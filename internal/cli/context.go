@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -164,6 +163,30 @@ type contextRow struct {
 	Active    bool   `json:"active"`
 }
 
+// contextColumns are the table columns of context list; wide adds the
+// default user ID (empty when unset).
+var contextColumns = output.Columns{
+	Table: []output.Column{
+		{Header: "NAME", Path: "name"},
+		{Header: "SUBDOMAIN", Path: "subdomain"},
+		{Header: "SCHREIBSCHUTZ", Path: "read_only"},
+		{Header: "AKTIV", Path: "active", Fmt: func(v any) string {
+			if v == true {
+				return "*"
+			}
+			return ""
+		}},
+	},
+	Wide: []output.Column{
+		{Header: "USER-ID", Path: "user", Fmt: func(v any) string {
+			if s := fmt.Sprint(v); s != "0" {
+				return s
+			}
+			return ""
+		}},
+	},
+}
+
 func newContextListCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
@@ -180,22 +203,13 @@ func newContextListCmd(app *App) *cobra.Command {
 				ctx := cfg.Contexts[n]
 				rows = append(rows, contextRow{n, ctx.Subdomain, ctx.ReadOnly, ctx.User, n == cfg.ActiveContext})
 			}
-			if o := app.outputOptions(c.Context(), app.Flags.Output); o.Structured() {
+			o := app.outputOptions(c.Context(), app.Flags.Output)
+			if o.Structured() {
 				return output.RenderValue(o, contextListJSON{cfg.ActiveContext, rows}, output.Columns{})
 			}
-			tw := tabwriter.NewWriter(app.Out, 0, 4, 2, ' ', 0)
-			_, _ = fmt.Fprintln(tw, "AKTIV\tNAME\tSUBDOMAIN\tSCHREIBSCHUTZ")
-			for _, r := range rows {
-				mark, ro := "", "nein"
-				if r.Active {
-					mark = "*"
-				}
-				if r.ReadOnly {
-					ro = "ja"
-				}
-				_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", mark, r.Name, r.Subdomain, ro)
-			}
-			return tw.Flush()
+			// table/wide: one row per context; --fields selects row keys
+			// (name, subdomain, read_only, user, active).
+			return output.RenderValue(o, rows, contextColumns)
 		},
 	}
 }
@@ -212,7 +226,7 @@ func newContextActiveCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if o := app.outputOptions(c.Context(), app.Flags.Output); o.Structured() {
+			if o := app.outputOptions(c.Context(), app.Flags.Output); !ownText(o) {
 				return output.RenderValue(o, map[string]string{"active_context": cfg.ActiveContext}, output.Columns{})
 			}
 			if cfg.ActiveContext == "" {

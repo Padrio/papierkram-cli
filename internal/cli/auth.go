@@ -203,7 +203,7 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 	if a.Env("PAPIERKRAM_TOKEN") != "" {
 		_, _ = fmt.Fprintln(a.Err, "Hinweis: PAPIERKRAM_TOKEN ist gesetzt und hat weiterhin Vorrang vor dem gespeicherten Token.")
 	}
-	if o := a.outputOptions(c.Context(), a.outputFormat(r)); o.Structured() {
+	if o := a.outputOptions(c.Context(), a.outputFormat(r)); !ownText(o) {
 		return output.RenderValue(o, loginJSON{name, ctx.Subdomain, tokenSource}, output.Columns{})
 	}
 	return nil
@@ -389,7 +389,7 @@ func newAuthStatusCmd(app *App) *cobra.Command {
 				ReadOnly: r.ReadOnly, ReadOnlySource: r.ReadOnlySource,
 				Quota: quotaJSON{app.quota.Remaining, app.quota.Consumed, app.quota.Known},
 			}
-			if o := app.outputOptions(c.Context(), app.outputFormat(r)); o.Structured() {
+			if o := app.outputOptions(c.Context(), app.outputFormat(r)); !ownText(o) {
 				if err := output.RenderValue(o, st, output.Columns{}); err != nil {
 					return err
 				}

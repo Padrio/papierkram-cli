@@ -16,7 +16,7 @@ func newVersionCmd(app *App) *cobra.Command {
 		Short: "Version, Commit und Build-Datum anzeigen",
 		Args:  noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
-			if o := app.outputOptions(c.Context(), app.Flags.Output); o.Structured() {
+			if o := app.outputOptions(c.Context(), app.Flags.Output); !ownText(o) {
 				return output.RenderValue(o, map[string]string{
 					"version":    buildinfo.Version,
 					"commit":     buildinfo.Commit,

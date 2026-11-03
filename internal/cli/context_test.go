@@ -204,8 +204,8 @@ func TestContextUseListActive(t *testing.T) {
 	}
 	out.Reset()
 	Run(app, []string{"context", "list"})
-	if !strings.Contains(out.String(), "SCHREIBSCHUTZ") || !strings.Contains(out.String(), "* ") {
-		t.Errorf("Tabelle:\n%s", out.String())
+	if want := "NAME  SUBDOMAIN  SCHREIBSCHUTZ  AKTIV\na     firma-a    nein\nb     firma-b    ja             *\n"; out.String() != want {
+		t.Errorf("Tabelle:\n%s\nwant\n%s", out.String(), want)
 	}
 	out.Reset()
 	Run(app, []string{"context", "active", "-o", "json"})

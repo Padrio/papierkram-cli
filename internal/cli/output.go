@@ -20,3 +20,11 @@ func (a *App) outputOptions(ctx context.Context, format string) output.Options {
 		Err:     a.Err,
 	}
 }
+
+// ownText reports whether a command prints its own human-readable text
+// (version, context active, auth status/login): -o table or wide without
+// --fields. Structured formats and --fields go through output.Render, so
+// --fields works in every format (table/wide: one FELD/WERT row per field).
+func ownText(o output.Options) bool {
+	return !o.Structured() && len(o.Fields) == 0
+}

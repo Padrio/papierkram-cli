@@ -245,3 +245,89 @@ func TestJQRuntimeErrorAfterCommandRan(t *testing.T) {
 		t.Errorf("stdout = %q, stderr:\n%s", out.String(), errb.String())
 	}
 }
+
+// Carried from Task 16: --fields also selects the columns of -o table and
+// -o wide; context list renders its rows through output.Render.
+func TestContextListTableFieldsAndWide(t *testing.T) {
+	app, out, errb := newTestApp(t)
+	writeCfg(t, app, twoCtx+"user = 7\n")
+	if code := Run(app, []string{"context", "list", "--fields", "name,active,read_only"}); code != 0 {
+		t.Fatal(errb.String())
+	}
+	if want := "NAME  ACTIVE  READ_ONLY\na     *       nein\nb             ja\n"; out.String() != want {
+		t.Errorf("--fields:\n%s\nwant\n%s", out.String(), want)
+	}
+	out.Reset()
+	if code := Run(app, []string{"context", "list", "-o", "wide"}); code != 0 {
+		t.Fatal(errb.String())
+	}
+	if want := "NAME  SUBDOMAIN  SCHREIBSCHUTZ  AKTIV  USER-ID\na     firma-a    nein           *\nb     firma-b    ja                    7\n"; out.String() != want {
+		t.Errorf("wide:\n%s\nwant\n%s", out.String(), want)
+	}
+}
+
+func TestContextListEmptyTable(t *testing.T) {
+	app, out, errb := newTestApp(t)
+	if code := Run(app, []string{"context", "list"}); code != 0 {
+		t.Fatal(errb.String())
+	}
+	if out.String() != "NAME  SUBDOMAIN  SCHREIBSCHUTZ  AKTIV\n" || errb.String() != "Keine Einträge.\n" {
+		t.Errorf("stdout %q, stderr %q", out.String(), errb.String())
+	}
+}
+
+// Commands with their own text keep it for -o table; with --fields they
+// print a FELD/WERT table instead.
+func TestOwnTextCommandsTableFields(t *testing.T) {
+	app, out, errb := newTestApp(t)
+	writeCfg(t, app, twoCtx)
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"version", "--fields", "version"}, "FELD     WERT\nVERSION  " + buildinfo.Version + "\n"},
+		{[]string{"version", "-o", "wide", "--fields", "go_version"}, "FELD        WERT\nGO_VERSION  " + runtime.Version() + "\n"},
+		{[]string{"context", "active", "--fields", "active_context"}, "FELD            WERT\nACTIVE_CONTEXT  a\n"},
+		{[]string{"context", "active"}, "a\n"},
+		{[]string{"version"}, "papierkram " + buildinfo.Version + " (Commit " + buildinfo.Commit + ", Build " + buildinfo.Date + ", " + runtime.Version() + ")\n"},
+	} {
+		out.Reset()
+		if code := Run(app, tc.args); code != 0 {
+			t.Fatalf("%v: exit %d %s", tc.args, code, errb.String())
+		}
+		if out.String() != tc.want {
+			t.Errorf("%v:\n%q\nwant\n%q", tc.args, out.String(), tc.want)
+		}
+	}
+}
+
+func TestAuthStatusTableFields(t *testing.T) {
+	app, _ := mockApp(t, nil)
+	writeCfg(t, app, twoCtx)
+	if code := run(t, app, "auth", "status", "--fields", "context,subdomain,read_only,quota.known"); code != 3 {
+		t.Errorf("exit = %d, want 3", code)
+	}
+	out, errs := bufs(app)
+	if want := "FELD         WERT\nCONTEXT      a\nSUBDOMAIN    firma-a\nREAD_ONLY    nein\nQUOTA.KNOWN  nein\n"; out != want {
+		t.Errorf("stdout:\n%s\nwant\n%s", out, want)
+	}
+	if strings.Contains(errs, `{"error"`) {
+		t.Errorf("JSON-Fehler bei -o table:\n%s", errs)
+	}
+}
+
+// auth login prints nothing on stdout for -o table; with --fields it
+// prints the requested fields as FELD/WERT table.
+func TestAuthLoginTableFields(t *testing.T) {
+	app, _ := mockApp(t, nil)
+	writeCfg(t, app, twoCtx)
+	app.In = strings.NewReader("test-token-f\n")
+	if code := run(t, app, "auth", "login", "--token-stdin", "--fields", "context,token_source"); code != 0 {
+		_, errs := bufs(app)
+		t.Fatalf("exit = %d, stderr = %s", code, errs)
+	}
+	if out, _ := bufs(app); out != "FELD          WERT\nCONTEXT       a\nTOKEN_SOURCE  keychain\n" {
+		t.Errorf("stdout:\n%s", out)
+	}
+	assertNoToken(t, app)
+}
