@@ -268,6 +268,14 @@ func itemSchema(s *openapi3.Schema) *openapi3.Schema {
 	return s.Items.Value
 }
 
+// IsObject reports an object schema: type object, or properties without a
+// type.
+func IsObject(s *openapi3.Schema) bool { return isObject(s) }
+
+// IsIDOnly reports an object schema whose only property is id, a reference
+// such as line_items[].proposition.
+func IsIDOnly(s *openapi3.Schema) bool { return isIDOnly(s) }
+
 func isObject(s *openapi3.Schema) bool {
 	return s.Type.Is("object") || (s.Type.IsEmpty() && len(s.Properties) > 0)
 }

@@ -221,7 +221,7 @@ func LoadItems(path string, stdin io.Reader) ([]any, error) {
 			r = strings.NewReader("")
 		}
 	default:
-		f, err := openItemsFile(path)
+		f, err := openJSONFile("--items", path)
 		if err != nil {
 			return nil, err
 		}
@@ -246,21 +246,22 @@ func LoadItems(path string, stdin io.Reader) ([]any, error) {
 	return items, nil
 }
 
-// openItemsFile opens the --items file with German errors.
-func openItemsFile(path string) (*os.File, error) {
+// openJSONFile opens the JSON file of flag (--input, --items) with German
+// errors; all are usage errors (exit 2).
+func openJSONFile(flag, path string) (*os.File, error) {
 	hint := "Pfad prüfen oder - für die Standardeingabe angeben"
 	f, err := os.Open(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("--items: Datei %q nicht gefunden", path), hint)
+		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: Datei %q nicht gefunden", flag, path), hint)
 	case errors.Is(err, fs.ErrPermission):
-		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("--items: keine Leseberechtigung für %q", path), hint)
+		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: keine Leseberechtigung für %q", flag, path), hint)
 	case err != nil:
-		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("--items: Datei %q nicht lesbar", path), hint)
+		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: Datei %q nicht lesbar", flag, path), hint)
 	}
 	if st, err := f.Stat(); err == nil && st.IsDir() {
 		_ = f.Close()
-		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("--items: %q ist ein Verzeichnis", path), hint)
+		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: %q ist ein Verzeichnis", flag, path), hint)
 	}
 	return f, nil
 }

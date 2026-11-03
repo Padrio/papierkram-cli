@@ -29,6 +29,8 @@ var germanTypeNames = map[string]string{
 	"boolSlice":     "Wahrheitswerte",
 	"durationSlice": "Dauern",
 	"count":         "Anzahl",
+	// rawValue types of the create/update field flags (builder_write.go)
+	"id": "ID", "integer": "Zahl", "number": "Dezimalzahl", "date": "Datum",
 }
 
 // defaultIsZero mirrors pflag's (unexported) defaultIsZeroValue by type name.

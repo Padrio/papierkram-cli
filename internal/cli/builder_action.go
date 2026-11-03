@@ -53,7 +53,7 @@ func (a *App) runSimpleAction(c *cobra.Command, e registry.Entry, args []string)
 	if err != nil {
 		return err
 	}
-	if err := a.beforeMutation(c, e, r, params); err != nil {
+	if err := a.beforeMutation(c, e, r, params, nil); err != nil {
 		return err
 	}
 	resp, err := client.Call(c.Context(), e.OperationID, params, nil, nil)

@@ -17,8 +17,9 @@ import (
 // BuildResourceCommands adds one command group per registry resource to
 // root (spec 7.1), with the German aliases, and below it one command per
 // registry entry. A resource whose entry has no action (info) becomes that
-// command itself. Entries marked Custom are skipped: their handlers add
-// themselves to the group. Resources without any entry get no command yet.
+// command itself. Entries the generic builder does not make (see generic)
+// are skipped: their handlers add themselves to the group. Resources without
+// any entry get no command yet.
 func BuildResourceCommands(app *App, root *cobra.Command) {
 	entries := registry.Entries()
 	for _, r := range registry.Resources() {
@@ -32,7 +33,7 @@ func BuildResourceCommands(app *App, root *cobra.Command) {
 			continue
 		}
 		if len(own) == 1 && own[0].Action == "" {
-			if !own[0].Custom {
+			if generic(own[0]) {
 				cmd := app.newEntryCmd(own[0])
 				cmd.Aliases = r.Aliases
 				root.AddCommand(cmd)
@@ -52,7 +53,7 @@ func BuildResourceCommands(app *App, root *cobra.Command) {
 			RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 		}
 		for _, e := range own {
-			if !e.Custom {
+			if generic(e) {
 				group.AddCommand(app.newEntryCmd(e))
 			}
 		}
@@ -71,8 +72,8 @@ var simpleActions = map[string]string{
 }
 
 // newEntryCmd builds the command of one registry entry: list, describe (and
-// info, Action ""), or a simple action. Path parameters before the last one
-// are required flags (see pathParamsOf).
+// info, Action ""), a simple action, or create/update. Path parameters other
+// than the positional ID are required flags (see pathParamsOf).
 func (a *App) newEntryCmd(e registry.Entry) *cobra.Command {
 	params := pathParamsOf(e)
 	cmd := &cobra.Command{
@@ -103,6 +104,9 @@ func (a *App) newEntryCmd(e registry.Entry) *cobra.Command {
 		cmd.RunE = func(c *cobra.Command, _ []string) error { return a.runList(c, e) }
 	case simple:
 		cmd.RunE = func(c *cobra.Command, args []string) error { return a.runSimpleAction(c, e, args) }
+	case isWrite(e):
+		addWriteFlags(cmd, e)
+		cmd.RunE = func(c *cobra.Command, args []string) error { return a.runWrite(c, e, args) }
 	default:
 		cmd.RunE = func(c *cobra.Command, args []string) error { return a.runDescribe(c, e, args) }
 	}
@@ -141,7 +145,8 @@ type pathParam struct {
 var pathParamRe = regexp.MustCompile(`\{(\w+)\}`)
 
 // pathParamsOf returns the path parameters of e in template order. For
-// every action but list the last one is the positional ID; all others come
+// every action but list and create (which work on a collection) the last
+// one is the positional ID; all others come
 // from required flags named after the parameter without "_id" in
 // kebab-case ({company_id} → --company).
 func pathParamsOf(e registry.Entry) []pathParam {
@@ -150,7 +155,7 @@ func pathParamsOf(e registry.Entry) []pathParam {
 	for i, sub := range m {
 		params[i] = pathParam{name: sub[1], flag: strings.ReplaceAll(strings.TrimSuffix(sub[1], "_id"), "_", "-")}
 	}
-	if e.Action != "list" && len(params) > 0 {
+	if e.Action != "list" && e.Action != "create" && len(params) > 0 {
 		params[len(params)-1].flag = ""
 	}
 	return params
@@ -219,8 +224,9 @@ func afterRequest(err error) error {
 
 // beforeMutation is the single hook every mutating builder path calls
 // after the arguments are checked and the configuration is resolved, right
-// before the request is sent. The protection rules of spec 8 (read-only
-// lock, --dry-run, confirmation; Task 24) go here. It does nothing yet.
-func (a *App) beforeMutation(_ *cobra.Command, _ registry.Entry, _ *config.Resolved, _ []int64) error {
+// before the request is sent; body is the finished request body (nil for
+// actions without one). The protection rules of spec 8 (read-only lock,
+// --dry-run, confirmation; Task 24) go here. It does nothing yet.
+func (a *App) beforeMutation(_ *cobra.Command, _ registry.Entry, _ *config.Resolved, _ []int64, _ map[string]any) error {
 	return nil
 }
