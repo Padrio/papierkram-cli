@@ -42,13 +42,18 @@ jobs:
         with:
           go-version: '1.27.x'
       # Linux has no Secret Service on the runner: start a private D-Bus session
-      # and an unlocked gnome-keyring (empty password) for the duration of the test.
+      # and gnome-keyring for the duration of the test. Unlocking with a NON-empty
+      # password makes the daemon create the default "login" collection (an empty
+      # password leaves no unlocked default collection); same recipe as
+      # zalando/go-keyring's CI. The password is a throwaway CI value, not a secret.
       - name: keychain integration test (linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y gnome-keyring dbus-x11
-          dbus-run-session -- sh -c 'echo -n "" | gnome-keyring-daemon --unlock --components=secrets && go test -tags keychain -count=1 -v ./internal/auth/...'
+          mkdir -p "$HOME/.local/share/keyrings"
+          chmod 700 -R "$HOME/.local"
+          dbus-run-session -- sh -c "echo 'pk-ci-keyring-pass' | gnome-keyring-daemon --unlock --components=secrets && go test -count=1 -v -tags keychain ./internal/auth/..."
       # macOS uses the runner's login keychain, Windows the Credential Manager.
       - name: keychain integration test
         if: runner.os != 'Linux'
