@@ -7,10 +7,12 @@ import (
 	"io/fs"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/spf13/cobra"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/spec"
@@ -211,28 +213,9 @@ const itemsHint = `--items erwartet ein JSON-Array von Positionen, z. B. [{"name
 // --input. A missing or unreadable file is a usage error (exit 2); invalid
 // content is a validation error (exit 5), as for --input.
 func LoadItems(path string, stdin io.Reader) ([]any, error) {
-	var r io.Reader
-	switch path {
-	case "":
-		return nil, clierr.New(clierr.CodeUsage, "--items: Dateiname fehlt", "Datei angeben oder - für die Standardeingabe")
-	case "-":
-		r = stdin
-		if r == nil {
-			r = strings.NewReader("")
-		}
-	default:
-		f, err := openJSONFile("--items", path)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = f.Close() }()
-		r = f
-	}
-	v, err := spec.DecodeJSON(r)
+	v, err := readJSON("--items", path, stdin)
 	if err != nil {
-		e := *clierr.From(err)
-		e.Message = "--items: " + e.Message
-		return nil, &e
+		return nil, err
 	}
 	items, ok := v.([]any)
 	if !ok {
@@ -244,6 +227,47 @@ func LoadItems(path string, stdin io.Reader) ([]any, error) {
 		}
 	}
 	return items, nil
+}
+
+// readJSON reads the JSON value of flag (--input, --items): a file, or
+// stdin for "-" (a nil stdin reads as empty). It decodes with
+// spec.DecodeJSON (BOM removed, CRLF, json.Number). A missing path or an
+// unreadable file is a usage error (exit 2), invalid content a validation
+// error (exit 5); messages start with the flag.
+func readJSON(flag, path string, stdin io.Reader) (any, error) {
+	r := stdin
+	switch path {
+	case "":
+		return nil, errMissingPath(flag)
+	case "-":
+		if r == nil {
+			r = strings.NewReader("")
+		}
+	default:
+		f, err := openJSONFile(flag, path)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = f.Close() }()
+		r = f
+	}
+	v, err := spec.DecodeJSON(r)
+	if err != nil {
+		return nil, prefixErr(flag+": ", err)
+	}
+	return v, nil
+}
+
+// errMissingPath is the usage error of --input/--items without a path.
+func errMissingPath(flag string) error {
+	return clierr.New(clierr.CodeUsage, flag+": Dateiname fehlt", "Datei angeben oder - für die Standardeingabe")
+}
+
+// prefixErr puts prefix (the flag) before the message of err.
+func prefixErr(prefix string, err error) error {
+	e := *clierr.From(err)
+	e.Message = prefix + e.Message
+	return &e
 }
 
 // openJSONFile opens the JSON file of flag (--input, --items) with German
@@ -264,4 +288,112 @@ func openJSONFile(flag, path string) (*os.File, error) {
 		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: %q ist ein Verzeichnis", flag, path), hint)
 	}
 	return f, nil
+}
+
+// lineItems returns the positions of --items (pruned like --input) or
+// --item, nil when neither is given, and the removed response-only fields.
+func (a *App) lineItems(c *cobra.Command, ws writeSpec, resp *openapi3.Schema) ([]any, []string, error) {
+	key := itemsKey(ws)
+	if c.Flags().Changed("items") {
+		raw, err := LoadItems(flagString(c, "items"), a.In)
+		if err != nil {
+			return nil, nil, err
+		}
+		pr, err := spec.Prune(map[string]any{key: raw}, ws.req, resp)
+		if err != nil {
+			return nil, nil, prefixErr("--items: ", err)
+		}
+		a.pruneHints(pr)
+		items, _ := pr.Body[key].([]any)
+		if items == nil {
+			items = []any{}
+		}
+		return items, pr.Removed, nil
+	}
+	if !c.Flags().Changed(ws.items.Flag) {
+		return nil, nil, nil
+	}
+	raws, _ := c.Flags().GetStringArray(ws.items.Flag)
+	schema := ws.itemSchema()
+	parsed, err := parseItems(raws, schema)
+	if err != nil {
+		return nil, nil, err
+	}
+	items := make([]any, len(parsed))
+	for i, it := range parsed {
+		if err := itemRefs(raws[i], it, schema); err != nil {
+			return nil, nil, err
+		}
+		items[i] = it
+	}
+	return items, nil, nil
+}
+
+// parseItems parses --item values with ParseItem and rejects object fields
+// that key=value cannot express (checkItemShape). It needs only the flags,
+// so checkWriteFlags runs it before anything is read or sent; all its
+// errors are usage errors (exit 2).
+func parseItems(raws []string, schema *openapi3.Schema) ([]map[string]any, error) {
+	out := make([]map[string]any, 0, len(raws))
+	for _, s := range raws {
+		it, err := ParseItem(s, schema)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkItemShape(s, it, schema); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, nil
+}
+
+// itemField is the schema of the line item property key, nil if unknown.
+func itemField(schema *openapi3.Schema, key string) *openapi3.Schema {
+	if schema == nil {
+		return nil
+	}
+	if ref := schema.Properties[key]; ref != nil {
+		return ref.Value
+	}
+	return nil
+}
+
+// checkItemShape rejects --item fields that are objects with more than an
+// id, or arrays: they cannot be written as key=value and need --items.
+func checkItemShape(s string, it map[string]any, schema *openapi3.Schema) error {
+	keys := make([]string, 0, len(it))
+	for k := range it {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		ps := itemField(schema, k)
+		if ps != nil && !spec.IsIDOnly(ps) && (spec.IsObject(ps) || ps.Type.Is("array")) {
+			return clierr.New(clierr.CodeUsage,
+				fmt.Sprintf("--item %s: Feld %q ist ein Objekt und lässt sich nicht als key=value angeben", showItem(s), k),
+				"Positionen mit diesem Feld als JSON per --items angeben")
+		}
+	}
+	return nil
+}
+
+// itemRefs turns the reference fields of an --item position, objects with
+// only an id, from an integer into {"id": n} (proposition=2); an invalid ID
+// is a validation error (exit 5).
+func itemRefs(s string, it map[string]any, schema *openapi3.Schema) error {
+	for k, v := range it {
+		ps := itemField(schema, k)
+		if ps == nil || !spec.IsIDOnly(ps) {
+			continue
+		}
+		raw, _ := v.(string)
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id < 0 {
+			return clierr.New(clierr.CodeValidation,
+				fmt.Sprintf("--item %s: ungültiger Wert %q für %s: ID muss eine ganze Zahl ≥ 0 sein", showItem(s), raw, k), "")
+		}
+		it[k] = map[string]any{"id": id}
+	}
+	return nil
 }

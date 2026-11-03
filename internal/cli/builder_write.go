@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"strconv"
+	"slices"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -165,7 +165,11 @@ func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error 
 		return err
 	}
 	isUpdate := e.Action == "update"
-	if err := checkWriteFlags(c, isUpdate); err != nil {
+	ws := newWriteSpec(e)
+	if ws.err != nil {
+		return errUnavailable(ws.err)
+	}
+	if err := checkWriteFlags(c, ws, isUpdate); err != nil {
 		return err
 	}
 	client, r, err := a.Client(c)
@@ -216,10 +220,17 @@ func flagBool(c *cobra.Command, name string) bool {
 	return v
 }
 
-// checkWriteFlags checks the flag combinations of create/update before
-// anything is read or sent (exit 2).
-func checkWriteFlags(c *cobra.Command, isUpdate bool) error {
+// checkWriteFlags runs every usage check of create/update that needs only
+// the flags, before the configuration is resolved and before anything is
+// read or sent (exit 2): flag combinations, an empty --input/--items path,
+// and the --item values (syntax, keys, object fields; see parseItems).
+func checkWriteFlags(c *cobra.Command, ws writeSpec, isUpdate bool) error {
 	item, items := c.Flags().Changed("item"), c.Flags().Changed("items")
+	for _, flag := range []string{"input", "items"} {
+		if c.Flags().Changed(flag) && flagString(c, flag) == "" {
+			return errMissingPath("--" + flag)
+		}
+	}
 	switch {
 	case item && items:
 		return clierr.New(clierr.CodeUsage, "--item und --items nicht zusammen verwenden",
@@ -233,8 +244,17 @@ func checkWriteFlags(c *cobra.Command, isUpdate bool) error {
 			flag = "--items"
 		}
 		return clierr.New(clierr.CodeUsage, flag+" ersetzt alle Positionen; dafür zusätzlich --replace-items angeben", replaceHint)
+	case item:
+		raws, _ := c.Flags().GetStringArray(ws.items.Flag)
+		_, err := parseItems(raws, ws.itemSchema())
+		return err
 	}
 	return nil
+}
+
+// errUnavailable reports a command whose fields cannot be derived.
+func errUnavailable(err error) error {
+	return clierr.New(clierr.CodeError, "Befehl nicht verfügbar: "+err.Error(), "")
 }
 
 // buildBody builds the request body of create/update (spec 6.1–6.4, 6.3a):
@@ -256,7 +276,7 @@ func checkWriteFlags(c *cobra.Command, isUpdate bool) error {
 func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[string]any, []string, error) {
 	ws := newWriteSpec(e)
 	if ws.err != nil {
-		return nil, nil, clierr.New(clierr.CodeError, "Befehl nicht verfügbar: "+ws.err.Error(), "")
+		return nil, nil, errUnavailable(ws.err)
 	}
 	resp := spec.ResourceResponseSchema(e.OperationID)
 	replace := flagBool(c, "replace-items")
@@ -267,18 +287,25 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 		if err != nil {
 			return nil, nil, err
 		}
+		key := itemsKey(ws)
+		if _, ok := in[key]; ok && key != "" && isUpdate && !replace {
+			// dropped before Prune: no hints or errors about positions
+			// that are not sent
+			delete(in, key)
+			_, _ = fmt.Fprintf(a.Err, "Hinweis: %s aus --input nicht gesendet – Positionen bleiben unverändert; zum Ersetzen --replace-items angeben\n", key)
+		}
 		pr, err := spec.Prune(in, ws.req, resp)
 		if err != nil {
 			return nil, nil, prefixErr("--input: ", err)
 		}
+		// null positions with --replace-items: an error whether Prune
+		// dropped the null or kept it (nullable on update), never a
+		// silent []
+		if v, ok := pr.Body[key]; key != "" && replace && ((ok && v == nil) || slices.Contains(pr.DroppedNulls, key)) {
+			return nil, nil, clierr.New(clierr.CodeValidation, key+": null ist nicht erlaubt – für leere Positionsliste [] angeben", "")
+		}
 		a.pruneHints(pr)
 		body, removed = pr.Body, pr.Removed
-		if key := itemsKey(ws); key != "" && isUpdate && !replace {
-			if _, ok := body[key]; ok {
-				delete(body, key)
-				_, _ = fmt.Fprintf(a.Err, "Hinweis: %s aus --input nicht gesendet – Positionen bleiben unverändert; zum Ersetzen --replace-items angeben\n", key)
-			}
-		}
 	}
 
 	cc := spec.CoerceContext{Now: a.Now, Loc: a.Location}
@@ -308,7 +335,7 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 			}
 			setPath(body, f.Path, list)
 		default:
-			v, err := spec.CoerceFlag(cc, f, c.Flags().Lookup(f.Flag).Value.String())
+			v, err := spec.CoerceFlag(cc, f, rawText(c, f.Flag))
 			if err != nil {
 				return nil, nil, err
 			}
@@ -325,7 +352,7 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 		switch {
 		case items != nil:
 			setPath(body, ws.items.Path, items)
-		case replace && body[ws.items.Path[0]] == nil:
+		case replace && !hasKey(body, itemsKey(ws)):
 			setPath(body, ws.items.Path, []any{})
 		}
 	}
@@ -345,6 +372,11 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 	return body, removed, nil
 }
 
+func hasKey(m map[string]any, k string) bool {
+	_, ok := m[k]
+	return ok
+}
+
 // itemsKey is the body key of the line items, "" without them.
 func itemsKey(ws writeSpec) string {
 	if ws.items == nil {
@@ -353,99 +385,26 @@ func itemsKey(ws writeSpec) string {
 	return ws.items.Path[0]
 }
 
+// rawText is the text given to a scalar field flag, exactly as typed
+// (--flagged= is "", not "false").
+func rawText(c *cobra.Command, flag string) string {
+	if v, ok := c.Flags().Lookup(flag).Value.(*rawValue); ok {
+		return v.s
+	}
+	return c.Flags().Lookup(flag).Value.String()
+}
+
 // readInput reads the --input body: a JSON object from a file or stdin.
 func (a *App) readInput(path string) (map[string]any, error) {
-	if path == "" {
-		return nil, clierr.New(clierr.CodeUsage, "--input: Dateiname fehlt", "Datei angeben oder - für die Standardeingabe")
-	}
-	r := a.In
-	if path != "-" {
-		f, err := openJSONFile("--input", path)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = f.Close() }()
-		r = f
-	}
-	v, err := spec.DecodeJSON(r)
+	v, err := readJSON("--input", path, a.In)
 	if err != nil {
-		return nil, prefixErr("--input: ", err)
+		return nil, err
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
 		return nil, clierr.New(clierr.CodeValidation, "--input: Eingabe muss ein JSON-Objekt sein", `z. B. {"name": "Beispiel"}`)
 	}
 	return m, nil
-}
-
-// lineItems returns the positions of --items (pruned like --input) or
-// --item, nil when neither is given, and the removed response-only fields.
-func (a *App) lineItems(c *cobra.Command, ws writeSpec, resp *openapi3.Schema) ([]any, []string, error) {
-	key := ws.items.Path[0]
-	if c.Flags().Changed("items") {
-		raw, err := LoadItems(flagString(c, "items"), a.In)
-		if err != nil {
-			return nil, nil, err
-		}
-		pr, err := spec.Prune(map[string]any{key: raw}, ws.req, resp)
-		if err != nil {
-			return nil, nil, prefixErr("--items: ", err)
-		}
-		a.pruneHints(pr)
-		items, _ := pr.Body[key].([]any)
-		if items == nil {
-			items = []any{}
-		}
-		return items, pr.Removed, nil
-	}
-	if !c.Flags().Changed(ws.items.Flag) {
-		return nil, nil, nil
-	}
-	raws, _ := c.Flags().GetStringArray(ws.items.Flag)
-	schema := ws.itemSchema()
-	items := make([]any, 0, len(raws))
-	for _, s := range raws {
-		it, err := ParseItem(s, schema)
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := itemObjects(s, it, schema); err != nil {
-			return nil, nil, err
-		}
-		items = append(items, it)
-	}
-	return items, nil, nil
-}
-
-// itemObjects converts the object fields of an --item position: an object
-// with only an id (proposition=2) becomes {"id": 2}; other objects and
-// arrays cannot be written as key=value and need --items.
-func itemObjects(s string, it map[string]any, schema *openapi3.Schema) error {
-	if schema == nil {
-		return nil
-	}
-	for k, v := range it {
-		ref := schema.Properties[k]
-		if ref == nil || ref.Value == nil {
-			continue
-		}
-		ps := ref.Value
-		switch {
-		case spec.IsIDOnly(ps):
-			raw, _ := v.(string)
-			id, err := strconv.ParseInt(raw, 10, 64)
-			if err != nil || id < 0 {
-				return clierr.New(clierr.CodeValidation,
-					fmt.Sprintf("--item %s: ungültiger Wert %q für %s: ID muss eine ganze Zahl ≥ 0 sein", showItem(s), raw, k), "")
-			}
-			it[k] = map[string]any{"id": id}
-		case spec.IsObject(ps) || ps.Type.Is("array"):
-			return clierr.New(clierr.CodeUsage,
-				fmt.Sprintf("--item %s: Feld %q ist ein Objekt und lässt sich nicht als key=value angeben", showItem(s), k),
-				"Positionen mit diesem Feld als JSON per --items angeben")
-		}
-	}
-	return nil
 }
 
 // pruneHints prints which fields Prune removed or whose null it dropped.
@@ -456,13 +415,6 @@ func (a *App) pruneHints(pr spec.PruneResult) {
 	if len(pr.DroppedNulls) > 0 {
 		_, _ = fmt.Fprintf(a.Err, "Hinweis: null ignoriert (Feld bleibt unverändert): %s\n", strings.Join(pr.DroppedNulls, ", "))
 	}
-}
-
-// prefixErr puts prefix (the flag) before the message of err.
-func prefixErr(prefix string, err error) error {
-	e := *clierr.From(err)
-	e.Message = prefix + e.Message
-	return &e
 }
 
 // setPath sets v at path in body, creating the objects on the way. A map

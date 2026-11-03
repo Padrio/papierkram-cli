@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"github.com/Padrio/papierkram-cli/internal/registry"
@@ -623,13 +625,121 @@ func TestReservedFlagsCoverRootFlags(t *testing.T) {
 	}
 }
 
-func TestWriteHelpGerman(t *testing.T) {
-	app, _ := apiApp(t)
-	wantExit(t, app, runWrite(t, app, "invoice", "update", "--help"), 0)
-	out, _ := bufs(app)
-	for _, want := range []string{"--replace-items", "--item Texte", "--items Text", "--input Text", "--customer ID", "--document-date Datum", "--flagged ", "(YYYY-MM-DD, heute, gestern)"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("Hilfe enthält %q nicht:\n%s", want, out)
+// runGerman runs args against the real root with entries attached and the
+// German templates applied afterwards, as in the full command tree.
+func runGerman(t *testing.T, app *App, args []string, entries ...registry.Entry) int {
+	t.Helper()
+	root := NewRootCmd(app)
+	for _, e := range entries {
+		group := &cobra.Command{Use: e.Resource}
+		if g, _, err := root.Find([]string{e.Resource}); err == nil && g != root {
+			group = g
+		} else {
+			root.AddCommand(group)
 		}
+		group.AddCommand(app.newEntryCmd(e))
+	}
+	applyGerman(root)
+	return executeContext(context.Background(), app, root, args)
+}
+
+func TestWriteHelpGerman(t *testing.T) {
+	entries := append(writeEntries(t), specEntry(t, "UpdateTimeEntry", "time", "update", registry.ClassUpdate))
+	for _, args := range [][]string{{"invoice", "update", "--help"}, {"time", "update", "--help"}} {
+		app, _ := apiApp(t)
+		wantExit(t, app, runGerman(t, app, args, entries...), 0)
+		out, _ := bufs(app)
+		for _, bad := range []string{"(Standard: )", "help for", "[flags]"} {
+			if strings.Contains(out, bad) {
+				t.Errorf("%v: Hilfe enthält %q:\n%s", args, bad, out)
+			}
+		}
+		if !strings.Contains(out, "Hilfe zu update") {
+			t.Errorf("%v: deutsche Hilfe-Zeile fehlt:\n%s", args, out)
+		}
+	}
+
+	app, _ := apiApp(t)
+	wantExit(t, app, runGerman(t, app, []string{"invoice", "update", "--help"}, entries...), 0)
+	out, _ := bufs(app)
+	for _, want := range []string{
+		"--flagged Wert für flagged (true/false)",
+		"--customer ID ID für customer",
+		"--document-date Datum Wert für document_date (YYYY-MM-DD, heute, gestern)",
+		"--item Texte Position als key=wert,key=wert (wiederholbar)",
+		"--items Text Positionen als JSON-Array aus Datei oder - für die Standardeingabe",
+		"--input Text Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder",
+		"--replace-items alle Positionen ersetzen (nötig für --item/--items; ohne Positionen werden alle gelöscht)",
+	} {
+		if !slices.Contains(helpLines(out), want) {
+			t.Errorf("Hilfe enthält die Zeile %q nicht:\n%s", want, out)
+		}
+	}
+
+	app, _ = apiApp(t)
+	wantExit(t, app, runGerman(t, app, []string{"time", "update", "--help"}, entries...), 0)
+	if out, _ := bufs(app); !slices.Contains(helpLines(out), "--billable-duration Zahl Wert für billable_duration") {
+		t.Errorf("Hilfe:\n%s", out)
+	}
+}
+
+// helpLines returns the help lines with whitespace runs collapsed.
+func helpLines(out string) []string {
+	var lines []string
+	for _, l := range strings.Split(out, "\n") {
+		lines = append(lines, strings.Join(strings.Fields(l), " "))
+	}
+	return lines
+}
+
+func TestWriteFlagOnlyUsageErrorsBeforeConfig(t *testing.T) {
+	// no token: anything after a.Client would be exit 3
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"voucher", "create", "--item", "name=A,billing=5"}, `Feld "billing" ist ein Objekt`},
+		{[]string{"invoice", "create", "--item", "nam=A"}, `unbekannter Schlüssel "nam"`},
+		{[]string{"invoice", "create", "--item", `name="offen`}, "--item"},
+		{[]string{"invoice", "create", "--input", ""}, "--input: Dateiname fehlt"},
+		{[]string{"invoice", "create", "--input=", "--name", "R"}, "--input: Dateiname fehlt"},
+		{[]string{"invoice", "create", "--items", ""}, "--items: Dateiname fehlt"},
+	} {
+		app, srv := mockApp(t, nil)
+		wantExit(t, app, runWrite(t, app, tc.args...), 2)
+		wantRequests(t, srv, 0)
+		if _, errs := bufs(app); !strings.Contains(errs, tc.want) {
+			t.Errorf("%v: stderr = %q", tc.args, errs)
+		}
+	}
+}
+
+func TestWriteNullLineItemsWithReplace(t *testing.T) {
+	app, srv := apiApp(t)
+	app.In = strings.NewReader(`{"name":"Neu","line_items":null}`)
+	wantExit(t, app, runWrite(t, app, "invoice", "update", "12", "--input", "-", "--replace-items"), 5)
+	wantRequests(t, srv, 0)
+	if _, errs := bufs(app); !strings.Contains(errs, "line_items: null ist nicht erlaubt – für leere Positionsliste [] angeben") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
+
+func TestWriteDroppedInputItemsNotPruned(t *testing.T) {
+	// positions that are not sent produce neither prune hints nor errors
+	app, srv := apiApp(t)
+	app.In = strings.NewReader(`{"name":"Neu","line_items":[{"nam":"x","total_net":5,"proposition":null}]}`)
+	wantExit(t, app, runWrite(t, app, "invoice", "update", "12", "--input", "-", "-o", "json"), 0)
+	wantBody(t, srv, "PUT", "/income/invoices/12", `{"name":"Neu"}`)
+	if _, errs := bufs(app); errs != itemsDropHint {
+		t.Errorf("stderr = %q", errs)
+	}
+}
+
+func TestWriteEmptyBoolFlagIsInvalid(t *testing.T) {
+	app, srv := apiApp(t)
+	wantExit(t, app, runWrite(t, app, "project", "update", "5", "--flagged="), 5)
+	wantRequests(t, srv, 0)
+	if _, errs := bufs(app); !strings.Contains(errs, `ungültiger Wert "" für --flagged`) {
+		t.Errorf("stderr = %q", errs)
 	}
 }

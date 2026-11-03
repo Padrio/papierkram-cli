@@ -34,7 +34,12 @@ var germanTypeNames = map[string]string{
 }
 
 // defaultIsZero mirrors pflag's (unexported) defaultIsZeroValue by type name.
+// An empty default is always zero (the raw create/update field flags have
+// numeric type names but no default).
 func defaultIsZero(f *pflag.Flag) bool {
+	if f.DefValue == "" {
+		return true
+	}
 	switch t := f.Value.Type(); {
 	case t == "bool" || t == "boolfunc":
 		return f.DefValue == "false" || f.DefValue == ""
