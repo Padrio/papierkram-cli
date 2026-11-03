@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,10 +14,109 @@ func useLine(c *cobra.Command) string {
 	return strings.ReplaceAll(c.UseLine(), "[flags]", "[Optionen]")
 }
 
-// germanFlagUsages renders pflag's flag list with "(Standard: …)" instead of
-// "(default …)".
+// germanTypeNames maps pflag value types to the German placeholder shown
+// after the flag name; "" shows none (booleans). Unlisted types show "Wert".
+var germanTypeNames = map[string]string{
+	"bool": "", "boolfunc": "",
+	"string":   "Text",
+	"duration": "Dauer",
+	"int":      "Zahl", "int8": "Zahl", "int16": "Zahl", "int32": "Zahl", "int64": "Zahl",
+	"uint": "Zahl", "uint8": "Zahl", "uint16": "Zahl", "uint32": "Zahl", "uint64": "Zahl",
+	"float32": "Dezimalzahl", "float64": "Dezimalzahl",
+	"stringSlice": "Texte", "stringArray": "Texte",
+	"intSlice": "Zahlen", "int32Slice": "Zahlen", "int64Slice": "Zahlen", "uintSlice": "Zahlen",
+	"float32Slice": "Dezimalzahlen", "float64Slice": "Dezimalzahlen",
+	"boolSlice":     "Wahrheitswerte",
+	"durationSlice": "Dauern",
+	"count":         "Anzahl",
+}
+
+// defaultIsZero mirrors pflag's (unexported) defaultIsZeroValue by type name.
+func defaultIsZero(f *pflag.Flag) bool {
+	switch t := f.Value.Type(); {
+	case t == "bool" || t == "boolfunc":
+		return f.DefValue == "false" || f.DefValue == ""
+	case t == "duration":
+		return f.DefValue == "0" || f.DefValue == "0s"
+	case t == "string":
+		return f.DefValue == ""
+	case strings.HasPrefix(t, "int") || strings.HasPrefix(t, "uint") || strings.HasPrefix(t, "float") || t == "count":
+		if strings.HasSuffix(t, "Slice") {
+			return f.DefValue == "[]"
+		}
+		return f.DefValue == "0"
+	case strings.HasSuffix(t, "Slice") || t == "stringArray":
+		return f.DefValue == "[]"
+	}
+	switch f.DefValue {
+	case "false", "<nil>", "", "0":
+		return true
+	}
+	return false
+}
+
+// germanFlagUsages renders a flag list like pflag's FlagUsages, but with
+// German type placeholders and "(Standard: …)" instead of "(default …)".
+// A back-quoted name in the usage text is kept as placeholder (pflag rule).
 func germanFlagUsages(fs *pflag.FlagSet) string {
-	return strings.ReplaceAll(fs.FlagUsages(), " (default ", " (Standard: ")
+	type row struct{ left, usage string }
+	var rows []row
+	maxlen := 0
+	fs.VisitAll(func(f *pflag.Flag) {
+		if f.Hidden {
+			return
+		}
+		left := "      --" + f.Name
+		if f.Shorthand != "" && f.ShorthandDeprecated == "" {
+			left = "  -" + f.Shorthand + ", --" + f.Name
+		}
+		name, usage := pflag.UnquoteUsage(f)
+		if usage == f.Usage { // no back-quoted name: derive from the type
+			var ok bool
+			if name, ok = germanTypeNames[f.Value.Type()]; !ok {
+				name = "Wert"
+			}
+		}
+		if name != "" {
+			left += " " + name
+		}
+		if f.NoOptDefVal != "" {
+			switch f.Value.Type() {
+			case "string":
+				left += fmt.Sprintf("[=%q]", f.NoOptDefVal)
+			case "bool", "boolfunc":
+				if f.NoOptDefVal != "true" {
+					left += "[=" + f.NoOptDefVal + "]"
+				}
+			case "count":
+				if f.NoOptDefVal != "+1" {
+					left += "[=" + f.NoOptDefVal + "]"
+				}
+			default:
+				left += "[=" + f.NoOptDefVal + "]"
+			}
+		}
+		if !defaultIsZero(f) {
+			if f.Value.Type() == "string" {
+				usage += fmt.Sprintf(" (Standard: %q)", f.DefValue)
+			} else {
+				usage += fmt.Sprintf(" (Standard: %s)", f.DefValue)
+			}
+		}
+		if f.Deprecated != "" {
+			usage += fmt.Sprintf(" (veraltet: %s)", f.Deprecated)
+		}
+		maxlen = max(maxlen, len(left)+1)
+		rows = append(rows, row{left, usage})
+	})
+	var b strings.Builder
+	for _, r := range rows {
+		// Same layout as pflag: left, one space, padding, one space, usage;
+		// continuation lines of a multi-line usage are indented to match.
+		usage := strings.ReplaceAll(r.usage, "\n", "\n"+strings.Repeat(" ", maxlen+2))
+		b.WriteString(r.left + " " + strings.Repeat(" ", maxlen-len(r.left)) + " " + usage + "\n")
+	}
+	return b.String()
 }
 
 const usageTemplate = `Verwendung:{{if .Runnable}}

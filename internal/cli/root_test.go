@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/buildinfo"
@@ -128,12 +130,16 @@ func TestUnknownCommandGerman(t *testing.T) {
 // checks help output and usage-error hints for English cobra/pflag remnants.
 func TestHelpAndUsageHintsGermanEverywhere(t *testing.T) {
 	app, _, _ := newTestApp(t)
+	root := NewRootCmd(app)
+	// cobra adds the help command only in ExecuteC; add it here so the walk
+	// covers it as well.
+	root.InitDefaultHelpCmd()
 	var paths [][]string
-	walk(NewRootCmd(app), func(c *cobra.Command) {
+	walk(root, func(c *cobra.Command) {
 		paths = append(paths, strings.Fields(c.CommandPath())[1:])
 	})
-	if len(paths) < 9 {
-		t.Fatalf("Baum unvollständig: %v", paths)
+	if len(paths) < 10 || !slices.ContainsFunc(paths, func(p []string) bool { return slices.Equal(p, []string{"help"}) }) {
+		t.Fatalf("Baum unvollständig (help fehlt?): %v", paths)
 	}
 	bad := []string{"(default", "[flags]", "Usage:"}
 	for _, p := range paths {
@@ -152,7 +158,67 @@ func TestHelpAndUsageHintsGermanEverywhere(t *testing.T) {
 					t.Errorf("%v (%s, exit %d): enthält %q:\n%s", args, kind, code, b, got)
 				}
 			}
+			if m := englishFlagTypeRe.FindString(got); m != "" {
+				t.Errorf("%v (%s): englischer Typname %q in der Optionsliste:\n%s", args, kind, m, got)
+			}
 		}
+	}
+}
+
+// englishFlagTypeRe matches a pflag type placeholder directly after a flag
+// name in an option list, e.g. "--timeout duration" or "-o, --output string".
+var englishFlagTypeRe = regexp.MustCompile(`(?m)^\s+(?:-\w, )?--[\w-]+ (string|strings|stringArray|duration|int|ints|uint|uints|float|bool|bools|count|value|ip|ipMask|ipNet)\b`)
+
+func TestFlagTypeNamesGerman(t *testing.T) {
+	app, out, _ := newTestApp(t)
+	if code := Run(app, []string{"context", "create", "--help"}); code != 0 {
+		t.Fatal(code)
+	}
+	for _, want := range []string{"--subdomain Text ", "--timeout Dauer ", "-o, --output Text ", "--user Text "} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("Hilfe enthält %q nicht:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), " string ") || strings.Contains(out.String(), "--timeout duration") {
+		t.Errorf("englische Typnamen:\n%s", out.String())
+	}
+}
+
+func TestGermanFlagUsagesAllTypes(t *testing.T) {
+	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
+	fs.String("s", "", "Text-Flag")
+	fs.Duration("d", 0, "Dauer-Flag")
+	fs.Int("i", 0, "Zahl-Flag")
+	fs.Int64("i64", 5, "Zahl mit Standard")
+	fs.Uint("u", 0, "vorzeichenlos")
+	fs.Float64("f", 0, "Dezimal")
+	fs.StringSlice("ss", nil, "Liste")
+	fs.StringArray("sa", nil, "Feld")
+	fs.IntSlice("is", nil, "Zahlenliste")
+	fs.Bool("b", false, "Schalter")
+	fs.Count("c", "Zähler")
+	fs.String("named", "", "eigener `Name` bleibt")
+	got := germanFlagUsages(fs)
+	for _, want := range []string{
+		"--s Text ", "--d Dauer ", "--i Zahl ", "--i64 Zahl ", "Zahl mit Standard (Standard: 5)", "--u Zahl ",
+		"--f Dezimalzahl ", "--ss Texte ", "--sa Texte ", "--is Zahlen ", "--c Anzahl ", "--named Name ", "eigener Name bleibt",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("fehlt %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "--b ") && !strings.Contains(got, "--b  ") {
+		t.Errorf("bool-Flag darf keinen Typnamen haben:\n%s", got)
+	}
+	if m := englishFlagTypeRe.FindString(got); m != "" {
+		t.Errorf("englischer Typname %q:\n%s", m, got)
+	}
+	// Without type names and defaults the layout matches pflag exactly.
+	plain := pflag.NewFlagSet("y", pflag.ContinueOnError)
+	plain.BoolP("yes", "y", false, "bejahen")
+	plain.Bool("no-color", false, "Farben aus\nzweite Zeile")
+	if g, w := germanFlagUsages(plain), plain.FlagUsages(); g != w {
+		t.Errorf("Layout weicht von pflag ab:\n%q\n%q", g, w)
 	}
 }
 
