@@ -12,6 +12,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
+	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/projectfile"
 )
 
@@ -120,8 +121,8 @@ func (a *App) warnEnvOverrides(r *config.Resolved) {
 	if len(vars) > 1 {
 		verb = "haben"
 	}
-	_, _ = fmt.Fprintf(a.Err, "Warnung: Kontext %q ist per %s gewählt, aber %s aus der Umgebung %s Vorrang vor seinen Einstellungen.\n",
-		r.Context, how, strings.Join(vars, ", "), verb)
+	output.Warn(a.Err, fmt.Sprintf("Kontext %q ist per %s gewählt, aber %s aus der Umgebung %s Vorrang vor seinen Einstellungen.",
+		r.Context, how, strings.Join(vars, ", "), verb))
 }
 
 // clientFor checks that r has a base URL and a token and builds the client.
@@ -192,7 +193,7 @@ func (a *App) onQuota(q api.Quota) {
 	a.quota = q
 	if q.Known && q.Remaining < lowQuota && !a.quotaWarned {
 		a.quotaWarned = true
-		_, _ = fmt.Fprintf(a.Err, "Warnung: Restkontingent niedrig: %d Credits\n", q.Remaining)
+		output.Warn(a.Err, fmt.Sprintf("Restkontingent niedrig: %d Credits", q.Remaining))
 	}
 }
 

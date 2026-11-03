@@ -8,6 +8,7 @@ package output
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,13 +32,15 @@ const (
 
 // Options controls one rendering. Fields are dotted paths (--fields, see
 // ParseFields), JQ a gojq expression (--jq, implies JSON). Color is decided
-// by the caller (see UseColor). Out receives the data, Err errors.
+// by the caller (see UseColor). Out receives the data, Err errors. Context
+// cancels a running --jq expression (nil means context.Background()).
 type Options struct {
 	Format   Format
 	Fields   []string
 	JQ       string
 	Color    bool
 	Out, Err io.Writer
+	Context  context.Context
 }
 
 // Structured reports whether the output is machine-readable: json, yaml or

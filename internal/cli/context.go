@@ -170,7 +170,7 @@ func newContextListCmd(app *App) *cobra.Command {
 		Short: "Kontexte auflisten",
 		Long:  "Listet alle Kontexte auf; der aktive Kontext ist markiert. Tokens werden nie ausgegeben.",
 		Args:  noArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(c *cobra.Command, _ []string) error {
 			cfg, _, err := app.loadConfig()
 			if err != nil {
 				return err
@@ -180,7 +180,7 @@ func newContextListCmd(app *App) *cobra.Command {
 				ctx := cfg.Contexts[n]
 				rows = append(rows, contextRow{n, ctx.Subdomain, ctx.ReadOnly, ctx.User, n == cfg.ActiveContext})
 			}
-			if o := app.outputOptions(app.Flags.Output); o.Structured() {
+			if o := app.outputOptions(c.Context(), app.Flags.Output); o.Structured() {
 				return output.RenderValue(o, contextListJSON{cfg.ActiveContext, rows}, output.Columns{})
 			}
 			tw := tabwriter.NewWriter(app.Out, 0, 4, 2, ' ', 0)
@@ -207,12 +207,12 @@ func newContextActiveCmd(app *App) *cobra.Command {
 		Long: "Zeigt den in der Konfiguration gespeicherten aktiven Kontext (active_context).\n" +
 			"--context, PAPIERKRAM_CONTEXT und die Projektdatei werden hier nicht berücksichtigt.",
 		Args: noArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(c *cobra.Command, _ []string) error {
 			cfg, _, err := app.loadConfig()
 			if err != nil {
 				return err
 			}
-			if o := app.outputOptions(app.Flags.Output); o.Structured() {
+			if o := app.outputOptions(c.Context(), app.Flags.Output); o.Structured() {
 				return output.RenderValue(o, map[string]string{"active_context": cfg.ActiveContext}, output.Columns{})
 			}
 			if cfg.ActiveContext == "" {
@@ -227,7 +227,7 @@ func newContextActiveCmd(app *App) *cobra.Command {
 
 // warnKeyring reports a non-fatal keychain problem on stderr.
 func (a *App) warnKeyring(format string, args ...any) {
-	_, _ = fmt.Fprintf(a.Err, "Warnung: "+format+"\n", args...)
+	output.Warn(a.Err, fmt.Sprintf(format, args...))
 }
 
 func keyringErr(err error, what string) error {

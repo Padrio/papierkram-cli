@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -187,16 +189,59 @@ func TestAuthLoginYAML(t *testing.T) {
 func TestOutputOptionsColor(t *testing.T) {
 	app, _, _ := newTestApp(t)
 	app.StdoutTTY = true
-	if !app.outputOptions("table").Color {
+	if !app.outputOptions(context.Background(), "table").Color {
 		t.Error("TTY ohne NO_COLOR: Farbe erwartet")
 	}
 	app.Env = envMap(map[string]string{"NO_COLOR": "1"})
-	if app.outputOptions("table").Color {
+	if app.outputOptions(context.Background(), "table").Color {
 		t.Error("NO_COLOR gesetzt: keine Farbe erwartet")
 	}
 	app.Env = envMap(nil)
 	app.Flags.NoColor = true
-	if app.outputOptions("table").Color {
+	if app.outputOptions(context.Background(), "table").Color {
 		t.Error("--no-color: keine Farbe erwartet")
+	}
+}
+
+// Plan check order: an invalid --jq is a usage error before anything is
+// sent or stored.
+func TestInvalidJQRejectedBeforeAnySideEffect(t *testing.T) {
+	app, srv := mockApp(t, nil)
+	writeCfg(t, app, twoCtx)
+	before, err := os.ReadFile(cfgFile(t, app))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.In = strings.NewReader("test-token-q\n")
+	if code := run(t, app, "auth", "login", "--token-stdin", "--jq", ".["); code != 2 {
+		t.Errorf("login: exit = %d, want 2", code)
+	}
+	if n := len(srv.Requests()); n != 0 {
+		t.Errorf("login: %d Requests", n)
+	}
+	if _, err := app.Keyring.Get("a"); err == nil {
+		t.Error("login: Token trotz ungültigem --jq gespeichert")
+	}
+	if after, _ := os.ReadFile(cfgFile(t, app)); string(after) != string(before) {
+		t.Errorf("config.toml verändert:\n%s", after)
+	}
+
+	app2, srv2 := mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-s", "PAPIERKRAM_SUBDOMAIN": "firma"})
+	if code := run(t, app2, "auth", "status", "--jq", ".["); code != 2 {
+		t.Errorf("status: exit = %d, want 2", code)
+	}
+	if n := len(srv2.Requests()); n != 0 {
+		t.Errorf("status: %d Requests", n)
+	}
+}
+
+// A jq runtime error after the command ran is exit 1, not usage.
+func TestJQRuntimeErrorAfterCommandRan(t *testing.T) {
+	app, out, errb := newTestApp(t)
+	if code := Run(app, []string{"version", "--jq", ".version | keys"}); code != 1 {
+		t.Errorf("exit = %d, want 1", code)
+	}
+	if out.Len() != 0 || !strings.HasPrefix(errb.String(), "Fehler: Befehl ausgeführt, Ausgabe fehlgeschlagen: ") {
+		t.Errorf("stdout = %q, stderr:\n%s", out.String(), errb.String())
 	}
 }

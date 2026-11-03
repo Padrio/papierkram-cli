@@ -222,7 +222,7 @@ func toYAML(v any) any {
 		return yamlLiteral(v)
 	case string:
 		if looksNumeric(v) {
-			b, err := json.Marshal(v) // a JSON string is a valid double-quoted YAML scalar
+			b, err := marshalJSON(v) // a JSON string is a valid double-quoted YAML scalar
 			if err == nil {
 				return yamlLiteral(b)
 			}

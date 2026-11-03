@@ -183,7 +183,7 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 			}
 			// The new token is in the keychain and wins over the config
 			// token, so the login counts; only the cleanup failed.
-			_, _ = fmt.Fprintf(a.Err, "Warnung: Token im Schlüsselbund gespeichert, altes Klartext-Token in %s konnte nicht entfernt werden (%v). Die Zeile token im Kontext %q von Hand löschen.\n", path, err, name)
+			output.Warn(a.Err, fmt.Sprintf("Token im Schlüsselbund gespeichert, altes Klartext-Token in %s konnte nicht entfernt werden (%v). Die Zeile token im Kontext %q von Hand löschen.", path, err, name))
 		}
 	}
 
@@ -197,13 +197,13 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 	where := "im Schlüsselbund"
 	if tokenSource == config.SourceConfig {
 		where = "in " + path
-		_, _ = fmt.Fprintf(a.Err, "Warnung: Kein Schlüsselbund verfügbar. Das Token steht wegen --insecure-storage im Klartext in %s (Rechte 0600). Wer diese Datei lesen kann, kann die Papierkram-API mit dem Token nutzen.\n", path)
+		output.Warn(a.Err, fmt.Sprintf("Kein Schlüsselbund verfügbar. Das Token steht wegen --insecure-storage im Klartext in %s (Rechte 0600). Wer diese Datei lesen kann, kann die Papierkram-API mit dem Token nutzen.", path))
 	}
 	_, _ = fmt.Fprintf(a.Err, "Angemeldet: Kontext %q (Subdomain %s), Token %s gespeichert.\n", name, ctx.Subdomain, where)
 	if a.Env("PAPIERKRAM_TOKEN") != "" {
 		_, _ = fmt.Fprintln(a.Err, "Hinweis: PAPIERKRAM_TOKEN ist gesetzt und hat weiterhin Vorrang vor dem gespeicherten Token.")
 	}
-	if o := a.outputOptions(a.outputFormat(r)); o.Structured() {
+	if o := a.outputOptions(c.Context(), a.outputFormat(r)); o.Structured() {
 		return output.RenderValue(o, loginJSON{name, ctx.Subdomain, tokenSource}, output.Columns{})
 	}
 	return nil
@@ -389,7 +389,7 @@ func newAuthStatusCmd(app *App) *cobra.Command {
 				ReadOnly: r.ReadOnly, ReadOnlySource: r.ReadOnlySource,
 				Quota: quotaJSON{app.quota.Remaining, app.quota.Consumed, app.quota.Known},
 			}
-			if o := app.outputOptions(app.outputFormat(r)); o.Structured() {
+			if o := app.outputOptions(c.Context(), app.outputFormat(r)); o.Structured() {
 				if err := output.RenderValue(o, st, output.Columns{}); err != nil {
 					return err
 				}

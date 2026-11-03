@@ -1,10 +1,9 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
+	"github.com/Padrio/papierkram-cli/internal/output"
 )
 
 // annotWritesConfig marks commands that write config.toml, the keychain or
@@ -42,6 +41,6 @@ func (a *App) configPath() (string, error) {
 // that is neither clearly on nor off (the mode is enabled then).
 func (a *App) warnReadOnlyEnv() {
 	if w := config.EnvReadOnlyWarning(a.Env); w != "" {
-		_, _ = fmt.Fprintln(a.Err, "Warnung: "+w)
+		output.Warn(a.Err, w)
 	}
 }

@@ -1,6 +1,7 @@
 package output
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -58,13 +59,54 @@ func TestJQHasNoEnvironment(t *testing.T) {
 	}
 }
 
-func TestJQErrorsAreUsageErrors(t *testing.T) {
-	for _, expr := range []string{".[", "foo(1)", ".id | keys"} {
+func TestCheckJQ(t *testing.T) {
+	if err := CheckJQ(".entries[].id"); err != nil {
+		t.Errorf("gültig: %v", err)
+	}
+	for _, expr := range []string{".[", "foo(1)", "$undefined"} {
+		ce := clierr.From(CheckJQ(expr))
+		if ce == nil || ce.Exit() != 2 || !strings.HasPrefix(ce.Message, "ungültiger jq-Ausdruck: ") || !strings.Contains(ce.Hint, "jqlang.org") {
+			t.Errorf("%q: %+v", expr, ce)
+		}
+	}
+}
+
+func TestJQParseErrorsAreUsageErrors(t *testing.T) {
+	for _, expr := range []string{".[", "foo(1)"} {
 		out, _, err := render(t, Options{Format: FormatJSON, JQ: expr}, `{"id":1}`)
-		ce := clierr.From(err)
-		if ce == nil || ce.Exit() != 2 || !strings.Contains(ce.Message, "jq-Ausdruck") || out != "" {
+		if ce := clierr.From(err); ce == nil || ce.Exit() != 2 || out != "" {
 			t.Errorf("%q: err = %+v, out = %q", expr, ce, out)
 		}
+	}
+}
+
+// A runtime error depends on the data: the command already ran, only the
+// output failed (exit 1, not usage).
+func TestJQRuntimeErrorIsNotUsage(t *testing.T) {
+	out, _, err := render(t, Options{Format: FormatJSON, JQ: ".id | keys"}, `{"id":1}`)
+	ce := clierr.From(err)
+	if ce == nil || ce.Exit() != 1 || !strings.HasPrefix(ce.Message, "Befehl ausgeführt, Ausgabe fehlgeschlagen: ") || ce.Hint != "" || out != "" {
+		t.Errorf("err = %+v, out = %q", ce, out)
+	}
+}
+
+func TestJQCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	out, _, err := render(t, Options{Format: FormatJSON, JQ: "range(1e9)", Context: ctx}, `{}`)
+	if ce := clierr.From(err); ce == nil || ce.Exit() != 1 || !strings.Contains(ce.Message, "context canceled") || out != "" {
+		t.Errorf("err = %+v, out = %q", ce, out)
+	}
+}
+
+func TestJQOutputLimit(t *testing.T) {
+	old := jqOutputLimit
+	jqOutputLimit = 64
+	t.Cleanup(func() { jqOutputLimit = old })
+	out, _, err := render(t, Options{Format: FormatJSON, JQ: "range(1e9)"}, `{}`)
+	ce := clierr.From(err)
+	if ce == nil || ce.Exit() != 1 || !strings.Contains(ce.Message, "größer als") || out != "" {
+		t.Errorf("err = %+v, out = %q", ce, out)
 	}
 }
 

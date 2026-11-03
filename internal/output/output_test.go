@@ -287,7 +287,7 @@ func TestWarn(t *testing.T) {
 // Strings that a YAML reader could take for numbers, booleans or null stay
 // strings (zip codes, invoice numbers, times).
 func TestYAMLQuotesAmbiguousStrings(t *testing.T) {
-	values := []string{"0815", "01067", "1e5", "-1", ".5", "12:30", "1_000", "0x1F", "true", "no", "null", "~", "", "2026-11-03", "1. Mahnung"}
+	values := []string{"0<8>&15", "0815", "01067", "1e5", "-1", ".5", "12:30", "1_000", "0x1F", "true", "no", "null", "~", "", "2026-11-03", "1. Mahnung"}
 	var raw strings.Builder
 	raw.WriteString("{")
 	for i, v := range values {
@@ -307,7 +307,9 @@ func TestYAMLQuotesAmbiguousStrings(t *testing.T) {
 			t.Errorf("%q kam als %#v zurück:\n%s", v, back[fmt.Sprint("k", i)], got)
 		}
 	}
-	if !strings.Contains(got, `k0: "0815"`) {
-		t.Errorf("0815 nicht gequotet:\n%s", got)
+	for _, want := range []string{`k1: "0815"`, `k0: "0<8>&15"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%s fehlt (gequotet, ohne HTML-Escaping):\n%s", want, got)
+		}
 	}
 }

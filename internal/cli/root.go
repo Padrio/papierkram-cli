@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"regexp"
@@ -101,6 +102,11 @@ func (a *App) checkGlobalFlags(c *cobra.Command) error {
 	if !slices.Contains(outputFormats, fl.Output) {
 		return usageErr(fmt.Sprintf("ungültiger Wert %q für -o, --output: erlaubt sind %s", fl.Output, strings.Join(outputFormats, ", ")))
 	}
+	// --jq is compiled here, before any request (plan: flags first). --fields
+	// cannot fail: unknown paths are left out of the output.
+	if fl.JQ != "" {
+		return output.CheckJQ(fl.JQ)
+	}
 	return nil
 }
 
@@ -171,7 +177,7 @@ func execute(app *App, root *cobra.Command, args []string) int {
 	ce := clierr.From(err)
 	// The format of the error output is the resolved one (context output
 	// value) when the configuration was resolved, otherwise the flag.
-	output.WriteError(app.outputOptions(app.outputFormat(app.resolved)), ce)
+	output.WriteError(app.outputOptions(context.Background(), app.outputFormat(app.resolved)), ce)
 	return ce.Exit()
 }
 
