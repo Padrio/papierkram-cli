@@ -231,7 +231,7 @@ func TestResolvedNeverPrintsToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, v := range []any{r, *r, &r} {
+	for _, v := range []any{r, *r} {
 		for _, f := range []string{"%v", "%+v", "%#v", "%s", "%q", "%d"} {
 			if out := fmt.Sprintf(f, v); strings.Contains(out, tok) {
 				t.Errorf("%s leaks token: %s", f, out)

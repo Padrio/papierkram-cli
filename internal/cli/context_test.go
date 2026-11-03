@@ -252,6 +252,16 @@ func TestContextRenameMovesKeychain(t *testing.T) {
 	if code := Run(app, []string{"context", "rename", "b", "c"}); code != 0 {
 		t.Fatal(errb.String())
 	}
+	cfg, _, err := app.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Contexts["b"] != nil || cfg.Contexts["c"] == nil || cfg.Contexts["c"].Subdomain != "firma-b" || !cfg.Contexts["c"].ReadOnly || cfg.ActiveContext != "neu" {
+		t.Errorf("Config nach zweitem Umbenennen: %+v", cfg)
+	}
+	if _, err := app.Keyring.Get("c"); err != auth.ErrNotFound {
+		t.Errorf("Keychain-Eintrag für c entstanden: %v", err)
+	}
 }
 
 type failSetStore struct{ auth.Store }
