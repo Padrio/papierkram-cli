@@ -176,16 +176,8 @@ entries:
 
 // Table rendering arrives with Task 17; until then table/wide fall back to
 // indented JSON.
-func TestTableFallsBackToJSON(t *testing.T) {
-	for _, f := range []Format{FormatTable, FormatWide} {
-		if got := mustRender(t, Options{Format: f}, `{"id":1}`); got != "{\n  \"id\": 1\n}\n" {
-			t.Errorf("%s: %q", f, got)
-		}
-	}
-}
-
 func TestEmptyBodyPrintsNothing(t *testing.T) {
-	for _, o := range []Options{{Format: FormatJSON}, {Format: FormatYAML}, {Format: FormatJSON, JQ: "."}, {Format: FormatJSON, Fields: []string{"id"}}} {
+	for _, o := range []Options{{Format: FormatJSON}, {Format: FormatYAML}, {Format: FormatJSON, JQ: "."}, {Format: FormatJSON, Fields: []string{"id"}}, {Format: FormatTable}, {Format: FormatWide}} {
 		if got := mustRender(t, o, " \n"); got != "" {
 			t.Errorf("%+v: %q", o, got)
 		}
@@ -193,7 +185,7 @@ func TestEmptyBodyPrintsNothing(t *testing.T) {
 }
 
 func TestInvalidJSONIsAnError(t *testing.T) {
-	for _, o := range []Options{{Format: FormatJSON}, {Format: FormatYAML}, {Format: FormatJSON, Fields: []string{"id"}}, {Format: FormatJSON, JQ: "."}} {
+	for _, o := range []Options{{Format: FormatJSON}, {Format: FormatYAML}, {Format: FormatJSON, Fields: []string{"id"}}, {Format: FormatJSON, JQ: "."}, {Format: FormatTable}, {Format: FormatWide}} {
 		out, _, err := render(t, o, `{"id":1`)
 		if err == nil || out != "" {
 			t.Errorf("%+v: err = %v, out = %q", o, err, out)

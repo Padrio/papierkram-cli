@@ -1,0 +1,4 @@
+ID                NAME         ORT         BRUTTO   AKTIV
+1                 Müller GmbH  Köln        1190.00  ja
+9007199254740993  Straße & Co  Düsseldorf  19.99    nein
+3                 Größe                    0.00

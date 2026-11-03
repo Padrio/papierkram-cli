@@ -1,0 +1,6 @@
+FELD      WERT
+ID        1
+NAME      Straße
+VAT_RATE  0.19
+ARCHIVED  nein
+NOTE

@@ -89,7 +89,8 @@ func Warn(w io.Writer, msg string) {
 // Render writes the API response raw (JSON) to o.Out in the format of o.
 // An empty body prints nothing. With --fields each object, or each element
 // of entries[] in a list envelope, is reduced to the given paths; --jq is
-// applied afterwards and prints one result per line.
+// applied afterwards and prints one result per line. table and wide show
+// cols (see renderTable); with --fields the fields are the columns.
 func Render(o Options, raw []byte, cols Columns) error {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil
@@ -103,9 +104,7 @@ func Render(o Options, raw []byte, cols Columns) error {
 	case FormatYAML:
 		return renderYAML(o, raw)
 	case FormatTable, FormatWide:
-		// table rendering: see table.go (Task 17). Until then table and
-		// wide fall back to indented JSON.
-		return renderJSON(o, raw)
+		return renderTable(o, raw, cols)
 	default:
 		return clierr.New(clierr.CodeUsage, fmt.Sprintf("unbekanntes Ausgabeformat %q", o.Format),
 			"Erlaubt sind table, wide, json, yaml")

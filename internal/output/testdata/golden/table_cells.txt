@@ -1,0 +1,3 @@
+ID  FLAG  NESTED               LONG                                                          ARR    N  MISSING  S
+1   ja    {"b":1,"a":"Äpfel"}  {"text":"Ein sehr langer Text mit Umlauten: äöüß ÄÖÜ, der a…  [1,2]              a b c
+2   nein

@@ -1,0 +1,4 @@
+ID                NAME         CITY        TOTAL_GROSS  ACTIVE  NOTE
+1                 Müller GmbH  Köln        1190.00      ja
+9007199254740993  Straße & Co  Düsseldorf  19.99        nein    Zeile 1 Zeile 2 mit Tab
+3                 Größe                    0.00
