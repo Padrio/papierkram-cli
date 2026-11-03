@@ -1,11 +1,14 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
@@ -247,5 +250,63 @@ func TestResolvedNeverPrintsToken(t *testing.T) {
 	empty := &Resolved{}
 	if strings.Contains(empty.String(), "***") {
 		t.Fatalf("empty token must not show mask: %s", empty.String())
+	}
+}
+
+func TestResolveDirectModeSkipsUnknownImplicitContext(t *testing.T) {
+	cfg := &Config{ActiveContext: "gone", Contexts: map[string]*Context{}}
+	direct := map[string]string{"PAPIERKRAM_TOKEN": "test-token-env", "PAPIERKRAM_SUBDOMAIN": "acme"}
+	directBase := map[string]string{"PAPIERKRAM_TOKEN": "test-token-env", "PAPIERKRAM_BASE_URL": "http://127.0.0.1:1/api/v1"}
+
+	for name, in := range map[string]ResolveInput{
+		"active_context + subdomain": {Env: env(direct)},
+		"active_context + base url":  {Env: env(directBase)},
+		"project file + subdomain":   {ProjectContext: "gone", Env: env(direct)},
+		"project file + base url":    {ProjectContext: "gone", Env: env(directBase)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, err := Resolve(cfg, in)
+			if err != nil {
+				t.Fatalf("direct mode must ignore the unknown implicit context: %v", err)
+			}
+			if r.Context != "" || r.ContextSource != "" || r.Token != "test-token-env" || r.TokenSource != SourceEnv || r.BaseURL == "" {
+				t.Fatalf("%+v", r)
+			}
+		})
+	}
+	for name, in := range map[string]ResolveInput{
+		"explicit flag":           {FlagContext: "gone", Env: env(direct)},
+		"explicit env":            {Env: env(map[string]string{"PAPIERKRAM_TOKEN": "test-token-env", "PAPIERKRAM_SUBDOMAIN": "acme", "PAPIERKRAM_CONTEXT": "gone"})},
+		"token without subdomain": {Env: env(map[string]string{"PAPIERKRAM_TOKEN": "test-token-env"})},
+		"subdomain without token": {Env: env(map[string]string{"PAPIERKRAM_SUBDOMAIN": "acme"})},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Resolve(cfg, in)
+			wantCode(t, err, clierr.CodeNotFound)
+		})
+	}
+}
+
+func TestResolvedTokenNotSerialized(t *testing.T) {
+	const tok = "test-token-serialize-123"
+	r, err := Resolve(testConfig(), ResolveInput{Env: env(map[string]string{"PAPIERKRAM_TOKEN": tok})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	y, err := yaml.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for kind, out := range map[string][]byte{"json": j, "yaml": y} {
+		if strings.Contains(string(out), tok) {
+			t.Errorf("%s leaks token: %s", kind, out)
+		}
+		if !strings.Contains(string(out), "sub-active") {
+			t.Errorf("%s lacks other fields: %s", kind, out)
+		}
 	}
 }

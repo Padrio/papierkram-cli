@@ -38,13 +38,15 @@ type ResolveInput struct {
 type Resolved struct {
 	Context, ContextSource string
 	Subdomain, BaseURL     string
-	Token, TokenSource     string
-	ReadOnly               bool
-	ReadOnlySource         string
-	Timeout                time.Duration
-	Output                 string
-	User                   int64
-	CompletionLookup       bool
+	// Token is never serialized (json/yaml) and masked by String/Format.
+	Token            string `json:"-" yaml:"-"`
+	TokenSource      string
+	ReadOnly         bool
+	ReadOnlySource   string
+	Timeout          time.Duration
+	Output           string
+	User             int64
+	CompletionLookup bool
 }
 
 // String renders the Resolved without the token (masked as ***).
@@ -89,6 +91,16 @@ func Resolve(c *Config, in ResolveInput) (*Resolved, error) {
 		r.Context, r.ContextSource = in.ProjectContext, SourceProjectFile
 	case c.ActiveContext != "":
 		r.Context, r.ContextSource = c.ActiveContext, SourceConfig
+	}
+
+	// Direct mode (PAPIERKRAM_TOKEN plus subdomain or base URL) needs no
+	// context: an unknown context that was only picked implicitly (project
+	// file, active_context) is ignored instead of failing.
+	direct := getenv("PAPIERKRAM_TOKEN") != "" &&
+		(getenv("PAPIERKRAM_SUBDOMAIN") != "" || getenv("PAPIERKRAM_BASE_URL") != "")
+	implicit := r.ContextSource == SourceProjectFile || r.ContextSource == SourceConfig
+	if r.Context != "" && c.Contexts[r.Context] == nil && direct && implicit {
+		r.Context, r.ContextSource = "", ""
 	}
 
 	var ctx *Context
