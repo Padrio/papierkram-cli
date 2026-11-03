@@ -14,7 +14,7 @@ func newVersionCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Version, Commit und Build-Datum anzeigen",
-		Args:  cobra.NoArgs,
+		Args:  noArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if app.Flags.Output == "json" {
 				enc := json.NewEncoder(app.Out)

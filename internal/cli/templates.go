@@ -59,6 +59,8 @@ func applyGerman(root *cobra.Command) {
 			return target.Help()
 		},
 	}
+	help.InitDefaultHelpFlag()
+	help.Flags().Lookup("help").Usage = "Hilfe zu help"
 	root.SetHelpCommand(help)
 	walk(root, func(c *cobra.Command) {
 		c.InitDefaultHelpFlag()

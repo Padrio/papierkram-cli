@@ -24,4 +24,4 @@ cover:
 	go tool cover -func=coverage.out | tail -n 1
 
 snapshot:
-	go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
+	go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean

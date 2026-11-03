@@ -1,25 +1,43 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
+	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/Padrio/papierkram-cli/internal/clierr"
 )
 
-// usageError marks errors caused by wrong flags or arguments (exit code 2).
-type usageError struct{ msg string }
-
-func (e *usageError) Error() string { return e.msg }
+func usageErr(msg string) error { return clierr.New(clierr.CodeUsage, msg, "") }
 
 func unknownCommand(root *cobra.Command, name string) error {
-	return &usageError{fmt.Sprintf("unbekannter Befehl %q für %q", name, root.CommandPath())}
+	return usageErr(fmt.Sprintf("unbekannter Befehl %q für %q", name, root.CommandPath()))
 }
 
-// germanFlagError translates pflag error messages.
+// noArgs rejects positional arguments with a German usage error.
+func noArgs(c *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return usageErr(fmt.Sprintf("unerwartetes Argument %q für %q", args[0], c.CommandPath()))
+	}
+	return nil
+}
+
+var (
+	invalidValueRe = regexp.MustCompile(`^invalid argument (".*?") for "(-[^"]+)" flag: (.*)$`)
+	strconvPrefix  = regexp.MustCompile(`strconv\.\w+: parsing "[^"]*": `)
+	englishCauses  = strings.NewReplacer(
+		"time: invalid duration", "ungültige Dauer",
+		"invalid syntax", "ungültige Syntax",
+		"value out of range", "Wert außerhalb des Bereichs",
+	)
+)
+
+// germanFlagError translates pflag error messages into German usage errors.
 func germanFlagError(_ *cobra.Command, err error) error {
 	msg := err.Error()
 	switch {
@@ -29,10 +47,11 @@ func germanFlagError(_ *cobra.Command, err error) error {
 		msg = "unbekanntes Kurz-Flag: " + strings.TrimPrefix(msg, "unknown shorthand flag: ")
 	case strings.HasPrefix(msg, "flag needs an argument: "):
 		msg = "Flag benötigt einen Wert: " + strings.TrimPrefix(msg, "flag needs an argument: ")
-	case strings.HasPrefix(msg, "invalid argument "):
-		msg = "ungültiger Wert " + strings.TrimPrefix(msg, "invalid argument ")
+	case invalidValueRe.MatchString(msg):
+		m := invalidValueRe.FindStringSubmatch(msg)
+		msg = fmt.Sprintf("ungültiger Wert %s für %s: %s", m[1], m[2], englishCauses.Replace(strconvPrefix.ReplaceAllString(m[3], "")))
 	}
-	return &usageError{msg}
+	return usageErr(msg)
 }
 
 // NewRootCmd builds the root command with all global flags.
@@ -43,13 +62,13 @@ func NewRootCmd(app *App) *cobra.Command {
 		Long:          "papierkram steuert Papierkram (Buchhaltung) von der Kommandozeile aus.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Args:          cobra.NoArgs,
-		RunE: func(c *cobra.Command, args []string) error {
+		Args: func(c *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				return unknownCommand(c, args[0])
 			}
-			return c.Help()
+			return nil
 		},
+		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.SetFlagErrorFunc(germanFlagError)
@@ -77,23 +96,19 @@ func NewRootCmd(app *App) *cobra.Command {
 
 // Run executes the CLI with the given arguments and returns the exit code.
 func Run(app *App, args []string) int {
-	root := NewRootCmd(app)
+	return execute(app, NewRootCmd(app), args)
+}
+
+// execute runs root and maps the resulting error to message and exit code.
+func execute(app *App, root *cobra.Command, args []string) int {
 	root.SetArgs(args)
 	err := root.Execute()
 	if err == nil {
 		return 0
 	}
-	msg := err.Error()
-	if strings.HasPrefix(msg, "unknown command ") {
-		msg = "unbekannter Befehl" + strings.Replace(strings.TrimPrefix(msg, "unknown command"), "\" for \"", "\" für \"", 1)
-		err = &usageError{msg}
-	}
-	_, _ = fmt.Fprintf(app.Err, "Fehler: %s\n", msg)
-	var ue *usageError
-	if errors.As(err, &ue) {
-		return 2
-	}
-	return 1
+	ce := clierr.From(err)
+	_, _ = io.WriteString(app.Err, ce.Format())
+	return ce.Exit()
 }
 
 // Main is the process entry point and returns the exit code.
