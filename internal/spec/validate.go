@@ -24,7 +24,7 @@ const (
 	dateFormatHint = "Datum im Format YYYY-MM-DD angeben"
 	vatFormatHint  = "Steuersatz als Dezimalbruch angeben, z. B. 0.19"
 	bigEnumHint    = "der Wert muss exakt einem Eintrag entsprechen; alle Werte zeigt die Completion (Tab)"
-	keyPatternHint = "Schlüssel ist die ID der Attributdefinition (siehe Einstellungen → eigene Felder)"
+	keyPatternHint = "Schlüssel ist die ID der Attributdefinition; gültige IDs zeigt `papierkram custom-attribute list`"
 )
 
 // problem is one validation finding: path (for ordering), message line and
@@ -132,14 +132,18 @@ func convertSchemaError(body any, se *openapi3.SchemaError) problem {
 	}
 	switch se.SchemaField {
 	case "type":
-		return problem{path, fmt.Sprintf("%s: %s erwartet", where, typeName(s)), ""}
+		return problem{path, fmt.Sprintf("%s: %s erwartet", where, typeName(s.Type.Slice())), ""}
+	case "anyOf", "oneOf":
+		if types := branchTypes(s); len(types) > 0 {
+			return problem{path, fmt.Sprintf("%s: %s erwartet", where, typeName(types)), ""}
+		}
 	case "format":
 		if s.Format == "date" {
 			return problem{path, fmt.Sprintf("%s: ungültiges Datum %s", where, showJSON(se.Value)), dateFormatHint}
 		}
-		return problem{path, fmt.Sprintf("%s: ungültiges Format %s (erwartet %s)", where, showJSON(se.Value), s.Format), ""}
+		return problem{path, fmt.Sprintf("%s: ungültiges Format %s", where, showJSON(se.Value)), ""}
 	}
-	return problem{path, fmt.Sprintf("%s: ungültiger Wert %s (Regel %s)", where, showJSON(se.Value), se.SchemaField), ""}
+	return problem{path, fmt.Sprintf("%s: ungültiger Wert %s", where, showJSON(se.Value)), ""}
 }
 
 // unknownProblem reports the keys of an object that its schema does not
@@ -155,7 +159,7 @@ func unknownProblem(path string, v any, s *openapi3.Schema) problem {
 		}
 	}
 	if len(us) == 0 {
-		return problem{path, fmt.Sprintf("%s: unbekanntes Feld", or(path, "Body")), unknownBaseHint}
+		return problem{path, fmt.Sprintf("%s: unbekanntes Feld", or(path, "Body")), ""}
 	}
 	lines := make([]string, len(us))
 	for i, u := range us {
@@ -184,31 +188,51 @@ func enumProblem(path string, v any, s *openapi3.Schema) problem {
 	return problem{path, msg + " Erlaubt: " + strings.Join(allowed, ", "), ""}
 }
 
-// typeName is the German name of the schema's type for "… erwartet".
-func typeName(s *openapi3.Schema) string {
-	var names []string
-	for _, t := range s.Type.Slice() {
+// typeName names JSON types in German for "… erwartet": "Zahl",
+// "Text, ganze Zahl, Zahl oder Wahrheitswert". A lone boolean is
+// "Wahrheitswert (true/false)".
+func typeName(types []string) string {
+	if len(types) == 1 && types[0] == "boolean" {
+		return "Wahrheitswert (true/false)"
+	}
+	names := make([]string, 0, len(types))
+	for _, t := range types {
 		switch t {
 		case "string":
-			names = append(names, "Text")
+			t = "Text"
 		case "number":
-			names = append(names, "Zahl")
+			t = "Zahl"
 		case "integer":
-			names = append(names, "ganze Zahl")
+			t = "ganze Zahl"
 		case "boolean":
-			names = append(names, "Wahrheitswert (true/false)")
+			t = "Wahrheitswert"
 		case "object":
-			names = append(names, "Objekt")
+			t = "Objekt"
 		case "array":
-			names = append(names, "Liste")
-		default:
+			t = "Liste"
+		}
+		if !slices.Contains(names, t) {
 			names = append(names, t)
 		}
 	}
-	if len(names) == 0 {
+	switch len(names) {
+	case 0:
 		return "anderer Typ"
+	case 1:
+		return names[0]
 	}
-	return strings.Join(names, " oder ")
+	return strings.Join(names[:len(names)-1], ", ") + " oder " + names[len(names)-1]
+}
+
+// branchTypes collects the types of the anyOf/oneOf branches in order.
+func branchTypes(s *openapi3.Schema) []string {
+	var out []string
+	for _, b := range slices.Concat(s.AnyOf, s.OneOf) {
+		if b.Value != nil && b.Value.Type != nil {
+			out = append(out, b.Value.Type.Slice()...)
+		}
+	}
+	return out
 }
 
 // displayPath renders a JSON pointer as a dotted path with array indices,
@@ -270,7 +294,7 @@ func checkKeyPatterns(s *openapi3.Schema, v any, segs []string, body any) ([]pro
 	var out []problem
 	switch x := v.(type) {
 	case map[string]any:
-		if _, ok := s.Extensions["x-cli-key-pattern"]; ok || isAttrs(s) {
+		if _, ok := s.Extensions["x-cli-key-pattern"]; ok || isFreeFormMap(s) {
 			pattern := keyPattern(s)
 			re, err := regexp.Compile(pattern)
 			if err != nil {
@@ -323,12 +347,31 @@ func checkLineItems(req *openapi3.Schema, body any) []problem {
 	return nil
 }
 
-var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+var (
+	utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+	utf16LE = []byte{0xFF, 0xFE}
+	utf16BE = []byte{0xFE, 0xFF}
+)
+
+// invalidUTF8 returns the offset of the first byte that is not valid UTF-8.
+func invalidUTF8(data []byte) int {
+	for i := 0; i < len(data); {
+		r, n := utf8.DecodeRune(data[i:])
+		if r == utf8.RuneError && n <= 1 {
+			return i
+		}
+		i += n
+	}
+	return len(data)
+}
 
 const jsonHint = "die Eingabe muss gültiges JSON (UTF-8) sein"
 
 // DecodeJSON reads one JSON value from --input, --items or a body file:
-// a UTF-8 BOM is removed, CRLF line ends are fine, numbers stay json.Number
+// a UTF-8 BOM is removed, CRLF line ends are fine, UTF-16 (BOM FF FE / FE FF
+// or NUL bytes) and other non-UTF-8 input (Windows-1252 umlauts) are
+// rejected before decoding, since encoding/json would silently turn them
+// into U+FFFD, numbers stay json.Number
 // (exact decimals and large IDs), and anything after the value is an error.
 // Syntax errors are validation errors (exit 5) that name line and column.
 func DecodeJSON(r io.Reader) (any, error) {
@@ -336,7 +379,14 @@ func DecodeJSON(r io.Reader) (any, error) {
 	if err != nil {
 		return nil, clierr.New(clierr.CodeError, "Eingabe nicht lesbar: "+err.Error(), "")
 	}
+	if bytes.HasPrefix(data, utf16LE) || bytes.HasPrefix(data, utf16BE) || bytes.IndexByte(data, 0) >= 0 {
+		return nil, clierr.New(clierr.CodeValidation, "Eingabe ist UTF-16-kodiert – als UTF-8 speichern", jsonHint)
+	}
 	data = bytes.TrimPrefix(data, utf8BOM)
+	if !utf8.Valid(data) {
+		at := invalidUTF8(data)
+		return nil, clierr.New(clierr.CodeValidation, fmt.Sprintf("Eingabe ist nicht UTF-8-kodiert (z. B. Windows-1252, %s) – als UTF-8 speichern", position(data, at)), jsonHint)
+	}
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, clierr.New(clierr.CodeValidation, "Eingabe ist leer", jsonHint)
 	}

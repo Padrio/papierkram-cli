@@ -3,8 +3,11 @@ package spec
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 )
@@ -160,6 +163,29 @@ func TestValidateTypesAndNull(t *testing.T) {
 	}
 }
 
+func TestValidateAnyOfNamesTypes(t *testing.T) {
+	body := map[string]any{"name": "A", "contact_type": "customer", "custom_attributes": map[string]any{"12": map[string]any{"x": "y"}}}
+	ce := validationError(t, Validate(body, RequestSchema("CreateCompany")))
+	if want := "custom_attributes.12: Text, ganze Zahl, Zahl oder Wahrheitswert erwartet"; ce.Message != want {
+		t.Errorf("message = %q, want %q", ce.Message, want)
+	}
+}
+
+// For huge enums the x-cli-enum-hints entry comes first, the closest values
+// fill up to three.
+func TestValidateHugeEnumHintFirst(t *testing.T) {
+	var enum []any
+	for i := range 25 {
+		enum = append(enum, fmt.Sprintf("wert%02d", i))
+	}
+	prop := &openapi3.Schema{Type: &openapi3.Types{"string"}, Enum: enum, Extensions: map[string]any{"x-cli-enum-hints": map[string]any{"alt": "wert24"}}}
+	req := &openapi3.Schema{Type: &openapi3.Types{"object"}, Properties: openapi3.Schemas{"k": {Value: prop}}}
+	ce := validationError(t, Validate(map[string]any{"k": "alt"}, req))
+	if !strings.HasPrefix(ce.Message, `ungültiger Wert "alt" für k – meintest du "wert24", "wert00" oder "wert01"?`) {
+		t.Errorf("message = %q", ce.Message)
+	}
+}
+
 func TestValidateUnknownFieldWithoutSuggestion(t *testing.T) {
 	ce := validationError(t, Validate(map[string]any{"name": "A", "contact_type": "customer", "zzzzzzzz": 1}, RequestSchema("CreateCompany")))
 	if ce.Message != `unbekanntes Feld "zzzzzzzz"` {
@@ -173,6 +199,9 @@ func TestValidateCustomAttributeKeyPattern(t *testing.T) {
 	ce := validationError(t, Validate(body, req))
 	if want := `custom_attributes: Attribut-ID "abc" passt nicht zum Muster ^[0-9]+$`; ce.Message != want {
 		t.Errorf("message = %q, want %q", ce.Message, want)
+	}
+	if !strings.Contains(ce.Hint, "papierkram custom-attribute list") {
+		t.Errorf("hint = %q", ce.Hint)
 	}
 	body["custom_attributes"] = map[string]any{"12": "x", "13": json.Number("4"), "14": true, "15": nil}
 	if err := Validate(body, req); err != nil {
@@ -220,6 +249,23 @@ func TestDecodeJSONBOMAndCRLF(t *testing.T) {
 	v, err = DecodeJSON(strings.NewReader("\xEF\xBB\xBF[{\"quantity\": 1.25}]"))
 	if err != nil || v.([]any)[0].(map[string]any)["quantity"] != json.Number("1.25") {
 		t.Errorf("array: %#v, %v", v, err)
+	}
+}
+
+func TestDecodeJSONRejectsOtherEncodings(t *testing.T) {
+	tests := map[string]string{
+		// "Müller" in Windows-1252: ü is the single byte 0xFC.
+		"{\"name\": \"M\xfcller\"}":           "nicht UTF-8-kodiert (z. B. Windows-1252, Zeile 1, Spalte 12) – als UTF-8 speichern",
+		"\xff\xfe{\x00\"\x00a\x00\"\x00}\x00": "UTF-16-kodiert – als UTF-8 speichern",
+		"\xfe\xff\x00{\x00\"\x00a\x00\"\x00}": "UTF-16-kodiert – als UTF-8 speichern",
+		"{\x00\"\x00a\x00\"\x00}\x00":         "UTF-16-kodiert – als UTF-8 speichern",
+	}
+	for in, want := range tests {
+		_, err := DecodeJSON(strings.NewReader(in))
+		ce := validationError(t, err)
+		if !strings.Contains(ce.Message, want) {
+			t.Errorf("DecodeJSON(%q): message %q lacks %q", in, ce.Message, want)
+		}
 	}
 }
 

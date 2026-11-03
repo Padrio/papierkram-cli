@@ -148,31 +148,39 @@ func TestPruneRoundTripAllUpdateExamples(t *testing.T) {
 			continue
 		}
 		get := strings.Replace(o.ID, "Update", "Get", 1)
-		g, ok := OperationByID(get)
-		if !ok {
+		if _, ok := OperationByID(get); !ok {
 			t.Errorf("%s: no %s", o.ID, get)
 			continue
 		}
-		mt := g.Op.Responses.Status(200).Value.Content["application/json"]
-		for name := range mt.Examples {
-			n++
-			req := RequestSchema(o.ID)
-			res, err := Prune(getExample(t, get, name), req, ResourceResponseSchema(o.ID))
-			if err != nil {
-				t.Errorf("%s / %s: Prune: %v", o.ID, name, err)
+		// GET answers (describe) and the PUT's own 200 answers (output of a
+		// previous update) both go back in.
+		for _, src := range []string{get, o.ID} {
+			s, _ := OperationByID(src)
+			mt := s.Op.Responses.Status(200).Value.Content["application/json"]
+			if mt == nil {
+				t.Errorf("%s: no JSON 200 response", src)
 				continue
 			}
-			c, err := CoerceValue(req, res.Body, "")
-			if err != nil {
-				t.Errorf("%s / %s: CoerceValue: %v", o.ID, name, err)
-				continue
-			}
-			if err := Validate(c, req); err != nil {
-				t.Errorf("%s / %s: Validate: %v", o.ID, name, err)
+			for name := range mt.Examples {
+				n++
+				req := RequestSchema(o.ID)
+				res, err := Prune(getExample(t, src, name), req, ResourceResponseSchema(o.ID))
+				if err != nil {
+					t.Errorf("%s / %s: Prune: %v", src, name, err)
+					continue
+				}
+				c, err := CoerceValue(req, res.Body, "")
+				if err != nil {
+					t.Errorf("%s / %s: CoerceValue: %v", src, name, err)
+					continue
+				}
+				if err := Validate(c, req); err != nil {
+					t.Errorf("%s / %s: Validate: %v", src, name, err)
+				}
 			}
 		}
 	}
-	if n < 10 {
+	if n < 60 {
 		t.Errorf("only %d examples checked", n)
 	}
 }
@@ -183,6 +191,10 @@ func TestR13_NoteSuggestsNotes(t *testing.T) {
 	wantValidation(t, err, `unbekanntes Feld "note" – meintest du "notes"?`)
 	if exit := err.(interface{ Exit() int }).Exit(); exit != 5 {
 		t.Errorf("exit = %d, want 5", exit)
+	}
+	ce := validationError(t, err)
+	if want := "stammt das Feld aus einer describe-Ausgabe: mit jq 'del(.note)' entfernen oder die CLI aktualisieren"; ce.Hint != want {
+		t.Errorf("hint = %q, want %q", ce.Hint, want)
 	}
 	// Validate without Prune reports the same (additionalProperties: false).
 	wantValidation(t, Validate(body, RequestSchema("CreateCompany")), `unbekanntes Feld "note" – meintest du "notes"?`)
@@ -199,8 +211,11 @@ func TestPruneCollectsAllUnknownFields(t *testing.T) {
 		`unbekanntes Feld "nmae" – meintest du "name"?`,
 		`unbekanntes Feld "customer.proejct" – meintest du "project"?`,
 		`unbekanntes Feld "line_items[].quantty" – meintest du "quantity"?`,
-		`"nmae" → "name"`,
+		`jq 'del(.customer.proejct, .line_items[].quantty, .nmae, .zzzzzzzz)'`,
 	)
+	if ce := validationError(t, err); strings.Contains(ce.Hint, "meintest") {
+		t.Errorf("hint repeats the suggestions: %q", ce.Hint)
+	}
 	msg := err.Error()
 	if !strings.Contains(msg, "unbekanntes Feld \"zzzzzzzz\"\n") && !strings.HasSuffix(msg, `unbekanntes Feld "zzzzzzzz"`) {
 		t.Errorf("unknown field without suggestion missing or with suggestion clause: %q", msg)
@@ -218,6 +233,7 @@ func TestPruneNullForNonNullableRequestField(t *testing.T) {
 		"name":            "R",
 		"custom_template": nil,
 		"description":     nil,
+		"id":              json.Number("1"),
 		"line_items":      []any{map[string]any{"name": "a", "proposition": nil}},
 	}
 	res := prune(t, "UpdateInvoice", body)
@@ -230,9 +246,29 @@ func TestPruneNullForNonNullableRequestField(t *testing.T) {
 	if _, ok := res.Body["line_items"].([]any)[0].(map[string]any)["proposition"]; ok {
 		t.Error("line_items[].proposition: null kept")
 	}
-	if !slices.Equal(res.Removed, []string{"custom_template", "line_items[].proposition"}) {
+	// Dropped nulls are reported apart from response-only fields: the
+	// builder says the field stays unchanged.
+	if !slices.Equal(res.DroppedNulls, []string{"custom_template", "line_items[].proposition"}) {
+		t.Errorf("DroppedNulls = %q", res.DroppedNulls)
+	}
+	if !slices.Equal(res.Removed, []string{"id"}) {
 		t.Errorf("Removed = %q", res.Removed)
 	}
+}
+
+// A null in a required field is not dropped (that would turn it into a
+// missing field); Validate reports it.
+func TestPruneKeepsNullInRequiredField(t *testing.T) {
+	req := RequestSchema("CreateInvoice")
+	body := map[string]any{"name": "R", "payment_term": nil, "line_items": []any{map[string]any{"name": "a", "vat_rate": json.Number("0.19")}}}
+	res := prune(t, "CreateInvoice", body)
+	if v, ok := res.Body["payment_term"]; !ok || v != nil {
+		t.Fatalf("payment_term = %#v, %v; want kept null", v, ok)
+	}
+	if len(res.DroppedNulls) != 0 {
+		t.Errorf("DroppedNulls = %q", res.DroppedNulls)
+	}
+	wantValidation(t, Validate(res.Body, req), "payment_term: darf nicht null sein")
 }
 
 func TestPruneKeepsFreeFormMaps(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -184,13 +185,19 @@ func checkEnum(f Field, raw string) error {
 
 // enumSuggestions returns the values to suggest for an invalid enum input
 // (flags and Validate alike): for huge enums (the expense categories, spec
-// 6.2) always the three closest values; otherwise the x-cli-enum-hints entry,
-// else up to three close values.
+// 6.2) always three values, the x-cli-enum-hints entry first if there is
+// one, then the closest values; otherwise the x-cli-enum-hints entry, else
+// up to three close values.
 func enumSuggestions(s *openapi3.Schema, in string, allowed []string) []string {
+	h, hinted := EnumHint(s, in)
 	if len(allowed) > bigEnum {
-		return Nearest(in, allowed, 3)
+		if !hinted {
+			return Nearest(in, allowed, 3)
+		}
+		rest := slices.DeleteFunc(slices.Clone(allowed), func(a string) bool { return a == h })
+		return append([]string{h}, Nearest(in, rest, 2)...)
 	}
-	if h, ok := EnumHint(s, in); ok {
+	if hinted {
 		return []string{h}
 	}
 	return Suggest(in, allowed, 3)
@@ -367,8 +374,10 @@ const attrValueKey = "value"
 // attribute object {id, name, type, value}) into its value when the request
 // expects a scalar there. Anything else is returned as is.
 func unwrapAttr(s *openapi3.Schema, v any) any {
-	ap := s.AdditionalProperties.Schema
-	if ap == nil || ap.Value == nil || isObject(ap.Value) {
+	if !isFreeFormMap(s) {
+		return v
+	}
+	if ap := s.AdditionalProperties.Schema.Value; ap == nil || isObject(ap) {
 		return v
 	}
 	if m, ok := v.(map[string]any); ok {

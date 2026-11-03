@@ -3,6 +3,7 @@ package spec
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,11 +14,14 @@ import (
 )
 
 // PruneResult is a body cleaned up against the request schema. Removed lists
-// the dotted paths of the response-only fields that were dropped, sorted and
-// without duplicates; array elements appear as [] (line_items[].total_net).
+// the dotted paths of the response-only fields that were dropped;
+// DroppedNulls the request fields whose null was dropped (they stay
+// unchanged on update). Both are sorted and without duplicates; array
+// elements appear as [] (line_items[].total_net).
 type PruneResult struct {
-	Body    map[string]any
-	Removed []string
+	Body         map[string]any
+	Removed      []string
+	DroppedNulls []string
 }
 
 // Prune matches an --input body recursively against the request schema
@@ -26,8 +30,9 @@ type PruneResult struct {
 //   - in the request schema: kept, the request schema wins over readOnly
 //     markers in the response (R31). A null where the request does not allow
 //     null (e.g. line_items[].proposition from a GET answer) is dropped and
-//     listed in Removed when the response has the field, since the request
-//     cannot express "none" otherwise;
+//     listed in DroppedNulls when the response has the field, since the
+//     request cannot express "none" otherwise; required fields keep their
+//     null so that Validate reports it;
 //   - not in the request schema but in resp: removed and listed in Removed
 //     (id, customer.name, line_items[].total_net, and top-level response
 //     references such as contact_person or project, which are never
@@ -40,23 +45,27 @@ type PruneResult struct {
 // The caller chooses it; ResourceResponseSchema maps a create or update
 // operation to the schema of its GET. Objects without properties in the
 // request (custom_attributes) are free-form and kept as they are; their keys
-// are checked by Validate. Values whose type does not match the schema are
+// are checked by Validate (see isFreeFormMap). Values whose type does not match the schema are
 // kept for Validate. The input is not modified; kept values are copied.
 func Prune(body map[string]any, req, resp *openapi3.Schema) (PruneResult, error) {
 	if req == nil {
 		return PruneResult{}, clierr.New(clierr.CodeError, "Bereinigung ohne Request-Schema nicht möglich", "")
 	}
-	p := &pruner{removed: map[string]bool{}, unknownSeen: map[string]bool{}}
+	p := &pruner{removed: map[string]bool{}, nulls: map[string]bool{}, unknownSeen: map[string]bool{}}
 	out := p.object(body, req, flatten([]*openapi3.Schema{resp}), "")
 	if len(p.unknown) > 0 {
 		return PruneResult{}, unknownFieldsError(p.unknown)
 	}
-	removed := slices.Sorted(maps.Keys(p.removed))
-	return PruneResult{Body: out, Removed: removed}, nil
+	return PruneResult{
+		Body:         out,
+		Removed:      slices.Sorted(maps.Keys(p.removed)),
+		DroppedNulls: slices.Sorted(maps.Keys(p.nulls)),
+	}, nil
 }
 
 type pruner struct {
 	removed     map[string]bool
+	nulls       map[string]bool
 	unknown     []unknownField
 	unknownSeen map[string]bool
 }
@@ -67,7 +76,7 @@ type unknownField struct {
 }
 
 func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi3.Schema, path string) map[string]any {
-	if isFreeForm(req) {
+	if isFreeFormMap(req) {
 		return cloneValue(in).(map[string]any)
 	}
 	out := make(map[string]any, len(in))
@@ -78,8 +87,8 @@ func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi
 		ps := req.Properties[k]
 		switch {
 		case ps != nil && ps.Value != nil:
-			if v == nil && !allowsNull(ps.Value) && len(rs) > 0 {
-				p.removed[cp] = true
+			if v == nil && !allowsNull(ps.Value) && len(rs) > 0 && !slices.Contains(req.Required, k) {
+				p.nulls[cp] = true
 				continue
 			}
 			out[k] = p.value(v, ps.Value, rs, cp)
@@ -98,7 +107,7 @@ func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi
 func (p *pruner) value(v any, req *openapi3.Schema, resp []*openapi3.Schema, path string) any {
 	switch x := v.(type) {
 	case map[string]any:
-		if isObject(req) || isFreeForm(req) {
+		if isObject(req) {
 			return p.object(x, req, resp, path)
 		}
 	case []any:
@@ -112,16 +121,6 @@ func (p *pruner) value(v any, req *openapi3.Schema, resp []*openapi3.Schema, pat
 		}
 	}
 	return cloneValue(v)
-}
-
-// isFreeForm reports an object whose keys are not fixed by the schema: no
-// properties, but additional properties allowed (custom_attributes).
-func isFreeForm(s *openapi3.Schema) bool {
-	if len(s.Properties) > 0 || !s.Type.Is("object") {
-		return false
-	}
-	ap := s.AdditionalProperties
-	return ap.Schema != nil || ap.Has == nil || *ap.Has
 }
 
 // allowsNull reports whether the schema accepts null (OpenAPI 3.0 nullable,
@@ -212,21 +211,40 @@ func unknownLine(u unknownField) string {
 	return line
 }
 
-// unknownHint lists the suggestions of unknown fields ("note" → "notes").
+// unknownHint tells where unknown fields usually come from and how to drop
+// them with jq. The suggestions are already on the message lines.
 func unknownHint(us []unknownField) string {
-	var sugg []string
-	for _, u := range us {
-		if u.suggestion != "" {
-			sugg = append(sugg, fmt.Sprintf("%s → %s", strconv.Quote(lastKey(u.path)), strconv.Quote(u.suggestion)))
-		}
+	paths := make([]string, len(us))
+	for i, u := range us {
+		paths[i] = jqPath(u.path)
 	}
-	if len(sugg) == 0 {
-		return unknownBaseHint
+	lead := "stammt das Feld"
+	if len(us) > 1 {
+		lead = "stammen die Felder"
 	}
-	return "meintest du: " + strings.Join(sugg, ", ")
+	return fmt.Sprintf("%s aus einer describe-Ausgabe: mit jq 'del(%s)' entfernen oder die CLI aktualisieren", lead, strings.Join(paths, ", "))
 }
 
-const unknownBaseHint = "erlaubt sind nur die Felder des Request-Schemas (siehe Hilfe des Befehls)"
+var jqIdentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// jqPath turns a dotted field path (line_items[].name, line_items[1].name)
+// into a jq path (.line_items[].name); keys that are no jq identifiers are
+// quoted (."12").
+func jqPath(path string) string {
+	var b strings.Builder
+	for _, seg := range strings.Split(path, ".") {
+		key, idx, _ := strings.Cut(seg, "[")
+		if jqIdentRe.MatchString(key) {
+			b.WriteString("." + key)
+		} else {
+			b.WriteString("." + strconv.Quote(key))
+		}
+		if idx != "" {
+			b.WriteString("[" + idx)
+		}
+	}
+	return b.String()
+}
 
 func unknownFieldsError(us []unknownField) *clierr.Error {
 	lines := make([]string, len(us))

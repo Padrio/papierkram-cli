@@ -158,7 +158,7 @@ func (w *walker) property(ps *openapi3.Schema, p []string, required bool) {
 			// (spec 6.1).
 			w.add(Field{Kind: KindObjectList, Type: "array"}, ps, p, required, "")
 		}
-	case isAttrs(ps):
+	case isFreeFormMap(ps):
 		w.add(Field{Flag: "attr", Kind: KindAttrs, Type: "object", Repeatable: true}, ps, p, required, "attr")
 	case isObject(ps):
 		skip := ""
@@ -276,9 +276,14 @@ func isIDOnly(s *openapi3.Schema) bool {
 	return isObject(s) && len(s.Properties) == 1 && s.Properties["id"] != nil
 }
 
-// isAttrs reports a free-form map such as custom_attributes: an object
-// without properties whose values are described by additionalProperties.
-func isAttrs(s *openapi3.Schema) bool {
+// isFreeFormMap reports a free-form map such as custom_attributes: an object
+// without declared properties whose values are described by an
+// additionalProperties schema. Its keys are data (attribute IDs, checked
+// against x-cli-key-pattern), not field names: Fields turns it into --attr,
+// Prune keeps all its keys, CoerceValue unwraps response-form values,
+// Validate checks the keys. An object with neither properties nor an
+// additionalProperties schema is not free-form (it allows no keys).
+func isFreeFormMap(s *openapi3.Schema) bool {
 	return isObject(s) && len(s.Properties) == 0 && s.AdditionalProperties.Schema != nil
 }
 
