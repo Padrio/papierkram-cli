@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/Padrio/papierkram-cli/internal/auth"
@@ -70,7 +69,7 @@ func (r Resolved) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, r.Strin
 // token: PAPIERKRAM_TOKEN > keychain > token in config (no token is not an
 // error, callers check Token == ""); subdomain: PAPIERKRAM_SUBDOMAIN >
 // context; PAPIERKRAM_BASE_URL overrides the derived base URL; read-only:
-// PAPIERKRAM_READ_ONLY=1 or the context option.
+// PAPIERKRAM_READ_ONLY (see EnvReadOnly) or the context option.
 func Resolve(c *Config, in ResolveInput) (*Resolved, error) {
 	if c == nil {
 		c = &Config{}
@@ -147,7 +146,7 @@ func Resolve(c *Config, in ResolveInput) (*Resolved, error) {
 
 	// Read-only: the environment is the hard stage and always wins.
 	switch {
-	case strings.TrimSpace(getenv("PAPIERKRAM_READ_ONLY")) == "1":
+	case EnvReadOnly(getenv):
 		r.ReadOnly, r.ReadOnlySource = true, SourceEnv
 	case ctx != nil && ctx.ReadOnly:
 		r.ReadOnly, r.ReadOnlySource = true, SourceContext

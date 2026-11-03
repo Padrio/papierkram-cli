@@ -81,6 +81,10 @@ func NewRootCmd(app *App) *cobra.Command {
 			}
 			return nil
 		},
+		PersistentPreRunE: func(*cobra.Command, []string) error {
+			app.warnReadOnlyEnv()
+			return nil
+		},
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	root.CompletionOptions.DisableDefaultCmd = true

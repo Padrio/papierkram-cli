@@ -180,8 +180,12 @@ func TestResolveReadOnly(t *testing.T) {
 		{"env with ro context -> env", "ro", "1", true, "env"},
 		{"ro context", "ro", "", true, "context"},
 		{"rw context", "rw", "", false, ""},
-		{"env other value ignored", "rw", "0", false, ""},
-		{"env true word ignored", "rw", "true", false, ""},
+		{"env 0 is off", "rw", "0", false, ""},
+		{"env false is off", "rw", "false", false, ""},
+		{"env empty is off", "rw", "", false, ""},
+		{"env trailing space enables", "rw", "1 ", true, "env"},
+		{"env true word enables", "rw", "TRUE", true, "env"},
+		{"env unknown word enables", "rw", "ja", true, "env"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

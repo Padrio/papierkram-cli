@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,15 @@ subdomain = "firma-b"
 read_only = true
 `
 
+func roEnv(value string) func(string) string {
+	return func(k string) string {
+		if k == "PAPIERKRAM_READ_ONLY" {
+			return value
+		}
+		return ""
+	}
+}
+
 func TestR36_ReadOnlyEnvBlocksContextUse(t *testing.T) {
 	cases := map[string][]string{
 		"use":    {"context", "use", "b"},
@@ -44,45 +54,70 @@ func TestR36_ReadOnlyEnvBlocksContextUse(t *testing.T) {
 		"delete": {"context", "delete", "b"},
 		"rename": {"context", "rename", "b", "c"},
 	}
+	// Any non-empty value other than 0/false/no/off enables the hard
+	// read-only mode (fail-closed); unknown words additionally warn.
+	values := map[string]bool{"1": false, "1 ": false, " 1": false, "true": false, "TRUE": false, "yes": false, "ja": true}
 	for name, args := range cases {
-		t.Run(name, func(t *testing.T) {
-			app, _, errb := newTestApp(t)
-			app.Env = func(k string) string {
-				if k == "PAPIERKRAM_READ_ONLY" {
-					return "1"
+		for value, warn := range values {
+			t.Run(fmt.Sprintf("%s/%q", name, value), func(t *testing.T) {
+				app, _, errb := newTestApp(t)
+				app.Env = roEnv(value)
+				writeCfg(t, app, twoCtx)
+				if err := app.Keyring.Set("b", "test-token-b"); err != nil {
+					t.Fatal(err)
 				}
-				return ""
+				before, _ := os.ReadFile(cfgFile(t, app))
+				if code := Run(app, args); code != 9 {
+					t.Fatalf("exit = %d, want 9; stderr = %s", code, errb.String())
+				}
+				if !strings.Contains(errb.String(), "Fehler: Schreibschutz aktiv (PAPIERKRAM_READ_ONLY ist gesetzt)") {
+					t.Errorf("Meldung fehlt: %s", errb.String())
+				}
+				if got := strings.Contains(errb.String(), "Warnung: PAPIERKRAM_READ_ONLY"); got != warn {
+					t.Errorf("Warnung = %v, erwartet %v: %s", got, warn, errb.String())
+				}
+				after, _ := os.ReadFile(cfgFile(t, app))
+				if string(before) != string(after) {
+					t.Errorf("Config verändert:\n%s", after)
+				}
+				if tok, err := app.Keyring.Get("b"); err != nil || tok != "test-token-b" {
+					t.Errorf("Keychain verändert: %q %v", tok, err)
+				}
+			})
+		}
+	}
+}
+
+func TestReadOnlyEnvOffValuesAllowConfigWrites(t *testing.T) {
+	for _, value := range []string{"", "0", " 0 ", "false", "FALSE", "no", "off"} {
+		t.Run(fmt.Sprintf("%q", value), func(t *testing.T) {
+			app, _, errb := newTestApp(t)
+			app.Env = roEnv(value)
+			if code := Run(app, []string{"context", "create", "c", "--subdomain", "x"}); code != 0 {
+				t.Fatalf("exit = %d; stderr = %s", code, errb.String())
 			}
-			writeCfg(t, app, twoCtx)
-			if err := app.Keyring.Set("b", "test-token-b"); err != nil {
-				t.Fatal(err)
-			}
-			before, _ := os.ReadFile(cfgFile(t, app))
-			if code := Run(app, args); code != 9 {
-				t.Fatalf("exit = %d, want 9; stderr = %s", code, errb.String())
-			}
-			if !strings.Contains(errb.String(), "Schreibschutz aktiv (PAPIERKRAM_READ_ONLY=1)") {
-				t.Errorf("Meldung fehlt: %s", errb.String())
-			}
-			after, _ := os.ReadFile(cfgFile(t, app))
-			if string(before) != string(after) {
-				t.Errorf("Config verändert:\n%s", after)
-			}
-			if tok, err := app.Keyring.Get("b"); err != nil || tok != "test-token-b" {
-				t.Errorf("Keychain verändert: %q %v", tok, err)
+			if errb.Len() != 0 {
+				t.Errorf("unerwartete stderr-Ausgabe: %s", errb.String())
 			}
 		})
 	}
 }
 
+func TestReadOnlyEnvUnknownValueWarnsOnReadCommands(t *testing.T) {
+	app, _, errb := newTestApp(t)
+	app.Env = roEnv("enabled")
+	writeCfg(t, app, twoCtx)
+	if code := Run(app, []string{"context", "list"}); code != 0 {
+		t.Fatalf("exit = %d; stderr = %s", code, errb.String())
+	}
+	if !strings.Contains(errb.String(), `Warnung: PAPIERKRAM_READ_ONLY hat den unbekannten Wert "enabled"`) {
+		t.Errorf("stderr = %q", errb.String())
+	}
+}
+
 func TestReadOnlyEnvAllowsListAndActive(t *testing.T) {
 	app, _, errb := newTestApp(t)
-	app.Env = func(k string) string {
-		if k == "PAPIERKRAM_READ_ONLY" {
-			return "1"
-		}
-		return ""
-	}
+	app.Env = roEnv("1")
 	writeCfg(t, app, twoCtx)
 	for _, a := range [][]string{{"context", "list"}, {"context", "active"}} {
 		if code := Run(app, a); code != 0 {
