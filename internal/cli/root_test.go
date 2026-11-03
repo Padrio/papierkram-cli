@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -31,6 +32,7 @@ func newTestApp(t *testing.T) (*App, *bytes.Buffer, *bytes.Buffer) {
 	cwd := t.TempDir()
 	app.Getwd = func() (string, error) { return cwd, nil }
 	app.ReadPassword = func() ([]byte, error) { return nil, errors.New("kein Terminal im Test") }
+	app.Sleep = func(time.Duration) {}
 	app.StdinTTY = false
 	app.StdoutTTY = false
 	return app, out, errb

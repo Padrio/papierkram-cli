@@ -112,14 +112,22 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 	if err != nil {
 		return err
 	}
-	token, err := a.readLoginToken(tokenStdin, name)
+	// Resolve the target like every other command, so that timeout, base
+	// URL, context options and --debug behave the same; only the token is
+	// the new one.
+	r, err := config.Resolve(cfg, config.ResolveInput{FlagContext: name, Env: a.loginEnv})
 	if err != nil {
 		return err
 	}
-
-	// Resolve the target like every other command, so that timeout, base
-	// URL and --debug behave the same; only the token is the new one.
-	r, err := config.Resolve(cfg, config.ResolveInput{FlagContext: name, Env: a.loginEnv})
+	if err := checkContextOptions(r); err != nil {
+		return err
+	}
+	// Probe the keychain before the token is read and verified, so that no
+	// credit is spent on a token that cannot be stored.
+	if _, err := a.Keyring.Get(name); errors.Is(err, auth.ErrUnavailable) && !insecure {
+		return noKeyringErr(name, tokenStdin)
+	}
+	token, err := a.readLoginToken(tokenStdin, name)
 	if err != nil {
 		return err
 	}
@@ -148,9 +156,7 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 		}
 	case errors.Is(err, auth.ErrUnavailable):
 		if !insecure {
-			return clierr.New(clierr.CodeAuth,
-				"Kein Schlüsselbund verfügbar; das Token wurde nicht gespeichert",
-				"Mit --insecure-storage wird es stattdessen im Klartext in config.toml (Rechte 0600) gespeichert: papierkram auth login --insecure-storage")
+			return noKeyringErr(name, tokenStdin)
 		}
 		ctx.Token, tokenSource, dirty = token, config.SourceConfig, true
 	default:
@@ -158,11 +164,16 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 	}
 	// config.toml is only rewritten when it changed (rewriting drops comments).
 	if dirty {
-		if err := wrapConfigErr(cfg.Save(path), path); err != nil {
-			if inKeychain && created {
-				_ = a.Keyring.Delete(name)
+		if err := cfg.Save(path); err != nil {
+			if !inKeychain || created {
+				if inKeychain {
+					_ = a.Keyring.Delete(name)
+				}
+				return wrapConfigErr(err, path)
 			}
-			return err
+			// The new token is in the keychain and wins over the config
+			// token, so the login counts; only the cleanup failed.
+			_, _ = fmt.Fprintf(a.Err, "Warnung: Token im Schlüsselbund gespeichert, altes Klartext-Token in %s konnte nicht entfernt werden (%v). Die Zeile token im Kontext %q von Hand löschen.\n", path, err, name)
 		}
 	}
 
@@ -186,6 +197,20 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 		return a.writeJSON(map[string]string{"context": name, "subdomain": ctx.Subdomain, "token_source": tokenSource})
 	}
 	return nil
+}
+
+// noKeyringErr is the exit-3 error for a missing keychain without
+// --insecure-storage; the hint repeats context and input mode.
+func noKeyringErr(name string, tokenStdin bool) error {
+	cmd := "papierkram auth login --context " + name
+	if tokenStdin {
+		cmd += " --token-stdin --insecure-storage < token.txt"
+	} else {
+		cmd += " --insecure-storage"
+	}
+	return clierr.New(clierr.CodeAuth,
+		"Kein Schlüsselbund verfügbar; das Token wurde nicht gespeichert",
+		"Mit --insecure-storage wird es stattdessen im Klartext in config.toml (Rechte 0600) gespeichert: "+cmd)
 }
 
 // loginTarget checks the target context of auth login and creates it (in
@@ -233,13 +258,14 @@ func (a *App) readLoginToken(fromStdin bool, name string) (string, error) {
 	if err != nil {
 		return "", clierr.New(clierr.CodeError, "Token konnte nicht gelesen werden: "+err.Error(), "")
 	}
-	token := strings.TrimSpace(string(raw))
+	// Trim spaces and CR/LF, and a UTF-8 BOM written by Windows editors.
+	token := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(raw)), "\uFEFF"))
 	if token == "" {
 		return "", clierr.New(clierr.CodeAuth, "Kein Token angegeben",
 			"Token in Papierkram unter Einstellungen → API anlegen und erneut eingeben")
 	}
-	if strings.IndexFunc(token, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
-		return "", clierr.New(clierr.CodeAuth, "Token ungültig: enthält Leer- oder Steuerzeichen",
+	if strings.IndexFunc(token, func(r rune) bool { return unicode.IsSpace(r) || !unicode.IsPrint(r) }) >= 0 {
+		return "", clierr.New(clierr.CodeAuth, "Token ungültig: enthält Leer-, Steuer- oder unsichtbare Zeichen",
 			"Nur das Token übergeben, eine Zeile, z. B. papierkram auth login --token-stdin < token.txt")
 	}
 	return token, nil

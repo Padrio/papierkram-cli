@@ -51,6 +51,8 @@ type App struct {
 	Getwd func() (string, error)
 	// ReadPassword reads a line from the terminal without echo (auth login).
 	ReadPassword func() ([]byte, error)
+	// Sleep waits between GET retries; nil means time.Sleep.
+	Sleep func(time.Duration)
 
 	// Flags receives the parsed global flag values.
 	Flags Flags

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -136,18 +137,21 @@ func TestAuthLoginRejectedTokenStoresNothing(t *testing.T) {
 }
 
 func TestAuthLoginKeychainUnavailable(t *testing.T) {
-	app, _ := mockApp(t, nil)
+	app, srv := mockApp(t, nil)
 	writeCfg(t, app, twoCtx)
 	app.Keyring = unavailableStore{}
 	app.In = strings.NewReader("test-token-k\n")
 	if code := run(t, app, "auth", "login", "--token-stdin"); code != 3 {
 		t.Errorf("exit = %d, want 3", code)
 	}
-	if _, errs := bufs(app); !strings.Contains(errs, "--insecure-storage") {
-		t.Errorf("Hinweis auf --insecure-storage fehlt: %q", errs)
+	if _, errs := bufs(app); !strings.Contains(errs, "papierkram auth login --context a --token-stdin --insecure-storage < token.txt") {
+		t.Errorf("Hinweis behält Eingabeweg/Kontext nicht: %q", errs)
 	}
 	if loadCfg(t, app).Contexts["a"].Token != "" {
 		t.Error("Token ohne --insecure-storage in Config")
+	}
+	if n := len(srv.Requests()); n != 0 {
+		t.Errorf("%d Requests (Credit verbraucht), obwohl das Token nicht gespeichert werden kann", n)
 	}
 	assertNoToken(t, app)
 
@@ -330,6 +334,9 @@ func TestAuthStatusTokenSources(t *testing.T) {
 				_, errs := bufs(app)
 				t.Fatalf("exit = %d, stderr = %s", code, errs)
 			}
+			if n := len(srv.Requests()); n != 1 {
+				t.Errorf("auth status sendete %d Requests, erwartet genau 1 (1 Credit)", n)
+			}
 			out, _ := bufs(app)
 			var got statusJSON
 			if err := json.Unmarshal([]byte(out), &got); err != nil {
@@ -454,4 +461,91 @@ func TestDebugShowsContextAndReadOnlyLevel(t *testing.T) {
 		}
 	}
 	assertNoToken(t, app)
+}
+
+// A UTF-8 BOM (Windows editors) in front of the token is removed as well.
+func TestAuthLoginTokenStdinStripsBOM(t *testing.T) {
+	app, srv := mockApp(t, nil)
+	writeCfg(t, app, twoCtx)
+	app.In = strings.NewReader("\uFEFFtest-token-bom\r\n")
+	if code := run(t, app, "auth", "login", "--token-stdin"); code != 0 {
+		_, errs := bufs(app)
+		t.Fatalf("exit = %d, stderr = %s", code, errs)
+	}
+	if tok, _ := app.Keyring.Get("a"); tok != "test-token-bom" {
+		t.Errorf("gespeichert = %q", tok)
+	}
+	if reqs := srv.Requests(); len(reqs) != 1 || reqs[0].Header.Get("Authorization") != "Bearer test-token-bom" {
+		t.Errorf("requests = %+v", reqs)
+	}
+}
+
+// The keychain write succeeded but removing the old plain-text token from
+// config.toml failed: the login counts (the keychain wins), the leftover is
+// named in a warning.
+func TestAuthLoginStaleConfigTokenSaveFailure(t *testing.T) {
+	app, _ := mockApp(t, nil)
+	writeCfg(t, app, twoCtx+"token = \"test-token-old\"\n")
+	dir := filepath.Dir(cfgFile(t, app))
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	app.In = strings.NewReader("test-token-new\n")
+	if code := run(t, app, "auth", "login", "--token-stdin", "--context", "b"); code != 0 {
+		_, errs := bufs(app)
+		t.Fatalf("exit = %d, stderr = %s", code, errs)
+	}
+	if tok, _ := app.Keyring.Get("b"); tok != "test-token-new" {
+		t.Errorf("keychain = %q", tok)
+	}
+	_, errs := bufs(app)
+	want := "Warnung: Token im Schlüsselbund gespeichert, altes Klartext-Token in " + cfgFile(t, app) + " konnte nicht entfernt werden"
+	if !strings.Contains(errs, want) {
+		t.Errorf("stderr = %q", errs)
+	}
+	assertNoToken(t, app)
+}
+
+// The login path validates the context option output like the client path.
+func TestAuthLoginInvalidContextOutput(t *testing.T) {
+	app, srv := mockApp(t, nil)
+	writeCfg(t, app, "active_context = \"a\"\n[contexts.a]\nsubdomain = \"firma-a\"\noutput = \"xml\"\n")
+	app.In = strings.NewReader("test-token-o\n")
+	if code := run(t, app, "auth", "login", "--token-stdin"); code != 2 {
+		t.Errorf("exit = %d, want 2", code)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, `"xml"`) {
+		t.Errorf("stderr = %q", errs)
+	}
+	if len(srv.Requests()) != 0 {
+		t.Error("Request trotz ungültiger Kontext-Option")
+	}
+}
+
+// A retried GET reports the quota twice; the warning still appears once.
+func TestQuotaWarningOnceAcrossRetry(t *testing.T) {
+	app, srv := mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-r", "PAPIERKRAM_SUBDOMAIN": "firma"})
+	calls := 0
+	srv.OnFunc(http.MethodGet, "/info", func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("X-Remaining-Quota", "50")
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"type":"error","error_type":"service_unavailable","message":"kurz weg"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	})
+	if code := run(t, app, "auth", "status"); code != 0 {
+		_, errs := bufs(app)
+		t.Fatalf("exit = %d, stderr = %s", code, errs)
+	}
+	if calls != 2 {
+		t.Errorf("calls = %d, want 2 (503, dann 200)", calls)
+	}
+	if _, errs := bufs(app); strings.Count(errs, "Warnung: Restkontingent niedrig: 50 Credits") != 1 {
+		t.Errorf("stderr = %q", errs)
+	}
 }

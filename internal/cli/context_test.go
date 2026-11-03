@@ -56,6 +56,8 @@ func TestR36_ReadOnlyEnvBlocksContextUse(t *testing.T) {
 		"create": {"context", "create", "c", "--subdomain", "x"},
 		"delete": {"context", "delete", "b"},
 		"rename": {"context", "rename", "b", "c"},
+		"login":  {"auth", "login", "--token-stdin", "--context", "b"},
+		"logout": {"auth", "logout", "--context", "b"},
 	}
 	// Any non-empty value other than 0/false/no/off enables the hard
 	// read-only mode (fail-closed); unknown words additionally warn.

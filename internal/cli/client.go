@@ -48,13 +48,22 @@ func (a *App) resolveConfig() (*config.Resolved, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.Output != "" && !slices.Contains(outputFormats, r.Output) {
-		return nil, clierr.New(clierr.CodeUsage,
-			fmt.Sprintf("Ungültiger Wert %q für output in Kontext %q", r.Output, r.Context),
-			"Erlaubt sind "+strings.Join(outputFormats, ", ")+"; config.toml korrigieren")
+	if err := checkContextOptions(r); err != nil {
+		return nil, err
 	}
 	a.warnEnvOverrides(r)
 	return r, nil
+}
+
+// checkContextOptions validates context options that Resolve passes through
+// unchecked; client and login path share it.
+func checkContextOptions(r *config.Resolved) error {
+	if r.Output != "" && !slices.Contains(outputFormats, r.Output) {
+		return clierr.New(clierr.CodeUsage,
+			fmt.Sprintf("Ungültiger Wert %q für output in Kontext %q", r.Output, r.Context),
+			"Erlaubt sind "+strings.Join(outputFormats, ", ")+"; config.toml korrigieren")
+	}
+	return nil
 }
 
 // resolveInput collects the inputs of the context selection. The project
@@ -149,6 +158,7 @@ func (a *App) clientOptions(r *config.Resolved) api.Options {
 		Token:   r.Token,
 		Timeout: timeout,
 		HTTP:    a.HTTPClient,
+		Sleep:   a.Sleep,
 		OnQuota: a.onQuota,
 	}
 	if a.Flags.Debug {
