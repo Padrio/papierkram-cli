@@ -4,7 +4,7 @@
 |---|---|
 | Stand | 2026-11-03 |
 | Autor | Pascal Krason (Entscheidungen), Claude (Recherche, Ausarbeitung) |
-| Status | Entwurf zur Freigabe |
+| Status | Freigegeben (2026-11-03) |
 | API-Snapshot | [`api/openapi.json`](../../api/openapi.json), SHA-256 `da826bc0…ccea`, siehe [`api/README.md`](../../api/README.md) |
 | Nächster Schritt | Implementierungsplan `docs/plans/2026-11-03-papierkram-cli.md` |
 
