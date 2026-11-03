@@ -46,6 +46,40 @@ func TestAssertMismatchShowsDiff(t *testing.T) {
 	}
 }
 
+// A mismatch that consists only of CRLF vs. LF line endings stays a
+// failure (no silent normalization) but names the likely cause.
+func TestAssertLineEndingMismatchHint(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	path := filepath.Join(dir, "testdata", "golden", "crlf.txt")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("ID  NAME\r\n1   Müller\r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := &recorder{TB: t}
+	Assert(r, "crlf.txt", []byte("ID  NAME\n1   Müller\n"))
+	if len(r.errors) != 1 {
+		t.Fatalf("errors = %v, fatal = %v", r.errors, r.fatal)
+	}
+	if !strings.Contains(r.errors[0], "Zeilenenden unterscheiden sich (CRLF/LF) – .gitattributes prüfen") {
+		t.Errorf("Meldung ohne CRLF-Hinweis:\n%s", r.errors[0])
+	}
+}
+
+// A real content mismatch must not blame line endings.
+func TestAssertContentMismatchHasNoLineEndingHint(t *testing.T) {
+	r := &recorder{TB: t}
+	Assert(r, "sample.txt", []byte("ID  NAME\r\n2   Müller\r\n"))
+	if len(r.errors) != 1 {
+		t.Fatalf("errors = %v, fatal = %v", r.errors, r.fatal)
+	}
+	if strings.Contains(r.errors[0], "Zeilenenden") {
+		t.Errorf("unerwarteter CRLF-Hinweis:\n%s", r.errors[0])
+	}
+}
+
 func TestAssertMissingFile(t *testing.T) {
 	r := &recorder{TB: t}
 	Assert(r, "fehlt.txt", []byte("x\n"))

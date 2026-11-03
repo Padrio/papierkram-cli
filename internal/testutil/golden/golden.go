@@ -55,9 +55,20 @@ func Assert(t testing.TB, name string, got []byte) {
 		return
 	}
 	if !bytes.Equal(got, want) {
-		t.Errorf("golden %s weicht ab (- erwartet, + erhalten; neu schreiben mit -update):\n%s",
-			filepath.ToSlash(path), diff(want, got))
+		t.Errorf("golden %s weicht ab (- erwartet, + erhalten; neu schreiben mit -update):%s\n%s",
+			filepath.ToSlash(path), lineEndingHint(want, got), diff(want, got))
 	}
+}
+
+// lineEndingHint explains a mismatch that consists only of CRLF vs. LF
+// line endings (typically a git checkout with core.autocrlf). The bytes
+// are deliberately not normalized: the mismatch stays a failure.
+func lineEndingHint(want, got []byte) string {
+	crlf, lf := []byte("\r\n"), []byte("\n")
+	if bytes.Equal(bytes.ReplaceAll(want, crlf, lf), bytes.ReplaceAll(got, crlf, lf)) {
+		return "\nZeilenenden unterscheiden sich (CRLF/LF) – .gitattributes prüfen (testdata muss byte-genau bleiben)"
+	}
+	return ""
 }
 
 // diff returns a line diff of want and got: unchanged lines with "  ",
