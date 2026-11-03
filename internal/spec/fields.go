@@ -21,7 +21,9 @@ const (
 	KindRefList    FieldKind = "ref_list"    // array of {id}: --team-member (repeatable)
 	KindAttrs      FieldKind = "attrs"       // custom_attributes: --attr id=wert
 	KindItems      FieldKind = "items"       // line_items: --item / --items
-	KindObjectList FieldKind = "object_list" // any other array: only via --input, no flag
+	KindScalarList FieldKind = "scalar_list" // array of scalars: --entertainment-person (repeatable)
+	KindObjectList FieldKind = "object_list" // array of objects: only via --input, no flag
+	KindBinary     FieldKind = "binary"      // format binary (multipart file): set by the command, no flag
 )
 
 // itemsField is the array of line items; it gets --item/--items (spec 6.2)
@@ -31,7 +33,8 @@ const itemsField = "line_items"
 // Field is one settable part of a request body, derived from the request
 // schema. Path is the JSON path of the value in the body. For KindRef,
 // KindNestedRef and KindRefList the value at Path is {"id": n}; Type and
-// Format are then those of the id. Flag is empty for KindObjectList. Schema
+// Format are then those of the id. Flag is empty for KindObjectList and
+// KindBinary. Schema
 // is the property schema at Path (enum hints, key pattern).
 type Field struct {
 	Flag                             string
@@ -82,8 +85,9 @@ const bigEnum = 20
 // become ID flags; a nested reference a.b{id} becomes --b, or --a-b when b is
 // one of resourceNames; scalars inside objects become --<object>-<field>;
 // arrays of {id} become a repeatable singular flag; custom_attributes become
-// --attr, line_items --item; all other arrays (people,
-// entertainment_persons) are input-only.
+// --attr, line_items --item; arrays of scalars become a repeatable singular
+// flag (--entertainment-person); arrays of objects (people) are input-only;
+// binary file parts (multipart) get no flag.
 //
 // The result is sorted by flag name. When two fields (or a field and a
 // reserved flag) would share a flag name, a nested field falls back to its
@@ -144,9 +148,14 @@ func (w *walker) property(ps *openapi3.Schema, p []string, required bool) {
 			f := Field{Flag: flag, Kind: KindRefList, Repeatable: true}
 			setType(&f, it.Properties["id"].Value)
 			w.add(f, ps, p, required, flag)
+		case it != nil && !isObject(it) && !it.Type.Is("array"):
+			flag := singular(full)
+			f := Field{Flag: flag, Kind: KindScalarList, Repeatable: true}
+			setScalar(&f, it)
+			w.add(f, ps, p, required, flag)
 		default:
-			// people (objects) and entertainment_persons (strings) are set
-			// only via --input (spec 6.1).
+			// Arrays of objects such as people are set only via --input
+			// (spec 6.1).
 			w.add(Field{Kind: KindObjectList, Type: "array"}, ps, p, required, "")
 		}
 	case isAttrs(ps):
@@ -166,6 +175,11 @@ func (w *walker) property(ps *openapi3.Schema, p []string, required bool) {
 			w.add(f, ps, p, required, full)
 		}
 		w.object(ps, p, required, skip)
+	case ps.Format == "binary":
+		// A file part of a multipart body; the command uploads it itself.
+		f := Field{Kind: KindBinary}
+		setType(&f, ps)
+		w.add(f, ps, p, required, "")
 	default:
 		f := Field{Flag: full, Kind: KindScalar}
 		if !top {
@@ -292,13 +306,15 @@ func help(f Field, s *openapi3.Schema) string {
 		h = "Position als key=wert,key=wert"
 	case f.Kind == KindObjectList:
 		h = path + ": nur über --input setzbar"
+	case f.Kind == KindBinary:
+		h = path + ": Datei, wird vom Befehl hochgeladen"
 	default:
 		h = "Wert für " + path
 	}
 	switch {
 	case f.Format == "date":
 		h += " (YYYY-MM-DD, heute, gestern)"
-	case f.Kind != KindObjectList && f.name() == vatField:
+	case f.Flag != "" && f.name() == vatField:
 		h += " (19, 19%, 0,19 oder 0.19)"
 	case f.IsBool():
 		h += " (true/false)"

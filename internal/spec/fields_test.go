@@ -141,7 +141,6 @@ func TestFieldsCreateProject(t *testing.T) {
 func TestFieldsObjectListsInputOnly(t *testing.T) {
 	for _, tc := range []struct{ op, path string }{
 		{"CreateCompany", "people"},
-		{"CreateVoucher", "entertainment_persons"},
 	} {
 		fs := mustFields(t, tc.op)
 		var found bool
@@ -190,6 +189,30 @@ func TestFieldsTaskAndPersonBoolString(t *testing.T) {
 	}
 }
 
+func TestFieldsScalarList(t *testing.T) {
+	for _, op := range []string{"CreateVoucher", "UpdateVoucher"} {
+		f := fieldByFlag(t, mustFields(t, op), "entertainment-person")
+		if f.Kind != KindScalarList || !f.Repeatable || f.Type != "string" ||
+			!slices.Equal(f.Path, []string{"entertainment_persons"}) || !strings.HasSuffix(f.Help, "(wiederholbar)") {
+			t.Errorf("%s --entertainment-person: %+v", op, f)
+		}
+	}
+}
+
+func TestFieldsBinaryInputOnly(t *testing.T) {
+	fs := mustFields(t, "UploadVoucherDocument")
+	if len(fs) != 1 {
+		t.Fatalf("got %d fields, want 1: %+v", len(fs), fs)
+	}
+	f := fs[0]
+	if f.Kind != KindBinary || f.Flag != "" || !f.Required || f.Format != "binary" || !slices.Equal(f.Path, []string{"file"}) {
+		t.Errorf("file: %+v", f)
+	}
+	if _, err := CoerceFlag(CoerceContext{}, f, "x.pdf"); err == nil {
+		t.Error("binary field must not be coerced from a flag")
+	}
+}
+
 func TestFieldsCreateVoucher(t *testing.T) {
 	fs := mustFields(t, "CreateVoucher")
 	if f := fieldByFlag(t, fs, "creditor"); f.Kind != KindRef {
@@ -230,7 +253,7 @@ func TestFieldsAllOperations(t *testing.T) {
 				t.Errorf("%s: incomplete field %+v", o.ID, f)
 			}
 			if f.Flag == "" {
-				if f.Kind != KindObjectList {
+				if f.Kind != KindObjectList && f.Kind != KindBinary {
 					t.Errorf("%s: field %v without flag", o.ID, f.Path)
 				}
 				continue

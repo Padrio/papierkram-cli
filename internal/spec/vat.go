@@ -2,7 +2,6 @@ package spec
 
 import (
 	"encoding/json"
-	"fmt"
 	"math"
 	"regexp"
 	"strconv"
@@ -22,9 +21,9 @@ const vatHint = "erlaubt: Prozent (19, 19%) oder Dezimalbruch (0,19 bzw. 0.19) v
 // NormalizeVAT turns a VAT rate in any accepted form into the decimal
 // fraction the API expects (spec 6.2): 19, "19", "19%", "0,19", "0.19" and
 // the number 19 all yield 0.19; 7 yields 0.07, 0 yields 0. Values above 1 and
-// values with a % sign are percentages and are divided by 100 (rounded to four
-// places). Negative values, values above 100 and anything unparsable are a
-// validation error.
+// values with a % sign are percentages and are divided by 100. The result is
+// rounded to four places. A bare 1 (1 % or 100 %?) is ambiguous; it, negative
+// values, values above 100 and anything unparsable are a validation error.
 func NormalizeVAT(v any) (float64, error) {
 	var text string
 	switch x := v.(type) {
@@ -62,26 +61,19 @@ func NormalizeVAT(v any) (float64, error) {
 }
 
 func scaleVAT(f float64, percent bool, orig any) (float64, error) {
-	if f < 0 || f > 100 {
+	switch {
+	case f < 0 || f > 100:
 		return 0, vatError(orig)
+	case f == 1 && !percent:
+		return 0, clierr.New(clierr.CodeValidation, "vat_rate 1 ist mehrdeutig (1 % oder 100 %?)", "0.01 bzw. 1% oder 100% angeben")
+	case percent || f > 1:
+		f /= 100
 	}
-	if percent || f > 1 {
-		return math.Round(f/100*10000) / 10000, nil
-	}
-	return f, nil
+	return math.Round(f*10000) / 10000, nil
 }
 
 func vatError(v any) *clierr.Error {
-	var shown string
-	switch x := v.(type) {
-	case string:
-		shown = strconv.Quote(x)
-	case nil:
-		shown = "null"
-	default:
-		shown = fmt.Sprintf("%v", x)
-	}
-	return clierr.New(clierr.CodeValidation, "ungültiger Steuersatz "+shown, vatHint)
+	return clierr.New(clierr.CodeValidation, "ungültiger Steuersatz "+showValue(v), vatHint)
 }
 
 // FormatVAT renders a normalized VAT rate as the API's string form, e.g.

@@ -57,10 +57,11 @@ const defaultKeyPattern = `^[0-9]+$`
 //     "true"/"false";
 //   - KindRef, KindNestedRef, KindRefList: {"id": int64} (one value per flag
 //     occurrence for ref lists);
-//   - KindAttrs: {"<id>": "<wert>"} from <id>=<wert>.
+//   - KindAttrs: {"<id>": "<wert>"} from <id>=<wert>;
+//   - KindScalarList: one element per flag occurrence, coerced like a scalar.
 //
-// KindItems and KindObjectList have no single flag value (line items have
-// their own parser) and yield an internal error. Invalid values are clierr
+// KindItems, KindObjectList and KindBinary have no single flag value (line
+// items have their own parser) and yield an internal error. Invalid values are clierr
 // validation errors that name the flag.
 func CoerceFlag(cc CoerceContext, f Field, raw string) (any, error) {
 	switch f.Kind {
@@ -72,7 +73,7 @@ func CoerceFlag(cc CoerceContext, f Field, raw string) (any, error) {
 		return map[string]any{"id": id}, nil
 	case KindAttrs:
 		return coerceAttr(f, raw)
-	case KindScalar, KindGroup:
+	case KindScalar, KindGroup, KindScalarList:
 		return coerceScalar(cc, f, raw)
 	default:
 		return nil, clierr.New(clierr.CodeError, fmt.Sprintf("--%s: Feldart %s hat keinen einzelnen Flag-Wert", f.Flag, f.Kind), "")
@@ -81,19 +82,12 @@ func CoerceFlag(cc CoerceContext, f Field, raw string) (any, error) {
 
 func coerceScalar(cc CoerceContext, f Field, raw string) (any, error) {
 	if f.name() == vatField {
-		v, err := NormalizeVAT(raw)
-		if err != nil {
-			return nil, flagError(f, raw, "kein gültiger Steuersatz", vatHint)
-		}
-		if f.Type == "string" {
-			return FormatVAT(v), nil
-		}
-		return json.Number(FormatVAT(v)), nil
+		return vatValue(raw, f.Type == "string", "--"+f.Flag)
 	}
 	if f.IsBool() {
 		b, ok := parseBool(raw)
 		if !ok {
-			return nil, flagError(f, raw, "Wahrheitswert erwartet", "erlaubt: true, false, ja, nein, 1, 0")
+			return nil, flagError(f, raw, "Wahrheitswert erwartet", boolHint)
 		}
 		if f.BoolString {
 			return strconv.FormatBool(b), nil
@@ -126,6 +120,26 @@ func coerceScalar(cc CoerceContext, f Field, raw string) (any, error) {
 		}
 	}
 	return raw, nil
+}
+
+const boolHint = "erlaubt: true, false, ja, nein, 1, 0"
+
+// vatValue normalizes a vat_rate and returns it in the schema's form: "0.19"
+// for string fields, the number 0.19 otherwise. where names the field in
+// errors (flag or body path). Flags and --input share it (spec 6.2).
+func vatValue(v any, asString bool, where string) (any, error) {
+	f, err := NormalizeVAT(v)
+	if err != nil {
+		var ce *clierr.Error
+		if errors.As(err, &ce) {
+			return nil, clierr.New(clierr.CodeValidation, where+": "+ce.Message, ce.Hint)
+		}
+		return nil, err
+	}
+	if asString {
+		return FormatVAT(f), nil
+	}
+	return json.Number(FormatVAT(f)), nil
 }
 
 func parseBool(raw string) (bool, bool) {
@@ -202,7 +216,7 @@ func coerceAttr(f Field, raw string) (any, error) {
 		return nil, clierr.New(clierr.CodeError, fmt.Sprintf("--%s: ungültiges Schlüsselmuster %q in der Spec", f.Flag, pattern), "")
 	}
 	if !re.MatchString(key) {
-		return nil, flagError(f, raw, fmt.Sprintf("Attribut-ID %q ist keine Zahl", key), "z. B. --"+f.Flag+" 12=Wert")
+		return nil, flagError(f, raw, fmt.Sprintf("Attribut-ID %q passt nicht zum Muster %s", key, pattern), "z. B. --"+f.Flag+" 12=Wert")
 	}
 	return map[string]any{key: val}, nil
 }
@@ -215,12 +229,15 @@ func flagError(f Field, raw, reason, hint string) *clierr.Error {
 // its schema, recursing into objects and arrays (spec 4.4, 6.3): numbers and
 // booleans for string fields become strings ("5000", "12.5", "true"),
 // numeric strings for integer/number fields become json.Number, "true"/"false"
-// for boolean fields become bool, and every vat_rate is normalized (number
+// (also ja/nein/1/0) for boolean fields become bool, x-cli-bool-string
+// fields become "true"/"false" from a bool, true/false/ja/nein/1/0 or the
+// numbers 0 and 1 (anything else is a validation error, as for the flag),
+// and every vat_rate is normalized (number
 // 0.19 in line items, "0.19" where the schema says string). Numbers stay
 // json.Number text, never round-trip through float64. path is the location
 // of v for error messages (e.g. "line_items[0]"); its last element names the
 // field. Values that do not fit are left as they are for the validator; only
-// an invalid vat_rate is an error here. The input is not modified.
+// an invalid vat_rate or string boolean is an error here. The input is not modified.
 func CoerceValue(s *openapi3.Schema, v any, path string) (any, error) {
 	key := path[strings.LastIndex(path, ".")+1:]
 	if i := strings.IndexByte(key, '['); i >= 0 {
@@ -235,18 +252,14 @@ func coerceValue(s *openapi3.Schema, v any, path, key string) (any, error) {
 	}
 	isArray := s.Type.Is("array")
 	if key == vatField && !isArray && !isObject(s) {
-		f, err := NormalizeVAT(v)
-		if err != nil {
-			var ce *clierr.Error
-			if errors.As(err, &ce) {
-				return nil, clierr.New(clierr.CodeValidation, path+": "+ce.Message, ce.Hint)
-			}
-			return nil, err
+		return vatValue(v, s.Type.Is("string"), path)
+	}
+	if bs, _ := s.Extensions["x-cli-bool-string"].(bool); bs {
+		b, ok := valueBool(v)
+		if !ok {
+			return nil, clierr.New(clierr.CodeValidation, fmt.Sprintf("%s: ungültiger Wahrheitswert %s", path, showValue(v)), boolHint)
 		}
-		if s.Type.Is("string") {
-			return FormatVAT(f), nil
-		}
-		return json.Number(FormatVAT(f)), nil
+		return strconv.FormatBool(b), nil
 	}
 	switch {
 	case isArray:
@@ -309,14 +322,16 @@ func coerceValue(s *openapi3.Schema, v any, path, key string) (any, error) {
 			return json.Number(x), nil
 		}
 	case s.Type.Is("boolean"):
-		if x, ok := v.(string); ok && (x == "true" || x == "false") {
-			return x == "true", nil
+		if x, ok := v.(string); ok {
+			if b, ok := parseBool(x); ok {
+				return b, nil
+			}
 		}
 	}
 	return v, nil
 }
 
-// EnumHint looks in up in the schema's x-cli-enum-hints (case-insensitive)
+// EnumHint looks the input up in the schema's x-cli-enum-hints (case-insensitive)
 // and returns the API value it stands for, e.g. non_eu → foreign.
 func EnumHint(s *openapi3.Schema, in string) (string, bool) {
 	if s == nil {
@@ -334,4 +349,37 @@ func EnumHint(s *openapi3.Schema, in string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// valueBool reads a body value of an x-cli-bool-string field the way the
+// flag path does: bool, true/false/ja/nein/1/0 (any case) or the numbers 0
+// and 1.
+func valueBool(v any) (bool, bool) {
+	switch x := v.(type) {
+	case bool:
+		return x, true
+	case string:
+		return parseBool(x)
+	case json.Number:
+		return parseBool(string(x))
+	case float64:
+		return x == 1, x == 0 || x == 1
+	case int:
+		return x == 1, x == 0 || x == 1
+	case int64:
+		return x == 1, x == 0 || x == 1
+	}
+	return false, false
+}
+
+// showValue renders a body value for an error message.
+func showValue(v any) string {
+	switch x := v.(type) {
+	case string:
+		return strconv.Quote(x)
+	case nil:
+		return "null"
+	default:
+		return fmt.Sprintf("%v", x)
+	}
 }

@@ -89,13 +89,28 @@ func TestR08_TaskFieldsAsString(t *testing.T) {
 				t.Errorf("%s --%s %s: got %#v, %v; want %q", op, tc.flag, tc.raw, v, err, tc.want)
 			}
 		}
-		body := map[string]any{"complete": true, "flagged": false, "relative_costs": json.Number("50")}
-		got, err := CoerceValue(RequestSchema(op), body, "")
-		if err != nil {
-			t.Fatal(err)
+		for _, tc := range []struct {
+			complete, flagged any
+		}{
+			{true, false},
+			{"ja", "nein"},
+			{"TRUE", "false"},
+			{json.Number("1"), json.Number("0")},
+			{float64(1), 0},
+			{"1", "0"},
+		} {
+			body := map[string]any{"complete": tc.complete, "flagged": tc.flagged, "relative_costs": json.Number("50")}
+			got, err := CoerceValue(RequestSchema(op), body, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if s := marshal(t, got); s != `{"complete":"true","flagged":"false","relative_costs":"50"}` {
+				t.Errorf("%s body %v: %s", op, tc, s)
+			}
 		}
-		if s := marshal(t, got); s != `{"complete":"true","flagged":"false","relative_costs":"50"}` {
-			t.Errorf("%s body: %s", op, s)
+		for _, bad := range []any{"vielleicht", json.Number("2"), float64(0.5), map[string]any{}} {
+			_, err := CoerceValue(RequestSchema(op), map[string]any{"flagged": bad}, "")
+			wantValidation(t, err, "flagged", "erlaubt: true, false, ja, nein, 1, 0")
 		}
 	}
 }
@@ -108,7 +123,7 @@ func TestR09_PersonDefaultFlaggedAsString(t *testing.T) {
 				t.Errorf("%s --%s: got %#v, %v", op, flag, v, err)
 			}
 		}
-		got, err := CoerceValue(RequestSchema(op), map[string]any{"default": true, "flagged": false}, "")
+		got, err := CoerceValue(RequestSchema(op), map[string]any{"default": "ja", "flagged": "nein"}, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -117,7 +132,7 @@ func TestR09_PersonDefaultFlaggedAsString(t *testing.T) {
 		}
 	}
 	// people of company create carry the same string booleans.
-	body := map[string]any{"name": "ACME", "people": []any{map[string]any{"default": true, "flagged": false, "first_name": "A"}}}
+	body := map[string]any{"name": "ACME", "people": []any{map[string]any{"default": true, "flagged": "nein", "first_name": "A"}}}
 	got, err := CoerceValue(RequestSchema("CreateCompany"), body, "")
 	if err != nil {
 		t.Fatal(err)
@@ -125,6 +140,9 @@ func TestR09_PersonDefaultFlaggedAsString(t *testing.T) {
 	if s := marshal(t, got); s != `{"name":"ACME","people":[{"default":"true","first_name":"A","flagged":"false"}]}` {
 		t.Errorf("company body: %s", s)
 	}
+	body = map[string]any{"people": []any{map[string]any{"default": "x"}}}
+	_, err = CoerceValue(RequestSchema("CreateCompany"), body, "")
+	wantValidation(t, err, `people[0].default`, `"x"`)
 }
 
 func TestR10_PropositionPriceVatAsString(t *testing.T) {
@@ -176,7 +194,10 @@ func TestR11_VatNormalization(t *testing.T) {
 		{"0%", 0},
 		{"5,5", 0.055},
 		{"100", 1},
-		{1, 1},
+		{100, 1},
+		{"100%", 1},
+		{"1%", 0.01},
+		{"0.12345", 0.1235},
 	}
 	for _, tc := range tests {
 		got, err := NormalizeVAT(tc.in)
@@ -188,6 +209,13 @@ func TestR11_VatNormalization(t *testing.T) {
 		_, err := NormalizeVAT(bad)
 		wantValidation(t, err, "Steuersatz")
 	}
+	// A bare 1 could mean 1 % or 100 %.
+	for _, amb := range []any{1, "1", "1.0", " 1 ", json.Number("1"), float64(1), int64(1)} {
+		_, err := NormalizeVAT(amb)
+		wantValidation(t, err, "vat_rate 1 ist mehrdeutig (1 % oder 100 %?)", "0.01 bzw. 1% oder 100% angeben")
+	}
+	_, err := coerceFlag(t, "CreateProposition", "vat-rate", "1")
+	wantValidation(t, err, "--vat-rate", "mehrdeutig")
 
 	// Line items: every accepted form ends up as the number 0.19.
 	for _, in := range []any{"19%", json.Number("19"), float64(19), "0,19", "19"} {
@@ -201,7 +229,7 @@ func TestR11_VatNormalization(t *testing.T) {
 		}
 	}
 	body := map[string]any{"line_items": []any{map[string]any{"vat_rate": "x"}}}
-	_, err := CoerceValue(RequestSchema("CreateVoucher"), body, "")
+	_, err = CoerceValue(RequestSchema("CreateVoucher"), body, "")
 	wantValidation(t, err, "line_items[0].vat_rate", `"x"`)
 }
 
@@ -238,6 +266,7 @@ func TestCoerceFlagTypes(t *testing.T) {
 		{"CreateProject", "color", "blue", "blue"},
 		{"CreateVoucher", "provenance", "eu", "eu"},
 		{"CreateInvoice", "name", " Beratung ", " Beratung "},
+		{"CreateVoucher", "entertainment-person", "Carl Customer", "Carl Customer"},
 	}
 	for _, tc := range tests {
 		got, err := coerceFlag(t, tc.op, tc.flag, tc.raw)
@@ -264,7 +293,7 @@ func TestCoerceFlagErrors(t *testing.T) {
 		{"CreateInvoice", "customer", "-1", []string{"--customer", "ID"}},
 		{"CreateInvoice", "customer", "abc", []string{"--customer", "ID"}},
 		{"CreateProject", "team-member", "x", []string{"--team-member"}},
-		{"CreateProject", "attr", "x=1", []string{"--attr", `"x"`}},
+		{"CreateProject", "attr", "x=1", []string{"--attr", `"x"`, "passt nicht zum Muster ^[0-9]+$"}},
 		{"CreateProject", "attr", "12", []string{"--attr", "<id>=<wert>"}},
 		{"CreateVoucher", "provenance", "non_eu", []string{"--provenance", `"non_eu"`, `meintest du "foreign"?`, "erlaubt: domestic, eu, foreign"}},
 		{"CreateVoucher", "provenance", "domestc", []string{`meintest du "domestic"?`}},
@@ -285,9 +314,11 @@ func TestCoerceFlagErrors(t *testing.T) {
 
 func TestCoerceFlagZeroContext(t *testing.T) {
 	f := fieldByFlag(t, mustFields(t, "CreateInvoice"), "document-date")
+	before := time.Now().Format("2006-01-02")
 	v, err := CoerceFlag(CoerceContext{}, f, "heute")
-	if err != nil || v != time.Now().Format("2006-01-02") {
-		t.Errorf("got %#v, %v", v, err)
+	after := time.Now().Format("2006-01-02")
+	if err != nil || (v != before && v != after) {
+		t.Errorf("got %#v, %v; want %s or %s", v, err, before, after)
 	}
 }
 
