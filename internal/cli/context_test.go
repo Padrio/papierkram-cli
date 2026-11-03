@@ -426,3 +426,62 @@ func TestConfigWriteGuardIsCentral(t *testing.T) {
 		t.Error("RunE lief trotz Schreibschutz")
 	}
 }
+
+func TestContextCreateRemovesStaleKeychainEntry(t *testing.T) {
+	app, _, errb := newTestApp(t)
+	_ = app.Keyring.Set("c", "test-token-stale")
+	if code := Run(app, []string{"context", "create", "c", "--subdomain", "x"}); code != 0 {
+		t.Fatalf("exit = %d; stderr = %s", code, errb.String())
+	}
+	if _, err := app.Keyring.Get("c"); err != auth.ErrNotFound {
+		t.Errorf("altes Token noch vorhanden: %v", err)
+	}
+	if !strings.Contains(errb.String(), `Hinweis: Im Schlüsselbund lag noch ein Token für "c"`) || strings.Contains(errb.String(), "test-token") {
+		t.Errorf("stderr = %q", errb.String())
+	}
+	// no stale entry: no hint
+	errb.Reset()
+	if code := Run(app, []string{"context", "create", "d", "--subdomain", "x"}); code != 0 || errb.Len() != 0 {
+		t.Errorf("exit = %d; stderr = %q", code, errb.String())
+	}
+}
+
+type failDeleteStore struct{ auth.Store }
+
+func (failDeleteStore) Delete(string) error { return os.ErrPermission }
+
+func TestContextCreateStaleKeychainDeleteFailureKeepsConfig(t *testing.T) {
+	app, _, errb := newTestApp(t)
+	mem := auth.NewMemory()
+	_ = mem.Set("c", "test-token-stale")
+	app.Keyring = failDeleteStore{mem}
+	if code := Run(app, []string{"context", "create", "c", "--subdomain", "x"}); code != 1 {
+		t.Fatalf("exit = %d, want 1; stderr = %s", code, errb.String())
+	}
+	if _, err := os.Stat(cfgFile(t, app)); !os.IsNotExist(err) {
+		t.Error("Config trotz Fehler geschrieben")
+	}
+}
+
+func TestContextRenameRefusesExistingTargetKeychainEntry(t *testing.T) {
+	app, _, errb := newTestApp(t)
+	writeCfg(t, app, twoCtx)
+	_ = app.Keyring.Set("a", "test-token-a")
+	_ = app.Keyring.Set("neu", "test-token-fremd")
+	before, _ := os.ReadFile(cfgFile(t, app))
+	if code := Run(app, []string{"context", "rename", "b", "neu"}); code != 2 {
+		t.Fatalf("exit = %d, want 2; stderr = %s", code, errb.String())
+	}
+	if !strings.Contains(errb.String(), `Im Schlüsselbund existiert bereits ein Token für "neu"`) || strings.Contains(errb.String(), "test-token") {
+		t.Errorf("stderr = %q", errb.String())
+	}
+	after, _ := os.ReadFile(cfgFile(t, app))
+	if string(before) != string(after) {
+		t.Errorf("Config verändert:\n%s", after)
+	}
+	for name, want := range map[string]string{"a": "test-token-a", "neu": "test-token-fremd"} {
+		if tok, err := app.Keyring.Get(name); err != nil || tok != want {
+			t.Errorf("%s: %q %v", name, tok, err)
+		}
+	}
+}

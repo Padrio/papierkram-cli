@@ -103,6 +103,15 @@ func newContextCreateCmd(app *App) *cobra.Command {
 			if err := cfg.Create(args[0], &config.Context{Subdomain: subdomain, ReadOnly: readOnly, User: userID}); err != nil {
 				return err
 			}
+			// A keychain entry left over from an earlier context of the same
+			// name must not be sent to the new subdomain.
+			switch err := app.Keyring.Delete(args[0]); {
+			case err == nil:
+				_, _ = fmt.Fprintf(app.Err, "Hinweis: Im Schlüsselbund lag noch ein Token für %q (von einem früheren Kontext gleichen Namens); es wurde entfernt. Token neu hinterlegen: papierkram auth login --context %s\n", args[0], args[0])
+			case errors.Is(err, auth.ErrNotFound), errors.Is(err, auth.ErrUnavailable):
+			default:
+				return keyringErr(err, fmt.Sprintf("altes Token für %q konnte nicht entfernt werden, Konfiguration unverändert", args[0]))
+			}
 			activated := cfg.ActiveContext == ""
 			if activated {
 				cfg.ActiveContext = args[0]
@@ -273,6 +282,16 @@ func newContextRenameCmd(app *App) *cobra.Command {
 			}
 			if err := cfg.Rename(oldName, newName); err != nil {
 				return err
+			}
+			// Never overwrite or adopt a foreign token stored under the new name.
+			switch _, err := app.Keyring.Get(newName); {
+			case err == nil:
+				return clierr.New(clierr.CodeUsage,
+					fmt.Sprintf("Im Schlüsselbund existiert bereits ein Token für %q", newName),
+					fmt.Sprintf("Anderen Namen wählen oder den Eintrag (Dienst papierkram-cli, Konto %s) im Schlüsselbund des Betriebssystems entfernen", newName))
+			case errors.Is(err, auth.ErrNotFound), errors.Is(err, auth.ErrUnavailable):
+			default:
+				return keyringErr(err, "Schlüsselbund konnte nicht geprüft werden, Konfiguration unverändert")
 			}
 			moved := false
 			switch tok, err := app.Keyring.Get(oldName); {
