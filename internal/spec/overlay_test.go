@@ -443,20 +443,27 @@ func TestRequestDateFieldsHaveDateFormat(t *testing.T) {
 }
 
 func TestBoolStringExtension(t *testing.T) {
-	doc := loadDoc(t, generatedPath)
-	marked := map[string][][]string{
-		"CreateTask":    {{"complete"}, {"flagged"}},
-		"UpdateTask":    {{"complete"}, {"flagged"}},
-		"CreatePerson":  {{"default"}, {"flagged"}},
-		"UpdatePerson":  {{"default"}, {"flagged"}},
-		"CreateCompany": {{"people", "[]", "default"}, {"people", "[]", "flagged"}},
+	want := []string{
+		"CreateTask.complete", "CreateTask.flagged",
+		"UpdateTask.complete", "UpdateTask.flagged",
+		"CreatePerson.default", "CreatePerson.flagged",
+		"UpdatePerson.default", "UpdatePerson.flagged",
+		"CreateCompany.people[].default", "CreateCompany.people[].flagged",
 	}
-	for id, props := range marked {
-		for _, path := range props {
-			s := property(t, requestSchema(t, doc, id), path...)
-			if !s.Type.Is("string") || s.Extensions["x-cli-bool-string"] != true {
-				t.Errorf("%s %v: type=%v x-cli-bool-string=%v, want string/true", id, path, s.Type, s.Extensions["x-cli-bool-string"])
-			}
+	got := extensionPaths(t, "x-cli-bool-string")
+	for _, g := range got {
+		if g.value != true {
+			t.Errorf("%s: x-cli-bool-string=%v, want true", g.path, g.value)
+		}
+	}
+	assertPaths(t, "x-cli-bool-string", got, want)
+
+	doc := loadDoc(t, generatedPath)
+	for _, w := range want {
+		id, path, _ := strings.Cut(w, ".")
+		s := property(t, requestSchema(t, doc, id), strings.Split(strings.ReplaceAll(path, "[]", ".[]"), ".")...)
+		if !s.Type.Is("string") {
+			t.Errorf("%s: type %v, want string", w, s.Type)
 		}
 	}
 	// relative_costs is a numeric string, not a boolean.
@@ -468,13 +475,133 @@ func TestBoolStringExtension(t *testing.T) {
 }
 
 func TestProvenanceEnumHint(t *testing.T) {
-	doc := loadDoc(t, generatedPath)
-	want := map[string]any{"non_eu": "foreign"}
-	for _, id := range []string{"CreateVoucher", "UpdateVoucher"} {
-		s := property(t, requestSchema(t, doc, id), "provenance")
-		if !reflect.DeepEqual(s.Extensions["x-cli-enum-hints"], want) {
-			t.Errorf("%s: x-cli-enum-hints=%v, want %v", id, s.Extensions["x-cli-enum-hints"], want)
+	want := []string{"CreateVoucher.provenance", "UpdateVoucher.provenance"}
+	got := extensionPaths(t, "x-cli-enum-hints")
+	assertPaths(t, "x-cli-enum-hints", got, want)
+	for _, g := range got {
+		if !reflect.DeepEqual(g.value, map[string]any{"non_eu": "foreign"}) {
+			t.Errorf("%s: x-cli-enum-hints=%v, want map[non_eu:foreign]", g.path, g.value)
 		}
+	}
+}
+
+type extension struct {
+	path  string
+	value any
+}
+
+// extensionPaths finds every occurrence of an x-cli-* key below a request body
+// schema and names it "<operationId>.<property path>" (arrays as "[]").
+func extensionPaths(t *testing.T, key string) []extension {
+	t.Helper()
+	doc := loadDoc(t, generatedPath)
+	var found []extension
+	for _, o := range operations(doc) {
+		if o.op.RequestBody == nil {
+			continue
+		}
+		for _, mt := range o.op.RequestBody.Value.Content {
+			collectExtension(mt.Schema.Value, key, o.op.OperationID, &found)
+		}
+	}
+	// Also make sure the key appears nowhere else (responses, components).
+	total := 0
+	walk(rawJSON(t, generatedPath), "$", func(_, k string, _ any) {
+		if k == key {
+			total++
+		}
+	})
+	if total != len(found) {
+		t.Errorf("%s occurs %d times in the spec but %d times in request bodies", key, total, len(found))
+	}
+	return found
+}
+
+func collectExtension(s *openapi3.Schema, key, path string, found *[]extension) {
+	if v, ok := s.Extensions[key]; ok {
+		*found = append(*found, extension{path: path, value: v})
+	}
+	for name, p := range s.Properties {
+		collectExtension(p.Value, key, path+"."+name, found)
+	}
+	if s.Items != nil {
+		collectExtension(s.Items.Value, key, path+"[]", found)
+	}
+}
+
+func assertPaths(t *testing.T, key string, got []extension, want []string) {
+	t.Helper()
+	paths := make([]string, 0, len(got))
+	for _, g := range got {
+		paths = append(paths, g.path)
+	}
+	sort.Strings(paths)
+	want = slices.Clone(want)
+	sort.Strings(want)
+	if !slices.Equal(paths, want) {
+		t.Errorf("%s occurrences:\n got  %v\nwant %v", key, paths, want)
+	}
+}
+
+func TestQueryIDParamsInt64(t *testing.T) {
+	doc := loadDoc(t, generatedPath)
+	n := 0
+	for _, o := range operations(doc) {
+		for _, p := range o.op.Parameters {
+			if p.Value.In != "query" || !strings.HasSuffix(p.Value.Name, "_id") {
+				continue
+			}
+			n++
+			if s := p.Value.Schema.Value; !s.Type.Is("integer") || s.Format != "int64" {
+				t.Errorf("%s %s: %s type=%v format=%q, want integer/int64", o.method, o.path, p.Value.Name, s.Type, s.Format)
+			}
+		}
+	}
+	if n != 14 {
+		t.Errorf("found %d *_id query parameters, want 14", n)
+	}
+}
+
+func TestSupplierRuleExamplesKept(t *testing.T) {
+	doc := loadDoc(t, generatedPath)
+	cases := map[string]string{
+		"CreateVoucher":  "Lieferant muss ein Lieferant sein",
+		"CreateEstimate": "",
+		"CreateInvoice":  "",
+	}
+	for id := range cases {
+		o := opByID(t, doc, id).op
+		for code, r := range o.Responses.Map() {
+			if code == "201" {
+				for name := range r.Value.Content["application/json"].Examples {
+					if strings.Contains(name, "supplier") {
+						t.Errorf("%s: error example %q still filed under 201", id, name)
+					}
+				}
+			}
+		}
+		found := false
+		for name, ex := range o.Responses.Status(422).Value.Content["application/json"].Examples {
+			if strings.Contains(name, "supplier") {
+				found = true
+				if m, _ := ex.Value.Value.(map[string]any)["message"].(string); m == "" {
+					t.Errorf("%s: example %q has no message", id, name)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: supplier-rule example missing under 422", id)
+		}
+	}
+	msg := opByID(t, doc, "CreateVoucher").op.Responses.Status(422).Value.Content["application/json"].Examples
+	ok := false
+	for _, ex := range msg {
+		if ex.Value.Value.(map[string]any)["message"] == "Lieferant muss ein Lieferant sein" {
+			ok = true
+		}
+	}
+	if !ok {
+		t.Error("CreateVoucher: message \"Lieferant muss ein Lieferant sein\" missing under 422")
 	}
 }
 

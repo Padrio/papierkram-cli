@@ -412,6 +412,13 @@ actions:
       type: integer
       format: int64
 
+  # Query parameters named *_id are integers as well; int64 keeps them
+  # consistent with the path IDs above (query IDs are filters such as
+  # company_id or project_id).
+  - target: $.paths[*].get.parameters[?@.in == 'query' && match(@.name, '.*_id')].schema
+    update:
+      format: int64
+
   # ---------------------------------------------------------------------------
   # 7. Date fields in request bodies
   # Why: plain strings without format, although the API expects YYYY-MM-DD
@@ -539,12 +546,39 @@ actions:
   # checks examples) fails. The mock server serves these examples as default
   # responses, so they also have to be consistent.
   # ---------------------------------------------------------------------------
-  # Error bodies (422) recorded under 201. The 422 responses already carry
-  # equivalent error examples, so these are only removed.
+  # Error bodies (422) recorded under 201. They carry business rules (the
+  # creditor must be a supplier; the customer of an invoice/estimate must not
+  # be a supplier), so they are moved into the 422 response's examples under
+  # a "could not be created" name instead of being dropped. Each is added to
+  # the 422 examples before it is removed from 201.
+  - target: $.paths['/expense/vouchers'].post.responses['422'].content['application/json'].examples
+    update:
+      'API v1 vouchers /expense/vouchers post Voucher could not be created validates the creditor is a supplier':
+        value:
+          type: error
+          error_type: unprocessable_entity
+          message: "Lieferant muss ein Lieferant sein"
+          correlation_id: 96addca7-dbc4-4aa1-877e-d77f62bdd658
   - target: $.paths['/expense/vouchers'].post.responses['201'].content['application/json'].examples['API v1 vouchers /expense/vouchers post Voucher created validates the creditor is a supplier']
     remove: true
+  - target: $.paths['/income/estimates'].post.responses['422'].content['application/json'].examples
+    update:
+      'API v1 estimates /income/estimates post Estimate could not be created does not allow suppliers as customer companies':
+        value:
+          type: error
+          error_type: unprocessable_entity
+          message: "Kunde muss ein Kunde sein"
+          correlation_id: e7fd2b47-ba15-4cb9-a4af-fe2cc6e27b6e
   - target: $.paths['/income/estimates'].post.responses['201'].content['application/json'].examples['API v1 estimates /income/estimates post Estimate created does not allow suppliers as customer companies']
     remove: true
+  - target: $.paths['/income/invoices'].post.responses['422'].content['application/json'].examples
+    update:
+      'API v1 invoices /income/invoices post Invoice could not be created does not allow suppliers as customer companies':
+        value:
+          type: error
+          error_type: unprocessable_entity
+          message: "Firma / Kontaktname muss ein Kunde sein"
+          correlation_id: 532f5f1a-18df-4720-8b94-814e18ed6e27
   - target: $.paths['/income/invoices'].post.responses['201'].content['application/json'].examples['API v1 invoices /income/invoices post Invoice created does not allow suppliers as customer companies']
     remove: true
   # Optional embedded objects are null when unset (examples show null for

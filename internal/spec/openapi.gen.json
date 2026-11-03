@@ -3448,6 +3448,7 @@
             "in": "query",
             "name": "bank_connection_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           }
@@ -7136,6 +7137,7 @@
             "in": "query",
             "name": "creditor_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           },
@@ -7144,6 +7146,7 @@
             "in": "query",
             "name": "project_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           },
@@ -7911,6 +7914,14 @@
                       "correlation_id": "f66d9372-0dd5-4f40-9dff-01dd30c7c769",
                       "error_type": "unprocessable_entity",
                       "message": "Das Pflichtfeld 'name' fehlt.",
+                      "type": "error"
+                    }
+                  },
+                  "API v1 vouchers /expense/vouchers post Voucher could not be created validates the creditor is a supplier": {
+                    "value": {
+                      "correlation_id": "96addca7-dbc4-4aa1-877e-d77f62bdd658",
+                      "error_type": "unprocessable_entity",
+                      "message": "Lieferant muss ein Lieferant sein",
                       "type": "error"
                     }
                   }
@@ -10035,6 +10046,7 @@
             "in": "query",
             "name": "company_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           },
@@ -10043,6 +10055,7 @@
             "in": "query",
             "name": "project_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           },
@@ -12216,6 +12229,14 @@
             "content": {
               "application/json": {
                 "examples": {
+                  "API v1 estimates /income/estimates post Estimate could not be created does not allow suppliers as customer companies": {
+                    "value": {
+                      "correlation_id": "e7fd2b47-ba15-4cb9-a4af-fe2cc6e27b6e",
+                      "error_type": "unprocessable_entity",
+                      "message": "Kunde muss ein Kunde sein",
+                      "type": "error"
+                    }
+                  },
                   "API v1 estimates /income/estimates post Estimate could not be created does not create an estimate": {
                     "value": {
                       "correlation_id": "92d47bcd-c631-4619-ae5d-6b35d3b54cb0",
@@ -14898,6 +14919,7 @@
             "in": "query",
             "name": "company_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           },
@@ -14906,6 +14928,7 @@
             "in": "query",
             "name": "project_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           },
@@ -17791,6 +17814,14 @@
             "content": {
               "application/json": {
                 "examples": {
+                  "API v1 invoices /income/invoices post Invoice could not be created does not allow suppliers as customer companies": {
+                    "value": {
+                      "correlation_id": "532f5f1a-18df-4720-8b94-814e18ed6e27",
+                      "error_type": "unprocessable_entity",
+                      "message": "Firma / Kontaktname muss ein Kunde sein",
+                      "type": "error"
+                    }
+                  },
                   "API v1 invoices /income/invoices post Invoice could not be created when attribute is invalid does not create an invoice": {
                     "value": {
                       "correlation_id": "c7563fcb-6963-478f-9261-e586aba12b9b",
@@ -21855,6 +21886,7 @@
             "in": "query",
             "name": "company_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           }
@@ -24070,6 +24102,7 @@
             "in": "query",
             "name": "project_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           },
@@ -24078,6 +24111,7 @@
             "in": "query",
             "name": "proposition_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           }
@@ -25045,6 +25079,7 @@
             "in": "query",
             "name": "project_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           },
@@ -25053,6 +25088,7 @@
             "in": "query",
             "name": "task_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           },
@@ -25061,6 +25097,7 @@
             "in": "query",
             "name": "invoice_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           },
@@ -25069,6 +25106,7 @@
             "in": "query",
             "name": "user_id",
             "schema": {
+              "format": "int64",
               "type": "integer"
             }
           },
