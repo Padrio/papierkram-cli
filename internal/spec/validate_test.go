@@ -252,6 +252,25 @@ func TestDecodeJSONBOMAndCRLF(t *testing.T) {
 	}
 }
 
+// The NUL check against UTF-16 looks at raw bytes only: an escaped \u0000
+// inside a JSON string is valid UTF-8 input and decodes to a NUL rune, next
+// to non-ASCII text.
+func TestDecodeJSONEscapedNULAndUnicode(t *testing.T) {
+	v, err := DecodeJSON(strings.NewReader(`{"a":"\u0000 Müller 😀"}`))
+	if err != nil {
+		t.Fatalf("DecodeJSON: %v", err)
+	}
+	got, _ := v.(map[string]any)["a"].(string)
+	if got != "\x00 Müller 😀" {
+		t.Errorf("a = %q, want %q", got, "\x00 Müller 😀")
+	}
+	for _, want := range []string{"\x00", "ü", "😀"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("a = %q lacks %q", got, want)
+		}
+	}
+}
+
 func TestDecodeJSONRejectsOtherEncodings(t *testing.T) {
 	tests := map[string]string{
 		// "Müller" in Windows-1252: ü is the single byte 0xFC.
