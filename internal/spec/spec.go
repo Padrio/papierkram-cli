@@ -75,6 +75,12 @@ func load() {
 				byShape[key] = append(byShape[key], t)
 			}
 		}
+		// byShape was filled in map order. Sort the candidates by template path so
+		// MatchPath breaks ties between equal literal counts deterministically
+		// (the first, i.e. lexically smallest template, wins).
+		for _, ts := range byShape {
+			sort.Slice(ts, func(i, j int) bool { return ts[i].op.Path < ts[j].op.Path })
+		}
 		sort.Slice(ops, func(i, j int) bool {
 			if ops[i].Path != ops[j].Path {
 				return ops[i].Path < ops[j].Path
@@ -106,7 +112,8 @@ func OperationByID(id string) (Operation, bool) {
 // /api/v1, a query string and a trailing slash are ignored. The returned IDs
 // are the path parameters in template order. A parameter segment that is not a
 // non-negative integer never matches. Where a literal and a parameter segment
-// both fit, the template with more literal segments wins.
+// both fit, the template with more literal segments wins; on a tie the
+// lexically smallest template path wins.
 func MatchPath(method, concretePath string) (Operation, []int64, bool) {
 	load()
 	p, _, _ := strings.Cut(concretePath, "?")

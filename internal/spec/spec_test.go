@@ -148,3 +148,14 @@ func TestQueryParams(t *testing.T) {
 
 func splitPath(p string) []string { return strings.Split(strings.Trim(p, "/"), "/") }
 func joinPath(s []string) string  { return strings.Join(s, "/") }
+
+func TestMatchPathCandidatesSorted(t *testing.T) {
+	load()
+	for key, ts := range byShape {
+		for i := 1; i < len(ts); i++ {
+			if ts[i-1].op.Path > ts[i].op.Path {
+				t.Errorf("%s: candidates not sorted by path: %s before %s", key, ts[i-1].op.Path, ts[i].op.Path)
+			}
+		}
+	}
+}
