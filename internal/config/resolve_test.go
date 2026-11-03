@@ -310,3 +310,31 @@ func TestResolvedTokenNotSerialized(t *testing.T) {
 		}
 	}
 }
+
+// SelectContext is the selection step of Resolve, usable without the
+// context having to exist (auth login creates it).
+func TestSelectContext(t *testing.T) {
+	c := &Config{ActiveContext: "active"}
+	tests := []struct {
+		flag, proj   string
+		env          map[string]string
+		wantCtx, src string
+	}{
+		{"f", "p", map[string]string{"PAPIERKRAM_CONTEXT": "e"}, "f", SourceFlag},
+		{"", "p", map[string]string{"PAPIERKRAM_CONTEXT": "e"}, "e", SourceEnv},
+		{"", "p", nil, "p", SourceProjectFile},
+		{"", "", nil, "active", SourceConfig},
+	}
+	for _, tt := range tests {
+		name, src := SelectContext(c, ResolveInput{FlagContext: tt.flag, ProjectContext: tt.proj, Env: env(tt.env)})
+		if name != tt.wantCtx || src != tt.src {
+			t.Errorf("%+v: got %q/%q, want %q/%q", tt, name, src, tt.wantCtx, tt.src)
+		}
+	}
+	if name, src := SelectContext(&Config{}, ResolveInput{}); name != "" || src != "" {
+		t.Errorf("empty: got %q/%q", name, src)
+	}
+	if name, _ := SelectContext(nil, ResolveInput{}); name != "" {
+		t.Errorf("nil config: got %q", name)
+	}
+}

@@ -66,6 +66,27 @@ func (r Resolved) GoString() string { return r.String() }
 // Format makes every fmt verb (%v, %+v, %#v, %s, %d, ...) use the masked form.
 func (r Resolved) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, r.String()) }
 
+// SelectContext returns the selected context name and its source
+// (flag > PAPIERKRAM_CONTEXT > project file > active_context), or "", "".
+// The context need not exist; Resolve and auth login share this order.
+func SelectContext(c *Config, in ResolveInput) (name, source string) {
+	getenv := in.Env
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	switch {
+	case in.FlagContext != "":
+		return in.FlagContext, SourceFlag
+	case getenv("PAPIERKRAM_CONTEXT") != "":
+		return getenv("PAPIERKRAM_CONTEXT"), SourceEnv
+	case in.ProjectContext != "":
+		return in.ProjectContext, SourceProjectFile
+	case c != nil && c.ActiveContext != "":
+		return c.ActiveContext, SourceConfig
+	}
+	return "", ""
+}
+
 // Resolve applies the resolution order (spec 10.1, 8.3):
 // context: flag > PAPIERKRAM_CONTEXT > project file > active_context;
 // token: PAPIERKRAM_TOKEN > keychain > token in config (no token is not an
@@ -81,17 +102,7 @@ func Resolve(c *Config, in ResolveInput) (*Resolved, error) {
 		getenv = func(string) string { return "" }
 	}
 	r := &Resolved{Timeout: defaultTimeout, CompletionLookup: true}
-
-	switch {
-	case in.FlagContext != "":
-		r.Context, r.ContextSource = in.FlagContext, SourceFlag
-	case getenv("PAPIERKRAM_CONTEXT") != "":
-		r.Context, r.ContextSource = getenv("PAPIERKRAM_CONTEXT"), SourceEnv
-	case in.ProjectContext != "":
-		r.Context, r.ContextSource = in.ProjectContext, SourceProjectFile
-	case c.ActiveContext != "":
-		r.Context, r.ContextSource = c.ActiveContext, SourceConfig
-	}
+	r.Context, r.ContextSource = SelectContext(c, in)
 
 	// Direct mode (PAPIERKRAM_TOKEN plus subdomain or base URL) needs no
 	// context: an unknown context that was only picked implicitly (project
@@ -158,7 +169,11 @@ func Resolve(c *Config, in ResolveInput) (*Resolved, error) {
 			case err == nil, errors.Is(err, auth.ErrNotFound), errors.Is(err, auth.ErrUnavailable):
 				// fall through to the config token
 			default:
-				return nil, fmt.Errorf("config: Token für Kontext %q lesen: %w", r.Context, err)
+				e := clierr.New(clierr.CodeError,
+					fmt.Sprintf("Token für Kontext %q konnte nicht aus dem Schlüsselbund gelesen werden: %v", r.Context, err),
+					"Schlüsselbund des Betriebssystems prüfen (Dienst papierkram-cli)")
+				e.Cause = err
+				return nil, e
 			}
 		}
 		if r.Token == "" && ctx.Token != "" {

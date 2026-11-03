@@ -28,6 +28,9 @@ func newTestApp(t *testing.T) (*App, *bytes.Buffer, *bytes.Buffer) {
 	app.ConfigDir = t.TempDir()
 	app.CacheDir = t.TempDir()
 	app.Keyring = auth.NewMemory()
+	cwd := t.TempDir()
+	app.Getwd = func() (string, error) { return cwd, nil }
+	app.ReadPassword = func() ([]byte, error) { return nil, errors.New("kein Terminal im Test") }
 	app.StdinTTY = false
 	app.StdoutTTY = false
 	return app, out, errb

@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/auth"
 )
 
@@ -45,9 +46,19 @@ type App struct {
 	HTTPClient *http.Client
 	// Keyring stores the API tokens per context (tests use auth.NewMemory()).
 	Keyring auth.Store
+	// Getwd returns the working directory, the start of the project file
+	// search.
+	Getwd func() (string, error)
+	// ReadPassword reads a line from the terminal without echo (auth login).
+	ReadPassword func() ([]byte, error)
 
 	// Flags receives the parsed global flag values.
 	Flags Flags
+
+	// quota is the last quota state reported by the API in this invocation;
+	// quotaWarned records that the low-quota warning was printed.
+	quota       api.Quota
+	quotaWarned bool
 }
 
 // NewApp creates an App wired to the operating system.
@@ -63,6 +74,10 @@ func NewApp() *App {
 		StdoutTTY:  term.IsTerminal(int(os.Stdout.Fd())),
 		HTTPClient: http.DefaultClient,
 		Keyring:    auth.Keyring(),
+		Getwd:      os.Getwd,
+		ReadPassword: func() ([]byte, error) {
+			return term.ReadPassword(int(os.Stdin.Fd()))
+		},
 	}
 	if dir, err := os.UserConfigDir(); err == nil {
 		// config.Path appends "papierkram/config.toml" itself.

@@ -143,7 +143,7 @@ func NewRootCmd(app *App) *cobra.Command {
 	f.StringVar(&fl.Fields, "fields", "", "Felder der Ausgabe, kommagetrennt")
 	f.StringVar(&fl.JQ, "jq", "", "jq-Ausdruck auf die Ausgabe anwenden")
 	f.BoolVar(&fl.Debug, "debug", false, "HTTP-Debug-Ausgabe auf stderr (ohne Token)")
-	f.DurationVar(&fl.Timeout, "timeout", 30*time.Second, "Zeitlimit je Anfrage")
+	f.DurationVar(&fl.Timeout, "timeout", 30*time.Second, "Zeitlimit je Anfrage, pro Versuch; GET wird bis zu zweimal wiederholt")
 	f.BoolVar(&fl.NoInput, "no-input", false, "keine interaktiven Rückfragen")
 	f.BoolVarP(&fl.Yes, "yes", "y", false, "Bestätigungen automatisch bejahen")
 	f.BoolVar(&fl.DryRun, "dry-run", false, "Mutation nur anzeigen, nicht senden")
