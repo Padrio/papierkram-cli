@@ -264,7 +264,8 @@ func (a *App) readLoginToken(ctx context.Context, fromStdin bool, name string) (
 	var raw []byte
 	var err error
 	if fromStdin {
-		raw, err = a.readCtx(ctx, func() ([]byte, error) { return io.ReadAll(io.LimitReader(a.In, maxTokenInput)) })
+		in := a.stdin()
+		raw, err = a.readCtx(ctx, func() ([]byte, error) { return io.ReadAll(io.LimitReader(in, maxTokenInput)) })
 	} else {
 		_, _ = fmt.Fprintf(a.Err, "Token für Kontext %q (Eingabe verdeckt): ", name)
 		raw, err = a.readCtx(ctx, a.ReadPassword)

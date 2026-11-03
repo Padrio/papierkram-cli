@@ -113,7 +113,7 @@ func TestActionWithBodyRendersAPIObject(t *testing.T) {
 func TestDeleteOutputsDeletedObject(t *testing.T) {
 	del := specEntry(t, "DeleteCompany", "company", "delete", registry.ClassDestructive)
 	app, srv := apiApp(t)
-	wantExit(t, app, runEntries(t, app, nil, []string{"company", "delete", "0", "-o", "json"}, del), 0)
+	wantExit(t, app, runEntries(t, app, nil, []string{"company", "delete", "0", "-o", "json", "--yes"}, del), 0)
 	reqs := wantRequests(t, srv, 1)
 	if reqs[0].Method != "DELETE" || reqs[0].Path != "/contact/companies/0" {
 		t.Errorf("request = %s %s", reqs[0].Method, reqs[0].Path)
@@ -123,7 +123,7 @@ func TestDeleteOutputsDeletedObject(t *testing.T) {
 	}
 
 	app, _ = apiApp(t)
-	wantExit(t, app, runEntries(t, app, nil, []string{"company", "delete", "7"}, del), 0)
+	wantExit(t, app, runEntries(t, app, nil, []string{"company", "delete", "7", "--yes"}, del), 0)
 	if out, _ := bufs(app); out != "company 7 gelöscht.\n" {
 		t.Errorf("stdout = %q", out)
 	}
@@ -669,7 +669,7 @@ func TestPathParamFlags(t *testing.T) {
 	}
 
 	app, srv = apiApp(t)
-	wantExit(t, app, runEntries(t, app, nil, []string{"person", "delete", "5", "--company", "7", "-o", "json"}, get, list, del), 0)
+	wantExit(t, app, runEntries(t, app, nil, []string{"person", "delete", "5", "--company", "7", "-o", "json", "--yes"}, get, list, del), 0)
 	if r := wantRequests(t, srv, 1)[0]; r.Method != "DELETE" || r.Path != "/contact/companies/7/persons/5" {
 		t.Errorf("request = %s %s", r.Method, r.Path)
 	}

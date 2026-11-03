@@ -1,9 +1,15 @@
 package cli
 
 import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+
+	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
+	"github.com/Padrio/papierkram-cli/internal/registry"
 )
 
 // annotWritesConfig marks commands that write config.toml, the keychain or
@@ -43,4 +49,66 @@ func (a *App) warnReadOnlyEnv() {
 	if w := config.EnvReadOnlyWarning(a.Env); w != "" {
 		output.Warn(a.Err, w)
 	}
+}
+
+// annotClass carries the action class (registry.Class) of a registry
+// command; checkDryRun reads it.
+const annotClass = "pk:class"
+
+// checkDryRun runs in the root PersistentPreRunE, before configuration and
+// requests (exit 2): --dry-run is only meaningful for API mutations. A
+// registry command of class read_only rejects it, and so does a command
+// that writes the configuration (it has no dry run and would write).
+// Commands without a class (meta commands such as version) ignore it.
+func (a *App) checkDryRun(c *cobra.Command) error {
+	if !a.Flags.DryRun {
+		return nil
+	}
+	switch {
+	case c.Annotations[annotWritesConfig] == "true":
+		return clierr.New(clierr.CodeUsage, "--dry-run wird von diesem Befehl nicht unterstützt",
+			"Der Befehl ändert die lokale Konfiguration; ohne --dry-run ausführen")
+	case c.Annotations[annotClass] == string(registry.ClassReadOnly):
+		return clierr.New(clierr.CodeUsage, "--dry-run gilt nur für ändernde Befehle",
+			"Dieser Befehl liest nur; ohne --dry-run ausführen. Verwendung: "+useLine(c))
+	}
+	return nil
+}
+
+// guardMutation is the read-only gate of every mutating command (spec 8.3,
+// exit 9): every class but read_only is blocked when PAPIERKRAM_READ_ONLY
+// is on, whatever context is chosen (R35), or when the chosen context has
+// read_only = true. The environment is checked through the shared
+// predicate as well, so the gate stays closed even without a resolution.
+func (a *App) guardMutation(e registry.Entry, r *config.Resolved) error {
+	if e.Class == registry.ClassReadOnly {
+		return nil
+	}
+	switch {
+	case config.EnvReadOnly(a.Env) || (r != nil && r.ReadOnly && r.ReadOnlySource == config.SourceEnv):
+		return clierr.New(clierr.CodeReadOnly,
+			"Schreibschutz aktiv (PAPIERKRAM_READ_ONLY) – Schreibzugriffe sind gesperrt",
+			"Die Variable setzt, wer diesen Prozess startet; sie lässt sich nicht aufheben.")
+	case r != nil && r.ReadOnly:
+		return clierr.New(clierr.CodeReadOnly,
+			fmt.Sprintf("Kontext %q ist schreibgeschützt (read_only = true)", r.Context),
+			"anderen Kontext mit --context wählen")
+	}
+	return nil
+}
+
+// mutationClient is Client for mutating commands: it resolves the
+// configuration, applies guardMutation and only then builds the client
+// (plan order: read-only lock before the body is read and independent of
+// the token). The resolution and client construction are those of Client.
+func (a *App) mutationClient(e registry.Entry) (*api.Client, *config.Resolved, error) {
+	r, err := a.resolveConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := a.guardMutation(e, r); err != nil {
+		return nil, nil, err
+	}
+	c, err := a.clientFor(r)
+	return c, r, err
 }

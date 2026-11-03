@@ -52,10 +52,12 @@ type Entry struct {
 }
 
 // Resource is a top-level command noun with its German aliases (spec 7.1).
+// Noun is the German singular shown in confirmation prompts ("Rechnung").
 type Resource struct {
 	Name    string
 	Aliases []string
 	Short   string
+	Noun    string
 }
 
 // Resources returns all resources in the order of spec 7.1.

@@ -295,7 +295,7 @@ func openJSONFile(flag, path string) (*os.File, error) {
 func (a *App) lineItems(c *cobra.Command, ws writeSpec, resp *openapi3.Schema) ([]any, []string, error) {
 	key := itemsKey(ws)
 	if c.Flags().Changed("items") {
-		raw, err := LoadItems(flagString(c, "items"), a.In)
+		raw, err := LoadItems(flagString(c, "items"), a.stdin())
 		if err != nil {
 			return nil, nil, err
 		}

@@ -179,6 +179,41 @@ func TestCallBodyOperationWithoutBody(t *testing.T) {
 	}
 }
 
+// Preview builds method and URL exactly like Call sends them, query
+// included, without sending anything (--dry-run).
+func TestPreviewMatchesCall(t *testing.T) {
+	rec := &recorder{}
+	srv := httptest.NewServer(rec)
+	defer srv.Close()
+	c := New(Options{BaseURL: srv.URL + "/api/v1", Token: testToken})
+	q := url.Values{"search": {"Müller & Söhne"}, "page": {"2"}}
+
+	method, u, err := c.Preview("ListPersons", []int64{7}, q)
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if len(rec.reqs) != 0 {
+		t.Fatalf("Preview hat gesendet: %+v", rec.reqs)
+	}
+	want := srv.URL + "/api/v1/contact/companies/7/persons?page=2&search=M%C3%BCller+%26+S%C3%B6hne"
+	if method != http.MethodGet || u != want {
+		t.Errorf("Preview = %s %s, erwartet GET %s", method, u, want)
+	}
+	if _, err := c.Call(context.Background(), "ListPersons", []int64{7}, q, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.last(t); srv.URL+got.Path+"?"+got.RawQuery != u {
+		t.Errorf("Call sendet %s?%s, Preview zeigt %s", got.Path, got.RawQuery, u)
+	}
+
+	if method, u, err = c.Preview("DeleteInvoice", []int64{12}, nil); err != nil || method != http.MethodDelete || u != srv.URL+"/api/v1/income/invoices/12" {
+		t.Errorf("Preview = %s %s, %v", method, u, err)
+	}
+	if _, _, err := c.Preview("NoSuchOp", nil, nil); !errors.Is(err, gen.ErrUnknownOperation) {
+		t.Errorf("unknown op: err = %v", err)
+	}
+}
+
 func TestCallBuildErrors(t *testing.T) {
 	c := New(Options{BaseURL: "http://127.0.0.1:1/api/v1", Token: testToken})
 	ctx := context.Background()

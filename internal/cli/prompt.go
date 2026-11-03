@@ -43,13 +43,29 @@ func (a *App) readCtx(ctx context.Context, read func() ([]byte, error)) ([]byte,
 	}
 }
 
+// stdin returns the one buffered reader over a.In that every stdin
+// consumer of this invocation shares (prompts, --input -, --items -,
+// --token-stdin): a reader per call would buffer ahead and lose the input
+// of the next prompt on piped stdin.
+func (a *App) stdin() *bufio.Reader {
+	if a.stdinBuf == nil {
+		in := a.In
+		if in == nil {
+			in = strings.NewReader("")
+		}
+		a.stdinBuf = bufio.NewReader(in)
+	}
+	return a.stdinBuf
+}
+
 // prompt writes question to stderr and reads one line of input (without
 // the line ending). An interrupt ends it with errInterrupted (exit 10);
 // end of input or a read error count as an empty answer.
 func (a *App) prompt(ctx context.Context, question string) (string, error) {
 	_, _ = fmt.Fprint(a.Err, question)
+	r := a.stdin()
 	line, err := a.readCtx(ctx, func() ([]byte, error) {
-		s, _ := bufio.NewReader(a.In).ReadString('\n')
+		s, _ := r.ReadString('\n')
 		return []byte(s), nil
 	})
 	if err != nil {

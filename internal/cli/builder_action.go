@@ -40,7 +40,9 @@ func (a *App) runDescribe(c *cobra.Command, e registry.Entry, args []string) err
 }
 
 // runSimpleAction sends delete, archive, unarchive, cancel or reverse for
-// one object. delete prints {"id":N,"deleted":true}; another action prints
+// one object. Order: arguments (exit 2), configuration and read-only gate
+// (mutationClient, exit 9), --dry-run and confirmation (beforeMutation),
+// then the request. delete prints {"id":N,"deleted":true}; another action prints
 // the API object, or {"id":N,"ok":true} when the body is empty (R03: an
 // empty 2xx body is never an error). Without --fields, table and wide show
 // a German sentence instead.
@@ -49,11 +51,11 @@ func (a *App) runSimpleAction(c *cobra.Command, e registry.Entry, args []string)
 	if err != nil {
 		return err
 	}
-	client, r, err := a.Client(c)
+	client, r, err := a.mutationClient(e)
 	if err != nil {
 		return err
 	}
-	if err := a.beforeMutation(c, e, r, params, nil); err != nil {
+	if proceed, err := a.beforeMutation(c, e, client, params, nil); !proceed || err != nil {
 		return err
 	}
 	resp, err := client.Call(c.Context(), e.OperationID, params, nil, nil)

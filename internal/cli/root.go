@@ -131,6 +131,9 @@ func NewRootCmd(app *App) *cobra.Command {
 			if err := app.checkGlobalFlags(c); err != nil {
 				return err
 			}
+			if err := app.checkDryRun(c); err != nil {
+				return err
+			}
 			app.warnReadOnlyEnv()
 			if c.Annotations[annotWritesConfig] == "true" {
 				return app.guardConfigWrite()

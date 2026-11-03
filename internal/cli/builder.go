@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
-	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 )
@@ -77,10 +77,11 @@ var simpleActions = map[string]string{
 func (a *App) newEntryCmd(e registry.Entry) *cobra.Command {
 	params := pathParamsOf(e)
 	cmd := &cobra.Command{
-		Use:     e.Action,
-		Short:   e.Short,
-		Long:    entryLong(e),
-		Example: entryExample(e),
+		Use:         e.Action,
+		Short:       e.Short,
+		Long:        entryLong(e),
+		Example:     entryExample(e),
+		Annotations: map[string]string{annotClass: string(e.Class)},
 	}
 	if e.Action == "" {
 		cmd.Use = e.Resource
@@ -223,10 +224,45 @@ func afterRequest(err error) error {
 }
 
 // beforeMutation is the single hook every mutating builder path calls
-// after the arguments are checked and the configuration is resolved, right
-// before the request is sent; body is the finished request body (nil for
-// actions without one). The protection rules of spec 8 (read-only lock,
-// --dry-run, confirmation; Task 24) go here. It does nothing yet.
-func (a *App) beforeMutation(_ *cobra.Command, _ registry.Entry, _ *config.Resolved, _ []int64, _ map[string]any) error {
-	return nil
+// after the body is built and validated, right before sending (plan order
+// steps 4 and 5). It repeats the read-only gate (step 2, which ran in
+// mutationClient before the body was read) so no path sends without it.
+// With --dry-run it prints the request and returns false: nothing is sent,
+// exit 0, no confirmation. Destructive and send classes then need the
+// confirmation (exit 8); the summary GET runs only when a prompt follows.
+// body is the request body, nil for actions without one. proceed reports
+// whether the caller sends the request.
+func (a *App) beforeMutation(c *cobra.Command, e registry.Entry, client *api.Client, params []int64, body map[string]any) (proceed bool, err error) {
+	if err := a.guardMutation(e, a.resolved); err != nil {
+		return false, err
+	}
+	if a.Flags.DryRun {
+		method, url, err := client.Preview(e.OperationID, params, nil)
+		if err != nil {
+			return false, err
+		}
+		var b any
+		if body != nil {
+			b = body
+		}
+		return false, a.dryRun(c.Context(), e, method, url, b, nil)
+	}
+	if !confirmed(e) {
+		return true, nil
+	}
+	ask, err := a.mustAsk(e, Summary{Resource: resourceNoun(e.Resource), ID: lastID(params)})
+	if err != nil {
+		return false, err
+	}
+	if !ask {
+		return true, nil
+	}
+	s, err := a.fetchSummary(c.Context(), client, e, params)
+	if err != nil {
+		return false, err
+	}
+	if err := a.confirm(c.Context(), e, s); err != nil {
+		return false, err
+	}
+	return true, nil
 }

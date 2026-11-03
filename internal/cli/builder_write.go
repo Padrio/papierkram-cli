@@ -154,9 +154,10 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 	}
 }
 
-// runWrite sends create or update (spec 6, 6.3a). Order: arguments and flag
-// combinations (exit 2), configuration, body (buildBody: exit 2/5), the
-// mutation hook, then the request. Output is the API object; an empty
+// runWrite sends create or update (spec 6, 6.3a). Order (plan): arguments
+// and flag combinations (exit 2), configuration and read-only gate
+// (mutationClient, exit 9, before anything is read), body (buildBody:
+// exit 2/5), --dry-run and confirmation (beforeMutation), then the request. Output is the API object; an empty
 // response prints {"id":N,"ok":true} on update and {"ok":true} with a
 // warning on create.
 func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error {
@@ -172,7 +173,7 @@ func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error 
 	if err := checkWriteFlags(c, ws, isUpdate); err != nil {
 		return err
 	}
-	client, r, err := a.Client(c)
+	client, r, err := a.mutationClient(e)
 	if err != nil {
 		return err
 	}
@@ -180,7 +181,7 @@ func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error 
 	if err != nil {
 		return err
 	}
-	if err := a.beforeMutation(c, e, r, params, body); err != nil {
+	if proceed, err := a.beforeMutation(c, e, client, params, body); !proceed || err != nil {
 		return err
 	}
 	resp, err := client.Call(c.Context(), e.OperationID, params, nil, body)
@@ -396,7 +397,7 @@ func rawText(c *cobra.Command, flag string) string {
 
 // readInput reads the --input body: a JSON object from a file or stdin.
 func (a *App) readInput(path string) (map[string]any, error) {
-	v, err := readJSON("--input", path, a.In)
+	v, err := readJSON("--input", path, a.stdin())
 	if err != nil {
 		return nil, err
 	}

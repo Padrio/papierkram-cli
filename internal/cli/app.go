@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"bufio"
 	"io"
 	"net/http"
 	"os"
@@ -71,6 +72,9 @@ type App struct {
 	// calls it when an interrupt ends a hidden token read (nil: no
 	// terminal).
 	restoreTerminal func()
+
+	// stdinBuf is the shared buffered reader over In (see stdin).
+	stdinBuf *bufio.Reader
 
 	// resolved is the configuration resolved in this invocation (nil until
 	// then); execute uses its output format for the error output.

@@ -316,6 +316,9 @@ func TestResources(t *testing.T) {
 		if r.Short == "" {
 			t.Errorf("%s: no short help", r.Name)
 		}
+		if r.Noun == "" {
+			t.Errorf("%s: no German noun for confirmations", r.Name)
+		}
 	}
 	if err := checkResources(rs); err != nil {
 		t.Fatal(err)

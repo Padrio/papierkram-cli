@@ -160,6 +160,17 @@ func (c *Client) Upload(ctx context.Context, opID string, pathParams []int64, fi
 // quoteEscaper escapes multipart header parameters like mime/multipart does.
 var quoteEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 
+// Preview returns the method and the full URL (query included) that Call
+// would send for opID, built with the same generated builder and base URL
+// as callOp, without sending anything (--dry-run).
+func (c *Client) Preview(opID string, pathParams []int64, query url.Values) (method, rawURL string, err error) {
+	req, err := gen.BuildRequest(opID, c.opts.BaseURL, pathParams, query, "", nil)
+	if err != nil {
+		return "", "", fmt.Errorf("api: Anfrage für %s kann nicht gebaut werden: %w", opID, err)
+	}
+	return req.Method, req.URL.String(), nil
+}
+
 // callOp builds opID with the generated builder and sends it. body must be
 // an untyped nil when there is no body.
 func (c *Client) callOp(ctx context.Context, opID string, pathParams []int64, query url.Values, contentType string, body io.Reader) (*Response, error) {
