@@ -56,7 +56,12 @@ func (c *Client) debugRequest(req *http.Request, attempt int) {
 		case req.GetBody == nil:
 			fmt.Fprintf(&b, "> <nicht protokolliert, %s>\n", sizeText(req.ContentLength))
 		default:
-			c.writeBody(&b, "> ", "", readCopy(req))
+			data, err := readCopy(req)
+			if err != nil {
+				fmt.Fprintf(&b, "> <nicht lesbar: %v>\n", err)
+				break
+			}
+			c.writeBody(&b, "> ", req.Header.Get("Content-Type"), data)
 		}
 	}
 	c.debugWrite(b.String())
@@ -74,6 +79,11 @@ func (c *Client) debugResponse(hr *http.Response, data []byte, q Quota, d time.D
 		status += " " + text
 	}
 	fmt.Fprintf(&b, "< %s (%dms)\n", status, d.Milliseconds())
+	for _, k := range debugResponseHeaders {
+		if v := hr.Header.Get(k); v != "" {
+			fmt.Fprintf(&b, "< %s: %s\n", k, v)
+		}
+	}
 	if q.Known {
 		fmt.Fprintf(&b, "< X-Remaining-Quota: %d\n", q.Remaining)
 		if hr.Header.Get("X-Consumed-Quota") != "" {
@@ -95,18 +105,23 @@ func (c *Client) debugError(err error, d time.Duration) {
 	c.debugWrite(fmt.Sprintf("< Fehler: %v (%dms)\n", err, d.Milliseconds()))
 }
 
-// writeBody appends data line by line: binary content (by Content-Type or
-// invalid UTF-8) only as its size, text cut to debugBodyLimit bytes.
+// debugResponseHeaders are the response headers --debug shows besides
+// status and quota; the rest is left out to keep the log compact.
+var debugResponseHeaders = []string{"Content-Type", "Retry-After"}
+
+// writeBody appends data line by line: binary content types only as their
+// size, everything else as text cut to debugBodyLimit bytes. Invalid UTF-8
+// (e.g. a Latin-1 proxy error page) is shown with replacement characters.
 func (c *Client) writeBody(b *strings.Builder, prefix, contentType string, data []byte) {
 	if len(data) == 0 {
 		return
 	}
-	if isBinaryType(contentType) || !utf8.Valid(data) {
+	if isBinaryType(contentType) {
 		fmt.Fprintf(b, "%s<binär, %d Bytes>\n", prefix, len(data))
 		return
 	}
 	// Redact before cutting, so a cut cannot leave half a token behind.
-	s := c.redact(string(data))
+	s := c.redact(strings.ToValidUTF8(string(data), "\uFFFD"))
 	marker := ""
 	if len(s) > debugBodyLimit {
 		cut := debugBodyLimit
@@ -143,22 +158,23 @@ func (c *Client) redact(s string) string {
 
 // readCopy reads the request body from a fresh GetBody reader; the body
 // that is sent stays untouched.
-func readCopy(req *http.Request) []byte {
+func readCopy(req *http.Request) ([]byte, error) {
 	rc, err := req.GetBody()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer func() { _ = rc.Close() }()
-	data, _ := io.ReadAll(rc)
-	return data
+	return io.ReadAll(rc)
 }
 
 // isBinaryType reports whether a body of this Content-Type is only logged
-// by size: uploads (multipart/form-data) and PDFs.
+// by size: uploads (multipart/*), PDFs, images and octet streams. Text,
+// JSON and missing or unknown types are logged as text.
 func isBinaryType(contentType string) bool {
 	mt, _, _ := strings.Cut(contentType, ";")
 	mt = strings.ToLower(strings.TrimSpace(mt))
-	return mt == "multipart/form-data" || mt == "application/pdf"
+	return strings.HasPrefix(mt, "multipart/") || strings.HasPrefix(mt, "image/") ||
+		mt == "application/pdf" || mt == "application/octet-stream"
 }
 
 func sizeText(n int64) string {

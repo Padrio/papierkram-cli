@@ -3,13 +3,17 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
+	"time"
 )
 
 // debugClient returns a client whose debug log goes to the returned buffer.
@@ -145,8 +149,8 @@ func TestDebugPDFResponseSizeOnly(t *testing.T) {
 	}
 }
 
-// Non-UTF-8 bodies (e.g. an image download) are binary whatever the type.
-func TestDebugInvalidUTF8SizeOnly(t *testing.T) {
+// Image downloads (e.g. a voucher document) are binary by Content-Type.
+func TestDebugImageResponseSizeOnly(t *testing.T) {
 	rec := &recorder{header: map[string]string{"Content-Type": "image/jpeg"}, body: "\xff\xd8\xff\xe0"}
 	c, buf := debugClient(t, rec, nil)
 	if _, err := c.CallRaw(context.Background(), http.MethodGet, "/expense/vouchers/3/documents/1", nil, "", nil); err != nil {
@@ -251,5 +255,139 @@ func TestDebugUnreplayableBodyNotRead(t *testing.T) {
 	}
 	if want := "> <nicht protokolliert, Größe unbekannt>\n"; !strings.Contains(buf.String(), want) {
 		t.Errorf("debug output lacks %q:\n%s", want, buf)
+	}
+}
+
+// The token is also removed from Go's transport error text, which quotes
+// the full URL including the query.
+func TestDebugRedactsTokenInTransportError(t *testing.T) {
+	const token = "test-token-err"
+	srv, _ := closingServer(t, 1)
+	var buf bytes.Buffer
+	c := New(Options{BaseURL: srv.URL + "/api/v1", Token: token, Debug: &buf})
+
+	if _, err := c.CallRaw(context.Background(), http.MethodPost, "/income/invoices?api_key="+token, nil, "", nil); err == nil {
+		t.Fatal("expected an error")
+	}
+	out := buf.String()
+	if strings.Contains(out, "test-token-") {
+		t.Fatalf("debug output contains the token:\n%s", out)
+	}
+	if !regexp.MustCompile(`(?m)^< Fehler: .*api_key=\*\*\*.* \(\d+ms\)$`).MatchString(out) {
+		t.Errorf("no redacted error line:\n%s", out)
+	}
+}
+
+// A token with characters that change under URL encoding is removed both
+// in its encoded form (query) and literally (bodies).
+func TestDebugRedactsURLEncodedToken(t *testing.T) {
+	const token = "test-token-a+b/c"
+	rec := &recorder{header: map[string]string{"Content-Type": "application/json"}, body: `{"echo":"` + token + `"}`}
+	c, buf := debugClient(t, rec, func(o *Options) { o.Token = token })
+
+	if _, err := c.CallRaw(context.Background(), http.MethodPost, "/income/invoices", url.Values{"api_key": {token}},
+		"application/json", strings.NewReader(`{"note":"`+token+`"}`)); err != nil {
+		t.Fatalf("CallRaw: %v", err)
+	}
+	if got := rec.last(t).RawQuery; got != "api_key=test-token-a%2Bb%2Fc" {
+		t.Fatalf("query = %q, want the encoded token", got)
+	}
+	out := buf.String()
+	if strings.Contains(out, "test-token-") {
+		t.Fatalf("debug output contains the token:\n%s", out)
+	}
+	for _, want := range []string{"/api/v1/income/invoices?api_key=***\n", `> {"note":"***"}`, `< {"echo":"***"}`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("debug output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+// A request body that cannot be copied for the log says so instead of
+// looking like an empty body; the error text is redacted as well.
+func TestDebugUnreadableRequestBody(t *testing.T) {
+	tests := map[string]func() (io.ReadCloser, error){
+		"GetBody fails": func() (io.ReadCloser, error) { return nil, errors.New("kaputt " + testToken) },
+		"read fails": func() (io.ReadCloser, error) {
+			return io.NopCloser(iotest.ErrReader(errors.New("kaputt " + testToken))), nil
+		},
+	}
+	for name, getBody := range tests {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			c := New(Options{BaseURL: "http://x/api/v1", Token: testToken, Debug: &buf})
+			req, err := http.NewRequest(http.MethodPost, "http://x/api/v1/income/invoices", strings.NewReader("{}"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.GetBody = getBody
+			c.debugRequest(req, 0)
+			if want := "> <nicht lesbar: kaputt ***>\n"; !strings.Contains(buf.String(), want) {
+				t.Errorf("debug output lacks %q:\n%s", want, buf.String())
+			}
+		})
+	}
+}
+
+// A Latin-1 error page from a proxy is shown as text, not hidden as binary.
+func TestDebugLatin1ErrorBodyAsText(t *testing.T) {
+	rec := &recorder{
+		status: http.StatusBadGateway,
+		header: map[string]string{"Content-Type": "text/html; charset=iso-8859-1"},
+		body:   "<h1>Gateway-Fehler f\xfcr Proxy</h1>",
+	}
+	c, buf := debugClient(t, rec, func(o *Options) { o.Sleep = func(time.Duration) {} })
+	if _, err := c.CallRaw(context.Background(), http.MethodGet, "/income/invoices", nil, "", nil); err == nil {
+		t.Fatal("expected an error")
+	}
+	out := buf.String()
+	if want := "< <h1>Gateway-Fehler f\uFFFDr Proxy</h1>\n"; !strings.Contains(out, want) {
+		t.Errorf("debug output lacks %q:\n%s", want, out)
+	}
+	if strings.Contains(out, "<binär") {
+		t.Errorf("text error body shown as binary:\n%s", out)
+	}
+}
+
+func TestDebugBodyClassification(t *testing.T) {
+	tests := []struct{ contentType, data, want string }{
+		{"", "abc\xff", "< abc\uFFFD\n"},
+		{"application/x-unknown", "abc", "< abc\n"},
+		{"application/json; charset=utf-8", `{"a":1}`, "< {\"a\":1}\n"},
+		{"text/plain", "hallo", "< hallo\n"},
+		{"application/pdf", "%PDF", "< <binär, 4 Bytes>\n"},
+		{"multipart/mixed; boundary=x", "abcd", "< <binär, 4 Bytes>\n"},
+		{"image/png", "abcd", "< <binär, 4 Bytes>\n"},
+		{"Application/Octet-Stream", "abcd", "< <binär, 4 Bytes>\n"},
+	}
+	c := New(Options{BaseURL: "http://x/api/v1", Token: testToken})
+	for _, tt := range tests {
+		var b strings.Builder
+		c.writeBody(&b, "< ", tt.contentType, []byte(tt.data))
+		if b.String() != tt.want {
+			t.Errorf("%q: got %q, want %q", tt.contentType, b.String(), tt.want)
+		}
+	}
+}
+
+func TestDebugResponseHeaderLines(t *testing.T) {
+	rec := &recorder{
+		status: http.StatusTooManyRequests,
+		header: map[string]string{"Content-Type": "application/json", "Retry-After": "3600", "Set-Cookie": "s=1"},
+		body:   `{"type":"error"}`,
+	}
+	c, buf := debugClient(t, rec, nil)
+	if _, err := c.Call(context.Background(), "ListInvoices", nil, nil, nil); err == nil {
+		t.Fatal("expected an error")
+	}
+	out := buf.String()
+	for _, want := range []string{"< 429 Too Many Requests (", "< Content-Type: application/json\n", "< Retry-After: 3600\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("debug output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Set-Cookie") {
+		t.Errorf("other response headers must not be dumped:\n%s", out)
 	}
 }
