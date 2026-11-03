@@ -247,10 +247,12 @@ func checkWriteFlags(c *cobra.Command, isUpdate bool) error {
 //
 // --attr values are sent as strings: converting by the attribute's
 // data_type would need the definition, which costs a request (spec 6.1:
-// "sonst als String"). On update only what is given is sent; an empty
-// line_items needs --replace-items, and --replace-items without positions
-// sends line_items: [] (R18). Positions from --input are sent as given
-// (describe | jq | update --input -, spec 6.3a).
+// "sonst als String"). On update only what is given is sent, and positions
+// only with --replace-items (spec 6.3a): without it line_items from --input
+// are left out with a hint, so describe | jq '.name="Neu"' | update
+// --input - renames without replacing the positions; with it they are sent
+// as given, and --replace-items without positions sends line_items: []
+// (R18). On create line_items from --input are always sent.
 func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[string]any, []string, error) {
 	ws := newWriteSpec(e)
 	if ws.err != nil {
@@ -271,8 +273,11 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 		}
 		a.pruneHints(pr)
 		body, removed = pr.Body, pr.Removed
-		if ws.items != nil && isUpdate && !replace && isEmptyList(body[ws.items.Path[0]]) {
-			return nil, nil, clierr.New(clierr.CodeUsage, "leeres line_items aus --input ersetzt alle Positionen (löscht sie); dafür zusätzlich --replace-items angeben", replaceHint)
+		if key := itemsKey(ws); key != "" && isUpdate && !replace {
+			if _, ok := body[key]; ok {
+				delete(body, key)
+				_, _ = fmt.Fprintf(a.Err, "Hinweis: %s aus --input nicht gesendet – Positionen bleiben unverändert; zum Ersetzen --replace-items angeben\n", key)
+			}
 		}
 	}
 
@@ -340,9 +345,12 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 	return body, removed, nil
 }
 
-func isEmptyList(v any) bool {
-	l, ok := v.([]any)
-	return ok && len(l) == 0
+// itemsKey is the body key of the line items, "" without them.
+func itemsKey(ws writeSpec) string {
+	if ws.items == nil {
+		return ""
+	}
+	return ws.items.Path[0]
 }
 
 // readInput reads the --input body: a JSON object from a file or stdin.

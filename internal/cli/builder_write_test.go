@@ -100,7 +100,6 @@ func TestR32_UpdateItemRequiresReplaceItems(t *testing.T) {
 	}{
 		{"item", "", []string{"--item", item1}},
 		{"items", "", []string{"--items", items}},
-		{"empty input list", `{"line_items":[]}`, []string{"--input", "-"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, srv := apiApp(t)
@@ -383,13 +382,87 @@ func TestWriteItemsFile(t *testing.T) {
 	wantRequests(t, srv, 0)
 }
 
-func TestWriteInputUpdateKeepsNonEmptyItems(t *testing.T) {
-	// describe -o json | jq '.name="Neu"' | update --input - (spec 6.3a):
-	// positions from --input are sent as given, without --replace-items
+const itemsDropHint = "Hinweis: line_items aus --input nicht gesendet – Positionen bleiben unverändert; zum Ersetzen --replace-items angeben\n"
+
+func TestWriteUpdateInputItemsOnlyWithReplace(t *testing.T) {
+	// spec 6.3a: positions are touched only with --replace-items; without
+	// it line_items from --input (empty or not) are left out with a hint
+	for _, items := range []string{`[]`, `[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]`} {
+		app, srv := apiApp(t)
+		app.In = strings.NewReader(`{"name":"Neu","line_items":` + items + `}`)
+		wantExit(t, app, runWrite(t, app, "invoice", "update", "12", "--input", "-", "-o", "json"), 0)
+		wantBody(t, srv, "PUT", "/income/invoices/12", `{"name":"Neu"}`)
+		if _, errs := bufs(app); !strings.Contains(errs, itemsDropHint) {
+			t.Errorf("%s: stderr = %q", items, errs)
+		}
+	}
+
+	// with --replace-items they are sent as given
 	app, srv := apiApp(t)
 	app.In = strings.NewReader(`{"name":"Neu","line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`)
-	wantExit(t, app, runWrite(t, app, "invoice", "update", "12", "--input", "-", "-o", "json"), 0)
+	wantExit(t, app, runWrite(t, app, "invoice", "update", "12", "--input", "-", "--replace-items", "-o", "json"), 0)
 	wantBody(t, srv, "PUT", "/income/invoices/12", `{"name":"Neu","line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`)
+	if _, errs := bufs(app); strings.Contains(errs, "nicht gesendet") {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// only line_items from --input: nothing left to change
+	app, srv = apiApp(t)
+	app.In = strings.NewReader(`{"line_items":[]}`)
+	wantExit(t, app, runWrite(t, app, "invoice", "update", "12", "--input", "-"), 2)
+	wantRequests(t, srv, 0)
+}
+
+func TestWriteDescribeRoundTripKeepsPositions(t *testing.T) {
+	get := specEntry(t, "GetInvoice", "invoice", "describe", registry.ClassReadOnly)
+	entries := append(writeEntries(t), get)
+	app, _ := apiApp(t)
+	wantExit(t, app, runEntries(t, app, nil, []string{"invoice", "describe", "12", "-o", "json"}, entries...), 0)
+	described, _ := bufs(app)
+	if !strings.Contains(described, `"line_items"`) {
+		t.Fatalf("GetInvoice-Beispiel ohne line_items: %s", described)
+	}
+
+	// describe | jq '.name="Neu"' | update --input -: no positions sent
+	app, srv := apiApp(t)
+	app.In = strings.NewReader(described)
+	wantExit(t, app, runEntries(t, app, nil, []string{"invoice", "update", "12", "--input", "-", "--name", "Neu", "-o", "json"}, entries...), 0)
+	r := wantRequests(t, srv, 1)[0]
+	var body map[string]any
+	if err := json.Unmarshal(r.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := body["line_items"]; ok || body["name"] != "Neu" {
+		t.Errorf("body = %s", r.Body)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, itemsDropHint) || !strings.Contains(errs, "nur lesbare Felder entfernt") {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// with --replace-items the positions are sent (R31)
+	app, srv = apiApp(t)
+	app.In = strings.NewReader(described)
+	wantExit(t, app, runEntries(t, app, nil, []string{"invoice", "update", "12", "--input", "-", "--replace-items", "-o", "json"}, entries...), 0)
+	r = wantRequests(t, srv, 1)[0]
+	body = nil
+	if err := json.Unmarshal(r.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := body["line_items"].([]any); len(l) == 0 {
+		t.Errorf("body ohne Positionen: %s", r.Body)
+	}
+}
+
+// TestWriteCreateSendsInputItems: on create line_items from --input are
+// always sent.
+func TestWriteCreateSendsInputItems(t *testing.T) {
+	app, srv := apiApp(t)
+	app.In = strings.NewReader(`{"name":"R","payment_term":{"id":4},"line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`)
+	wantExit(t, app, runWrite(t, app, "invoice", "create", "--input", "-", "-o", "json"), 0)
+	wantBody(t, srv, "POST", "/income/invoices", `{"name":"R","payment_term":{"id":4},"line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`)
+	if _, errs := bufs(app); strings.Contains(errs, "nicht gesendet") {
+		t.Errorf("stderr = %q", errs)
+	}
 }
 
 func TestWriteItemFlagCombinations(t *testing.T) {
