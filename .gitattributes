@@ -1,0 +1,4 @@
+# Byte-exact files: tests compare a SHA-256 checksum (snapshot) and a fresh
+# overlay run (generated spec) against them. Never convert line endings.
+api/openapi.json -text
+internal/spec/openapi.gen.json -text

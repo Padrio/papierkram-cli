@@ -1,0 +1,614 @@
+# OpenAPI Overlay 1.0 for api/openapi.json, the unmodified snapshot of the
+# Papierkram API v1. The snapshot is never edited by hand; every correction
+# lives here. `go generate ./internal/spec/` runs tools/applyoverlay, which
+# applies this file and writes internal/spec/openapi.gen.json (embedded into
+# the binary and the single source of truth for flags, types and validation).
+#
+# JSONPath: targets use RFC 9535 syntax. Overlay 1.0 leaves the dialect open,
+# so the x-speakeasy-jsonpath key tells the overlay library to use RFC 9535
+# instead of its legacy dialect.
+#
+# Application is strict: an action whose target matches nothing, or whose
+# update changes nothing, fails the generation. When a snapshot refresh fixes
+# a defect upstream, the matching action fails and must be removed here.
+#
+# Actions run top to bottom. Index-based removals refer to the snapshot as
+# retrieved (see api/README.md for its SHA-256).
+overlay: 1.0.0
+x-speakeasy-jsonpath: rfc9535
+info:
+  title: papierkram-cli corrections for the Papierkram API v1
+  version: 1.0.0
+actions:
+  # ---------------------------------------------------------------------------
+  # 1. operationIds
+  # Why: the snapshot has no operationId at all. oapi-codegen derives function
+  # names from them, and the command registry and coverage test reference
+  # operations by ID. Scheme <Verb><Resource>[<Action>]: List + plural for
+  # collections, Get/Create/Update/Delete/Archive/Unarchive/Cancel/Deliver/Pay
+  # + singular for a single object, Get<Resource>Pdf for PDF downloads.
+  # ---------------------------------------------------------------------------
+  # /banking/bank_connections
+  - target: $.paths['/banking/bank_connections'].get
+    update:
+      operationId: ListBankConnections
+  - target: $.paths['/banking/bank_connections/{id}'].get
+    update:
+      operationId: GetBankConnection
+
+  # /banking/transactions
+  - target: $.paths['/banking/transactions'].get
+    update:
+      operationId: ListTransactions
+  - target: $.paths['/banking/transactions/{id}'].get
+    update:
+      operationId: GetTransaction
+
+  # /contact/companies
+  - target: $.paths['/contact/companies'].get
+    update:
+      operationId: ListCompanies
+  - target: $.paths['/contact/companies'].post
+    update:
+      operationId: CreateCompany
+  - target: $.paths['/contact/companies/{id}'].get
+    update:
+      operationId: GetCompany
+  - target: $.paths['/contact/companies/{id}'].put
+    update:
+      operationId: UpdateCompany
+  - target: $.paths['/contact/companies/{id}'].delete
+    update:
+      operationId: DeleteCompany
+  - target: $.paths['/contact/companies/{id}/archive'].post
+    update:
+      operationId: ArchiveCompany
+  - target: $.paths['/contact/companies/{id}/unarchive'].post
+    update:
+      operationId: UnarchiveCompany
+
+  # /contact/companies/{company_id}/persons
+  - target: $.paths['/contact/companies/{company_id}/persons'].get
+    update:
+      operationId: ListPersons
+  - target: $.paths['/contact/companies/{company_id}/persons'].post
+    update:
+      operationId: CreatePerson
+  - target: $.paths['/contact/companies/{company_id}/persons/{id}'].get
+    update:
+      operationId: GetPerson
+  - target: $.paths['/contact/companies/{company_id}/persons/{id}'].put
+    update:
+      operationId: UpdatePerson
+  - target: $.paths['/contact/companies/{company_id}/persons/{id}'].delete
+    update:
+      operationId: DeletePerson
+
+  # /expense/vouchers/{voucher_id}/documents
+  - target: $.paths['/expense/vouchers/{voucher_id}/documents'].post
+    update:
+      operationId: UploadVoucherDocument
+  - target: $.paths['/expense/vouchers/{voucher_id}/documents/{id}'].delete
+    update:
+      operationId: DeleteVoucherDocument
+
+  # /expense/vouchers
+  - target: $.paths['/expense/vouchers'].get
+    update:
+      operationId: ListVouchers
+  - target: $.paths['/expense/vouchers'].post
+    update:
+      operationId: CreateVoucher
+  - target: $.paths['/expense/vouchers/{id}'].get
+    update:
+      operationId: GetVoucher
+  - target: $.paths['/expense/vouchers/{id}'].put
+    update:
+      operationId: UpdateVoucher
+  - target: $.paths['/expense/vouchers/{id}'].delete
+    update:
+      operationId: DeleteVoucher
+  - target: $.paths['/expense/vouchers/{id}/archive'].post
+    update:
+      operationId: ArchiveVoucher
+  - target: $.paths['/expense/vouchers/{id}/unarchive'].post
+    update:
+      operationId: UnarchiveVoucher
+  - target: $.paths['/expense/vouchers/{id}/cancel'].post
+    update:
+      operationId: CancelVoucher
+  - target: $.paths['/expense/vouchers/{id}/cancel_with_reverse_entry'].post
+    update:
+      operationId: CancelVoucherWithReverseEntry
+  - target: $.paths['/expense/vouchers/{id}/pay'].post
+    update:
+      operationId: PayVoucher
+  - target: $.paths['/expense/vouchers/{id}/pdf'].get
+    update:
+      operationId: GetVoucherPdf
+
+  # /income/estimates
+  - target: $.paths['/income/estimates'].get
+    update:
+      operationId: ListEstimates
+  - target: $.paths['/income/estimates'].post
+    update:
+      operationId: CreateEstimate
+  - target: $.paths['/income/estimates/{id}'].get
+    update:
+      operationId: GetEstimate
+  - target: $.paths['/income/estimates/{id}'].put
+    update:
+      operationId: UpdateEstimate
+  - target: $.paths['/income/estimates/{id}'].delete
+    update:
+      operationId: DeleteEstimate
+  - target: $.paths['/income/estimates/{id}/archive'].post
+    update:
+      operationId: ArchiveEstimate
+  - target: $.paths['/income/estimates/{id}/unarchive'].post
+    update:
+      operationId: UnarchiveEstimate
+  - target: $.paths['/income/estimates/{id}/cancel'].post
+    update:
+      operationId: CancelEstimate
+  - target: $.paths['/income/estimates/{id}/deliver'].post
+    update:
+      operationId: DeliverEstimate
+  - target: $.paths['/income/estimates/{id}/pdf'].get
+    update:
+      operationId: GetEstimatePdf
+
+  # /income/invoices
+  - target: $.paths['/income/invoices'].get
+    update:
+      operationId: ListInvoices
+  - target: $.paths['/income/invoices'].post
+    update:
+      operationId: CreateInvoice
+  - target: $.paths['/income/invoices/{id}'].get
+    update:
+      operationId: GetInvoice
+  - target: $.paths['/income/invoices/{id}'].put
+    update:
+      operationId: UpdateInvoice
+  - target: $.paths['/income/invoices/{id}'].delete
+    update:
+      operationId: DeleteInvoice
+  - target: $.paths['/income/invoices/{id}/archive'].post
+    update:
+      operationId: ArchiveInvoice
+  - target: $.paths['/income/invoices/{id}/unarchive'].post
+    update:
+      operationId: UnarchiveInvoice
+  - target: $.paths['/income/invoices/{id}/cancel'].post
+    update:
+      operationId: CancelInvoice
+  - target: $.paths['/income/invoices/{id}/deliver'].post
+    update:
+      operationId: DeliverInvoice
+  - target: $.paths['/income/invoices/{id}/pdf'].get
+    update:
+      operationId: GetInvoicePdf
+
+  # /income/payment_terms
+  - target: $.paths['/income/payment_terms'].get
+    update:
+      operationId: ListPaymentTerms
+  - target: $.paths['/income/payment_terms/{id}'].get
+    update:
+      operationId: GetPaymentTerm
+
+  # /income/propositions
+  - target: $.paths['/income/propositions'].get
+    update:
+      operationId: ListPropositions
+  - target: $.paths['/income/propositions'].post
+    update:
+      operationId: CreateProposition
+  - target: $.paths['/income/propositions/{id}'].get
+    update:
+      operationId: GetProposition
+  - target: $.paths['/income/propositions/{id}'].put
+    update:
+      operationId: UpdateProposition
+  - target: $.paths['/income/propositions/{id}'].delete
+    update:
+      operationId: DeleteProposition
+  - target: $.paths['/income/propositions/{id}/archive'].post
+    update:
+      operationId: ArchiveProposition
+  - target: $.paths['/income/propositions/{id}/unarchive'].post
+    update:
+      operationId: UnarchiveProposition
+
+  # /info
+  - target: $.paths['/info'].get
+    update:
+      operationId: GetInfo
+
+  # /projects
+  - target: $.paths['/projects'].get
+    update:
+      operationId: ListProjects
+  - target: $.paths['/projects'].post
+    update:
+      operationId: CreateProject
+  - target: $.paths['/projects/{id}'].get
+    update:
+      operationId: GetProject
+  - target: $.paths['/projects/{id}'].put
+    update:
+      operationId: UpdateProject
+  - target: $.paths['/projects/{id}'].delete
+    update:
+      operationId: DeleteProject
+  - target: $.paths['/projects/{id}/archive'].post
+    update:
+      operationId: ArchiveProject
+  - target: $.paths['/projects/{id}/unarchive'].post
+    update:
+      operationId: UnarchiveProject
+
+  # /settings/custom_attributes
+  - target: $.paths['/settings/custom_attributes'].get
+    update:
+      operationId: ListCustomAttributes
+  - target: $.paths['/settings/custom_attributes'].post
+    update:
+      operationId: CreateCustomAttribute
+  - target: $.paths['/settings/custom_attributes/{id}'].get
+    update:
+      operationId: GetCustomAttribute
+  - target: $.paths['/settings/custom_attributes/{id}'].put
+    update:
+      operationId: UpdateCustomAttribute
+  - target: $.paths['/settings/custom_attributes/{id}'].delete
+    update:
+      operationId: DeleteCustomAttribute
+  - target: $.paths['/settings/custom_attributes/{id}/archive'].post
+    update:
+      operationId: ArchiveCustomAttribute
+  - target: $.paths['/settings/custom_attributes/{id}/unarchive'].post
+    update:
+      operationId: UnarchiveCustomAttribute
+
+  # /tracker/tasks
+  - target: $.paths['/tracker/tasks'].get
+    update:
+      operationId: ListTasks
+  - target: $.paths['/tracker/tasks'].post
+    update:
+      operationId: CreateTask
+  - target: $.paths['/tracker/tasks/{id}'].get
+    update:
+      operationId: GetTask
+  - target: $.paths['/tracker/tasks/{id}'].put
+    update:
+      operationId: UpdateTask
+  - target: $.paths['/tracker/tasks/{id}'].delete
+    update:
+      operationId: DeleteTask
+  - target: $.paths['/tracker/tasks/{id}/archive'].post
+    update:
+      operationId: ArchiveTask
+  - target: $.paths['/tracker/tasks/{id}/unarchive'].post
+    update:
+      operationId: UnarchiveTask
+
+  # /tracker/time_entries
+  - target: $.paths['/tracker/time_entries'].get
+    update:
+      operationId: ListTimeEntries
+  - target: $.paths['/tracker/time_entries'].post
+    update:
+      operationId: CreateTimeEntry
+  - target: $.paths['/tracker/time_entries/{id}'].get
+    update:
+      operationId: GetTimeEntry
+  - target: $.paths['/tracker/time_entries/{id}'].put
+    update:
+      operationId: UpdateTimeEntry
+  - target: $.paths['/tracker/time_entries/{id}'].delete
+    update:
+      operationId: DeleteTimeEntry
+  - target: $.paths['/tracker/time_entries/{id}/archive'].post
+    update:
+      operationId: ArchiveTimeEntry
+  - target: $.paths['/tracker/time_entries/{id}/unarchive'].post
+    update:
+      operationId: UnarchiveTimeEntry
+
+  # /users
+  - target: $.paths['/users'].get
+    update:
+      operationId: ListUsers
+  - target: $.paths['/users/{id}'].get
+    update:
+      operationId: GetUser
+
+  # ---------------------------------------------------------------------------
+  # 2. PDF responses
+  # Why: the snapshot uses the literal content-type key `["application/pdf"]`
+  # and references the *List JSON schema. The endpoints return a PDF file, so
+  # the response becomes application/pdf with a binary string.
+  # ---------------------------------------------------------------------------
+  - target: $.paths['/expense/vouchers/{id}/pdf','/income/estimates/{id}/pdf','/income/invoices/{id}/pdf'].get.responses['200'].content
+    remove: true
+  - target: $.paths['/expense/vouchers/{id}/pdf','/income/estimates/{id}/pdf','/income/invoices/{id}/pdf'].get.responses['200']
+    update:
+      content:
+        application/pdf:
+          schema:
+            type: string
+            format: binary
+
+  # ---------------------------------------------------------------------------
+  # 3. deliver responses
+  # Why: the snapshot documents 201 with an invoice/estimate body, but the live
+  # API answers 2xx with an empty body. Both 200 and 201 are declared without
+  # content so generated code never tries to parse a body.
+  # ---------------------------------------------------------------------------
+  - target: $.paths['/income/estimates/{id}/deliver','/income/invoices/{id}/deliver'].post.responses['201'].content
+    remove: true
+  - target: $.paths['/income/estimates/{id}/deliver','/income/invoices/{id}/deliver'].post.responses
+    update:
+      '200':
+        description: Delivery successful (empty body)
+
+  # ---------------------------------------------------------------------------
+  # 4. order_direction
+  # Why: typed as an array of asc|desc, but the API takes a single value; an
+  # array type would make generated code serialize order_direction repeatedly.
+  # The old schema is removed first: an update only merges into the existing
+  # schema and cannot delete its `items`.
+  # ---------------------------------------------------------------------------
+  - target: $.paths[*].get.parameters[?@.name == 'order_direction'].schema
+    remove: true
+  - target: $.paths[*].get.parameters[?@.name == 'order_direction']
+    update:
+      schema:
+        type: string
+        enum: [asc, desc]
+
+  # ---------------------------------------------------------------------------
+  # 5. Enums: duplicates and null
+  # Why: duplicate enum values break code generation (duplicate constants) and
+  # are meaningless for validation. Removed by index (snapshot order) before
+  # the null removal below, so the indices still match the snapshot.
+  # ---------------------------------------------------------------------------
+  # difference_reason: index 4 is the second "sonstige".
+  - target: $.paths['/expense/vouchers/{id}/pay'].post.requestBody.content['application/json'].schema.properties.difference_reason.enum[4]
+    remove: true
+  # Expense category (create and update voucher): indices 91-94 repeat 87-90
+  # ("Umsatzsteuer frühere Jahre", "Umsatzsteuer Vorjahr",
+  # "Umsatzsteuervorauszahlungen", "Umsatzsteuervorauszahlungen 1/11").
+  # 99 entries - 4 duplicates - null = 94 unique categories.
+  - target: $.paths['/expense/vouchers','/expense/vouchers/{id}']['post','put'].requestBody.content['application/json'].schema.properties.line_items.items.properties.category.enum[91:95]
+    remove: true
+  # Why: 31 enums list null as a value. Every one of them is already marked
+  # `nullable: true`, which is how OpenAPI 3.0 expresses null; null as an enum
+  # member produces an invalid constant in generated code and a bogus flag
+  # value in completions.
+  - target: $..enum[?@ == null]
+    remove: true
+
+  # ---------------------------------------------------------------------------
+  # 6. Path parameters
+  # Why: id/voucher_id/company_id are integers in the API, but the snapshot
+  # declares most of them as string and a few as integer. Uniform
+  # integer/int64 gives one ID type in generated code and keeps large IDs
+  # exact. All {…} placeholders are declared in the snapshot (most at path
+  # level, one at operation level), so no declaration has to be added; the
+  # spec tests guard that every placeholder stays declared.
+  # ---------------------------------------------------------------------------
+  - target: $.paths[*].parameters[?@.in == 'path'].schema
+    update:
+      type: integer
+      format: int64
+  # The only path parameter declared at operation level instead of path level.
+  - target: $.paths['/expense/vouchers/{voucher_id}/documents'].post.parameters[?@.in == 'path'].schema
+    update:
+      type: integer
+      format: int64
+
+  # ---------------------------------------------------------------------------
+  # 7. Date fields in request bodies
+  # Why: plain strings without format, although the API expects YYYY-MM-DD
+  # (all snapshot examples except the German-style task deadline use it).
+  # format: date lets the CLI validate locally before spending credits.
+  # supply_date is deliberately left out: it is free text in the API (the
+  # snapshot example is "01.05.2020 - 14.05.2020", a service period).
+  # ---------------------------------------------------------------------------
+  - target: $.paths[*]['post','put'].requestBody.content['application/json'].schema.properties['deadline','document_date','due_date','end_date','entry_date','payment_date','reminder_date','start_date']
+    update:
+      format: date
+  # The task create examples use the German form "15.05.2020" for deadline.
+  # The CLI standardizes on ISO dates, so the examples are rewritten to the
+  # same day in ISO form; otherwise they would contradict format: date.
+  # (Bracket notation because the JSONPath parser treats bare `value` as the
+  # RFC 9535 value() function.)
+  - target: $.paths['/tracker/tasks'].post.requestBody.content['application/json'].examples[*]['value'].deadline
+    update: '2020-05-15'
+
+  # ---------------------------------------------------------------------------
+  # 8. String booleans (x-cli-bool-string)
+  # Why: the API types these fields as string but they are booleans in meaning
+  # ("true"/"false"). The extension tells the CLI to offer a boolean flag and
+  # send the string form. Person fields are marked wherever a person body
+  # appears, including the people list of company create.
+  # relative_costs (task) is a numeric string and stays unmarked.
+  # ---------------------------------------------------------------------------
+  - target: $.paths['/tracker/tasks','/tracker/tasks/{id}']['post','put'].requestBody.content['application/json'].schema.properties['complete','flagged']
+    update:
+      x-cli-bool-string: true
+  - target: $.paths['/contact/companies/{company_id}/persons','/contact/companies/{company_id}/persons/{id}']['post','put'].requestBody.content['application/json'].schema.properties['default','flagged']
+    update:
+      x-cli-bool-string: true
+  - target: $.paths['/contact/companies'].post.requestBody.content['application/json'].schema.properties.people.items.properties['default','flagged']
+    update:
+      x-cli-bool-string: true
+
+  # ---------------------------------------------------------------------------
+  # 9. Enum hints (x-cli-enum-hints)
+  # Why: users (and other tools) say "non_eu" for a supplier outside the EU,
+  # but the API value is "foreign". The CLI uses the hint for its error
+  # message instead of a bare enum violation.
+  # ---------------------------------------------------------------------------
+  - target: $.paths['/expense/vouchers','/expense/vouchers/{id}']['post','put'].requestBody.content['application/json'].schema.properties.provenance
+    update:
+      x-cli-enum-hints:
+        non_eu: foreign
+
+  # ---------------------------------------------------------------------------
+  # 10. patternProperties
+  # Why: patternProperties is JSON Schema / OpenAPI 3.1 only; kin-openapi
+  # rejects the 3.0.3 document because of it (169 occurrences). 163 are empty
+  # and are dropped. The 6 non-empty ones describe custom_attributes, an
+  # object keyed by attribute ID ("^[0-9]+$"). They are rewritten first: the
+  # value schema moves to additionalProperties (OpenAPI 3.0) and the key
+  # pattern is kept as x-cli-key-pattern for local validation.
+  # additionalProperties: false is removed before the update because Overlay
+  # 1.0 does not define merging an object into a boolean.
+  # ---------------------------------------------------------------------------
+  - target: $.paths['/contact/companies','/contact/companies/{id}','/projects','/projects/{id}']['post','put'].requestBody.content['application/json'].schema.properties.custom_attributes.additionalProperties
+    remove: true
+  - target: $.paths['/contact/companies','/contact/companies/{id}','/projects','/projects/{id}']['post','put'].requestBody.content['application/json'].schema.properties.custom_attributes
+    update:
+      x-cli-key-pattern: '^[0-9]+$'
+      additionalProperties:
+        anyOf:
+          - type: string
+            nullable: true
+          - type: integer
+            nullable: true
+          - type: number
+            nullable: true
+          - type: boolean
+            nullable: true
+  - target: $.components.schemas['CompanyWithSimpleEmbeds','ProjectWithDetailedEmbeds'].allOf[1].properties.custom_attributes.additionalProperties
+    remove: true
+  - target: $.components.schemas['CompanyWithSimpleEmbeds','ProjectWithDetailedEmbeds'].allOf[1].properties.custom_attributes
+    update:
+      x-cli-key-pattern: '^[0-9]+$'
+      additionalProperties:
+        type: object
+        nullable: false
+        properties:
+          type:
+            type: string
+            enum: [custom_attribute]
+            nullable: false
+          id:
+            type: integer
+            nullable: false
+          name:
+            type: string
+            nullable: false
+          value:
+            anyOf:
+              - type: string
+                nullable: true
+              - type: integer
+                nullable: true
+              - type: number
+                nullable: true
+              - type: boolean
+                nullable: true
+  - target: $..patternProperties
+    remove: true
+
+  # ---------------------------------------------------------------------------
+  # 11. additionalProperties: false in response schemas
+  # Why: every response schema is an allOf of a *OnlyReference schema (or a
+  # *Flat schema built on it) plus further properties, and the *OnlyReference
+  # schemas carry additionalProperties: false. Under allOf that forbids every
+  # property of the other branch, so no real response (including all snapshot
+  # examples) can validate. Responses are also allowed to grow fields the
+  # snapshot does not know yet. Only components are touched: all of them are
+  # response schemas. Request bodies are inline under paths and keep their
+  # additionalProperties: false, because the API rejects unknown fields (422).
+  # ---------------------------------------------------------------------------
+  - target: $.components.schemas..[?@.additionalProperties == false].additionalProperties
+    remove: true
+
+  # ---------------------------------------------------------------------------
+  # 12. Response schemas contradicted by the recorded examples
+  # Why: the snapshot's examples are recorded API responses. Where a response
+  # schema rejects them, the schema is wrong, and kin-openapi's Validate (which
+  # checks examples) fails. The mock server serves these examples as default
+  # responses, so they also have to be consistent.
+  # ---------------------------------------------------------------------------
+  # Error bodies (422) recorded under 201. The 422 responses already carry
+  # equivalent error examples, so these are only removed.
+  - target: $.paths['/expense/vouchers'].post.responses['201'].content['application/json'].examples['API v1 vouchers /expense/vouchers post Voucher created validates the creditor is a supplier']
+    remove: true
+  - target: $.paths['/income/estimates'].post.responses['201'].content['application/json'].examples['API v1 estimates /income/estimates post Estimate created does not allow suppliers as customer companies']
+    remove: true
+  - target: $.paths['/income/invoices'].post.responses['201'].content['application/json'].examples['API v1 invoices /income/invoices post Invoice created does not allow suppliers as customer companies']
+    remove: true
+  # Optional embedded objects are null when unset (examples show null for
+  # each of these). OpenAPI 3.0 ignores siblings of $ref, so the reference is
+  # wrapped in allOf to carry nullable: true. project is fixed for estimate
+  # and invoice alike because both embed it the same way.
+  - target: $.components.schemas['EstimateWithDetailedEmbeds','InvoiceWithDetailedEmbeds'].allOf[1].properties.contact_person['$ref']
+    remove: true
+  - target: $.components.schemas['EstimateWithDetailedEmbeds','InvoiceWithDetailedEmbeds'].allOf[1].properties.contact_person
+    update:
+      nullable: true
+      allOf:
+        - $ref: '#/components/schemas/PersonOnlyReference'
+  - target: $.components.schemas['EstimateWithDetailedEmbeds','InvoiceWithDetailedEmbeds'].allOf[1].properties.project['$ref']
+    remove: true
+  - target: $.components.schemas['EstimateWithDetailedEmbeds','InvoiceWithDetailedEmbeds'].allOf[1].properties.project
+    update:
+      nullable: true
+      allOf:
+        - $ref: '#/components/schemas/ProjectOnlyReference'
+  - target: $.components.schemas.TimeEntryWithDetailedEmbeds.allOf[1].properties.invoice['$ref']
+    remove: true
+  - target: $.components.schemas.TimeEntryWithDetailedEmbeds.allOf[1].properties.invoice
+    update:
+      nullable: true
+      allOf:
+        - $ref: '#/components/schemas/InvoiceFlat'
+  - target: $.components.schemas.TaskWithDetailedEmbeds.allOf[1].properties.user['$ref']
+    remove: true
+  - target: $.components.schemas.TaskWithDetailedEmbeds.allOf[1].properties.user
+    update:
+      nullable: true
+      allOf:
+        - $ref: '#/components/schemas/UserFlat'
+  - target: $.components.schemas.ProjectWithDetailedEmbeds.allOf[1].properties.default_proposition['$ref']
+    remove: true
+  - target: $.components.schemas.ProjectWithDetailedEmbeds.allOf[1].properties.default_proposition
+    update:
+      nullable: true
+      allOf:
+        - $ref: '#/components/schemas/PropositionFlat'
+  - target: $.components.schemas.VoucherWithDetailedEmbeds.allOf[1].properties.creditor['$ref']
+    remove: true
+  - target: $.components.schemas.VoucherWithDetailedEmbeds.allOf[1].properties.creditor
+    update:
+      nullable: true
+      allOf:
+        - $ref: '#/components/schemas/CompanyFlat'
+  - target: $.components.schemas.PaymentTermWithDetailedEmbeds.allOf[1].properties.banking_bank_connection['$ref']
+    remove: true
+  - target: $.components.schemas.PaymentTermWithDetailedEmbeds.allOf[1].properties.banking_bank_connection
+    update:
+      nullable: true
+      allOf:
+        - $ref: '#/components/schemas/BankConnectionOnlyReference'
+  # Draft and canceled estimates/invoices have no name yet.
+  - target: $.components.schemas['EstimateOnlyReference','InvoiceOnlyReference'].properties.name
+    update:
+      nullable: true
+  # Line item numbering is a string such as "1." or "2.1", not an integer.
+  - target: $.components.schemas['EstimateWithDetailedEmbeds','InvoiceWithDetailedEmbeds'].allOf[1].properties['line_items','document_charges'].items.properties.position_in_group
+    update:
+      type: string
+  # The API returns supply_date as free text or "2026-08-28 13:41:23 +0200",
+  # never as a plain date.
+  - target: $.components.schemas.InvoiceFlat.allOf[1].properties.supply_date.format
+    remove: true
