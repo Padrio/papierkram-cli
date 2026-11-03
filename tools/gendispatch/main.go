@@ -50,7 +50,7 @@ func run(args []string) error {
 
 type operation struct {
 	ID        string
-	PathTypes []string // Go type per path parameter, template order
+	PathTypes []string // Go type per path parameter (always int64), template order
 	HasQuery  bool
 	HasBody   bool
 }
@@ -106,20 +106,14 @@ func collect(doc *openapi3.T) ([]operation, error) {
 	return ops, nil
 }
 
-// goType is the type oapi-codegen uses for an integer path parameter.
+// goType returns the Go type of a path parameter. BuildRequest takes []int64,
+// so only integer/int64 parameters are supported; anything else would need a
+// narrowing conversion and is a generator error.
 func goType(p *openapi3.Parameter) (string, error) {
-	if p.Schema == nil || p.Schema.Value == nil || !p.Schema.Value.Type.Is("integer") {
-		return "", fmt.Errorf("path parameter %q is not an integer", p.Name)
+	if p.Schema == nil || p.Schema.Value == nil || !p.Schema.Value.Type.Is("integer") || p.Schema.Value.Format != "int64" {
+		return "", fmt.Errorf("path parameter %q must be integer/int64", p.Name)
 	}
-	switch p.Schema.Value.Format {
-	case "int64":
-		return "int64", nil
-	case "int32":
-		return "int32", nil
-	case "":
-		return "int", nil
-	}
-	return "", fmt.Errorf("path parameter %q has unsupported format %q", p.Name, p.Schema.Value.Format)
+	return "int64", nil
 }
 
 func render(ops []operation) ([]byte, error) {
@@ -169,12 +163,8 @@ func build(opID, server string, ids []int64, contentType string, body io.Reader)
 		fmt.Fprintf(&b, "\tcase %q:\n", o.ID)
 		fmt.Fprintf(&b, "\t\tif len(ids) != %d {\n\t\t\treturn nil, pathParamsError(opID, %d, len(ids))\n\t\t}\n", n, n)
 		args := []string{"server"}
-		for i, t := range o.PathTypes {
-			if t == "int64" {
-				args = append(args, fmt.Sprintf("ids[%d]", i))
-			} else {
-				args = append(args, fmt.Sprintf("%s(ids[%d])", t, i))
-			}
+		for i := range o.PathTypes {
+			args = append(args, fmt.Sprintf("ids[%d]", i))
 		}
 		if o.HasQuery {
 			args = append(args, "nil")
