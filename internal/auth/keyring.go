@@ -38,14 +38,17 @@ func (osKeyring) Delete(context string) error {
 // messages that mean "no usable keyring" rather than a failed operation.
 // go-keyring exposes no typed error for this, so we match heuristically:
 //   - "unsupported platform": fallback provider (e.g. non-cgo BSD builds)
-//   - "dbus" / "session bus": no D-Bus session (headless Linux, CI, containers)
+//   - "session bus" / "dbus-launch" / "dbus_session_bus_address": no D-Bus
+//     session (headless Linux, CI, containers); bare "dbus" is not matched
+//     because other godbus errors (protocol/message errors) are real failures
 //   - "org.freedesktop.secrets" / "secret service": no Secret Service provider
 //     (e.g. "name org.freedesktop.secrets was not provided by any .service files")
 //   - "serviceunknown": bus reachable, service missing
 var unavailableHints = []string{
 	"unsupported platform",
-	"dbus",
 	"session bus",
+	"dbus_session_bus_address",
+	"dbus-launch",
 	"org.freedesktop.secrets",
 	"secret service",
 	"serviceunknown",
