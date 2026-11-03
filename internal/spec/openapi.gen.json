@@ -978,6 +978,11 @@
                       "readOnly": true,
                       "type": "number"
                     },
+                    "document_charge_gross": {
+                      "nullable": true,
+                      "readOnly": true,
+                      "type": "number"
+                    },
                     "name": {
                       "nullable": true,
                       "readOnly": true,

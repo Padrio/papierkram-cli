@@ -3469,6 +3469,7 @@ type EstimateWithDetailedEmbeds struct {
 		DiscountCalculatedGross *float32 `json:"discount_calculated_gross,omitempty"`
 		DiscountPercentage      *float32 `json:"discount_percentage,omitempty"`
 		DocumentCharge          *float32 `json:"document_charge,omitempty"`
+		DocumentChargeGross     *float32 `json:"document_charge_gross,omitempty"`
 		Name                    *string  `json:"name,omitempty"`
 		PositionInGroup         *string  `json:"position_in_group,omitempty"`
 		Price                   *float32 `json:"price,omitempty"`

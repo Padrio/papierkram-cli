@@ -642,6 +642,16 @@ actions:
   - target: $.components.schemas['EstimateWithDetailedEmbeds','InvoiceWithDetailedEmbeds'].allOf[1].properties['line_items','document_charges'].items.properties.position_in_group
     update:
       type: string
+  # Every recorded estimate response has document_charge_gross in its line
+  # items, the schema does not declare it. --input cleanup (spec 6.3) removes
+  # only fields the response schema knows and rejects all others, so without
+  # it `estimate describe | estimate update --input -` would fail.
+  - target: $.components.schemas.EstimateWithDetailedEmbeds.allOf[1].properties.line_items.items.properties
+    update:
+      document_charge_gross:
+        nullable: true
+        readOnly: true
+        type: number
   # The API returns supply_date as free text or "2026-08-28 13:41:23 +0200",
   # never as a plain date.
   - target: $.components.schemas.InvoiceFlat.allOf[1].properties.supply_date.format
