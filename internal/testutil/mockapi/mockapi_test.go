@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -207,6 +208,7 @@ func TestBodyViolations(t *testing.T) {
 		"invalid JSON":           {http.MethodPut, "/projects/3", `{"name":`},
 		"missing required field": {http.MethodPost, "/income/invoices/12/deliver", `{}`},
 		"body on GET":            {http.MethodGet, "/projects/3", `{"name":"x"}`},
+		"wrong property type":    {http.MethodPut, "/projects/3", `{"budget_money": 5}`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := mockapi.New(t, mockapi.WithoutAutoFail())
@@ -249,6 +251,15 @@ type fakeTB struct {
 	mu       sync.Mutex
 	errs     []string
 	cleanups []func()
+	ran      bool
+}
+
+// newFakeTB also registers its cleanups on t as a fallback, so the mock
+// server is closed even when the test stops before runCleanups.
+func newFakeTB(t *testing.T) *fakeTB {
+	f := &fakeTB{TB: t}
+	t.Cleanup(f.runCleanups)
+	return f
 }
 
 func (f *fakeTB) Helper() {}
@@ -260,14 +271,20 @@ func (f *fakeTB) Errorf(format string, args ...any) {
 	defer f.mu.Unlock()
 	f.errs = append(f.errs, fmt.Sprintf(format, args...))
 }
+
+// runCleanups runs the registered cleanups once, last first.
 func (f *fakeTB) runCleanups() {
+	if f.ran {
+		return
+	}
+	f.ran = true
 	for i := len(f.cleanups) - 1; i >= 0; i-- {
 		f.cleanups[i]()
 	}
 }
 
 func TestAutoFailAtCleanup(t *testing.T) {
-	ft := &fakeTB{TB: t}
+	ft := newFakeTB(t)
 	s := mockapi.New(ft)
 	send(t, s, http.MethodPost, "/income/invoices", `{"bogus":1}`)
 	send(t, s, http.MethodGet, "/info", "", "Authorization", "")
@@ -282,7 +299,7 @@ func TestAutoFailAtCleanup(t *testing.T) {
 		t.Errorf("cleanup error does not list all violations: %s", ft.errs[0])
 	}
 
-	clean := &fakeTB{TB: t}
+	clean := newFakeTB(t)
 	cs := mockapi.New(clean)
 	send(t, cs, http.MethodGet, "/info", "")
 	clean.runCleanups()
@@ -290,7 +307,7 @@ func TestAutoFailAtCleanup(t *testing.T) {
 		t.Errorf("Errorf without violations: %v", clean.errs)
 	}
 
-	opted := &fakeTB{TB: t}
+	opted := newFakeTB(t)
 	optedSrv := mockapi.New(opted, mockapi.WithoutAutoFail())
 	send(t, optedSrv, http.MethodGet, "/info", "", "Authorization", "")
 	opted.runCleanups()
@@ -403,7 +420,7 @@ func TestDefaults(t *testing.T) {
 }
 
 func TestUnknownPathIs404(t *testing.T) {
-	s := mockapi.New(t)
+	s := mockapi.New(t, mockapi.WithoutAutoFail())
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/nope"},
 		{http.MethodGet, "/income/invoices/1/nope"},
@@ -422,8 +439,14 @@ func TestUnknownPathIs404(t *testing.T) {
 			t.Errorf("quota header missing on 404")
 		}
 	}
-	if v := s.Violations(); len(v) != 0 {
-		t.Errorf("404 recorded violations: %v", v)
+	v := s.Violations()
+	if len(v) != 3 {
+		t.Fatalf("violations = %v, want one per request", v)
+	}
+	for i, want := range []string{"GET /api/v1/nope", "GET /api/v1/income/invoices/1/nope", "PATCH /api/v1/income/invoices/1"} {
+		if !strings.HasPrefix(v[i], want+":") || !strings.Contains(v[i], "nicht in der API-Spec") {
+			t.Errorf("violation %d = %q, want %q: … nicht in der API-Spec", i, v[i], want)
+		}
 	}
 }
 
@@ -480,4 +503,61 @@ func TestOnOddHeaderPairsPanics(t *testing.T) {
 		}
 	}()
 	s.On(http.MethodGet, "/info", http.StatusOK, nil, "X-Only-Key") //nolint:staticcheck // SA5012: the odd count is the point of this test
+}
+
+// sendUpload posts a multipart body to the voucher document upload; part is
+// the form field name, "" sends no part at all.
+func sendUpload(t *testing.T, s *mockapi.Server, part string) *http.Response {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	if part != "" {
+		w, err := mw.CreateFormFile(part, "beleg.pdf")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte("%PDF-1.4\n%%EOF\n"))
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resp, _ := send(t, s, http.MethodPost, "/expense/vouchers/7/documents", buf.String(), "Content-Type", mw.FormDataContentType())
+	return resp
+}
+
+func TestUploadViolations(t *testing.T) {
+	ok := mockapi.New(t)
+	if resp := sendUpload(t, ok, "file"); resp.StatusCode != http.StatusCreated {
+		t.Errorf("valid upload: status %d, want 201", resp.StatusCode)
+	}
+
+	for name, run := range map[string]func(*mockapi.Server) *http.Response{
+		"wrong part name": func(s *mockapi.Server) *http.Response { return sendUpload(t, s, "datei") },
+		"no file part":    func(s *mockapi.Server) *http.Response { return sendUpload(t, s, "") },
+		"text/plain body": func(s *mockapi.Server) *http.Response {
+			resp, _ := send(t, s, http.MethodPost, "/expense/vouchers/7/documents", "datei", "Content-Type", "text/plain")
+			return resp
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := mockapi.New(t, mockapi.WithoutAutoFail())
+			resp := run(s)
+			if resp.StatusCode != http.StatusInternalServerError || len(s.Violations()) != 1 {
+				t.Errorf("status %d, violations %v; want 500 and one violation", resp.StatusCode, s.Violations())
+			}
+		})
+	}
+}
+
+// Servers created by parallel tests share the spec document; run with -race.
+func TestParallelServers(t *testing.T) {
+	for i := range 4 {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			t.Parallel()
+			s := mockapi.New(t)
+			if resp, _ := send(t, s, http.MethodGet, "/income/invoices?page=1", ""); resp.StatusCode != http.StatusOK {
+				t.Errorf("status %d, want 200", resp.StatusCode)
+			}
+		})
+	}
 }

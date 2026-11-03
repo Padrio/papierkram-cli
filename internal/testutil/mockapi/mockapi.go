@@ -5,10 +5,10 @@
 //
 // A request that does not match the spec (path parameters, query, headers,
 // body, a missing "Authorization: Bearer <token>") is a violation: it is
-// answered with 500 and an API-style error body, and, unless WithoutAutoFail
-// is given, the test fails at cleanup with all violations listed. Requests
-// to paths or methods the spec does not know get 404 in the API error format
-// and are not violations.
+// answered with 500 and an API-style error body. A path or method the spec
+// does not know is a violation too, answered with 404 in the API error
+// format. Unless WithoutAutoFail is given, the test fails at cleanup with all
+// violations listed. Tests that need a 404 for a known operation use On.
 package mockapi
 
 import (
@@ -68,6 +68,7 @@ func WithoutAutoFail() Option { return func(s *Server) { s.autoFail = false } }
 type Server struct {
 	srv      *httptest.Server
 	router   routers.Router
+	defaults map[string]cannedResponse // by operationId
 	autoFail bool
 	corrID   atomic.Int64
 
@@ -80,7 +81,11 @@ type Server struct {
 // New starts a mock server that is closed at t's cleanup.
 func New(t testing.TB, opts ...Option) *Server {
 	t.Helper()
-	s := &Server{autoFail: true, overrides: map[string]http.HandlerFunc{}}
+	defs, err := loadDefaults()
+	if err != nil {
+		t.Fatalf("mockapi: %v", err)
+	}
+	s := &Server{autoFail: true, defaults: defs, overrides: map[string]http.HandlerFunc{}}
 	for _, o := range opts {
 		o(s)
 	}
@@ -207,10 +212,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		route, pathParams, err = s.router.FindRoute(vr)
 	}
 	if err != nil {
+		s.record(r, errors.New("Pfad/Methode nicht in der API-Spec"))
 		s.writeError(w, http.StatusNotFound, "not_found", "Nicht gefunden")
 		return
 	}
-	if err := validate(vr, route, pathParams); err != nil {
+	if err := validate(r.Context(), vr, route, pathParams); err != nil {
 		s.violate(w, r, err)
 		return
 	}
@@ -220,20 +226,20 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		h(w, r)
 		return
 	}
-	writeDefault(w, route)
+	s.writeDefault(w, route)
 }
 
 // validate checks the request against the operation: kin-openapi covers
 // path, query, headers and body; unknown query parameters are checked here,
 // because kin-openapi ignores them.
-func validate(r *http.Request, route *routers.Route, pathParams map[string]string) error {
+func validate(ctx context.Context, r *http.Request, route *routers.Route, pathParams map[string]string) error {
 	opts := &openapi3filter.Options{
 		AuthenticationFunc:                openapi3filter.NoopAuthenticationFunc, // bearer checked in serve
 		RejectWhenRequestBodyNotSpecified: true,
 		SkipSettingDefaults:               true,
 	}
 	opts.WithCustomSchemaErrorFunc(schemaErrorMessage)
-	err := openapi3filter.ValidateRequest(context.Background(), &openapi3filter.RequestValidationInput{
+	err := openapi3filter.ValidateRequest(ctx, &openapi3filter.RequestValidationInput{
 		Request: r, PathParams: pathParams, Route: route, Options: opts,
 	})
 	if err != nil {
@@ -273,13 +279,20 @@ func hasBearer(v string) bool {
 	return ok && strings.TrimSpace(token) != ""
 }
 
+// violate records cause and answers with 500.
 func (s *Server) violate(w http.ResponseWriter, r *http.Request, cause error) {
+	msg := s.record(r, cause)
+	s.writeError(w, http.StatusInternalServerError, "mock_spec_violation",
+		"Mock: Anfrage entspricht nicht der API-Spec: "+msg)
+}
+
+// record stores the violation "METHOD /request/uri: cause" and returns it.
+func (s *Server) record(r *http.Request, cause error) string {
 	msg := fmt.Sprintf("%s %s: %v", r.Method, r.URL.RequestURI(), cause)
 	s.mu.Lock()
 	s.violations = append(s.violations, msg)
 	s.mu.Unlock()
-	s.writeError(w, http.StatusInternalServerError, "mock_spec_violation",
-		"Mock: Anfrage entspricht nicht der API-Spec: "+msg)
+	return msg
 }
 
 // writeError writes the API error format (spec 4.1).
@@ -323,14 +336,8 @@ type cannedResponse struct {
 	body        []byte
 }
 
-var (
-	defaultsOnce sync.Once
-	defaults     map[string]cannedResponse // by operationId
-)
-
-func writeDefault(w http.ResponseWriter, route *routers.Route) {
-	defaultsOnce.Do(loadDefaults)
-	c := defaults[route.Operation.OperationID]
+func (s *Server) writeDefault(w http.ResponseWriter, route *routers.Route) {
+	c := s.defaults[route.Operation.OperationID]
 	if c.contentType != "" {
 		w.Header().Set("Content-Type", c.contentType)
 	}
@@ -339,23 +346,24 @@ func writeDefault(w http.ResponseWriter, route *routers.Route) {
 }
 
 // loadDefaults derives the default response of every operation from its
-// first 2xx response. Example bodies are taken verbatim from the raw spec
-// so decimals like 1190.00 and large IDs keep their exact spelling.
-func loadDefaults() {
+// first 2xx response, once per test binary; the map is read-only. Example
+// bodies are taken verbatim from the raw spec so decimals like 1190.00 and
+// large IDs keep their exact spelling.
+var loadDefaults = sync.OnceValues(func() (map[string]cannedResponse, error) {
 	// Path items also hold "parameters" (an array), so operations are
 	// decoded one by one.
 	var raw struct {
 		Paths map[string]map[string]json.RawMessage `json:"paths"`
 	}
 	if err := json.Unmarshal(spec.Raw(), &raw); err != nil {
-		panic(fmt.Sprintf("mockapi: spec does not parse: %v", err))
+		return nil, fmt.Errorf("spec does not parse: %w", err)
 	}
 	type rawOperation struct {
 		Responses map[string]struct {
 			Content map[string]rawMediaType `json:"content"`
 		} `json:"responses"`
 	}
-	defaults = map[string]cannedResponse{}
+	defaults := map[string]cannedResponse{}
 	for _, o := range spec.Operations() {
 		var code string
 		for _, c := range slices.Sorted(maps.Keys(o.Op.Responses.Map())) {
@@ -379,14 +387,15 @@ func loadDefaults() {
 		case resp.Content["application/json"] != nil:
 			var ro rawOperation
 			if err := json.Unmarshal(raw.Paths[o.Path][strings.ToLower(o.Method)], &ro); err != nil {
-				panic(fmt.Sprintf("mockapi: operation %s does not parse: %v", o.ID, err))
+				return nil, fmt.Errorf("operation %s does not parse: %w", o.ID, err)
 			}
 			body := jsonExample(ro.Responses[code].Content["application/json"], resp.Content["application/json"].Schema)
 			c.contentType, c.body = "application/json", body
 		}
 		defaults[o.ID] = c
 	}
-}
+	return defaults, nil
+})
 
 // rawMediaType is a response media type of the raw spec.
 type rawMediaType struct {
