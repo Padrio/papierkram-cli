@@ -1,0 +1,406 @@
+package cli
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"text/tabwriter"
+	"unicode"
+
+	"github.com/spf13/cobra"
+
+	"github.com/Padrio/papierkram-cli/internal/auth"
+	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/config"
+)
+
+// maxTokenInput bounds what auth login reads from stdin.
+const maxTokenInput = 64 << 10
+
+func newAuthCmd(app *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auth",
+		Short: "API-Token anmelden, abmelden und prüfen",
+		Long: "Hinterlegt das API-Token eines Kontexts im Schlüsselbund des Betriebssystems, entfernt es wieder\n" +
+			"oder zeigt, welcher Kontext, welches Token und welcher Schreibschutz gerade gelten.",
+		Args: noArgs,
+		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
+	}
+	cmd.AddCommand(newAuthLoginCmd(app), newAuthLogoutCmd(app), newAuthStatusCmd(app))
+	return cmd
+}
+
+// selectContext returns the context auth login/logout act on, in the same
+// order as every other command (flag > PAPIERKRAM_CONTEXT > project file >
+// active_context).
+func (a *App) selectContext(cfg *config.Config) (name, source string, err error) {
+	in, err := a.resolveInput()
+	if err != nil {
+		return "", "", err
+	}
+	name, source = config.SelectContext(cfg, in)
+	return name, source, nil
+}
+
+func newAuthLoginCmd(app *App) *cobra.Command {
+	var subdomain string
+	var tokenStdin, insecure bool
+	cmd := &cobra.Command{
+		Use:         "login",
+		Annotations: writesConfig(),
+		Short:       "Token prüfen und speichern",
+		Long: "Liest das API-Token (Papierkram: Einstellungen → API) verdeckt vom Terminal oder mit --token-stdin\n" +
+			"von der Standardeingabe, prüft es mit GET /info (1 Credit) und speichert es erst danach im\n" +
+			"Schlüsselbund des Betriebssystems. Das Token wird nie als Flag-Wert angenommen.\n\n" +
+			"Ziel ist der gewählte Kontext (--context, PAPIERKRAM_CONTEXT, Projektdatei, aktiver Kontext).\n" +
+			"Existiert er nicht, wird er mit --subdomain angelegt (und aktiv, falls noch keiner aktiv ist).\n" +
+			"Ohne Schlüsselbund (z. B. Linux ohne Secret Service) speichert nur --insecure-storage das Token\n" +
+			"im Klartext in config.toml (Rechte 0600).",
+		Example: "  papierkram auth login --context firma-gmbh --subdomain firma-gmbh\n" +
+			"  papierkram auth login --token-stdin < token.txt",
+		Args: func(c *cobra.Command, args []string) error {
+			if err := noArgs(c, args); err != nil {
+				return err
+			}
+			if c.Flags().Changed("subdomain") {
+				s, err := config.NormalizeSubdomain(subdomain, "--subdomain")
+				if err != nil {
+					return err
+				}
+				subdomain = s
+			}
+			if !tokenStdin && (!app.StdinTTY || app.Flags.NoInput) {
+				return clierr.New(clierr.CodeUsage,
+					"Kein Terminal für die verdeckte Token-Eingabe",
+					"Token über die Standardeingabe übergeben: papierkram auth login --token-stdin < token.txt")
+			}
+			return nil
+		},
+		RunE: func(c *cobra.Command, _ []string) error {
+			return app.login(c, subdomain, tokenStdin, insecure)
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&subdomain, "subdomain", "", "Subdomain, wenn der Kontext neu angelegt wird")
+	f.BoolVar(&tokenStdin, "token-stdin", false, "Token von der Standardeingabe lesen (Leerzeichen und Zeilenende werden entfernt)")
+	f.BoolVar(&insecure, "insecure-storage", false, "ohne Schlüsselbund das Token im Klartext in config.toml speichern")
+	return cmd
+}
+
+// loginEnv hides the variables that must not influence the verification
+// of a new token: it belongs to the target context and its subdomain.
+// PAPIERKRAM_BASE_URL still applies (mock servers, tests).
+func (a *App) loginEnv(k string) string {
+	switch k {
+	case "PAPIERKRAM_TOKEN", "PAPIERKRAM_SUBDOMAIN", "PAPIERKRAM_CONTEXT":
+		return ""
+	}
+	return a.Env(k)
+}
+
+func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure bool) error {
+	cfg, path, err := a.loadConfig()
+	if err != nil {
+		return err
+	}
+	name, source, err := a.selectContext(cfg)
+	if err != nil {
+		return err
+	}
+	created, activated, err := loginTarget(cfg, name, subdomain)
+	if err != nil {
+		return err
+	}
+	token, err := a.readLoginToken(tokenStdin, name)
+	if err != nil {
+		return err
+	}
+
+	// Resolve the target like every other command, so that timeout, base
+	// URL and --debug behave the same; only the token is the new one.
+	r, err := config.Resolve(cfg, config.ResolveInput{FlagContext: name, Env: a.loginEnv})
+	if err != nil {
+		return err
+	}
+	r.ContextSource, r.Token, r.TokenSource = source, token, ""
+	if u := a.Env("PAPIERKRAM_BASE_URL"); u != "" {
+		_, _ = fmt.Fprintf(a.Err, "Hinweis: Das Token wird gegen PAPIERKRAM_BASE_URL (%s) geprüft.\n", u)
+	}
+	client, err := a.clientFor(r)
+	if err != nil {
+		return err
+	}
+	if _, err := client.Call(c.Context(), "GetInfo", nil, nil, nil); err != nil {
+		ce := clierr.From(err)
+		ce.Message += "; das Token wurde nicht gespeichert"
+		return ce
+	}
+
+	ctx := cfg.Contexts[name]
+	tokenSource := config.SourceKeychain
+	inKeychain, dirty := false, created
+	switch err := a.Keyring.Set(name, token); {
+	case err == nil:
+		inKeychain = true
+		if ctx.Token != "" { // a plain-text token from an earlier fallback is obsolete
+			ctx.Token, dirty = "", true
+		}
+	case errors.Is(err, auth.ErrUnavailable):
+		if !insecure {
+			return clierr.New(clierr.CodeAuth,
+				"Kein Schlüsselbund verfügbar; das Token wurde nicht gespeichert",
+				"Mit --insecure-storage wird es stattdessen im Klartext in config.toml (Rechte 0600) gespeichert: papierkram auth login --insecure-storage")
+		}
+		ctx.Token, tokenSource, dirty = token, config.SourceConfig, true
+	default:
+		return keyringErr(err, fmt.Sprintf("Token für Kontext %q konnte nicht gespeichert werden", name))
+	}
+	// config.toml is only rewritten when it changed (rewriting drops comments).
+	if dirty {
+		if err := wrapConfigErr(cfg.Save(path), path); err != nil {
+			if inKeychain && created {
+				_ = a.Keyring.Delete(name)
+			}
+			return err
+		}
+	}
+
+	if created {
+		msg := fmt.Sprintf("Kontext %q angelegt", name)
+		if activated {
+			msg += " und aktiviert"
+		}
+		_, _ = fmt.Fprintln(a.Err, msg+".")
+	}
+	where := "im Schlüsselbund"
+	if tokenSource == config.SourceConfig {
+		where = "in " + path
+		_, _ = fmt.Fprintf(a.Err, "Warnung: Kein Schlüsselbund verfügbar. Das Token steht wegen --insecure-storage im Klartext in %s (Rechte 0600). Wer diese Datei lesen kann, kann die Papierkram-API mit dem Token nutzen.\n", path)
+	}
+	_, _ = fmt.Fprintf(a.Err, "Angemeldet: Kontext %q (Subdomain %s), Token %s gespeichert.\n", name, ctx.Subdomain, where)
+	if a.Env("PAPIERKRAM_TOKEN") != "" {
+		_, _ = fmt.Fprintln(a.Err, "Hinweis: PAPIERKRAM_TOKEN ist gesetzt und hat weiterhin Vorrang vor dem gespeicherten Token.")
+	}
+	if a.outputFormat(r) == "json" {
+		return a.writeJSON(map[string]string{"context": name, "subdomain": ctx.Subdomain, "token_source": tokenSource})
+	}
+	return nil
+}
+
+// loginTarget checks the target context of auth login and creates it (in
+// memory) when it is missing and a subdomain was given.
+func loginTarget(cfg *config.Config, name, subdomain string) (created, activated bool, err error) {
+	if name == "" {
+		return false, false, clierr.New(clierr.CodeUsage, "Kein Kontext gewählt",
+			"Kontext angeben und bei Bedarf anlegen: papierkram auth login --context <name> --subdomain <subdomain>")
+	}
+	if ctx, ok := cfg.Contexts[name]; ok && ctx != nil {
+		if subdomain != "" && subdomain != ctx.Subdomain {
+			return false, false, clierr.New(clierr.CodeUsage,
+				fmt.Sprintf("Kontext %q hat bereits die Subdomain %q; --subdomain %s passt nicht dazu", name, ctx.Subdomain, subdomain),
+				"--subdomain weglassen oder einen anderen Kontext wählen")
+		}
+		return false, false, nil
+	}
+	if subdomain == "" {
+		return false, false, clierr.New(clierr.CodeUsage, fmt.Sprintf("Kontext %q existiert nicht", name),
+			fmt.Sprintf("Mit Subdomain anlegen: papierkram auth login --context %s --subdomain <subdomain>", name))
+	}
+	if err := cfg.Create(name, &config.Context{Subdomain: subdomain}); err != nil {
+		return false, false, err
+	}
+	if cfg.ActiveContext == "" {
+		cfg.ActiveContext = name
+		activated = true
+	}
+	return true, activated, nil
+}
+
+// readLoginToken reads the token from stdin or, with a terminal, hidden
+// from the keyboard. Surrounding spaces and line endings (CR/LF) are
+// removed; the token never appears in an error.
+func (a *App) readLoginToken(fromStdin bool, name string) (string, error) {
+	var raw []byte
+	var err error
+	if fromStdin {
+		raw, err = io.ReadAll(io.LimitReader(a.In, maxTokenInput))
+	} else {
+		_, _ = fmt.Fprintf(a.Err, "Token für Kontext %q (Eingabe verdeckt): ", name)
+		raw, err = a.ReadPassword()
+		_, _ = fmt.Fprintln(a.Err)
+	}
+	if err != nil {
+		return "", clierr.New(clierr.CodeError, "Token konnte nicht gelesen werden: "+err.Error(), "")
+	}
+	token := strings.TrimSpace(string(raw))
+	if token == "" {
+		return "", clierr.New(clierr.CodeAuth, "Kein Token angegeben",
+			"Token in Papierkram unter Einstellungen → API anlegen und erneut eingeben")
+	}
+	if strings.IndexFunc(token, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return "", clierr.New(clierr.CodeAuth, "Token ungültig: enthält Leer- oder Steuerzeichen",
+			"Nur das Token übergeben, eine Zeile, z. B. papierkram auth login --token-stdin < token.txt")
+	}
+	return token, nil
+}
+
+func newAuthLogoutCmd(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:         "logout",
+		Annotations: writesConfig(),
+		Short:       "Token entfernen",
+		Long: "Entfernt das Token des gewählten Kontexts aus dem Schlüsselbund und aus config.toml.\n" +
+			"Der Kontext selbst bleibt erhalten. War kein Token gespeichert, ist das kein Fehler.",
+		Args: noArgs,
+		RunE: func(_ *cobra.Command, _ []string) error { return app.logout() },
+	}
+}
+
+func (a *App) logout() error {
+	cfg, path, err := a.loadConfig()
+	if err != nil {
+		return err
+	}
+	name, _, err := a.selectContext(cfg)
+	if err != nil {
+		return err
+	}
+	if name == "" {
+		return clierr.New(clierr.CodeUsage, "Kein Kontext gewählt", "Kontext angeben: papierkram auth logout --context <name>")
+	}
+	ctx, ok := cfg.Contexts[name]
+	if !ok || ctx == nil {
+		return clierr.New(clierr.CodeNotFound, fmt.Sprintf("Kontext %q nicht gefunden", name),
+			"Vorhandene Kontexte: papierkram context list")
+	}
+	var removed []string
+	switch err := a.Keyring.Delete(name); {
+	case err == nil:
+		removed = append(removed, "Schlüsselbund")
+	case errors.Is(err, auth.ErrNotFound):
+	case errors.Is(err, auth.ErrUnavailable):
+		a.warnKeyring("Schlüsselbund nicht verfügbar, ein dort gespeichertes Token von %q wurde nicht entfernt.", name)
+	default:
+		return keyringErr(err, fmt.Sprintf("Token von Kontext %q konnte nicht entfernt werden", name))
+	}
+	if ctx.Token != "" {
+		ctx.Token = ""
+		if err := wrapConfigErr(cfg.Save(path), path); err != nil {
+			return err
+		}
+		removed = append(removed, "config.toml")
+	}
+	if len(removed) == 0 {
+		_, _ = fmt.Fprintf(a.Err, "Hinweis: Kontext %q war bereits abgemeldet (kein Token gespeichert).\n", name)
+	} else {
+		_, _ = fmt.Fprintf(a.Err, "Abgemeldet: Kontext %q, Token entfernt aus: %s.\n", name, strings.Join(removed, ", "))
+	}
+	if a.Env("PAPIERKRAM_TOKEN") != "" {
+		_, _ = fmt.Fprintln(a.Err, "Hinweis: PAPIERKRAM_TOKEN ist weiterhin gesetzt und wird verwendet.")
+	}
+	return nil
+}
+
+type quotaJSON struct {
+	Remaining int  `json:"remaining"`
+	Consumed  int  `json:"consumed"`
+	Known     bool `json:"known"`
+}
+
+type statusJSON struct {
+	Context        string    `json:"context"`
+	ContextSource  string    `json:"context_source"`
+	Subdomain      string    `json:"subdomain"`
+	BaseURL        string    `json:"base_url"`
+	TokenSource    string    `json:"token_source"`
+	ReadOnly       bool      `json:"read_only"`
+	ReadOnlySource string    `json:"read_only_source"`
+	Quota          quotaJSON `json:"quota"`
+}
+
+func newAuthStatusCmd(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Kontext, Token-Quelle, Schreibschutz und Restkontingent anzeigen",
+		Long: "Zeigt den wirksamen Kontext (mit Herkunft), Subdomain, Basis-URL, die Quelle des Tokens (env, keychain\n" +
+			"oder config; das Token selbst nie), die Schreibschutzstufe und das Restkontingent.\n" +
+			"Das Kontingent stammt aus einem Aufruf von GET /info und kostet 1 Credit.\n" +
+			"Fehlt das Token oder lehnt die API es ab, werden die bekannten Angaben trotzdem ausgegeben (Exit 3).",
+		Args: noArgs,
+		RunE: func(c *cobra.Command, _ []string) error {
+			r, err := app.resolveConfig()
+			if err != nil {
+				return err
+			}
+			client, callErr := app.clientFor(r)
+			if callErr == nil {
+				_, callErr = client.Call(c.Context(), "GetInfo", nil, nil, nil)
+			}
+			st := statusJSON{
+				Context: r.Context, ContextSource: r.ContextSource,
+				Subdomain: r.Subdomain, BaseURL: r.BaseURL, TokenSource: r.TokenSource,
+				ReadOnly: r.ReadOnly, ReadOnlySource: r.ReadOnlySource,
+				Quota: quotaJSON{app.quota.Remaining, app.quota.Consumed, app.quota.Known},
+			}
+			if app.outputFormat(r) == "json" {
+				if err := app.writeJSON(st); err != nil {
+					return err
+				}
+			} else if err := app.writeStatusText(st); err != nil {
+				return err
+			}
+			return callErr
+		},
+	}
+}
+
+var contextSourceText = map[string]string{
+	config.SourceFlag:        "--context",
+	config.SourceEnv:         "PAPIERKRAM_CONTEXT",
+	config.SourceProjectFile: "Projektdatei",
+	config.SourceConfig:      "active_context",
+}
+
+var tokenSourceText = map[string]string{
+	config.SourceEnv:      "env (PAPIERKRAM_TOKEN)",
+	config.SourceKeychain: "keychain (Schlüsselbund)",
+	config.SourceConfig:   "config (Klartext in config.toml)",
+	"":                    "keins",
+}
+
+func (a *App) writeStatusText(st statusJSON) error {
+	orDash := func(s string) string {
+		if s == "" {
+			return "–"
+		}
+		return s
+	}
+	ctx := "– (keiner gewählt)"
+	if st.Context != "" {
+		ctx = fmt.Sprintf("%s (%s)", st.Context, contextSourceText[st.ContextSource])
+	}
+	ro := "aus"
+	switch st.ReadOnlySource {
+	case config.SourceEnv:
+		ro = "an (env: PAPIERKRAM_READ_ONLY)"
+	case config.SourceContext:
+		ro = "an (context: read_only = true im Kontext)"
+	}
+	quota := "unbekannt"
+	if st.Quota.Known {
+		quota = fmt.Sprintf("%d Credits übrig (verbraucht: %d)", st.Quota.Remaining, st.Quota.Consumed)
+	}
+	tw := tabwriter.NewWriter(a.Out, 0, 4, 2, ' ', 0)
+	for _, row := range [][2]string{
+		{"Kontext:", ctx},
+		{"Subdomain:", orDash(st.Subdomain)},
+		{"Basis-URL:", orDash(st.BaseURL)},
+		{"Token-Quelle:", tokenSourceText[st.TokenSource]},
+		{"Schreibschutz:", ro},
+		{"Kontingent:", quota},
+	} {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\n", row[0], row[1])
+	}
+	return tw.Flush()
+}

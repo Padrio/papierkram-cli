@@ -151,6 +151,7 @@ func NewRootCmd(app *App) *cobra.Command {
 
 	root.AddCommand(newVersionCmd(app))
 	root.AddCommand(newContextCmd(app))
+	root.AddCommand(newAuthCmd(app))
 	applyGerman(root)
 	return root
 }

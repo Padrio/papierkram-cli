@@ -378,6 +378,8 @@ var configWriteSampleArgs = map[string][]string{
 	"papierkram context use":    {"b"},
 	"papierkram context delete": {"b"},
 	"papierkram context rename": {"b", "c"},
+	"papierkram auth login":     {"--token-stdin"},
+	"papierkram auth logout":    {},
 }
 
 func TestConfigWritingCommandsAnnotatedAndBlocked(t *testing.T) {
@@ -388,7 +390,7 @@ func TestConfigWritingCommandsAnnotatedAndBlocked(t *testing.T) {
 			annotated = append(annotated, c.CommandPath())
 		}
 	})
-	for _, want := range []string{"papierkram context create", "papierkram context use", "papierkram context delete", "papierkram context rename"} {
+	for _, want := range []string{"papierkram context create", "papierkram context use", "papierkram context delete", "papierkram context rename", "papierkram auth login", "papierkram auth logout"} {
 		if !slices.Contains(annotated, want) {
 			t.Errorf("%q ist nicht als config-schreibend annotiert", want)
 		}
@@ -407,7 +409,7 @@ func TestConfigWritingCommandsAnnotatedAndBlocked(t *testing.T) {
 			t.Errorf("%v: exit = %d, want 9; stderr = %s", args, code, errb.String())
 		}
 	}
-	for _, path := range []string{"papierkram context list", "papierkram context active", "papierkram version"} {
+	for _, path := range []string{"papierkram context list", "papierkram context active", "papierkram version", "papierkram auth status"} {
 		if slices.Contains(annotated, path) {
 			t.Errorf("%q schreibt nicht und darf nicht annotiert sein", path)
 		}
