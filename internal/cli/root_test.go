@@ -101,12 +101,21 @@ func TestUnknownFlagGerman(t *testing.T) {
 
 func TestGlobalFlagsParsed(t *testing.T) {
 	app, _, _ := newTestApp(t)
-	if code := Run(app, []string{"--context", "x", "-y", "--no-input", "--dry-run", "--no-color", "--debug", "--fields", "id", "--jq", ".", "--timeout", "5s", "-o", "json", "version"}); code != 0 {
+	if code := Run(app, []string{"--context", "x", "-y", "--no-input", "--no-color", "--debug", "--fields", "id", "--jq", ".", "--timeout", "5s", "-o", "json", "version"}); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
 	f := app.Flags
-	if f.Context != "x" || !f.Yes || !f.NoInput || !f.DryRun || !f.NoColor || !f.Debug || f.Fields != "id" || f.JQ != "." || f.Timeout.Seconds() != 5 || f.Output != "json" {
+	if f.Context != "x" || !f.Yes || !f.NoInput || !f.NoColor || !f.Debug || f.Fields != "id" || f.JQ != "." || f.Timeout.Seconds() != 5 || f.Output != "json" {
 		t.Errorf("Flags = %+v", f)
+	}
+
+	// --dry-run is parsed, but version only reads: exit 2 (Task 24)
+	app, _, errb := newTestApp(t)
+	if code := Run(app, []string{"--dry-run", "version"}); code != 2 || !app.Flags.DryRun {
+		t.Fatalf("exit = %d, DryRun = %t", code, app.Flags.DryRun)
+	}
+	if !strings.Contains(errb.String(), "--dry-run gilt nur für ändernde Befehle") {
+		t.Errorf("stderr = %q", errb.String())
 	}
 }
 

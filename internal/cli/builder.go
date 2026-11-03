@@ -98,20 +98,59 @@ func (a *App) newEntryCmd(e registry.Entry) *cobra.Command {
 			cmd.Flags().Int64(p.flag, 0, fmt.Sprintf("ID des übergeordneten Objekts (%s, Pflicht)", p.name))
 		}
 	}
-	_, simple := simpleActions[e.Action]
-	switch {
-	case e.Action == "list":
+	kind, err := entryKind(e)
+	if err != nil {
+		// fail closed: a command that could send a mutation past the
+		// guards is never built (registry defect, caught by every test)
+		panic(err)
+	}
+	switch kind {
+	case kindList:
 		addListFlags(cmd, e)
 		cmd.RunE = func(c *cobra.Command, _ []string) error { return a.runList(c, e) }
-	case simple:
+	case kindAction:
 		cmd.RunE = func(c *cobra.Command, args []string) error { return a.runSimpleAction(c, e, args) }
-	case isWrite(e):
+	case kindWrite:
 		addWriteFlags(cmd, e)
 		cmd.RunE = func(c *cobra.Command, args []string) error { return a.runWrite(c, e, args) }
 	default:
 		cmd.RunE = func(c *cobra.Command, args []string) error { return a.runDescribe(c, e, args) }
 	}
 	return cmd
+}
+
+// The runners of the generic builder.
+const (
+	kindList     = "list"
+	kindDescribe = "describe"
+	kindAction   = "action"
+	kindWrite    = "write"
+)
+
+// entryKind picks the runner of a generic entry and fails closed: list and
+// describe (every other action, also info and pdf-like reads) send without
+// guards, so they are only allowed for class read_only; simple actions and
+// create/update run the guards and must not be read_only (the gate would
+// let them pass). Any other combination, e.g. a destructive entry with an
+// unknown action, is an error: such commands need a Custom handler.
+func entryKind(e registry.Entry) (string, error) {
+	_, simple := simpleActions[e.Action]
+	readOnly := e.Class == registry.ClassReadOnly
+	kind := kindDescribe
+	switch {
+	case e.Action == "list":
+		kind = kindList
+	case simple:
+		kind = kindAction
+	case isWrite(e):
+		kind = kindWrite
+	}
+	mutating := kind == kindAction || kind == kindWrite
+	if mutating == readOnly {
+		return "", fmt.Errorf("registry: %s %s (%s) hat Klasse %q, der generische Builder führt sie als %s aus – Klasse korrigieren oder Custom-Handler verwenden",
+			e.Resource, e.Action, e.OperationID, e.Class, kind)
+	}
+	return kind, nil
 }
 
 // entryLong is the German long help of an entry command: the short help

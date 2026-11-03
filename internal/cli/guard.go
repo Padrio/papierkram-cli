@@ -55,11 +55,19 @@ func (a *App) warnReadOnlyEnv() {
 // command; checkDryRun reads it.
 const annotClass = "pk:class"
 
+// readsOnly is the Annotations value of meta commands that only read
+// (version, context list|active, auth status): class read_only, so
+// --dry-run is rejected there like on list and describe.
+func readsOnly() map[string]string {
+	return map[string]string{annotClass: string(registry.ClassReadOnly)}
+}
+
 // checkDryRun runs in the root PersistentPreRunE, before configuration and
 // requests (exit 2): --dry-run is only meaningful for API mutations. A
 // registry command of class read_only rejects it, and so does a command
 // that writes the configuration (it has no dry run and would write).
-// Commands without a class (meta commands such as version) ignore it.
+// Commands without a class (command groups that only print help) ignore
+// it.
 func (a *App) checkDryRun(c *cobra.Command) error {
 	if !a.Flags.DryRun {
 		return nil

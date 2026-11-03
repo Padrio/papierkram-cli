@@ -380,6 +380,10 @@ func TestDryRunOnReadCommandIsUsageError(t *testing.T) {
 		{"user", "list", "--dry-run"},
 		{"info", "--dry-run"},
 		{"context", "use", "b", "--dry-run"},
+		{"version", "--dry-run"},
+		{"context", "list", "--dry-run"},
+		{"context", "active", "--dry-run"},
+		{"auth", "status", "--dry-run"},
 	} {
 		app, srv := apiApp(t)
 		writeCfg(t, app, twoCtx)
@@ -391,5 +395,74 @@ func TestDryRunOnReadCommandIsUsageError(t *testing.T) {
 		if b, err := os.ReadFile(cfgFile(t, app)); err != nil || string(b) != twoCtx {
 			t.Errorf("%v: config geändert: %s", args, b)
 		}
+	}
+}
+
+// Every generic registry entry has a runner that fits its class: reads
+// (list, describe, info, …) are read_only, simple actions and create/update
+// are not. A mutation with an unknown action must be Custom.
+func TestRegistryEntriesFitGenericRunner(t *testing.T) {
+	for _, e := range registry.Entries() {
+		if !generic(e) {
+			continue
+		}
+		if _, err := entryKind(e); err != nil {
+			t.Error(err)
+		}
+	}
+}
+
+func TestEntryKindFailsClosed(t *testing.T) {
+	for _, e := range []registry.Entry{
+		specEntry(t, "PayVoucher", "voucher", "pay", registry.ClassDestructive),
+		specEntry(t, "DeliverInvoice", "invoice", "deliver", registry.ClassSend),
+		specEntry(t, "CreateInvoice", "invoice", "copy", registry.ClassCreate),
+		specEntry(t, "ListInvoices", "invoice", "list", registry.ClassArchive),
+		specEntry(t, "DeleteInvoice", "invoice", "delete", registry.ClassReadOnly),
+		specEntry(t, "CreateProject", "project", "create", registry.ClassReadOnly),
+	} {
+		if kind, err := entryKind(e); err == nil {
+			t.Errorf("%s %s (%s): Runner %q statt Fehler", e.Resource, e.Action, e.Class, kind)
+		}
+	}
+}
+
+// A destructive entry with an action the builder does not know is never
+// built, so it can never send (no fall-through to describe).
+func TestUnknownDestructiveActionIsNeverBuilt(t *testing.T) {
+	pay := specEntry(t, "PayVoucher", "voucher", "pay", registry.ClassDestructive)
+	app, srv := apiApp(t)
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("Command für unbekannte destruktive Aktion gebaut")
+			}
+		}()
+		runEntries(t, app, nil, []string{"voucher", "pay", "12", "--yes"}, pay)
+	}()
+	wantRequests(t, srv, 0)
+}
+
+func TestDeleteWithTTYAndYesSkipsSummary(t *testing.T) {
+	app, srv := apiApp(t)
+	app.StdinTTY = true
+	wantExit(t, app, runProtect(t, app, "invoice", "delete", "12", "--yes"), 0)
+	if r := wantRequests(t, srv, 1)[0]; r.Method != "DELETE" {
+		t.Errorf("request = %s %s", r.Method, r.Path)
+	}
+	if _, errs := bufs(app); strings.Contains(errs, "eingeben") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
+
+func TestDryRunWithTTYNeverPrompts(t *testing.T) {
+	app, srv := apiApp(t)
+	app.StdinTTY = true
+	in := &countingReader{r: strings.NewReader("12\n")}
+	app.In = in
+	wantExit(t, app, runProtect(t, app, "invoice", "delete", "12", "--dry-run", "-o", "json"), 0)
+	wantRequests(t, srv, 0)
+	if _, errs := bufs(app); errs != "" || in.n != 0 {
+		t.Errorf("stderr = %q, %d Reads", errs, in.n)
 	}
 }

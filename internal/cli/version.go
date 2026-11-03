@@ -12,9 +12,10 @@ import (
 
 func newVersionCmd(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
-		Short: "Version, Commit und Build-Datum anzeigen",
-		Args:  noArgs,
+		Use:         "version",
+		Annotations: readsOnly(),
+		Short:       "Version, Commit und Build-Datum anzeigen",
+		Args:        noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			if o := app.outputOptions(c.Context(), app.Flags.Output); !ownText(o) {
 				return output.RenderValue(o, map[string]string{

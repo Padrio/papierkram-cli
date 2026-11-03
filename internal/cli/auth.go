@@ -375,8 +375,9 @@ type statusJSON struct {
 
 func newAuthStatusCmd(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:   "status",
-		Short: "Kontext, Token-Quelle, Schreibschutz und Restkontingent anzeigen",
+		Use:         "status",
+		Annotations: readsOnly(),
+		Short:       "Kontext, Token-Quelle, Schreibschutz und Restkontingent anzeigen",
 		Long: "Zeigt den wirksamen Kontext (mit Herkunft), Subdomain, Basis-URL, die Quelle des Tokens (env, keychain\n" +
 			"oder config; das Token selbst nie), die Schreibschutzstufe und das Restkontingent.\n" +
 			"Das Kontingent stammt aus einem Aufruf von GET /info und kostet 1 Credit.\n" +

@@ -190,10 +190,11 @@ var contextColumns = output.Columns{
 
 func newContextListCmd(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
-		Short: "Kontexte auflisten",
-		Long:  "Listet alle Kontexte auf; der aktive Kontext ist markiert. Tokens werden nie ausgegeben.",
-		Args:  noArgs,
+		Use:         "list",
+		Annotations: readsOnly(),
+		Short:       "Kontexte auflisten",
+		Long:        "Listet alle Kontexte auf; der aktive Kontext ist markiert. Tokens werden nie ausgegeben.",
+		Args:        noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			cfg, _, err := app.loadConfig()
 			if err != nil {
@@ -217,8 +218,9 @@ func newContextListCmd(app *App) *cobra.Command {
 
 func newContextActiveCmd(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:   "active",
-		Short: "Aktiven Kontext anzeigen",
+		Use:         "active",
+		Annotations: readsOnly(),
+		Short:       "Aktiven Kontext anzeigen",
 		Long: "Zeigt den in der Konfiguration gespeicherten aktiven Kontext (active_context).\n" +
 			"--context, PAPIERKRAM_CONTEXT und die Projektdatei werden hier nicht berücksichtigt.",
 		Args: noArgs,

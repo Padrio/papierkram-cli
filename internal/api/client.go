@@ -164,16 +164,18 @@ var quoteEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 // would send for opID, built with the same generated builder and base URL
 // as callOp, without sending anything (--dry-run).
 func (c *Client) Preview(opID string, pathParams []int64, query url.Values) (method, rawURL string, err error) {
-	req, err := gen.BuildRequest(opID, c.opts.BaseURL, pathParams, query, "", nil)
+	req, err := c.buildOp(opID, pathParams, query, "", nil)
 	if err != nil {
-		return "", "", fmt.Errorf("api: Anfrage für %s kann nicht gebaut werden: %w", opID, err)
+		return "", "", err
 	}
 	return req.Method, req.URL.String(), nil
 }
 
-// callOp builds opID with the generated builder and sends it. body must be
-// an untyped nil when there is no body.
-func (c *Client) callOp(ctx context.Context, opID string, pathParams []int64, query url.Values, contentType string, body io.Reader) (*Response, error) {
+// buildOp builds the request of opID with the generated builder against the
+// base URL; callOp and Preview share it, so a dry run shows exactly what
+// would be sent. body must be an untyped nil when there is no body; then no
+// Content-Type is set.
+func (c *Client) buildOp(opID string, pathParams []int64, query url.Values, contentType string, body io.Reader) (*http.Request, error) {
 	req, err := gen.BuildRequest(opID, c.opts.BaseURL, pathParams, query, contentType, body)
 	if err != nil {
 		return nil, fmt.Errorf("api: Anfrage für %s kann nicht gebaut werden: %w", opID, err)
@@ -181,6 +183,16 @@ func (c *Client) callOp(ctx context.Context, opID string, pathParams []int64, qu
 	if body == nil {
 		// Builders of body operations always add Content-Type, even empty.
 		req.Header.Del("Content-Type")
+	}
+	return req, nil
+}
+
+// callOp builds opID with the generated builder and sends it. body must be
+// an untyped nil when there is no body.
+func (c *Client) callOp(ctx context.Context, opID string, pathParams []int64, query url.Values, contentType string, body io.Reader) (*Response, error) {
+	req, err := c.buildOp(opID, pathParams, query, contentType, body)
+	if err != nil {
+		return nil, err
 	}
 	return c.do(ctx, req)
 }
