@@ -5,7 +5,7 @@
 /papierkram.exe
 *.test
 *.out
-coverage.*
+/coverage.*
 
 # Editor/OS
 .DS_Store
