@@ -44,3 +44,23 @@ func categories(t *testing.T) []string {
 	}
 	return out
 }
+
+func TestNearest(t *testing.T) {
+	tests := []struct {
+		in         string
+		candidates []string
+		n          int
+		want       []string
+	}{
+		// No distance limit: nonsense still gets the closest values.
+		{"xyz", []string{"domestic", "eu", "foreign"}, 2, []string{"eu", "foreign"}},
+		{"ab", []string{"ac", "xb", "ab", "ab"}, 5, []string{"ab", "ac", "xb"}},
+		{"ab", []string{"ac"}, 0, nil},
+		{"BÜRO", []string{"Büro", "Bar"}, 1, []string{"Büro"}},
+	}
+	for _, tc := range tests {
+		if got := Nearest(tc.in, tc.candidates, tc.n); !slices.Equal(got, tc.want) {
+			t.Errorf("Nearest(%q, n=%d) = %q, want %q", tc.in, tc.n, got, tc.want)
+		}
+	}
+}

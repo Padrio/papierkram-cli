@@ -59,3 +59,30 @@ func levenshtein(a, b []rune) int {
 	}
 	return prev[len(b)]
 }
+
+// Nearest returns the n candidates closest to in (Levenshtein distance,
+// case-insensitive), closest first, without a distance limit: there is always
+// a suggestion as long as there are candidates. Ties keep the candidate
+// order; duplicates count once. Huge enums (the expense categories, spec 6.2)
+// use it so a typo always yields three values.
+func Nearest(in string, candidates []string, n int) []string {
+	lin := []rune(strings.ToLower(in))
+	type match struct {
+		s    string
+		dist int
+	}
+	var ms []match
+	seen := map[string]bool{}
+	for _, c := range candidates {
+		if !seen[c] {
+			seen[c] = true
+			ms = append(ms, match{c, levenshtein(lin, []rune(strings.ToLower(c)))})
+		}
+	}
+	sort.SliceStable(ms, func(i, j int) bool { return ms[i].dist < ms[j].dist })
+	var out []string
+	for _, m := range ms[:min(max(n, 0), len(ms))] {
+		out = append(out, m.s)
+	}
+	return out
+}

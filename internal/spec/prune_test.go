@@ -1,0 +1,294 @@
+package spec
+
+import (
+	"bytes"
+	"encoding/json"
+	"slices"
+	"sort"
+	"strings"
+	"testing"
+)
+
+// getExample returns a response example of a GET operation from the embedded
+// spec, decoded like --input (json.Number). name "" takes the first example
+// in name order.
+func getExample(t *testing.T, opID, name string) map[string]any {
+	t.Helper()
+	o, ok := OperationByID(opID)
+	if !ok {
+		t.Fatalf("operation %s not found", opID)
+	}
+	mt := o.Op.Responses.Status(200).Value.Content["application/json"]
+	if mt == nil || len(mt.Examples) == 0 {
+		t.Fatalf("%s has no 200 example", opID)
+	}
+	if name == "" {
+		names := make([]string, 0, len(mt.Examples))
+		for n := range mt.Examples {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		name = names[0]
+	}
+	ex := mt.Examples[name]
+	if ex == nil || ex.Value == nil {
+		t.Fatalf("%s: example %q missing", opID, name)
+	}
+	b, err := json.Marshal(ex.Value.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := DecodeJSON(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		t.Fatalf("%s example is %T, want object", opID, v)
+	}
+	return m
+}
+
+func prune(t *testing.T, opID string, body map[string]any) PruneResult {
+	t.Helper()
+	res, err := Prune(body, RequestSchema(opID), ResourceResponseSchema(opID))
+	if err != nil {
+		t.Fatalf("Prune(%s): %v", opID, err)
+	}
+	return res
+}
+
+func TestR14_UpdateInputPrunesReadOnly(t *testing.T) {
+	in := getExample(t, "GetInvoice", "")
+	before := marshal(t, in)
+	res := prune(t, "UpdateInvoice", in)
+
+	if after := marshal(t, in); after != before {
+		t.Error("Prune modified its input")
+	}
+	for _, k := range []string{"id", "invoice_no", "created_at", "customer_no", "state", "record_state", "total_net", "contact_person", "project", "type"} {
+		if _, ok := res.Body[k]; ok {
+			t.Errorf("response-only field %q kept", k)
+		}
+	}
+	for _, k := range []string{"name", "description", "document_date", "supply_date", "gross", "billing", "customer", "payment_term", "custom_template", "line_items"} {
+		if _, ok := res.Body[k]; !ok {
+			t.Errorf("request field %q removed", k)
+		}
+	}
+	if got := marshal(t, res.Body["customer"]); got != `{"id":3214}` {
+		t.Errorf("customer = %s, want {\"id\":3214}", got)
+	}
+	if got := marshal(t, res.Body["payment_term"]); got != `{"id":1130}` {
+		t.Errorf("payment_term = %s, want {\"id\":1130}", got)
+	}
+	for _, it := range res.Body["line_items"].([]any) {
+		item := it.(map[string]any)
+		for _, k := range []string{"total_net", "total_gross", "total_vat", "document_charge", "position_in_group"} {
+			if _, ok := item[k]; ok {
+				t.Errorf("line item field %q kept", k)
+			}
+		}
+	}
+	for _, want := range []string{"id", "invoice_no", "customer_no", "contact_person", "project", "customer.name", "customer.type", "payment_term.template_id", "line_items[].total_net", "line_items[].position_in_group"} {
+		if !slices.Contains(res.Removed, want) {
+			t.Errorf("Removed %q lacks %q", res.Removed, want)
+		}
+	}
+	if !slices.IsSorted(res.Removed) {
+		t.Errorf("Removed not sorted: %q", res.Removed)
+	}
+	if n := len(slices.Compact(slices.Clone(res.Removed))); n != len(res.Removed) {
+		t.Errorf("Removed has duplicates: %q", res.Removed)
+	}
+	// The request schema wins: billing.contact_person is a request field,
+	// although the response has a top-level contact_person too.
+	if b := res.Body["billing"].(map[string]any); b["contact_person"] != "John Doe" {
+		t.Errorf("billing.contact_person = %v", b["contact_person"])
+	}
+}
+
+func TestR31_DescribeRoundTripKeepsItems(t *testing.T) {
+	req := RequestSchema("UpdateInvoice")
+	res := prune(t, "UpdateInvoice", getExample(t, "GetInvoice", ""))
+	coerced, err := CoerceValue(req, res.Body, "")
+	if err != nil {
+		t.Fatalf("CoerceValue: %v", err)
+	}
+	if err := Validate(coerced, req); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	items := coerced.(map[string]any)["line_items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("got %d line items, want 2", len(items))
+	}
+	first := items[0].(map[string]any)
+	for _, k := range []string{"name", "description", "quantity", "price", "unit", "type_of", "discount_percentage", "discount_calculated", "price_gross"} {
+		if _, ok := first[k]; !ok {
+			t.Errorf("line item field %q removed (request schema must win over readOnly)", k)
+		}
+	}
+	if first["vat_rate"] != json.Number("0.19") {
+		t.Errorf("vat_rate = %#v, want json.Number 0.19", first["vat_rate"])
+	}
+	if v := items[1].(map[string]any)["vat_rate"]; v != json.Number("0.07") {
+		t.Errorf("second vat_rate = %#v, want json.Number 0.07", v)
+	}
+	if first["name"] != "Büroartikel" || first["price"] != json.Number("100") {
+		t.Errorf("line item values changed: %v", first)
+	}
+}
+
+// Every GET example of a resource with an update operation survives the
+// describe → update round trip: Prune, CoerceValue and Validate accept it.
+func TestPruneRoundTripAllUpdateExamples(t *testing.T) {
+	n := 0
+	for _, o := range Operations() {
+		if o.Method != "PUT" || RequestSchema(o.ID) == nil {
+			continue
+		}
+		get := strings.Replace(o.ID, "Update", "Get", 1)
+		g, ok := OperationByID(get)
+		if !ok {
+			t.Errorf("%s: no %s", o.ID, get)
+			continue
+		}
+		mt := g.Op.Responses.Status(200).Value.Content["application/json"]
+		for name := range mt.Examples {
+			n++
+			req := RequestSchema(o.ID)
+			res, err := Prune(getExample(t, get, name), req, ResourceResponseSchema(o.ID))
+			if err != nil {
+				t.Errorf("%s / %s: Prune: %v", o.ID, name, err)
+				continue
+			}
+			c, err := CoerceValue(req, res.Body, "")
+			if err != nil {
+				t.Errorf("%s / %s: CoerceValue: %v", o.ID, name, err)
+				continue
+			}
+			if err := Validate(c, req); err != nil {
+				t.Errorf("%s / %s: Validate: %v", o.ID, name, err)
+			}
+		}
+	}
+	if n < 10 {
+		t.Errorf("only %d examples checked", n)
+	}
+}
+
+func TestR13_NoteSuggestsNotes(t *testing.T) {
+	body := map[string]any{"name": "ACME", "contact_type": "customer", "note": "x"}
+	_, err := Prune(body, RequestSchema("CreateCompany"), ResourceResponseSchema("CreateCompany"))
+	wantValidation(t, err, `unbekanntes Feld "note" – meintest du "notes"?`)
+	if exit := err.(interface{ Exit() int }).Exit(); exit != 5 {
+		t.Errorf("exit = %d, want 5", exit)
+	}
+	// Validate without Prune reports the same (additionalProperties: false).
+	wantValidation(t, Validate(body, RequestSchema("CreateCompany")), `unbekanntes Feld "note" – meintest du "notes"?`)
+}
+
+func TestPruneCollectsAllUnknownFields(t *testing.T) {
+	body := map[string]any{
+		"name": "R", "nmae": "x", "zzzzzzzz": 1,
+		"customer":   map[string]any{"id": json.Number("1"), "proejct": "y"},
+		"line_items": []any{map[string]any{"name": "a", "quantty": 1}, map[string]any{"name": "b", "quantty": 2}},
+	}
+	_, err := Prune(body, RequestSchema("CreateInvoice"), ResourceResponseSchema("CreateInvoice"))
+	wantValidation(t, err,
+		`unbekanntes Feld "nmae" – meintest du "name"?`,
+		`unbekanntes Feld "customer.proejct" – meintest du "project"?`,
+		`unbekanntes Feld "line_items[].quantty" – meintest du "quantity"?`,
+		`"nmae" → "name"`,
+	)
+	msg := err.Error()
+	if !strings.Contains(msg, "unbekanntes Feld \"zzzzzzzz\"\n") && !strings.HasSuffix(msg, `unbekanntes Feld "zzzzzzzz"`) {
+		t.Errorf("unknown field without suggestion missing or with suggestion clause: %q", msg)
+	}
+	if c := strings.Count(msg, "quantty"); c != 1 {
+		t.Errorf("line item unknown reported %d times, want once: %q", c, msg)
+	}
+	if lines := strings.Count(msg, "\n") + 1; lines != 4 {
+		t.Errorf("got %d lines, want 4: %q", lines, msg)
+	}
+}
+
+func TestPruneNullForNonNullableRequestField(t *testing.T) {
+	body := map[string]any{
+		"name":            "R",
+		"custom_template": nil,
+		"description":     nil,
+		"line_items":      []any{map[string]any{"name": "a", "proposition": nil}},
+	}
+	res := prune(t, "UpdateInvoice", body)
+	if _, ok := res.Body["custom_template"]; ok {
+		t.Error("custom_template: null kept although the request does not allow null")
+	}
+	if v, ok := res.Body["description"]; !ok || v != nil {
+		t.Error("description: null removed although the request allows null")
+	}
+	if _, ok := res.Body["line_items"].([]any)[0].(map[string]any)["proposition"]; ok {
+		t.Error("line_items[].proposition: null kept")
+	}
+	if !slices.Equal(res.Removed, []string{"custom_template", "line_items[].proposition"}) {
+		t.Errorf("Removed = %q", res.Removed)
+	}
+}
+
+func TestPruneKeepsFreeFormMaps(t *testing.T) {
+	body := map[string]any{"name": "ACME", "contact_type": "customer", "custom_attributes": map[string]any{"12": "x", "13": json.Number("4")}}
+	res := prune(t, "UpdateCompany", body)
+	if got := marshal(t, res.Body["custom_attributes"]); got != `{"12":"x","13":4}` {
+		t.Errorf("custom_attributes = %s", got)
+	}
+	if len(res.Removed) != 0 {
+		t.Errorf("Removed = %q", res.Removed)
+	}
+}
+
+func TestPruneKeepsPrecision(t *testing.T) {
+	body := map[string]any{"name": "A", "article_no": "1", "time_unit": "hour", "proposition_type": "service", "vat_rate": "0.19", "price": json.Number("19.99"), "id": json.Number("9007199254740993")}
+	res := prune(t, "UpdateProposition", body)
+	if res.Body["price"] != json.Number("19.99") {
+		t.Errorf("price = %#v", res.Body["price"])
+	}
+	if !slices.Equal(res.Removed, []string{"id"}) {
+		t.Errorf("Removed = %q", res.Removed)
+	}
+}
+
+func TestPruneNilRequestSchema(t *testing.T) {
+	_, err := Prune(map[string]any{"a": 1}, nil, nil)
+	if err == nil {
+		t.Fatal("want error for nil request schema")
+	}
+}
+
+func TestResourceResponseSchema(t *testing.T) {
+	get := ResponseSchema("GetInvoice")
+	for _, op := range []string{"CreateInvoice", "UpdateInvoice", "GetInvoice"} {
+		if ResourceResponseSchema(op) != get {
+			t.Errorf("%s: not the GetInvoice response schema", op)
+		}
+	}
+	if ResourceResponseSchema("CreatePerson") != ResponseSchema("GetPerson") {
+		t.Error("CreatePerson: not the GetPerson response schema")
+	}
+	if ResourceResponseSchema("UpdatePerson") != ResponseSchema("GetPerson") {
+		t.Error("UpdatePerson: not the GetPerson response schema")
+	}
+	for _, op := range []string{"DeliverInvoice", "Nope"} {
+		if ResourceResponseSchema(op) != nil {
+			t.Errorf("%s: want nil", op)
+		}
+	}
+	// Every create/update operation with a body finds its resource.
+	for _, o := range Operations() {
+		if RequestSchema(o.ID) == nil || !strings.HasPrefix(o.ID, "Create") && !strings.HasPrefix(o.ID, "Update") {
+			continue
+		}
+		if ResourceResponseSchema(o.ID) == nil {
+			t.Errorf("%s: no resource response schema", o.ID)
+		}
+	}
+}

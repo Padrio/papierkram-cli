@@ -387,3 +387,36 @@ func TestEnumHint(t *testing.T) {
 		t.Error("nil schema")
 	}
 }
+
+// describe output carries response forms that the request expresses as a
+// scalar: a proposition's vat_rate object (VatRateFlat) and custom attribute
+// objects {id, name, type, value}.
+func TestCoerceValueUnwrapsResponseForms(t *testing.T) {
+	prop := map[string]any{"vat_rate": map[string]any{"id": json.Number("1"), "name": "19%", "rate": json.Number("0.19"), "type": "vat_rate"}}
+	got, err := CoerceValue(RequestSchema("UpdateProposition"), prop, "")
+	if err != nil || marshal(t, got) != `{"vat_rate":"0.19"}` {
+		t.Errorf("proposition vat_rate: %s, %v", marshal(t, got), err)
+	}
+	comp := map[string]any{"custom_attributes": map[string]any{
+		"286": map[string]any{"id": json.Number("286"), "name": "Test", "type": "custom_attribute", "value": "Wert"},
+		"287": json.Number("4"),
+	}}
+	got, err = CoerceValue(RequestSchema("UpdateCompany"), comp, "")
+	if err != nil || marshal(t, got) != `{"custom_attributes":{"286":"Wert","287":4}}` {
+		t.Errorf("custom_attributes: %s, %v", marshal(t, got), err)
+	}
+	// An object without value stays for the validator.
+	comp = map[string]any{"custom_attributes": map[string]any{"1": map[string]any{"x": "y"}}}
+	got, _ = CoerceValue(RequestSchema("UpdateCompany"), comp, "")
+	if marshal(t, got) != `{"custom_attributes":{"1":{"x":"y"}}}` {
+		t.Errorf("object without value: %s", marshal(t, got))
+	}
+}
+
+// Flags use the same enum suggestions as Validate: huge enums always name the
+// three closest values (spec 6.2).
+func TestCoerceFlagHugeEnumThreeSuggestions(t *testing.T) {
+	f := Field{Flag: "category", Path: []string{"category"}, Kind: KindScalar, Type: "string", Enum: categories(t)}
+	_, err := CoerceFlag(testCC(t), f, "Bürobedraf")
+	wantValidation(t, err, `ungültiger Wert "Bürobedraf" für --category – meintest du "Bürobedarf", "Büroartikel" oder "Betriebsbedarf"?`)
+}

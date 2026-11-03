@@ -172,13 +172,7 @@ func checkEnum(f Field, raw string) error {
 		}
 	}
 	msg := fmt.Sprintf("ungültiger Wert %q für --%s", raw, f.Flag)
-	var sugg []string
-	if h, ok := EnumHint(f.Schema, raw); ok {
-		sugg = []string{h}
-	} else {
-		sugg = Suggest(raw, f.Enum, 3)
-	}
-	if len(sugg) > 0 {
+	if sugg := enumSuggestions(f.Schema, raw, f.Enum); len(sugg) > 0 {
 		msg += " – meintest du " + quoteList(sugg, "oder") + "?"
 	}
 	hint := "erlaubt: " + strings.Join(f.Enum, ", ")
@@ -186,6 +180,20 @@ func checkEnum(f Field, raw string) error {
 		hint = "alle Werte zeigt die Completion (Tab)"
 	}
 	return clierr.New(clierr.CodeValidation, msg, hint)
+}
+
+// enumSuggestions returns the values to suggest for an invalid enum input
+// (flags and Validate alike): for huge enums (the expense categories, spec
+// 6.2) always the three closest values; otherwise the x-cli-enum-hints entry,
+// else up to three close values.
+func enumSuggestions(s *openapi3.Schema, in string, allowed []string) []string {
+	if len(allowed) > bigEnum {
+		return Nearest(in, allowed, 3)
+	}
+	if h, ok := EnumHint(s, in); ok {
+		return []string{h}
+	}
+	return Suggest(in, allowed, 3)
 }
 
 // quoteList renders ["a","b","c"] as `"a", "b" oder "c"`.
@@ -205,12 +213,7 @@ func coerceAttr(f Field, raw string) (any, error) {
 	if !ok {
 		return nil, flagError(f, raw, "erwartet <id>=<wert>", "z. B. --"+f.Flag+" 12=Wert")
 	}
-	pattern := defaultKeyPattern
-	if f.Schema != nil {
-		if p, ok := f.Schema.Extensions["x-cli-key-pattern"].(string); ok {
-			pattern = p
-		}
-	}
+	pattern := keyPattern(f.Schema)
 	re, err := regexp.Compile(pattern)
 	if err != nil {
 		return nil, clierr.New(clierr.CodeError, fmt.Sprintf("--%s: ungültiges Schlüsselmuster %q in der Spec", f.Flag, pattern), "")
@@ -219,6 +222,17 @@ func coerceAttr(f Field, raw string) (any, error) {
 		return nil, flagError(f, raw, fmt.Sprintf("Attribut-ID %q passt nicht zum Muster %s", key, pattern), "z. B. --"+f.Flag+" 12=Wert")
 	}
 	return map[string]any{key: val}, nil
+}
+
+// keyPattern is the pattern custom attribute keys must match: the schema's
+// x-cli-key-pattern, else defaultKeyPattern.
+func keyPattern(s *openapi3.Schema) string {
+	if s != nil {
+		if p, ok := s.Extensions["x-cli-key-pattern"].(string); ok {
+			return p
+		}
+	}
+	return defaultKeyPattern
 }
 
 func flagError(f Field, raw, reason, hint string) *clierr.Error {
@@ -233,7 +247,10 @@ func flagError(f Field, raw, reason, hint string) *clierr.Error {
 // fields become "true"/"false" from a bool, true/false/ja/nein/1/0 or the
 // numbers 0 and 1 (anything else is a validation error, as for the flag),
 // and every vat_rate is normalized (number
-// 0.19 in line items, "0.19" where the schema says string). Numbers stay
+// 0.19 in line items, "0.19" where the schema says string). Response forms
+// from describe output are unwrapped where the request wants a scalar: the
+// rate of a VatRateFlat object for vat_rate, the value of a custom attribute
+// object {id, name, type, value}. Numbers stay
 // json.Number text, never round-trip through float64. path is the location
 // of v for error messages (e.g. "line_items[0]"); its last element names the
 // field. Values that do not fit are left as they are for the validator; only
@@ -252,6 +269,13 @@ func coerceValue(s *openapi3.Schema, v any, path, key string) (any, error) {
 	}
 	isArray := s.Type.Is("array")
 	if key == vatField && !isArray && !isObject(s) {
+		// describe output of a proposition has the VatRateFlat object; its
+		// rate is the value.
+		if m, ok := v.(map[string]any); ok {
+			if r, ok := m[vatRateKey]; ok {
+				v = r
+			}
+		}
 		return vatValue(v, s.Type.Is("string"), path)
 	}
 	if bs, _ := s.Extensions["x-cli-bool-string"].(bool); bs {
@@ -286,7 +310,7 @@ func coerceValue(s *openapi3.Schema, v any, path, key string) (any, error) {
 		for k, e := range in {
 			ps := s.Properties[k]
 			if ps == nil {
-				out[k] = e
+				out[k] = unwrapAttr(s, e)
 				continue
 			}
 			p := k
@@ -329,6 +353,30 @@ func coerceValue(s *openapi3.Schema, v any, path, key string) (any, error) {
 		}
 	}
 	return v, nil
+}
+
+// vatRateKey is the property of the VatRateFlat response object that holds
+// the decimal rate.
+const vatRateKey = "rate"
+
+// attrValueKey is the property of a custom attribute in responses
+// ({id, name, type, value}) that holds the value.
+const attrValueKey = "value"
+
+// unwrapAttr turns the response form of a free-form map entry (a custom
+// attribute object {id, name, type, value}) into its value when the request
+// expects a scalar there. Anything else is returned as is.
+func unwrapAttr(s *openapi3.Schema, v any) any {
+	ap := s.AdditionalProperties.Schema
+	if ap == nil || ap.Value == nil || isObject(ap.Value) {
+		return v
+	}
+	if m, ok := v.(map[string]any); ok {
+		if val, ok := m[attrValueKey]; ok {
+			return val
+		}
+	}
+	return v
 }
 
 // EnumHint looks the input up in the schema's x-cli-enum-hints (case-insensitive)
