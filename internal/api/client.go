@@ -1,7 +1,8 @@
 // Package api is the HTTP client of the Papierkram API: it builds requests
 // with the generated builders, sends them with the standard headers and
 // returns the raw response bytes plus the quota state. Failures become
-// *clierr.Error values; only GET is retried (retry.go, errors.go).
+// *clierr.Error values; only GET is retried (retry.go, errors.go). With
+// Options.Debug set, every attempt is logged with the token redacted (debug.go).
 package api
 
 import (
@@ -37,8 +38,11 @@ type Options struct {
 	Timeout time.Duration
 	// HTTP is the client used to send requests; nil means a new http.Client.
 	HTTP *http.Client
-	// Debug receives the request log (--debug); used from Task 13 on.
+	// Debug receives the redacted request log (--debug); nil disables it.
 	Debug io.Writer
+	// DebugInfo is written once per request to Debug as a context line,
+	// e.g. the active read-only level ("Schreibschutz: env").
+	DebugInfo string
 	// Sleep waits between GET retries; nil means time.Sleep.
 	Sleep func(time.Duration)
 	// OnQuota is called after every response that reports X-Remaining-Quota.

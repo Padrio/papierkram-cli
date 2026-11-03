@@ -28,6 +28,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) (*Response, error) {
 
 	// A GET body (only possible via CallRaw) must be rebuildable per attempt.
 	retry := req.Method == http.MethodGet && (req.Body == nil || req.Body == http.NoBody || req.GetBody != nil)
+	c.debugContext()
 	for attempt := 0; ; attempt++ {
 		resp, err := c.send(ctx, req, attempt)
 		if !retry || attempt >= len(retryBackoff) || !retryable(err) || ctx.Err() != nil {
@@ -69,8 +70,11 @@ func (c *Client) send(ctx context.Context, req *http.Request, attempt int) (*Res
 		r.Body = body
 	}
 
+	c.debugRequest(req, attempt)
+	start := time.Now()
 	hr, err := c.http.Do(r)
 	if err != nil {
+		c.debugError(err, time.Since(start))
 		return nil, transportError(req.Method, req.URL.Path, wrote.Load(), err)
 	}
 	defer func() { _ = hr.Body.Close() }()
@@ -79,6 +83,7 @@ func (c *Client) send(ctx context.Context, req *http.Request, attempt int) (*Res
 		c.opts.OnQuota(quota)
 	}
 	data, err := io.ReadAll(hr.Body)
+	c.debugResponse(hr, data, quota, time.Since(start), err)
 	resp := &Response{Status: hr.StatusCode, Header: hr.Header, Body: data, Quota: quota}
 	if hr.StatusCode < 200 || hr.StatusCode > 299 {
 		// The status decides, even if the body was cut off: a truncated
