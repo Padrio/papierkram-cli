@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -81,6 +82,24 @@ func germanFlagError(_ *cobra.Command, err error) error {
 	return usageErr(msg)
 }
 
+// outputFormats are the values accepted by -o/--output (spec 10.3).
+var outputFormats = []string{"table", "wide", "json", "yaml"}
+
+// checkGlobalFlags validates the global flags and records which of them were
+// set explicitly (context values only apply to unset flags).
+func (a *App) checkGlobalFlags(c *cobra.Command) error {
+	fl := &a.Flags
+	fl.OutputSet = c.Flags().Changed("output")
+	fl.TimeoutSet = c.Flags().Changed("timeout")
+	if fl.Timeout <= 0 {
+		return usageErr(fmt.Sprintf("ungültiger Wert %q für --timeout: positive Dauer erwartet (z. B. 30s)", c.Flags().Lookup("timeout").Value.String()))
+	}
+	if !slices.Contains(outputFormats, fl.Output) {
+		return usageErr(fmt.Sprintf("ungültiger Wert %q für -o, --output: erlaubt sind %s", fl.Output, strings.Join(outputFormats, ", ")))
+	}
+	return nil
+}
+
 // NewRootCmd builds the root command with all global flags.
 func NewRootCmd(app *App) *cobra.Command {
 	root := &cobra.Command{
@@ -95,7 +114,10 @@ func NewRootCmd(app *App) *cobra.Command {
 			}
 			return nil
 		},
-		PersistentPreRunE: func(*cobra.Command, []string) error {
+		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
+			if err := app.checkGlobalFlags(c); err != nil {
+				return err
+			}
 			app.warnReadOnlyEnv()
 			return nil
 		},

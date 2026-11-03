@@ -296,3 +296,48 @@ func TestUnknownFlagOutput(t *testing.T) {
 		t.Errorf("stderr = %q", errb.String())
 	}
 }
+
+func TestGlobalFlagValidation(t *testing.T) {
+	cases := map[string]struct {
+		args []string
+		want string
+	}{
+		"timeout zero":     {[]string{"--timeout", "0s", "version"}, `ungültiger Wert "0s" für --timeout: positive Dauer erwartet (z. B. 30s)`},
+		"timeout negative": {[]string{"--timeout=-5s", "version"}, `ungültiger Wert "-5s" für --timeout: positive Dauer erwartet (z. B. 30s)`},
+		"output xml":       {[]string{"-o", "xml", "version"}, `ungültiger Wert "xml" für -o, --output: erlaubt sind table, wide, json, yaml`},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			app, out, errb := newTestApp(t)
+			if code := Run(app, tc.args); code != 2 {
+				t.Fatalf("exit = %d, want 2; stderr = %s", code, errb.String())
+			}
+			if !strings.Contains(errb.String(), tc.want) || out.Len() != 0 {
+				t.Errorf("stdout = %q, stderr = %q", out.String(), errb.String())
+			}
+		})
+	}
+	// Flag errors come before the read-only guard (exit 2 before 9).
+	app, _, _ := newTestApp(t)
+	app.Env = roEnv("1")
+	if code := Run(app, []string{"-o", "xml", "context", "create", "c", "--subdomain", "x"}); code != 2 {
+		t.Errorf("read-only + -o xml: exit = %d, want 2", code)
+	}
+}
+
+func TestGlobalFlagsRecordWhetherSet(t *testing.T) {
+	app, _, _ := newTestApp(t)
+	if code := Run(app, []string{"version"}); code != 0 {
+		t.Fatal(code)
+	}
+	if app.Flags.OutputSet || app.Flags.TimeoutSet {
+		t.Errorf("defaults must not count as set: %+v", app.Flags)
+	}
+	app, _, _ = newTestApp(t)
+	if code := Run(app, []string{"version", "-o", "table", "--timeout", "30s"}); code != 0 {
+		t.Fatal(code)
+	}
+	if !app.Flags.OutputSet || !app.Flags.TimeoutSet {
+		t.Errorf("explicit flags must count as set: %+v", app.Flags)
+	}
+}

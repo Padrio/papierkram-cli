@@ -25,6 +25,10 @@ type Flags struct {
 	Yes     bool
 	DryRun  bool
 	NoColor bool
+
+	// OutputSet and TimeoutSet report whether -o/--output and --timeout were
+	// given explicitly; only then do they override the context values.
+	OutputSet, TimeoutSet bool
 }
 
 // App bundles all injectable dependencies of the CLI.

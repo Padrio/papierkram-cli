@@ -160,6 +160,12 @@ func TestContextCreateErrors(t *testing.T) {
 	if code := Run(app, []string{"context", "create"}); code != 2 || strings.Contains(errb.String(), "accepts") {
 		t.Errorf("ohne Name: %d %s", code, errb.String())
 	}
+	for _, u := range []string{"7abc", "0", "-1", "x"} {
+		errb.Reset()
+		if code := Run(app, []string{"context", "create", "x", "--subdomain", "s", "--user", u}); code != 2 || !strings.Contains(errb.String(), "--user") {
+			t.Errorf("--user %q: %d %s", u, code, errb.String())
+		}
+	}
 	Run(app, []string{"context", "create", "x", "--subdomain", "s"})
 	errb.Reset()
 	if code := Run(app, []string{"context", "create", "x", "--subdomain", "s"}); code != 2 || !strings.Contains(errb.String(), "existiert bereits") {
@@ -322,5 +328,32 @@ func TestContextHelpMentionsLostComments(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Kommentare") {
 		t.Errorf("Hilfe erwähnt verlorene Kommentare nicht:\n%s", out.String())
+	}
+}
+
+func TestContextCreateValidatesSubdomain(t *testing.T) {
+	for in, hint := range map[string]string{
+		"firma.papierkram.de": "Nur die Subdomain angeben, z. B. firma",
+		"evil.example#":       "Nur die Subdomain angeben, z. B. firma",
+		"-firma":              "Bindestriche",
+	} {
+		app, _, errb := newTestApp(t)
+		if code := Run(app, []string{"context", "create", "x", "--subdomain", in}); code != 2 {
+			t.Errorf("%q: exit = %d, want 2", in, code)
+		}
+		if !strings.Contains(errb.String(), `ungültige Subdomain "`+in+`" (--subdomain)`) || !strings.Contains(errb.String(), hint) {
+			t.Errorf("%q: stderr = %s", in, errb.String())
+		}
+		if _, err := os.Stat(cfgFile(t, app)); !os.IsNotExist(err) {
+			t.Errorf("%q: Config geschrieben", in)
+		}
+	}
+	app, _, errb := newTestApp(t)
+	if code := Run(app, []string{"context", "create", "x", "--subdomain", "Firma-GmbH"}); code != 0 {
+		t.Fatal(errb.String())
+	}
+	data, _ := os.ReadFile(cfgFile(t, app))
+	if !strings.Contains(string(data), "firma-gmbh") {
+		t.Errorf("Subdomain nicht normalisiert:\n%s", data)
 	}
 }

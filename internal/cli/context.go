@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -68,19 +69,34 @@ func newContextCreateCmd(app *App) *cobra.Command {
 			"Das Token wird separat mit \"papierkram auth login\" hinterlegt.",
 		Example: "  papierkram context create firma-gmbh --subdomain firma-gmbh\n" +
 			"  papierkram context create agent --subdomain firma-gmbh --read-only",
-		Args: exactArgs(1),
-		RunE: func(c *cobra.Command, args []string) error {
-			if err := app.guardConfigWrite(); err != nil {
+		// Flags are checked with the arguments, i.e. before the read-only
+		// guard (usage errors come first).
+		Args: func(c *cobra.Command, args []string) error {
+			if err := exactArgs(1)(c, args); err != nil {
+				return err
+			}
+			if err := config.ValidateName(args[0]); err != nil {
 				return err
 			}
 			if subdomain == "" {
 				return clierr.New(clierr.CodeUsage, "Pflicht-Flag --subdomain fehlt", "Verwendung: "+useLine(c))
 			}
+			s, err := config.NormalizeSubdomain(subdomain, "--subdomain")
+			if err != nil {
+				return err
+			}
+			subdomain = s
 			if c.Flags().Changed("user") {
-				userID = 0
-				if _, err := fmt.Sscanf(user, "%d", &userID); err != nil || userID <= 0 {
+				id, err := strconv.ParseInt(user, 10, 64)
+				if userID = id; err != nil || id <= 0 {
 					return usageErr(fmt.Sprintf("ungültiger Wert %q für --user: positive Zahl erwartet", user))
 				}
+			}
+			return nil
+		},
+		RunE: func(_ *cobra.Command, args []string) error {
+			if err := app.guardConfigWrite(); err != nil {
+				return err
 			}
 			cfg, path, err := app.loadConfig()
 			if err != nil {
