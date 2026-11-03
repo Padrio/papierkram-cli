@@ -124,8 +124,16 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 	}
 	// Probe the keychain before the token is read and verified, so that no
 	// credit is spent on a token that cannot be stored.
-	if _, err := a.Keyring.Get(name); errors.Is(err, auth.ErrUnavailable) && !insecure {
-		return noKeyringErr(name, tokenStdin)
+	// With --insecure-storage there is nothing to probe (and no keychain
+	// prompt on macOS); Set alone decides where the token goes.
+	newSubdomain := ""
+	if created {
+		newSubdomain = subdomain
+	}
+	if !insecure {
+		if _, err := a.Keyring.Get(name); errors.Is(err, auth.ErrUnavailable) {
+			return noKeyringErr(name, newSubdomain, tokenStdin)
+		}
 	}
 	token, err := a.readLoginToken(tokenStdin, name)
 	if err != nil {
@@ -156,7 +164,7 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 		}
 	case errors.Is(err, auth.ErrUnavailable):
 		if !insecure {
-			return noKeyringErr(name, tokenStdin)
+			return noKeyringErr(name, newSubdomain, tokenStdin)
 		}
 		ctx.Token, tokenSource, dirty = token, config.SourceConfig, true
 	default:
@@ -164,7 +172,7 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 	}
 	// config.toml is only rewritten when it changed (rewriting drops comments).
 	if dirty {
-		if err := cfg.Save(path); err != nil {
+		if err := a.save(cfg, path); err != nil {
 			if !inKeychain || created {
 				if inKeychain {
 					_ = a.Keyring.Delete(name)
@@ -200,9 +208,13 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 }
 
 // noKeyringErr is the exit-3 error for a missing keychain without
-// --insecure-storage; the hint repeats context and input mode.
-func noKeyringErr(name string, tokenStdin bool) error {
+// --insecure-storage; the hint repeats context, the subdomain of a context
+// that is still to be created (newSubdomain) and the input mode.
+func noKeyringErr(name, newSubdomain string, tokenStdin bool) error {
 	cmd := "papierkram auth login --context " + name
+	if newSubdomain != "" {
+		cmd += " --subdomain " + newSubdomain
+	}
 	if tokenStdin {
 		cmd += " --token-stdin --insecure-storage < token.txt"
 	} else {
@@ -312,7 +324,7 @@ func (a *App) logout() error {
 	}
 	if ctx.Token != "" {
 		ctx.Token = ""
-		if err := wrapConfigErr(cfg.Save(path), path); err != nil {
+		if err := wrapConfigErr(a.save(cfg, path), path); err != nil {
 			return err
 		}
 		removed = append(removed, "config.toml")

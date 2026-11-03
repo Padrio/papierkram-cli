@@ -12,6 +12,7 @@ import (
 
 	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/auth"
+	"github.com/Padrio/papierkram-cli/internal/config"
 )
 
 // Flags holds the values of the global persistent flags.
@@ -57,6 +58,10 @@ type App struct {
 	// Flags receives the parsed global flag values.
 	Flags Flags
 
+	// saveConfig writes config.toml; nil means (*config.Config).Save. Tests
+	// inject failures through it (portable, unlike file permissions).
+	saveConfig func(*config.Config, string) error
+
 	// quota is the last quota state reported by the API in this invocation;
 	// quotaWarned records that the low-quota warning was printed.
 	quota       api.Quota
@@ -89,4 +94,12 @@ func NewApp() *App {
 		app.CacheDir = filepath.Join(dir, "papierkram")
 	}
 	return app
+}
+
+// save writes cfg to path, through the saveConfig seam when set.
+func (a *App) save(cfg *config.Config, path string) error {
+	if a.saveConfig != nil {
+		return a.saveConfig(cfg, path)
+	}
+	return cfg.Save(path)
 }

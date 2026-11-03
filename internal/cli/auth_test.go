@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -166,8 +166,13 @@ func TestAuthLoginKeychainUnavailable(t *testing.T) {
 	if got := loadCfg(t, app).Contexts["a"].Token; got != "test-token-k" {
 		t.Errorf("config token = %q", got)
 	}
-	if fi, err := os.Stat(cfgFile(t, app)); err != nil || fi.Mode().Perm() != 0o600 {
-		t.Errorf("Rechte = %v, %v", fi.Mode().Perm(), err)
+	fi, err := os.Stat(cfgFile(t, app))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows has no POSIX file modes (same guard as internal/config).
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		t.Errorf("Rechte = %v", fi.Mode().Perm())
 	}
 	out, errs := bufs(app)
 	if !strings.Contains(errs, "Warnung:") || !strings.Contains(errs, "Klartext") {
@@ -486,11 +491,7 @@ func TestAuthLoginTokenStdinStripsBOM(t *testing.T) {
 func TestAuthLoginStaleConfigTokenSaveFailure(t *testing.T) {
 	app, _ := mockApp(t, nil)
 	writeCfg(t, app, twoCtx+"token = \"test-token-old\"\n")
-	dir := filepath.Dir(cfgFile(t, app))
-	if err := os.Chmod(dir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	app.saveConfig = func(*config.Config, string) error { return errors.New("Datenträger voll") }
 	app.In = strings.NewReader("test-token-new\n")
 	if code := run(t, app, "auth", "login", "--token-stdin", "--context", "b"); code != 0 {
 		_, errs := bufs(app)
@@ -547,5 +548,62 @@ func TestQuotaWarningOnceAcrossRetry(t *testing.T) {
 	}
 	if _, errs := bufs(app); strings.Count(errs, "Warnung: Restkontingent niedrig: 50 Credits") != 1 {
 		t.Errorf("stderr = %q", errs)
+	}
+}
+
+// A created context whose save fails after the keychain write is rolled
+// back: no keychain entry stays behind and the command fails.
+func TestAuthLoginNewContextSaveFailureRollsBack(t *testing.T) {
+	app, _ := mockApp(t, nil)
+	app.saveConfig = func(*config.Config, string) error { return errors.New("Datenträger voll") }
+	app.In = strings.NewReader("test-token-n\n")
+	if code := run(t, app, "auth", "login", "--token-stdin", "--context", "neu", "--subdomain", "neu-gmbh"); code != 1 {
+		t.Errorf("exit = %d, want 1", code)
+	}
+	if _, err := app.Keyring.Get("neu"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("Keychain-Eintrag nicht zurückgerollt: %v", err)
+	}
+	assertNoToken(t, app)
+}
+
+// For a login that creates the context, the hint keeps --subdomain, so
+// following it does not end in a usage error.
+func TestAuthLoginKeychainUnavailableHintKeepsSubdomain(t *testing.T) {
+	app, srv := mockApp(t, nil)
+	app.Keyring = unavailableStore{}
+	app.In = strings.NewReader("test-token-k\n")
+	if code := run(t, app, "auth", "login", "--token-stdin", "--context", "neu", "--subdomain", "neu-gmbh"); code != 3 {
+		t.Errorf("exit = %d, want 3", code)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "papierkram auth login --context neu --subdomain neu-gmbh --token-stdin --insecure-storage < token.txt") {
+		t.Errorf("Hinweis ohne --subdomain: %q", errs)
+	}
+	if len(srv.Requests()) != 0 {
+		t.Error("Request trotz fehlendem Schlüsselbund")
+	}
+}
+
+// countingStore counts Get calls on top of an unavailable keychain.
+type countingStore struct {
+	unavailableStore
+	gets *int
+}
+
+func (s countingStore) Get(c string) (string, error) { *s.gets++; return s.unavailableStore.Get(c) }
+
+// With --insecure-storage the keychain is not probed (no pointless macOS
+// keychain prompt); Set alone decides.
+func TestAuthLoginInsecureSkipsKeychainProbe(t *testing.T) {
+	app, _ := mockApp(t, nil)
+	writeCfg(t, app, twoCtx)
+	gets := 0
+	app.Keyring = countingStore{gets: &gets}
+	app.In = strings.NewReader("test-token-i\n")
+	if code := run(t, app, "auth", "login", "--token-stdin", "--insecure-storage"); code != 0 {
+		_, errs := bufs(app)
+		t.Fatalf("exit = %d, stderr = %s", code, errs)
+	}
+	if gets != 0 {
+		t.Errorf("Keyring.Get %d-mal aufgerufen, erwartet 0", gets)
 	}
 }
