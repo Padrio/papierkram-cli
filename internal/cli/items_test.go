@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -55,6 +56,8 @@ func TestParseItemGrammar(t *testing.T) {
 		{`name="Er sagte \"Hallo\""`, map[string]any{"name": `Er sagte "Hallo"`}},
 		{`name="C:\\temp\\x"`, map[string]any{"name": `C:\temp\x`}},
 		{`name="a\\"`, map[string]any{"name": `a\`}},
+		{`name="a\",b",qty=1`, map[string]any{"name": `a",b`, "quantity": "1"}},
+		{`name="a\\",qty=1`, map[string]any{"name": `a\`, "quantity": "1"}},
 		// other backslashes stay as they are, also outside quotes
 		{`name="a\nb"`, map[string]any{"name": `a\nb`}},
 		{`name=C:\temp`, map[string]any{"name": `C:\temp`}},
@@ -95,6 +98,9 @@ func TestParseItemManyPairs(t *testing.T) {
 	item := itemSchema(t, "CreateInvoice")
 	var keys []string
 	for k := range item.Properties {
+		// proposition is an object ({id}); its value is a reference, not a
+		// plain string, and is typed by the builder (Task 23). Every other
+		// property is a scalar and gets a distinct string value here.
 		if k != "proposition" {
 			keys = append(keys, k)
 		}
@@ -115,30 +121,67 @@ func TestParseItemManyPairs(t *testing.T) {
 	}
 }
 
+// end marks a column one past the last character of the shown input.
+const end = "<end>"
+
+// checkColumn asserts that msg shows the input between ‹ and › and that its
+// "Spalte n" points at the character at (or at end for the position after
+// the last character) in the shown text.
+func checkColumn(t *testing.T, msg, at string) {
+	t.Helper()
+	open, cl := strings.Index(msg, "‹"), strings.Index(msg, "›")
+	if open < 0 || cl < open {
+		t.Errorf("message %q does not show the input in ‹…›", msg)
+		return
+	}
+	shown := []rune(msg[open+len("‹") : cl])
+	var col int
+	if i := strings.LastIndex(msg, "Spalte "); i < 0 {
+		t.Errorf("message %q has no column", msg)
+		return
+	} else if _, err := fmt.Sscanf(msg[i:], "Spalte %d", &col); err != nil {
+		t.Errorf("message %q: column: %v", msg, err)
+		return
+	}
+	got := end
+	if col >= 1 && col <= len(shown) {
+		got = string(shown[col-1])
+	} else if col != len(shown)+1 {
+		got = fmt.Sprintf("column %d outside %q", col, string(shown))
+	}
+	if got != at {
+		t.Errorf("message %q: Spalte %d points at %q in %q, want %q", msg, col, got, string(shown), at)
+	}
+}
+
 func TestParseItemErrors(t *testing.T) {
 	tests := []struct {
 		in   string
 		want []string // substrings of the message
+		at   string   // character at the reported column; "" = no column
 	}{
-		{``, []string{"--item", "leer"}},
-		{`   `, []string{"--item", "leer"}},
-		{`name="Beratung, vor Ort`, []string{`--item "name=\"Beratung, vor Ort"`, "nicht geschlossenes Anführungszeichen", "Spalte 6"}},
-		{`name="a\"`, []string{"nicht geschlossenes Anführungszeichen", "Spalte 6"}},
-		{`name="Größe`, []string{"nicht geschlossenes Anführungszeichen", "Spalte 6"}},
-		{`qty=1,größe="x`, []string{"nicht geschlossenes Anführungszeichen", "Spalte 13"}},
-		{`name="a"b`, []string{`unerwartetes Zeichen "b" nach dem schließenden Anführungszeichen`, "Spalte 9"}},
-		{`name="a" "b"`, []string{`unerwartetes Zeichen "\""`, "Spalte 10"}},
-		{`name`, []string{`Schlüssel "name" ohne "="`, "Spalte 5"}},
-		{`name=x,qty`, []string{`Schlüssel "qty" ohne "="`, "Spalte 11"}},
-		{`name=x,qty,price=1`, []string{`Schlüssel "qty" ohne "="`, "Spalte 11"}},
-		{`=x`, []string{`leerer Schlüssel`, "Spalte 1"}},
-		{`name=x, =y`, []string{`leerer Schlüssel`, "Spalte 9"}},
-		{`name=x,`, []string{`leerer Eintrag`, "Spalte 8"}},
-		{`name=x,,qty=1`, []string{`leerer Eintrag`, "Spalte 8"}},
-		{`,name=x`, []string{`leerer Eintrag`, "Spalte 1"}},
-		{`name=a,name=b`, []string{`Schlüssel "name" mehrfach angegeben`, "Spalte 8"}},
-		{`qty=1,quantity=2`, []string{`Schlüssel "quantity" mehrfach angegeben`, `"qty"`, "Spalte 7"}},
-		{`vat=19,vat_rate=0.19`, []string{`Schlüssel "vat_rate" mehrfach angegeben`, `"vat"`}},
+		{``, []string{"--item", "leer"}, ""},
+		{`   `, []string{"--item", "leer"}, ""},
+		{`name="Beratung, vor Ort`, []string{`--item ‹name="Beratung, vor Ort›`, "nicht geschlossenes Anführungszeichen", "Spalte 6"}, `"`},
+		{`name="a\"`, []string{`--item ‹name="a\"›`, "nicht geschlossenes Anführungszeichen", "Spalte 6"}, `"`},
+		{`name="Größe`, []string{"nicht geschlossenes Anführungszeichen", "Spalte 6"}, `"`},
+		{`qty=1,größe="x`, []string{"nicht geschlossenes Anführungszeichen", "Spalte 13"}, `"`},
+		{`name="a"b`, []string{`unerwartetes Zeichen "b" nach dem schließenden Anführungszeichen`, "Spalte 9"}, "b"},
+		{`name="a" "b"`, []string{`--item ‹name="a" "b"›`, `unerwartetes Zeichen "\""`, "Spalte 10"}, `"`},
+		{`name`, []string{`Schlüssel "name" ohne "="`, "Spalte 5"}, end},
+		{`name=x,qty`, []string{`Schlüssel "qty" ohne "="`, "Spalte 11"}, end},
+		{`name=x,qty,price=1`, []string{`Schlüssel "qty" ohne "="`, "Spalte 11"}, ","},
+		{`=x`, []string{`leerer Schlüssel`, "Spalte 1"}, "="},
+		{`name=x, =y`, []string{`leerer Schlüssel`, "Spalte 9"}, "="},
+		{`name=x,`, []string{`leerer Eintrag`, "Spalte 8"}, end},
+		{`name=x,,qty=1`, []string{`leerer Eintrag`, "Spalte 8"}, ","},
+		{`,name=x`, []string{`leerer Eintrag`, "Spalte 1"}, ","},
+		{`name=a,name=b`, []string{`Schlüssel "name" mehrfach angegeben`, "Spalte 8"}, "n"},
+		{`qty=1,quantity=2`, []string{`Schlüssel "quantity" mehrfach angegeben`, `"qty"`, "Spalte 7"}, "q"},
+		{`vat=19,vat_rate=0.19`, []string{`Schlüssel "vat_rate" mehrfach angegeben`, `"vat"`, "Spalte 8"}, "v"},
+		// control characters are shown as one symbol each, so columns stay right
+		{"\x01=x,name=\"a", []string{"--item ‹␁=x,name=\"a›", "Spalte 10"}, `"`},
+		{"name=\"a\tb\"c", []string{"--item ‹name=\"a␉b\"c›", "Spalte 11"}, "c"},
 	}
 	item := itemSchema(t, "CreateInvoice")
 	for _, tt := range tests {
@@ -156,6 +199,9 @@ func TestParseItemErrors(t *testing.T) {
 				t.Errorf("ParseItem(%q): message %q lacks %q", tt.in, ce.Message, w)
 			}
 		}
+		if tt.at != "" {
+			checkColumn(t, ce.Message, tt.at)
+		}
 		if !strings.Contains(ce.Hint, "--item") {
 			t.Errorf("ParseItem(%q): hint %q lacks the format", tt.in, ce.Hint)
 		}
@@ -170,6 +216,7 @@ func TestParseItemUnknownKey(t *testing.T) {
 			t.Errorf("message %q lacks %q", ce.Message, w)
 		}
 	}
+	checkColumn(t, ce.Message, "n")
 	wantHint := "gültige Schlüssel: description, discount_calculated, discount_calculated_gross, discount_percentage, name, price, price_gross, proposition, quantity, start_new_item_group, type_of, unit, vat_rate; Kurzformen: qty → quantity, vat → vat_rate"
 	if ce.Hint != wantHint {
 		t.Errorf("hint = %q, want %q", ce.Hint, wantHint)
@@ -182,6 +229,7 @@ func TestParseItemUnknownKey(t *testing.T) {
 	if !strings.Contains(ce.Message, `unbekannter Schlüssel "qty"`) || !strings.Contains(ce.Message, "Spalte 13") {
 		t.Errorf("voucher qty: %q", ce.Message)
 	}
+	checkColumn(t, ce.Message, "q")
 	if want := "gültige Schlüssel: amount, billing, category, depreciation, name, vat_rate; Kurzformen: vat → vat_rate"; ce.Hint != want {
 		t.Errorf("voucher hint = %q, want %q", ce.Hint, want)
 	}
@@ -297,7 +345,8 @@ func TestLoadItemsErrors(t *testing.T) {
 		}
 	}
 	// A nil stdin reads as empty input.
-	if _, err := LoadItems("-", nil); err == nil {
-		t.Error("nil stdin: no error")
+	_, err := LoadItems("-", nil)
+	if ce := cliErr(t, err, clierr.CodeValidation); !strings.Contains(ce.Message, "--items") || !strings.Contains(ce.Message, "leer") {
+		t.Errorf("nil stdin: message %q lacks --items/leer", ce.Message)
 	}
 }

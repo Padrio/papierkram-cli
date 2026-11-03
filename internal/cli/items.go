@@ -154,7 +154,25 @@ func leadingSpace(rs []rune) int {
 
 // itemErr is a syntax error in the --item value s.
 func itemErr(s, msg string) error {
-	return clierr.New(clierr.CodeUsage, fmt.Sprintf("--item %q: %s", s, msg), itemFormatHint)
+	return clierr.New(clierr.CodeUsage, fmt.Sprintf("--item %s: %s", showItem(s), msg), itemFormatHint)
+}
+
+// showItem renders an --item value for an error message so that the column
+// counts match what is shown: unescaped between ‹ and ›, with each control
+// character replaced by one visible symbol (U+2400 block), never by an
+// escape sequence that would shift the columns.
+func showItem(s string) string {
+	return "‹" + strings.Map(func(r rune) rune {
+		switch {
+		case r < 0x20:
+			return 0x2400 + r
+		case r == 0x7f:
+			return '␡'
+		case unicode.IsControl(r):
+			return '�'
+		}
+		return r
+	}, s) + "›"
 }
 
 // unknownItemKey reports a key that is no property of the line item schema,
@@ -180,7 +198,7 @@ func unknownItemKey(s string, p itemPair, item *openapi3.Schema) error {
 	if len(shortForms) > 0 {
 		hint += "; Kurzformen: " + strings.Join(shortForms, ", ")
 	}
-	return clierr.New(clierr.CodeUsage, fmt.Sprintf("--item %q: %s", s, msg), hint)
+	return clierr.New(clierr.CodeUsage, fmt.Sprintf("--item %s: %s", showItem(s), msg), hint)
 }
 
 // itemsHint shows the expected shape of an --items file.
