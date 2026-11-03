@@ -229,3 +229,46 @@ func TestResolveTask_NonPositiveIsAliasLookup(t *testing.T) {
 	_, err := f.ResolveTask("0")
 	_ = usageErr(t, err)
 }
+
+func TestLoad_NumericAliasRejected(t *testing.T) {
+	for _, alias := range []string{"57", "0", "-3", "+5"} {
+		_, err := Load(write(t, t.TempDir(), FileName, "[tasks]\n\""+alias+"\" = 99\n"))
+		ce := usageErr(t, err)
+		if !strings.Contains(ce.Message, `"`+alias+`"`) || !strings.Contains(ce.Message, "Zahl") {
+			t.Errorf("%s: message %q", alias, ce.Message)
+		}
+	}
+	if _, err := Load(write(t, t.TempDir(), FileName, "[tasks]\nt57 = 99\n")); err != nil {
+		t.Fatalf("alias with letters must load: %v", err)
+	}
+}
+
+func TestLoad_ErrorsGermanWithCause(t *testing.T) {
+	for name, tc := range map[string]struct{ body, key string }{
+		"syntax":         {"project = = 1", ""},
+		"string for int": {`project = "abc"`, `"project"`},
+		"float for int":  {"company = 1.5", `"company"`},
+		"zero id":        {"task = 0", `"task"`},
+		"negative id":    {"user = -1", `"user"`},
+		"int for string": {"context = 5", `"context"`},
+		"table for int":  {"[project]\nx = 1", `"project"`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := write(t, t.TempDir(), FileName, tc.body)
+			_, err := Load(p)
+			ce := usageErr(t, err)
+			text := strings.ReplaceAll(ce.Message, p, "<pfad>") + "\n" + ce.Hint
+			for _, english := range []string{"toml:", "cannot", "decode", "expected", "invalid"} {
+				if strings.Contains(text, english) {
+					t.Errorf("English go-toml text %q in %q / %q", english, ce.Message, ce.Hint)
+				}
+			}
+			if tc.key != "" && !strings.Contains(ce.Message, tc.key) {
+				t.Errorf("key %s not named: %q", tc.key, ce.Message)
+			}
+			if tc.key == "" && (ce.Cause == nil || !strings.Contains(ce.Hint, "Zeile")) {
+				t.Errorf("syntax error: cause %v, hint %q", ce.Cause, ce.Hint)
+			}
+		})
+	}
+}

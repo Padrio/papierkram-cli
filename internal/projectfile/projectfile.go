@@ -25,20 +25,12 @@ var knownKeys = map[string]bool{
 
 // File is the parsed content of a .papierkram.toml.
 type File struct {
-	Path                         string           `toml:"-"`
-	Context                      string           `toml:"context"`
-	Company, Project, Task, User int64            `toml:"-"`
-	Tasks                        map[string]int64 `toml:"-"`
+	Path                         string
+	Context                      string
+	Company, Project, Task, User int64
+	Tasks                        map[string]int64
 	// Unknown lists unknown top-level keys, sorted.
-	Unknown []string `toml:"-"`
-}
-
-type raw struct {
-	Context string `toml:"context"`
-	Company int64  `toml:"company"`
-	Project int64  `toml:"project"`
-	Task    int64  `toml:"task"`
-	User    int64  `toml:"user"`
+	Unknown []string
 }
 
 // Find looks for the project file in cwd and, if cwd lies inside a Git
@@ -87,23 +79,66 @@ func Load(path string) (*File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s lesen: %w", path, err)
 	}
-	invalid := func(detail string) error {
-		return clierr.New(clierr.CodeUsage,
-			fmt.Sprintf("Projektdatei %s ist ungültig", path),
-			detail)
-	}
 	var m map[string]any
 	if err := toml.Unmarshal(data, &m); err != nil {
-		return nil, invalid(err.Error())
+		hint := "TOML-Syntax prüfen, z. B. project = 34"
+		var de *toml.DecodeError
+		if errors.As(err, &de) {
+			row, col := de.Position()
+			hint = fmt.Sprintf("TOML-Syntax in Zeile %d, Spalte %d prüfen, z. B. project = 34", row, col)
+		}
+		e := clierr.New(clierr.CodeUsage, fmt.Sprintf("Projektdatei %s ist ungültig", path), hint)
+		e.Cause = err
+		return nil, e
 	}
 	f := &File{Path: path}
+	if v, ok := m["context"]; ok {
+		ctx, isString := v.(string)
+		if !isString {
+			return nil, clierr.New(clierr.CodeUsage,
+				fmt.Sprintf("Projektdatei %s: %q muss eine Zeichenkette sein", path, "context"),
+				`Beispiel: context = "firma-gmbh"`)
+		}
+		f.Context = ctx
+	}
+	for _, id := range []struct {
+		key string
+		dst *int64
+	}{{"company", &f.Company}, {"project", &f.Project}, {"task", &f.Task}, {"user", &f.User}} {
+		key, dst := id.key, id.dst
+		v, ok := m[key]
+		if !ok {
+			continue
+		}
+		id, isInt := v.(int64)
+		if !isInt || id <= 0 {
+			return nil, clierr.New(clierr.CodeUsage,
+				fmt.Sprintf("Projektdatei %s: %q muss eine positive ganze Zahl sein", path, key),
+				fmt.Sprintf("Beispiel: %s = 34", key))
+		}
+		*dst = id
+	}
 	if v, ok := m["tasks"]; ok {
 		tbl, isTable := v.(map[string]any)
 		if !isTable {
-			return nil, invalid(`"tasks" muss eine Tabelle sein: [tasks] alias = 123`)
+			return nil, clierr.New(clierr.CodeUsage,
+				fmt.Sprintf("Projektdatei %s: %q muss eine Tabelle sein", path, "tasks"),
+				"Beispiel: [tasks] tickets = 57")
 		}
 		f.Tasks = make(map[string]int64, len(tbl))
-		for alias, val := range tbl {
+		aliases := make([]string, 0, len(tbl))
+		for alias := range tbl {
+			aliases = append(aliases, alias)
+		}
+		sort.Strings(aliases) // deterministic error for the first bad alias
+		for _, alias := range aliases {
+			val := tbl[alias]
+			// A numeric alias would be shadowed by the ID parsing in ResolveTask.
+			if _, err := strconv.ParseInt(alias, 10, 64); err == nil {
+				return nil, clierr.New(clierr.CodeUsage,
+					fmt.Sprintf("Projektdatei %s: Aufgaben-Alias %q darf keine Zahl sein (wird als Aufgaben-ID gelesen)", path, alias),
+					"Alias mit Buchstaben benennen, z. B. [tasks] tickets = 57")
+			}
 			id, isInt := val.(int64)
 			if !isInt || id <= 0 {
 				return nil, clierr.New(clierr.CodeUsage,
@@ -113,16 +148,6 @@ func Load(path string) (*File, error) {
 			f.Tasks[alias] = id
 		}
 	}
-	var r raw
-	if err := toml.Unmarshal(data, &r); err != nil {
-		var de *toml.DecodeError
-		detail := err.Error()
-		if errors.As(err, &de) {
-			detail = de.String()
-		}
-		return nil, invalid(detail)
-	}
-	f.Context, f.Company, f.Project, f.Task, f.User = r.Context, r.Company, r.Project, r.Task, r.User
 	for k := range m {
 		if !knownKeys[k] {
 			f.Unknown = append(f.Unknown, k)
