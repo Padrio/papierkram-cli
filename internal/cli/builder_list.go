@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -228,17 +228,20 @@ func (a *App) runList(c *cobra.Command, e registry.Entry) error {
 // listPage is the part of a list envelope --all needs. Entries stay raw
 // bytes, so numbers and texts are merged exactly as the API sent them.
 type listPage struct {
+	Type         json.RawMessage   `json:"type"`
+	PageSize     json.RawMessage   `json:"page_size"`
 	TotalPages   json.RawMessage   `json:"total_pages"`
 	TotalEntries json.RawMessage   `json:"total_entries"`
 	Entries      []json.RawMessage `json:"entries"`
 }
 
-// mergedList is the envelope of --all: page 1, the page size used, the
-// totals as reported by the API and all loaded entries.
+// mergedList is the envelope of --all: the envelope of page 1 unchanged
+// except page (1), has_more and the entries of all loaded pages
+// (spec 10.3).
 type mergedList struct {
-	Type         string            `json:"type"`
+	Type         json.RawMessage   `json:"type"`
 	Page         int               `json:"page"`
-	PageSize     int               `json:"page_size"`
+	PageSize     json.RawMessage   `json:"page_size"`
 	TotalPages   json.RawMessage   `json:"total_pages"`
 	TotalEntries json.RawMessage   `json:"total_entries"`
 	HasMore      bool              `json:"has_more"`
@@ -253,9 +256,11 @@ func (a *App) fetchAll(c *cobra.Command, e registry.Entry, client *api.Client, p
 	if err != nil {
 		return nil, err
 	}
+	// total_pages decides how many pages exist; null or missing would make
+	// --all claim a complete list.
 	var total int64
-	if err := json.Unmarshal(first.TotalPages, &total); err != nil || total < 0 {
-		return nil, unexpectedList(fmt.Errorf("total_pages %s", first.TotalPages))
+	if err := json.Unmarshal(first.TotalPages, &total); err != nil || total < 0 || string(first.TotalPages) == "null" {
+		return nil, unexpectedList(fmt.Errorf("total_pages ist %s", orMissing(first.TotalPages)))
 	}
 	pages := max(total, 1)
 	capped := lr.maxPages > 0 && int64(lr.maxPages) < pages
@@ -264,12 +269,12 @@ func (a *App) fetchAll(c *cobra.Command, e registry.Entry, client *api.Client, p
 	}
 	if pages >= warnPages {
 		output.Warn(a.Err, fmt.Sprintf("--all lädt %d Seiten (%d Credits); mit --max-pages begrenzen", pages, pages*int64(e.Credits)))
-		if err := a.confirmAll(); err != nil {
+		if err := a.confirmAll(c.Context()); err != nil {
 			return nil, err
 		}
 	}
 	merged := &mergedList{
-		Type: "list", Page: 1, PageSize: lr.pageSize,
+		Type: first.Type, Page: 1, PageSize: first.PageSize,
 		TotalPages: first.TotalPages, TotalEntries: first.TotalEntries,
 		Entries: append([]json.RawMessage{}, first.Entries...),
 	}
@@ -309,6 +314,14 @@ func (a *App) fetchPage(c *cobra.Command, e registry.Entry, client *api.Client, 
 	return &lp, nil
 }
 
+// orMissing shows a raw JSON value, or "nicht vorhanden" when it is absent.
+func orMissing(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return "nicht vorhanden"
+	}
+	return string(raw)
+}
+
 func unexpectedList(err error) error {
 	e := clierr.New(clierr.CodeError, "unerwartete Listenantwort der Papierkram-API: "+err.Error(), "")
 	e.Cause = err
@@ -317,13 +330,15 @@ func unexpectedList(err error) error {
 
 // confirmAll asks "Fortfahren? [j/N]" when stdin is a terminal and neither
 // --yes nor --no-input is given; without a terminal --all proceeds (the
-// warning is on stderr). Declining is exit 8.
-func (a *App) confirmAll() error {
+// warning is on stderr). Declining is exit 8, an interrupt exit 10.
+func (a *App) confirmAll(ctx context.Context) error {
 	if !a.StdinTTY || a.Flags.Yes || a.Flags.NoInput {
 		return nil
 	}
-	_, _ = fmt.Fprint(a.Err, "Fortfahren? [j/N] ")
-	line, _ := bufio.NewReader(a.In).ReadString('\n')
+	line, err := a.prompt(ctx, "Fortfahren? [j/N] ")
+	if err != nil {
+		return err
+	}
 	switch strings.ToLower(strings.TrimSpace(line)) {
 	case "j", "ja", "y", "yes":
 		return nil

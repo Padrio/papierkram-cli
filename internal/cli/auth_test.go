@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/config"
@@ -77,6 +79,46 @@ func TestAuthLoginTTYPrompt(t *testing.T) {
 		t.Errorf("Prompt fehlt: %q", errs)
 	}
 	assertNoToken(t, app)
+}
+
+func TestAuthLoginTTYPromptInterrupted(t *testing.T) {
+	app, srv := mockApp(t, nil)
+	writeCfg(t, app, twoCtx)
+	app.StdinTTY = true
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+	app.ReadPassword = func() ([]byte, error) {
+		cancel()
+		<-block
+		return nil, errors.New("beendet")
+	}
+	restored := false
+	app.restoreTerminal = func() { restored = true }
+	done := make(chan int, 1)
+	go func() { done <- executeContext(ctx, app, NewRootCmd(app), []string{"auth", "login", "--context", "b"}) }()
+	select {
+	case code := <-done:
+		if code != 10 {
+			_, errs := bufs(app)
+			t.Fatalf("exit = %d, stderr = %s", code, errs)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Unterbrechung beendet die Token-Eingabe nicht")
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Fehler: Abgebrochen: Eingabe durch Unterbrechung beendet") {
+		t.Errorf("stderr = %q", errs)
+	}
+	if !restored {
+		t.Error("Terminalzustand nicht wiederhergestellt")
+	}
+	if tok, err := app.Keyring.Get("b"); err == nil {
+		t.Errorf("Token gespeichert: %q", tok)
+	}
+	if n := len(srv.Requests()); n != 0 {
+		t.Errorf("%d Requests", n)
+	}
 }
 
 func TestAuthLoginWithoutTTYNeedsTokenStdin(t *testing.T) {

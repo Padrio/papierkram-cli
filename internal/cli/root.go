@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -180,6 +181,9 @@ var interruptSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
 func execute(app *App, root *cobra.Command, args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), interruptSignals...)
 	defer stop()
+	// After the first signal the default behaviour returns: a second
+	// Ctrl+C ends the process even if something still blocks.
+	context.AfterFunc(ctx, stop)
 	return executeContext(ctx, app, root, args)
 }
 
@@ -191,7 +195,7 @@ func executeContext(ctx context.Context, app *App, root *cobra.Command, args []s
 		return 0
 	}
 	ce := clierr.From(err)
-	if ctx.Err() != nil && ce.Code == clierr.CodeNetwork {
+	if ce.Code == clierr.CodeNetwork && ctx.Err() != nil && errors.Is(err, context.Canceled) {
 		// The request did not fail, it was interrupted (Ctrl+C).
 		ce = &clierr.Error{Code: ce.Code, Message: "Abgebrochen: Anfrage durch Unterbrechung beendet", Cause: err}
 	}

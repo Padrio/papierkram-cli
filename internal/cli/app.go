@@ -67,6 +67,11 @@ type App struct {
 	quota       api.Quota
 	quotaWarned bool
 
+	// restoreTerminal restores the terminal state of the start; readCtx
+	// calls it when an interrupt ends a hidden token read (nil: no
+	// terminal).
+	restoreTerminal func()
+
 	// resolved is the configuration resolved in this invocation (nil until
 	// then); execute uses its output format for the error output.
 	resolved *config.Resolved
@@ -89,6 +94,11 @@ func NewApp() *App {
 		ReadPassword: func() ([]byte, error) {
 			return term.ReadPassword(int(os.Stdin.Fd()))
 		},
+	}
+	if fd := int(os.Stdin.Fd()); app.StdinTTY {
+		if st, err := term.GetState(fd); err == nil {
+			app.restoreTerminal = func() { _ = term.Restore(fd, st) }
+		}
 	}
 	if dir, err := os.UserConfigDir(); err == nil {
 		// config.Path appends "papierkram/config.toml" itself.

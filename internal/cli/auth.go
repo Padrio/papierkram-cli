@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -137,7 +138,7 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 			return noKeyringErr(name, newSubdomain, tokenStdin)
 		}
 	}
-	token, err := a.readLoginToken(tokenStdin, name)
+	token, err := a.readLoginToken(c.Context(), tokenStdin, name)
 	if err != nil {
 		return err
 	}
@@ -259,14 +260,20 @@ func loginTarget(cfg *config.Config, name, subdomain string) (created, activated
 // readLoginToken reads the token from stdin or, with a terminal, hidden
 // from the keyboard. Surrounding spaces and line endings (CR/LF) are
 // removed; the token never appears in an error.
-func (a *App) readLoginToken(fromStdin bool, name string) (string, error) {
+func (a *App) readLoginToken(ctx context.Context, fromStdin bool, name string) (string, error) {
 	var raw []byte
 	var err error
 	if fromStdin {
-		raw, err = io.ReadAll(io.LimitReader(a.In, maxTokenInput))
+		raw, err = a.readCtx(ctx, func() ([]byte, error) { return io.ReadAll(io.LimitReader(a.In, maxTokenInput)) })
 	} else {
 		_, _ = fmt.Fprintf(a.Err, "Token für Kontext %q (Eingabe verdeckt): ", name)
-		raw, err = a.ReadPassword()
+		raw, err = a.readCtx(ctx, a.ReadPassword)
+	}
+	var ce *clierr.Error
+	if errors.As(err, &ce) {
+		return "", ce // interrupted; readCtx ended the line
+	}
+	if !fromStdin {
 		_, _ = fmt.Fprintln(a.Err)
 	}
 	if err != nil {

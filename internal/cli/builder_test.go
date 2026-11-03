@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -335,8 +336,9 @@ func TestListFlagValidation(t *testing.T) {
 	}
 }
 
-// pagedUsers answers GET /users with total pages of one user each; ids of
-// page p are 9007199254740990+p, so exact merging is visible.
+// pagedUsers answers GET /users with total pages of one user each and
+// echoes the requested page size; ids of page p are 9007199254740990+p, so
+// exact merging is visible.
 func pagedUsers(srv *mockapi.Server, total int) {
 	srv.OnFunc("GET", "/users", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Query().Get("page")
@@ -346,9 +348,9 @@ func pagedUsers(srv *mockapi.Server, total int) {
 		var n int
 		_, _ = fmt.Sscan(p, &n)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"type":"list","page":%d,"page_size":1,"total_pages":%d,"total_entries":%d,"has_more":%t,`+
+		_, _ = fmt.Fprintf(w, `{"type":"list","page":%d,"page_size":%s,"total_pages":%d,"total_entries":%d,"has_more":%t,`+
 			`"entries":[{"id":%d,"full_name":"Nutzer <%d> & Co","email":"u%d@example.org","role":"owner","rate":19.90}]}`,
-			n, total, total, n < total, int64(9007199254740990)+int64(n), n, n)
+			n, r.URL.Query().Get("page_size"), total, total, n < total, int64(9007199254740990)+int64(n), n, n)
 	})
 }
 
@@ -470,7 +472,8 @@ func TestListAllMaxPagesCaps(t *testing.T) {
 func TestListAllEmptyList(t *testing.T) {
 	app, srv := apiApp(t)
 	srv.On("GET", "/users", http.StatusOK, []byte(`{"type":"list","page":1,"page_size":100,"total_pages":0,"total_entries":0,"has_more":false,"entries":[]}`))
-	wantExit(t, app, Run(app, []string{"user", "list", "--all", "-o", "json"}), 0)
+	// page_size and the totals come from the API envelope, not the request
+	wantExit(t, app, Run(app, []string{"user", "list", "--all", "--limit", "30", "-o", "json"}), 0)
 	wantRequests(t, srv, 1)
 	want := "{\n  \"type\": \"list\",\n  \"page\": 1,\n  \"page_size\": 100,\n  \"total_pages\": 0,\n  \"total_entries\": 0,\n  \"has_more\": false,\n  \"entries\": []\n}\n"
 	if out := mustOut(app); out != want {
@@ -479,10 +482,103 @@ func TestListAllEmptyList(t *testing.T) {
 }
 
 func TestListAllInvalidEnvelopeIsNotUsageError(t *testing.T) {
+	for _, body := range []string{
+		`{"type":"list","entries":"kaputt"}`,
+		// without total_pages --all must not claim a complete list
+		`{"type":"list","page":1,"page_size":100,"total_pages":null,"total_entries":250,"has_more":true,"entries":[{"id":1}]}`,
+		`{"type":"list","page":1,"page_size":100,"total_entries":250,"has_more":true,"entries":[{"id":1}]}`,
+	} {
+		app, srv := apiApp(t)
+		srv.On("GET", "/users", http.StatusOK, []byte(body))
+		wantExit(t, app, Run(app, []string{"user", "list", "--all"}), 1)
+		wantRequests(t, srv, 1)
+		if out, errs := bufs(app); out != "" || !strings.Contains(errs, "unerwartete Listenantwort") {
+			t.Errorf("%s: stdout = %q, stderr = %q", body, out, errs)
+		}
+	}
+}
+
+// blockingReader blocks every Read until the test ends; the first Read
+// calls onRead (e.g. to simulate Ctrl+C while the prompt waits).
+type blockingReader struct {
+	onRead func()
+	done   chan struct{}
+}
+
+func (b *blockingReader) Read([]byte) (int, error) {
+	if b.onRead != nil {
+		b.onRead()
+		b.onRead = nil
+	}
+	<-b.done
+	return 0, io.EOF
+}
+
+func newBlockingReader(t *testing.T, onRead func()) *blockingReader {
+	b := &blockingReader{onRead: onRead, done: make(chan struct{})}
+	t.Cleanup(func() { close(b.done) })
+	return b
+}
+
+func waitExit(t *testing.T, run func() int) int {
+	t.Helper()
+	done := make(chan int, 1)
+	go func() { done <- run() }()
+	select {
+	case code := <-done:
+		return code
+	case <-time.After(10 * time.Second):
+		t.Fatal("Unterbrechung beendet die Eingabe nicht")
+		return -1
+	}
+}
+
+func TestListAllPromptInterrupted(t *testing.T) {
 	app, srv := apiApp(t)
-	srv.On("GET", "/users", http.StatusOK, []byte(`{"type":"list","entries":"kaputt"}`))
-	wantExit(t, app, Run(app, []string{"user", "list", "--all"}), 1)
+	pagedUsers(srv, 12)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	app.StdinTTY = true
+	app.In = newBlockingReader(t, cancel)
+	restored := false
+	app.restoreTerminal = func() { restored = true }
+	code := waitExit(t, func() int { return runEntries(t, app, ctx, []string{"user", "list", "--all"}) })
+	wantExit(t, app, code, 10)
 	wantRequests(t, srv, 1)
+	out, errs := bufs(app)
+	if out != "" || !strings.Contains(errs, "Fortfahren? [j/N] \nFehler: Abgebrochen: Eingabe durch Unterbrechung beendet") {
+		t.Errorf("stdout = %q, stderr = %q", out, errs)
+	}
+	if !restored {
+		t.Error("Terminalzustand nicht wiederhergestellt")
+	}
+}
+
+// An interrupt after a mutation was sent keeps outcome_unknown (exit 12)
+// with its hint; the rewrite to "Abgebrochen" only applies to exit 10.
+func TestMutationInterruptedAfterSendIsOutcomeUnknown(t *testing.T) {
+	archive := specEntry(t, "ArchiveCompany", "company", "archive", registry.ClassArchive)
+	for _, viaTimeout := range []bool{false, true} {
+		app, srv := apiApp(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		srv.OnFunc("POST", "/contact/companies/{id}/archive", func(_ http.ResponseWriter, r *http.Request) {
+			if !viaTimeout {
+				cancel()
+			}
+			<-r.Context().Done()
+		})
+		args := []string{"company", "archive", "12"}
+		if viaTimeout {
+			args = append(args, "--timeout", "50ms")
+		}
+		code := waitExit(t, func() int { return runEntries(t, app, ctx, args, archive) })
+		cancel()
+		wantExit(t, app, code, 12)
+		wantRequests(t, srv, 1)
+		if _, errs := bufs(app); !strings.Contains(errs, "Ergebnis unbekannt") || strings.Contains(errs, "Abgebrochen") {
+			t.Errorf("timeout=%t: stderr = %q", viaTimeout, errs)
+		}
+	}
 }
 
 func TestListInterruptAbortsRequest(t *testing.T) {
