@@ -23,13 +23,13 @@ type Columns struct {
 	Table, Wide []Column
 }
 
-// header is the column title: Header or, if empty, the upper-cased path
-// (e.g. BILLING.COMPANY for --fields billing.company).
+// header is the single-line column title: Header or, if empty, the
+// upper-cased path (e.g. BILLING.COMPANY for --fields billing.company).
 func (c Column) header() string {
 	if c.Header != "" {
-		return c.Header
+		return oneLine(c.Header)
 	}
-	return strings.ToUpper(c.Path)
+	return oneLine(strings.ToUpper(c.Path))
 }
 
 // FmtDurationHM formats a duration in seconds as h:mm (whole minutes,
@@ -59,6 +59,9 @@ func FmtDurationHM(v any) string {
 		sign, n = "-", -n
 	}
 	m := n / 60
+	if m == 0 {
+		sign = "" // -59 s is 0:00, not -0:00
+	}
 	return fmt.Sprintf("%s%d:%02d", sign, m/60, m%60)
 }
 

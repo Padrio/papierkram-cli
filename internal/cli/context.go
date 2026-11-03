@@ -164,7 +164,8 @@ type contextRow struct {
 }
 
 // contextColumns are the table columns of context list; wide adds the
-// default user ID (empty when unset).
+// default user ID (empty when unset). Order NAME, SUBDOMAIN, SCHREIBSCHUTZ,
+// AKTIV is a controller decision (Task 17).
 var contextColumns = output.Columns{
 	Table: []output.Column{
 		{Header: "NAME", Path: "name"},

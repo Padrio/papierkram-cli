@@ -1,4 +1,4 @@
-NAME         BILLING.COMPANY  TOTAL_GROSS  ID
-Müller GmbH  Größe AG         1190.00      1
-Straße & Co                   19.99        9007199254740993
-Größe                         0.00         3
+NAME         FIRMA     BILLING.STREET  BRUTTO   ID
+Müller GmbH  Größe AG  Hauptstraße 1   1190.00  1
+Straße & Co                            19.99    9007199254740993
+Größe                                  0.00     3

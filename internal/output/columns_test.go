@@ -16,6 +16,7 @@ func TestFmtDurationHM(t *testing.T) {
 		json.Number("3599"):  "0:59",
 		json.Number("36000"): "10:00",
 		json.Number("-5400"): "-1:30",
+		json.Number("-59"):   "0:00", // no "-0:00"
 		"5400":               "1:30",
 		int64(90061):         "25:01",
 		json.Number("1.5"):   "1.5", // not an integer: as given

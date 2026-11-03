@@ -251,10 +251,11 @@ func TestJQRuntimeErrorAfterCommandRan(t *testing.T) {
 func TestContextListTableFieldsAndWide(t *testing.T) {
 	app, out, errb := newTestApp(t)
 	writeCfg(t, app, twoCtx+"user = 7\n")
+	// Known paths keep header and formatter of their column.
 	if code := Run(app, []string{"context", "list", "--fields", "name,active,read_only"}); code != 0 {
 		t.Fatal(errb.String())
 	}
-	if want := "NAME  ACTIVE  READ_ONLY\na     *       nein\nb             ja\n"; out.String() != want {
+	if want := "NAME  AKTIV  SCHREIBSCHUTZ\na     *      nein\nb            ja\n"; out.String() != want {
 		t.Errorf("--fields:\n%s\nwant\n%s", out.String(), want)
 	}
 	out.Reset()

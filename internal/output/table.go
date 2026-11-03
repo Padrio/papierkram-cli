@@ -88,9 +88,9 @@ func tableEntries(v any) ([]any, bool) {
 	return nil, false
 }
 
-// tableColumns picks the columns: --fields (headers are the upper-cased
-// paths, the formatter of a known column with the same path is kept), else
-// Table, for wide followed by Wide.
+// tableColumns picks the columns: --fields (a known column with the same
+// path keeps its header and formatter, other paths get the upper-cased path
+// as header), else Table, for wide followed by Wide.
 func tableColumns(o Options, cols Columns) []Column {
 	known := slices.Concat(cols.Table, cols.Wide)
 	if len(o.Fields) > 0 {
@@ -98,7 +98,7 @@ func tableColumns(o Options, cols Columns) []Column {
 		for i, f := range o.Fields {
 			out[i] = Column{Path: f}
 			if j := slices.IndexFunc(known, func(c Column) bool { return c.Path == f }); j >= 0 {
-				out[i].Fmt = known[j].Fmt
+				out[i] = known[j]
 			}
 		}
 		return out
@@ -214,8 +214,10 @@ func oneLine(s string) string {
 	}, s)
 }
 
-// writeRows aligns rows with two spaces between columns; trailing spaces
-// (from empty last cells) are removed.
+// writeRows aligns rows with two spaces between columns. Trailing spaces
+// of every line are removed: the padding of empty last cells, but also
+// trailing spaces inside the last cell's own text. A row whose cells are
+// all empty would thereby become a blank line, so its first cell shows "-".
 func writeRows(w io.Writer, rows [][]string) error {
 	if len(rows) == 0 {
 		return nil
@@ -223,6 +225,10 @@ func writeRows(w io.Writer, rows [][]string) error {
 	var b bytes.Buffer
 	tw := tabwriter.NewWriter(&b, 0, 4, 2, ' ', 0)
 	for _, r := range rows {
+		if len(r) > 0 && !slices.ContainsFunc(r, func(c string) bool { return c != "" }) {
+			r = slices.Clone(r)
+			r[0] = "-"
+		}
 		_, _ = fmt.Fprintln(tw, strings.Join(r, "\t"))
 	}
 	if err := tw.Flush(); err != nil {

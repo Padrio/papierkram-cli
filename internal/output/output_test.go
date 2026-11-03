@@ -174,8 +174,6 @@ entries:
 	}
 }
 
-// Table rendering arrives with Task 17; until then table/wide fall back to
-// indented JSON.
 func TestEmptyBodyPrintsNothing(t *testing.T) {
 	for _, o := range []Options{{Format: FormatJSON}, {Format: FormatYAML}, {Format: FormatJSON, JQ: "."}, {Format: FormatJSON, Fields: []string{"id"}}, {Format: FormatTable}, {Format: FormatWide}} {
 		if got := mustRender(t, o, " \n"); got != "" {

@@ -54,11 +54,12 @@ func TestTableWide(t *testing.T) {
 	golden.Assert(t, "table_wide.txt", []byte(out))
 }
 
-// --fields selects the columns in the given order; headers are the
-// upper-cased paths, formatters of known columns are kept.
+// --fields selects the columns in the given order; a known column (same
+// path) keeps its header and formatter, other paths get the upper-cased
+// path as header.
 func TestTableFields(t *testing.T) {
 	for _, f := range []Format{FormatTable, FormatWide} {
-		out, _ := renderCols(t, Options{Format: f, Fields: []string{"name", "billing.company", "total_gross", "id"}}, tableList, tableCols)
+		out, _ := renderCols(t, Options{Format: f, Fields: []string{"name", "billing.company", "billing.street", "total_gross", "id"}}, tableList, tableCols)
 		golden.Assert(t, "table_fields.txt", []byte(out))
 	}
 }
@@ -188,5 +189,26 @@ func TestTableScalar(t *testing.T) {
 	out, _ := renderCols(t, Options{Format: FormatTable}, `"Zeile 1\nZeile 2"`, Columns{})
 	if out != "Zeile 1 Zeile 2\n" {
 		t.Errorf("got %q", out)
+	}
+}
+
+// A row whose cells are all empty would be trimmed to a blank line; it
+// shows "-" in the first cell instead.
+func TestTableAllEmptyRowStaysVisible(t *testing.T) {
+	out, _ := renderCols(t, Options{Format: FormatTable}, `[{"a":"x","b":"y"},{},{"a":null}]`, Columns{Table: []Column{{Path: "a"}, {Path: "b"}}})
+	if want := "A  B\nx  y\n-\n-\n"; out != want {
+		t.Errorf("got\n%q\nwant\n%q", out, want)
+	}
+}
+
+// Headers are single-line like cells.
+func TestTableHeaderOneLine(t *testing.T) {
+	out, _ := renderCols(t, Options{Format: FormatTable}, `[{"a":"x","b":"y"}]`, Columns{Table: []Column{{Header: "A\nZ", Path: "a"}, {Header: "B\tY", Path: "b"}}})
+	if want := "A Z  B Y\nx    y\n"; out != want {
+		t.Errorf("got\n%q\nwant\n%q", out, want)
+	}
+	out, _ = renderCols(t, Options{Format: FormatTable}, `{"a":"x"}`, Columns{Table: []Column{{Header: "A\nZ", Path: "a"}}})
+	if want := "FELD  WERT\nA Z   x\n"; out != want {
+		t.Errorf("object: got\n%q\nwant\n%q", out, want)
 	}
 }

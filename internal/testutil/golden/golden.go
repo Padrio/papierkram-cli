@@ -30,7 +30,7 @@ const tokenMarker = "test-token-"
 // compared or written.
 func Assert(t testing.TB, name string, got []byte) {
 	t.Helper()
-	if name == "" || filepath.IsAbs(name) || !filepath.IsLocal(name) {
+	if !filepath.IsLocal(name) { // also rejects "", absolute paths and ".."
 		t.Fatalf("golden: ungültiger Name %q (relativer Pfad unter testdata/golden erwartet)", name)
 		return
 	}
