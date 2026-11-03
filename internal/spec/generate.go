@@ -7,3 +7,5 @@ package spec
 // below, never above.
 
 //go:generate go run ../../tools/applyoverlay ../../api/openapi.json ../../api/overlay.yaml openapi.gen.json
+//go:generate go tool oapi-codegen -config ../api/gen/oapi-codegen.yaml openapi.gen.json
+//go:generate go run ../../tools/gendispatch openapi.gen.json ../api/gen/dispatch.gen.go

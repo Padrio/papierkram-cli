@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	"github.com/speakeasy-api/openapi/overlay"
-	"go.yaml.in/yaml/v3"
+	"gopkg.in/yaml.v3"
 )
 
 // Apply applies the overlay to the spec and returns the patched spec as JSON.

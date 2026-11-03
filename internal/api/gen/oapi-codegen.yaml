@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oapi-codegen/oapi-codegen/HEAD/configuration-schema.json
+package: gen
+# Relative to the working directory of the go:generate run (internal/spec).
+output: ../api/gen/client.gen.go
+generate:
+  models: true
+  client: true
