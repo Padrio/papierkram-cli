@@ -71,10 +71,13 @@ jobs:
           version: v2.14.0
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      # git diff misses newly generated untracked files; git status sees both.
       - name: go generate without diff
         run: |
           go generate ./...
           git diff --exit-code
+          git status --porcelain
+          test -z "$(git status --porcelain)"
       # Threshold is 0 for now; Task 43 raises it to 80.
       - name: coverage
         run: scripts/coverage.sh 0
