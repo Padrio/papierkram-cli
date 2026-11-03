@@ -4,8 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -139,5 +143,33 @@ func TestNetworkErrorBeforeSendIsNetwork(t *testing.T) {
 				t.Errorf("sleeps = %v, want %d", sleeps, wantSleeps)
 			}
 		})
+	}
+}
+
+func TestTransportReasonDNS(t *testing.T) {
+	err := &url.Error{Op: "Get", URL: "https://firma.papierkram.de/api/v1/x", Err: &net.OpError{
+		Op: "dial", Net: "tcp", Err: &net.DNSError{Err: "no such host", Name: "firma.papierkram.de", IsNotFound: true},
+	}}
+	ce := transportError(http.MethodGet, "/api/v1/x", false, err)
+	if ce.Code != clierr.CodeNetwork || ce.Message != "Papierkram-API nicht erreichbar (Adresse nicht auflösbar (firma.papierkram.de))" {
+		t.Errorf("code %s message %q", ce.Code, ce.Message)
+	}
+}
+
+func TestTLSCertificateErrorIsNetwork(t *testing.T) {
+	srv := httptest.NewUnstartedServer(http.NotFoundHandler())
+	srv.Config.ErrorLog = log.New(io.Discard, "", 0) // silence handshake errors
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+
+	// The default client does not trust the test certificate.
+	c := New(Options{BaseURL: srv.URL + "/api/v1", Token: testToken, Sleep: func(time.Duration) {}})
+	_, err := c.Call(context.Background(), "ListInvoices", nil, nil, nil)
+	ce := asCLIErr(t, err)
+	if ce.Code != clierr.CodeNetwork || ce.Message != "Papierkram-API nicht erreichbar (TLS-Zertifikat ungültig)" {
+		t.Errorf("code %s message %q", ce.Code, ce.Message)
+	}
+	if strings.Contains(ce.Message, "x509") {
+		t.Errorf("raw Go error in message: %q", ce.Message)
 	}
 }

@@ -2,10 +2,13 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 
@@ -94,7 +97,10 @@ func transportError(method, path string, sent bool, err error) *clierr.Error {
 
 // transportReason is a short German reason for err, without the URL.
 func transportReason(err error) string {
-	var ue *url.Error
+	var (
+		ue  *url.Error
+		dns *net.DNSError
+	)
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		return "Zeitüberschreitung"
@@ -102,11 +108,27 @@ func transportReason(err error) string {
 		return "abgebrochen"
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
 		return "Verbindung vom Server geschlossen"
+	case errors.As(err, &dns):
+		return fmt.Sprintf("Adresse nicht auflösbar (%s)", dns.Name)
+	case isCertificateError(err):
+		return "TLS-Zertifikat ungültig"
 	case errors.As(err, &ue):
 		return ue.Err.Error()
 	default:
 		return err.Error()
 	}
+}
+
+// isCertificateError reports whether err is a failed TLS certificate check.
+func isCertificateError(err error) bool {
+	var (
+		verify    *tls.CertificateVerificationError
+		authority x509.UnknownAuthorityError
+		hostname  x509.HostnameError
+		invalid   x509.CertificateInvalidError
+	)
+	return errors.As(err, &verify) || errors.As(err, &authority) ||
+		errors.As(err, &hostname) || errors.As(err, &invalid)
 }
 
 // safeMethod reports whether repeating method cannot change server state.

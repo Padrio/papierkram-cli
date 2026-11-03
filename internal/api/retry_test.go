@@ -218,3 +218,61 @@ func TestNoRetryAfterContextCanceled(t *testing.T) {
 		t.Errorf("%d requests, sleeps %v; want stop after cancel", n.Load(), s.got)
 	}
 }
+
+// truncatedServer answers every request with status and a body that ends
+// before the announced Content-Length, so reading the body fails.
+func truncatedServer(t *testing.T, status int) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n.Add(1)
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, `{"type":"error","mess`)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &n
+}
+
+// A known status wins over a failed body read: no retry on 429.
+func TestNoRetryOnTruncated429(t *testing.T) {
+	srv, n := truncatedServer(t, http.StatusTooManyRequests)
+	s := &sleepRecorder{}
+	resp, err := clientFor(srv, s).Call(context.Background(), "ListInvoices", nil, nil, nil)
+	ce := asCLIErr(t, err)
+	if ce.Code != clierr.CodeQuota || ce.Exit() != 6 || ce.HTTPStatus != 429 {
+		t.Errorf("code %s exit %d status %d, want quota 6 429", ce.Code, ce.Exit(), ce.HTTPStatus)
+	}
+	if n.Load() != 1 || len(s.got) != 0 {
+		t.Errorf("%d requests, sleeps %v; want 1 request, no sleep", n.Load(), s.got)
+	}
+	if resp == nil || resp.Status != 429 || resp.Header.Get("Content-Length") != "1000" {
+		t.Errorf("resp = %+v", resp)
+	}
+}
+
+func TestTruncatedErrorBodyKeepsStatusOnPost(t *testing.T) {
+	srv, n := truncatedServer(t, http.StatusUnprocessableEntity)
+	s := &sleepRecorder{}
+	resp, err := clientFor(srv, s).Call(context.Background(), "CreateInvoice", nil, nil, map[string]any{"name": "x"})
+	ce := asCLIErr(t, err)
+	if ce.Code != clierr.CodeValidation || ce.Exit() != 5 || ce.HTTPStatus != 422 {
+		t.Errorf("code %s exit %d status %d, want validation 5 422", ce.Code, ce.Exit(), ce.HTTPStatus)
+	}
+	if ce.Message != "Eingaben von der API abgelehnt (HTTP 422)" {
+		t.Errorf("message = %q", ce.Message)
+	}
+	if n.Load() != 1 || resp == nil || resp.Status != 422 {
+		t.Errorf("%d requests, resp %+v", n.Load(), resp)
+	}
+}
+
+// A truncated 2xx body is the payload itself: for a mutation the outcome is unknown.
+func TestTruncatedSuccessBodyOnPostIsOutcomeUnknown(t *testing.T) {
+	srv, _ := truncatedServer(t, http.StatusCreated)
+	_, err := clientFor(srv, &sleepRecorder{}).Call(context.Background(), "CreateInvoice", nil, nil, map[string]any{"name": "x"})
+	if ce := asCLIErr(t, err); ce.Code != clierr.CodeOutcomeUnknown || ce.Exit() != 12 {
+		t.Errorf("code %s exit %d, want outcome_unknown 12", ce.Code, ce.Exit())
+	}
+}

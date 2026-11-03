@@ -16,6 +16,7 @@ import (
 
 	"github.com/Padrio/papierkram-cli/internal/api/gen"
 	"github.com/Padrio/papierkram-cli/internal/buildinfo"
+	"github.com/Padrio/papierkram-cli/internal/clierr"
 )
 
 const testToken = "test-token-1"
@@ -322,6 +323,10 @@ func TestTimeoutApplied(t *testing.T) {
 	_, err := c.Call(context.Background(), "ListInvoices", nil, nil, nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want deadline exceeded", err)
+	}
+	// The GET was written completely; a safe method still counts as network.
+	if ce := asCLIErr(t, err); ce.Code != clierr.CodeNetwork || ce.Exit() != 10 {
+		t.Errorf("code %s exit %d, want network 10", ce.Code, ce.Exit())
 	}
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("timeout not applied, took %s", d)
