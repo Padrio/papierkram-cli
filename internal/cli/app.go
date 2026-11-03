@@ -66,6 +66,10 @@ type App struct {
 	// quotaWarned records that the low-quota warning was printed.
 	quota       api.Quota
 	quotaWarned bool
+
+	// resolved is the configuration resolved in this invocation (nil until
+	// then); execute uses its output format for the error output.
+	resolved *config.Resolved
 }
 
 // NewApp creates an App wired to the operating system.

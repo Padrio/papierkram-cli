@@ -13,6 +13,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
+	"github.com/Padrio/papierkram-cli/internal/output"
 )
 
 // maxTokenInput bounds what auth login reads from stdin.
@@ -122,6 +123,7 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 	if err := checkContextOptions(r); err != nil {
 		return err
 	}
+	a.resolved = r
 	// Probe the keychain before the token is read and verified, so that no
 	// credit is spent on a token that cannot be stored.
 	// With --insecure-storage there is nothing to probe (and no keychain
@@ -201,8 +203,8 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 	if a.Env("PAPIERKRAM_TOKEN") != "" {
 		_, _ = fmt.Fprintln(a.Err, "Hinweis: PAPIERKRAM_TOKEN ist gesetzt und hat weiterhin Vorrang vor dem gespeicherten Token.")
 	}
-	if a.outputFormat(r) == "json" {
-		return a.writeJSON(map[string]string{"context": name, "subdomain": ctx.Subdomain, "token_source": tokenSource})
+	if o := a.outputOptions(a.outputFormat(r)); o.Structured() {
+		return output.RenderValue(o, loginJSON{name, ctx.Subdomain, tokenSource}, output.Columns{})
 	}
 	return nil
 }
@@ -340,6 +342,12 @@ func (a *App) logout() error {
 	return nil
 }
 
+type loginJSON struct {
+	Context     string `json:"context"`
+	Subdomain   string `json:"subdomain"`
+	TokenSource string `json:"token_source"`
+}
+
 type quotaJSON struct {
 	Remaining int  `json:"remaining"`
 	Consumed  int  `json:"consumed"`
@@ -381,8 +389,8 @@ func newAuthStatusCmd(app *App) *cobra.Command {
 				ReadOnly: r.ReadOnly, ReadOnlySource: r.ReadOnlySource,
 				Quota: quotaJSON{app.quota.Remaining, app.quota.Consumed, app.quota.Known},
 			}
-			if app.outputFormat(r) == "json" {
-				if err := app.writeJSON(st); err != nil {
+			if o := app.outputOptions(app.outputFormat(r)); o.Structured() {
+				if err := output.RenderValue(o, st, output.Columns{}); err != nil {
 					return err
 				}
 			} else if err := app.writeStatusText(st); err != nil {

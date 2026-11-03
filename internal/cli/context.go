@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
+	"github.com/Padrio/papierkram-cli/internal/output"
 )
 
 // wrapConfigErr turns plain config errors into German clierr errors that
@@ -36,12 +36,6 @@ func (a *App) loadConfig() (*config.Config, string, error) {
 	}
 	c, err := config.Load(path)
 	return c, path, wrapConfigErr(err, path)
-}
-
-func (a *App) writeJSON(v any) error {
-	enc := json.NewEncoder(a.Out)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
 }
 
 func newContextCmd(app *App) *cobra.Command {
@@ -157,6 +151,11 @@ func newContextUseCmd(app *App) *cobra.Command {
 	}
 }
 
+type contextListJSON struct {
+	ActiveContext string       `json:"active_context"`
+	Contexts      []contextRow `json:"contexts"`
+}
+
 type contextRow struct {
 	Name      string `json:"name"`
 	Subdomain string `json:"subdomain"`
@@ -181,8 +180,8 @@ func newContextListCmd(app *App) *cobra.Command {
 				ctx := cfg.Contexts[n]
 				rows = append(rows, contextRow{n, ctx.Subdomain, ctx.ReadOnly, ctx.User, n == cfg.ActiveContext})
 			}
-			if app.Flags.Output == "json" {
-				return app.writeJSON(map[string]any{"active_context": cfg.ActiveContext, "contexts": rows})
+			if o := app.outputOptions(app.Flags.Output); o.Structured() {
+				return output.RenderValue(o, contextListJSON{cfg.ActiveContext, rows}, output.Columns{})
 			}
 			tw := tabwriter.NewWriter(app.Out, 0, 4, 2, ' ', 0)
 			_, _ = fmt.Fprintln(tw, "AKTIV\tNAME\tSUBDOMAIN\tSCHREIBSCHUTZ")
@@ -213,8 +212,8 @@ func newContextActiveCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if app.Flags.Output == "json" {
-				return app.writeJSON(map[string]string{"active_context": cfg.ActiveContext})
+			if o := app.outputOptions(app.Flags.Output); o.Structured() {
+				return output.RenderValue(o, map[string]string{"active_context": cfg.ActiveContext}, output.Columns{})
 			}
 			if cfg.ActiveContext == "" {
 				_, _ = fmt.Fprintln(app.Err, "Kein aktiver Kontext. Anlegen: papierkram context create <name> --subdomain <s>")

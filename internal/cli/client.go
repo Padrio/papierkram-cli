@@ -51,6 +51,7 @@ func (a *App) resolveConfig() (*config.Resolved, error) {
 	if err := checkContextOptions(r); err != nil {
 		return nil, err
 	}
+	a.resolved = r
 	a.warnEnvOverrides(r)
 	return r, nil
 }

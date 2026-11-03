@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"regexp"
 	"slices"
@@ -12,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/output"
 )
 
 // The root PersistentPreRunE (flag checks, central config write guard) must
@@ -169,7 +169,9 @@ func execute(app *App, root *cobra.Command, args []string) int {
 		return 0
 	}
 	ce := clierr.From(err)
-	_, _ = io.WriteString(app.Err, ce.Format())
+	// The format of the error output is the resolved one (context output
+	// value) when the configuration was resolved, otherwise the flag.
+	output.WriteError(app.outputOptions(app.outputFormat(app.resolved)), ce)
 	return ce.Exit()
 }
 
