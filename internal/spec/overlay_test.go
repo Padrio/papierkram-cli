@@ -29,6 +29,9 @@ const (
 
 func readFile(t *testing.T, path string) []byte {
 	t.Helper()
+	if path == generatedPath {
+		return Raw() // what the binary embeds
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
@@ -128,7 +131,7 @@ func TestGeneratedSpecUpToDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply overlay: %v", err)
 	}
-	if !bytes.Equal(got, readFile(t, generatedPath)) {
+	if !bytes.Equal(got, Raw()) {
 		t.Fatal("internal/spec/openapi.gen.json is stale; run `go generate ./internal/spec/`")
 	}
 }
