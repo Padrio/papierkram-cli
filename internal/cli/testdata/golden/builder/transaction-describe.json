@@ -1,0 +1,43 @@
+{
+  "bank_connection": {
+    "id": 1,
+    "name": "Standard",
+    "type": "bank_connection"
+  },
+  "bdate": "2026-08-28T13:39:52.000+02:00",
+  "categories": null,
+  "created_at": "2026-08-28T13:39:52.000+02:00",
+  "currency": "EUR",
+  "customerref": null,
+  "fintecapi_turnover_id": null,
+  "from": {
+    "account_no": null,
+    "bic": null,
+    "blz": null,
+    "currency": null,
+    "iban": null,
+    "name": "Sender"
+  },
+  "gvcode": null,
+  "id": 459,
+  "imported_at": "2026-08-26T13:39:52.000+02:00",
+  "instref": null,
+  "primanota": null,
+  "saldo": {
+    "currency": "EUR",
+    "timestamp": "2026-08-28T13:39:52.000+02:00",
+    "value": 0.0
+  },
+  "seen": null,
+  "sepa": null,
+  "state": "imported",
+  "storno": null,
+  "tags": null,
+  "text": null,
+  "transaction_type": "default",
+  "type": "banking_transaction",
+  "updated_at": "2026-08-28T13:39:52.000+02:00",
+  "usage": "Test",
+  "value": 119.0,
+  "valuta": null
+}

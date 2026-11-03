@@ -1,0 +1,60 @@
+{
+  "entries": [
+    {
+      "email": "user-9e4d72012e3725a66b8d@example.org",
+      "first_name": "Max",
+      "full_name": "Max Mustermann",
+      "id": 2516,
+      "last_name": "Mustermann",
+      "role": "owner",
+      "role_f": "Accountinhaber",
+      "type": "user"
+    },
+    {
+      "email": "user-086c4733af7479086752@example.org",
+      "first_name": "Max",
+      "full_name": "Max Mustermann",
+      "id": 2517,
+      "last_name": "Mustermann",
+      "role": "owner",
+      "role_f": "Accountinhaber",
+      "type": "user"
+    },
+    {
+      "email": "user-f46c9c8bffccdaab6c5b@example.org",
+      "first_name": "Max",
+      "full_name": "Max Mustermann",
+      "id": 2518,
+      "last_name": "Mustermann",
+      "role": "owner",
+      "role_f": "Accountinhaber",
+      "type": "user"
+    },
+    {
+      "email": "user-f105b8e750c8a9725d01@example.org",
+      "first_name": "Max",
+      "full_name": "Max Mustermann",
+      "id": 2519,
+      "last_name": "Mustermann",
+      "role": "owner",
+      "role_f": "Accountinhaber",
+      "type": "user"
+    },
+    {
+      "email": "user-28ec91cf63b35aa49c93@example.org",
+      "first_name": "Max",
+      "full_name": "Max Mustermann",
+      "id": 2520,
+      "last_name": "Mustermann",
+      "role": "owner",
+      "role_f": "Accountinhaber",
+      "type": "user"
+    }
+  ],
+  "has_more": false,
+  "page": 1,
+  "page_size": 100,
+  "total_entries": 5,
+  "total_pages": 1,
+  "type": "list"
+}

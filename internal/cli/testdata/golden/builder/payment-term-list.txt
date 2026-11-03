@@ -1,0 +1,3 @@
+ID    NAME             FÄLLIG
+1234  My payment_term  0
+1235  PAYMENT TERM     0

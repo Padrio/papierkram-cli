@@ -1,0 +1,31 @@
+{
+  "type": "list",
+  "page": 1,
+  "page_size": 100,
+  "total_pages": 3,
+  "total_entries": 3,
+  "has_more": false,
+  "entries": [
+    {
+      "id": 9007199254740991,
+      "full_name": "Nutzer <1> & Co",
+      "email": "u1@example.org",
+      "role": "owner",
+      "rate": 19.90
+    },
+    {
+      "id": 9007199254740992,
+      "full_name": "Nutzer <2> & Co",
+      "email": "u2@example.org",
+      "role": "owner",
+      "rate": 19.90
+    },
+    {
+      "id": 9007199254740993,
+      "full_name": "Nutzer <3> & Co",
+      "email": "u3@example.org",
+      "role": "owner",
+      "rate": 19.90
+    }
+  ]
+}

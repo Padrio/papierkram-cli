@@ -1,0 +1,20 @@
+{
+  "account_no": "1234",
+  "account_type": "bank",
+  "bic": "BARBGB2LLEI",
+  "blz": null,
+  "connection_type": null,
+  "created_at": "2026-08-28T13:39:51.000+02:00",
+  "customer_id": null,
+  "hbci": null,
+  "hbci_host_url": null,
+  "hbci_version": null,
+  "iban": "DE24646402976021115466",
+  "id": 239,
+  "name": "Testbank",
+  "primary": null,
+  "title": "",
+  "type": "bank_connection",
+  "updated_at": "2026-08-28T13:39:51.000+02:00",
+  "user_id": null
+}

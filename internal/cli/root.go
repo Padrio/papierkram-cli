@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -158,6 +160,7 @@ func NewRootCmd(app *App) *cobra.Command {
 	root.AddCommand(newVersionCmd(app))
 	root.AddCommand(newContextCmd(app))
 	root.AddCommand(newAuthCmd(app))
+	BuildResourceCommands(app, root)
 	applyGerman(root)
 	return root
 }
@@ -167,14 +170,31 @@ func Run(app *App, args []string) int {
 	return execute(app, NewRootCmd(app), args)
 }
 
-// execute runs root and maps the resulting error to message and exit code.
+// interruptSignals cancel the command context: Ctrl+C, and SIGTERM where
+// the platform delivers it.
+var interruptSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
+
+// execute runs root with a context that is cancelled on an interrupt, so a
+// running request is aborted, and maps the resulting error to message and
+// exit code.
 func execute(app *App, root *cobra.Command, args []string) int {
+	ctx, stop := signal.NotifyContext(context.Background(), interruptSignals...)
+	defer stop()
+	return executeContext(ctx, app, root, args)
+}
+
+// executeContext runs root with ctx as the command context (cmd.Context()).
+func executeContext(ctx context.Context, app *App, root *cobra.Command, args []string) int {
 	root.SetArgs(args)
-	err := root.Execute()
+	err := root.ExecuteContext(ctx)
 	if err == nil {
 		return 0
 	}
 	ce := clierr.From(err)
+	if ctx.Err() != nil && ce.Code == clierr.CodeNetwork {
+		// The request did not fail, it was interrupted (Ctrl+C).
+		ce = &clierr.Error{Code: ce.Code, Message: "Abgebrochen: Anfrage durch Unterbrechung beendet", Cause: err}
+	}
 	// The format of the error output is the resolved one (context output
 	// value) when the configuration was resolved, otherwise the flag.
 	output.WriteError(app.outputOptions(context.Background(), app.outputFormat(app.resolved)), ce)

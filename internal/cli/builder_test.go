@@ -1,0 +1,647 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+	_ "time/tzdata" // Europe/Berlin on every CI platform
+
+	"github.com/spf13/cobra"
+
+	"github.com/Padrio/papierkram-cli/internal/registry"
+	"github.com/Padrio/papierkram-cli/internal/spec"
+	"github.com/Padrio/papierkram-cli/internal/testutil/golden"
+	"github.com/Padrio/papierkram-cli/internal/testutil/mockapi"
+)
+
+// apiApp is a test app talking to a fresh mock with an environment token.
+func apiApp(t *testing.T) (*App, *mockapi.Server) {
+	t.Helper()
+	return mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-builder"})
+}
+
+// specEntry builds a registry entry for a spec operation that is not (yet)
+// registered, so the runners can be tested with it directly.
+func specEntry(t *testing.T, opID, resource, action string, class registry.Class, filters ...registry.Filter) registry.Entry {
+	t.Helper()
+	op, ok := spec.OperationByID(opID)
+	if !ok {
+		t.Fatalf("operation %s not in spec", opID)
+	}
+	return registry.Entry{
+		Resource: resource, Action: action, OperationID: opID,
+		Method: op.Method, Path: op.Path, Class: class,
+		Credits: registry.ExpectedCredits(op.Method, op.Path),
+		Filters: filters, Short: "Test " + opID,
+	}
+}
+
+// runEntries runs args against the real root plus commands built by the
+// builder for the given extra entries.
+func runEntries(t *testing.T, app *App, ctx context.Context, args []string, entries ...registry.Entry) int {
+	t.Helper()
+	root := NewRootCmd(app)
+	for _, e := range entries {
+		group, _, err := root.Find([]string{e.Resource})
+		if err != nil || group == root {
+			group = &cobra.Command{Use: e.Resource}
+			root.AddCommand(group)
+		}
+		group.AddCommand(app.newEntryCmd(e))
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return executeContext(ctx, app, root, args)
+}
+
+func wantExit(t *testing.T, app *App, got, want int) {
+	t.Helper()
+	if got != want {
+		out, errs := bufs(app)
+		t.Fatalf("exit = %d, erwartet %d\nstdout: %s\nstderr: %s", got, want, out, errs)
+	}
+}
+
+func wantRequests(t *testing.T, srv *mockapi.Server, n int) []mockapi.Recorded {
+	t.Helper()
+	reqs := srv.Requests()
+	if len(reqs) != n {
+		t.Fatalf("%d Requests, erwartet %d: %+v", len(reqs), n, reqs)
+	}
+	return reqs
+}
+
+func TestR03_EmptyBodyActionIsSuccess(t *testing.T) {
+	archive := specEntry(t, "ArchiveCompany", "company", "archive", registry.ClassArchive)
+	app, srv := apiApp(t)
+	srv.On("POST", "/contact/companies/{id}/archive", http.StatusOK, nil)
+	wantExit(t, app, runEntries(t, app, nil, []string{"company", "archive", "12", "-o", "json"}, archive), 0)
+	reqs := wantRequests(t, srv, 1)
+	if reqs[0].Method != "POST" || reqs[0].Path != "/contact/companies/12/archive" {
+		t.Errorf("request = %s %s", reqs[0].Method, reqs[0].Path)
+	}
+	if out, errs := bufs(app); out != "{\n  \"id\": 12,\n  \"ok\": true\n}\n" || errs != "" {
+		t.Errorf("stdout = %q, stderr = %q", out, errs)
+	}
+
+	// table without --fields: a German line instead of a FELD/WERT table
+	app, srv = apiApp(t)
+	srv.On("POST", "/contact/companies/{id}/archive", http.StatusOK, nil)
+	wantExit(t, app, runEntries(t, app, nil, []string{"company", "archive", "12"}, archive), 0)
+	if out, _ := bufs(app); out != "company 12 archiviert.\n" {
+		t.Errorf("stdout = %q", out)
+	}
+}
+
+func TestActionWithBodyRendersAPIObject(t *testing.T) {
+	archive := specEntry(t, "ArchiveCompany", "company", "archive", registry.ClassArchive)
+	app, srv := apiApp(t)
+	srv.On("POST", "/contact/companies/12/archive", http.StatusOK, []byte(`{"id":12,"name":"Müller & Söhne","total":1190.00}`))
+	wantExit(t, app, runEntries(t, app, nil, []string{"company", "archive", "12", "-o", "json"}, archive), 0)
+	want := "{\n  \"id\": 12,\n  \"name\": \"Müller & Söhne\",\n  \"total\": 1190.00\n}\n"
+	if out, _ := bufs(app); out != want {
+		t.Errorf("stdout = %q, erwartet %q", out, want)
+	}
+}
+
+func TestDeleteOutputsDeletedObject(t *testing.T) {
+	del := specEntry(t, "DeleteCompany", "company", "delete", registry.ClassDestructive)
+	app, srv := apiApp(t)
+	wantExit(t, app, runEntries(t, app, nil, []string{"company", "delete", "0", "-o", "json"}, del), 0)
+	reqs := wantRequests(t, srv, 1)
+	if reqs[0].Method != "DELETE" || reqs[0].Path != "/contact/companies/0" {
+		t.Errorf("request = %s %s", reqs[0].Method, reqs[0].Path)
+	}
+	if out, _ := bufs(app); out != "{\n  \"id\": 0,\n  \"deleted\": true\n}\n" {
+		t.Errorf("stdout = %q", out)
+	}
+
+	app, _ = apiApp(t)
+	wantExit(t, app, runEntries(t, app, nil, []string{"company", "delete", "7"}, del), 0)
+	if out, _ := bufs(app); out != "company 7 gelöscht.\n" {
+		t.Errorf("stdout = %q", out)
+	}
+}
+
+func TestActionIDValidation(t *testing.T) {
+	archive := specEntry(t, "ArchiveCompany", "company", "archive", registry.ClassArchive)
+	for _, args := range [][]string{
+		{"company", "archive"},
+		{"company", "archive", "abc"},
+		{"company", "archive", "1.5"},
+		{"company", "archive", "-1"},
+		{"company", "archive", "--", "-1"},
+		{"company", "archive", "99999999999999999999"},
+		{"company", "archive", "1", "2"},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, runEntries(t, app, nil, args, archive), 2)
+		wantRequests(t, srv, 0)
+		if _, errs := bufs(app); !strings.Contains(errs, "Fehler: ") || strings.Contains(errs, "[flags]") {
+			t.Errorf("%v: stderr = %q", args, errs)
+		}
+	}
+}
+
+func TestR20_SortAlwaysSendsDirection(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		dir  string
+	}{
+		{[]string{"user", "list", "--sort", "name"}, "asc"},
+		{[]string{"user", "list", "--sort", "name", "--desc"}, "desc"},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, Run(app, tc.args), 0)
+		q := wantRequests(t, srv, 1)[0].Query
+		if q.Get("order_by") != "name" || q.Get("order_direction") != tc.dir {
+			t.Errorf("%v: query = %v", tc.args, q)
+		}
+	}
+	for _, args := range [][]string{
+		{"user", "list", "--desc"},
+		{"user", "list", "--sort", ""},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, Run(app, args), 2)
+		wantRequests(t, srv, 0)
+	}
+}
+
+func TestR24_IDZeroIsSent(t *testing.T) {
+	app, srv := apiApp(t)
+	wantExit(t, app, Run(app, []string{"user", "describe", "0", "-o", "json"}), 0)
+	if p := wantRequests(t, srv, 1)[0].Path; p != "/users/0" {
+		t.Errorf("path = %q", p)
+	}
+}
+
+func TestDescribeIDValidation(t *testing.T) {
+	for _, args := range [][]string{
+		{"user", "describe"},
+		{"user", "describe", "x"},
+		{"user", "describe", "--", "-3"},
+		{"user", "describe", "1", "2"},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, Run(app, args), 2)
+		wantRequests(t, srv, 0)
+	}
+}
+
+func timeListEntry(t *testing.T) registry.Entry {
+	return specEntry(t, "ListTimeEntries", "time", "list", registry.ClassReadOnly,
+		registry.Filter{Flag: "state", Param: "billing_state", Kind: "enum", Help: "Abrechnungsstatus"},
+		registry.Filter{Flag: "since", Param: "start_time_range_start", Kind: "datetime_from", Help: "Beginn ab"},
+		registry.Filter{Flag: "until", Param: "start_time_range_end", Kind: "datetime_to", Help: "Beginn bis"},
+		registry.Filter{Flag: "user", Param: "user_id", Kind: "id", Help: "Benutzer"},
+	)
+}
+
+func TestR30_UnknownBillingStateRejectedLocally(t *testing.T) {
+	list := timeListEntry(t)
+	app, srv := apiApp(t)
+	wantExit(t, app, runEntries(t, app, nil, []string{"time", "list", "--state", "billd"}, list), 5)
+	wantRequests(t, srv, 0)
+	_, errs := bufs(app)
+	for _, want := range []string{`ungültiger Wert "billd" für --state`, `meintest du "billed"`, "billed, unbilled, billable, unbillable, archived"} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("stderr enthält %q nicht:\n%s", want, errs)
+		}
+	}
+
+	app, srv = apiApp(t)
+	wantExit(t, app, runEntries(t, app, nil, []string{"time", "list", "--state", "billed"}, list), 0)
+	if q := wantRequests(t, srv, 1)[0].Query; q.Get("billing_state") != "billed" {
+		t.Errorf("query = %v", q)
+	}
+}
+
+func berlinApp(t *testing.T) (*App, *mockapi.Server) {
+	t.Helper()
+	app, srv := apiApp(t)
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Location = loc
+	app.Now = func() time.Time { return time.Date(2026, 10, 26, 0, 30, 0, 0, loc) }
+	return app, srv
+}
+
+// Review Focus 4: date-only bounds are local midnight and 23:59:59, with
+// the offset valid on that day (DST ends on 2026-10-25 in Berlin).
+func TestListDateTimeFiltersUseLocalZone(t *testing.T) {
+	list := timeListEntry(t)
+	for _, tc := range []struct {
+		args       []string
+		start, end string
+	}{
+		{[]string{"--since", "2026-10-25", "--until", "2026-10-25"}, "2026-10-25T00:00:00+02:00", "2026-10-25T23:59:59+01:00"},
+		{[]string{"--since", "gestern", "--until", "heute"}, "2026-10-25T00:00:00+02:00", "2026-10-26T23:59:59+01:00"},
+		{[]string{"--since", "2026-10-25T08:00:00Z"}, "2026-10-25T08:00:00Z", ""},
+	} {
+		app, srv := berlinApp(t)
+		wantExit(t, app, runEntries(t, app, nil, append([]string{"time", "list"}, tc.args...), list), 0)
+		q := wantRequests(t, srv, 1)[0].Query
+		if q.Get("start_time_range_start") != tc.start || q.Get("start_time_range_end") != tc.end {
+			t.Errorf("%v: query = %v", tc.args, q)
+		}
+	}
+	for _, bad := range []string{"25.10.2026", "2026-13-01", "morgen"} {
+		app, srv := berlinApp(t)
+		wantExit(t, app, runEntries(t, app, nil, []string{"time", "list", "--since", bad}, list), 5)
+		wantRequests(t, srv, 0)
+		if _, errs := bufs(app); !strings.Contains(errs, "--since") || !strings.Contains(errs, "YYYY-MM-DD") {
+			t.Errorf("%s: stderr = %q", bad, errs)
+		}
+	}
+}
+
+func TestListDateFilter(t *testing.T) {
+	list := specEntry(t, "ListInvoices", "invoice", "list", registry.ClassReadOnly,
+		registry.Filter{Flag: "from", Param: "document_date_range_start", Kind: "date", Help: "ab"},
+		registry.Filter{Flag: "to", Param: "document_date_range_end", Kind: "date", Help: "bis"},
+	)
+	app, srv := berlinApp(t)
+	wantExit(t, app, runEntries(t, app, nil, []string{"invoice", "list", "--from", "gestern", "--to", "2026-12-31"}, list), 0)
+	q := wantRequests(t, srv, 1)[0].Query
+	if q.Get("document_date_range_start") != "2026-10-25" || q.Get("document_date_range_end") != "2026-12-31" {
+		t.Errorf("query = %v", q)
+	}
+	app, srv = berlinApp(t)
+	wantExit(t, app, runEntries(t, app, nil, []string{"invoice", "list", "--from", "1.1.2026"}, list), 5)
+	wantRequests(t, srv, 0)
+}
+
+func TestListIDFilter(t *testing.T) {
+	app, srv := apiApp(t)
+	wantExit(t, app, Run(app, []string{"transaction", "list", "--bank-connection", "0"}), 0)
+	if q := wantRequests(t, srv, 1)[0].Query; q.Get("bank_connection_id") != "0" {
+		t.Errorf("query = %v", q)
+	}
+	for _, bad := range []string{"-1", "abc", "1.5"} {
+		app, srv := apiApp(t)
+		wantExit(t, app, Run(app, []string{"transaction", "list", "--bank-connection", bad}), 2)
+		wantRequests(t, srv, 0)
+	}
+}
+
+func TestListDefaultAndPagingQuery(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want url.Values
+	}{
+		{nil, url.Values{"page_size": {"25"}}},
+		{[]string{"--page", "2", "--limit", "10"}, url.Values{"page": {"2"}, "page_size": {"10"}}},
+		{[]string{"--limit", "100"}, url.Values{"page_size": {"100"}}},
+		{[]string{"--limit", "1"}, url.Values{"page_size": {"1"}}},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, Run(app, append([]string{"user", "list"}, tc.args...)), 0)
+		if q := wantRequests(t, srv, 1)[0].Query; q.Encode() != tc.want.Encode() {
+			t.Errorf("%v: query = %s, erwartet %s", tc.args, q.Encode(), tc.want.Encode())
+		}
+	}
+}
+
+func TestListFlagValidation(t *testing.T) {
+	for _, args := range [][]string{
+		{"--limit", "101"},
+		{"--limit", "0"},
+		{"--page", "0"},
+		{"--max-pages", "0", "--all"},
+		{"--max-pages", "2"},
+		{"--page", "2", "--all"},
+		{"--limit", "x"},
+		{"extra"},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, Run(app, append([]string{"user", "list"}, args...)), 2)
+		wantRequests(t, srv, 0)
+		if _, errs := bufs(app); !strings.HasPrefix(errs, "Fehler: ") {
+			t.Errorf("%v: stderr = %q", args, errs)
+		}
+	}
+	app, _ := apiApp(t)
+	wantExit(t, app, Run(app, []string{"user", "list", "--limit", "101"}), 2)
+	if _, errs := bufs(app); !strings.Contains(errs, "--limit") || !strings.Contains(errs, "1–100") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
+
+// pagedUsers answers GET /users with total pages of one user each; ids of
+// page p are 9007199254740990+p, so exact merging is visible.
+func pagedUsers(srv *mockapi.Server, total int) {
+	srv.OnFunc("GET", "/users", func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Query().Get("page")
+		if p == "" {
+			p = "1"
+		}
+		var n int
+		_, _ = fmt.Sscan(p, &n)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"type":"list","page":%d,"page_size":1,"total_pages":%d,"total_entries":%d,"has_more":%t,`+
+			`"entries":[{"id":%d,"full_name":"Nutzer <%d> & Co","email":"u%d@example.org","role":"owner","rate":19.90}]}`,
+			n, total, total, n < total, int64(9007199254740990)+int64(n), n, n)
+	})
+}
+
+func TestListAllMergesPagesExactly(t *testing.T) {
+	app, srv := apiApp(t)
+	pagedUsers(srv, 3)
+	wantExit(t, app, Run(app, []string{"user", "list", "--all", "-o", "json"}), 0)
+	reqs := wantRequests(t, srv, 3)
+	for i, r := range reqs {
+		if r.Query.Get("page") != fmt.Sprint(i+1) || r.Query.Get("page_size") != "100" {
+			t.Errorf("request %d: query = %v", i, r.Query)
+		}
+	}
+	golden.Assert(t, "builder/user-list-all.json", []byte(mustOut(app)))
+	if _, errs := bufs(app); errs != "" {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// --limit sets the page size of --all
+	app, srv = apiApp(t)
+	pagedUsers(srv, 2)
+	wantExit(t, app, Run(app, []string{"user", "list", "--all", "--limit", "50", "-o", "json"}), 0)
+	for _, r := range wantRequests(t, srv, 2) {
+		if r.Query.Get("page_size") != "50" {
+			t.Errorf("query = %v", r.Query)
+		}
+	}
+	if out := mustOut(app); !strings.Contains(out, `"page_size": 50,`) || !strings.Contains(out, `"has_more": false`) {
+		t.Errorf("stdout = %s", out)
+	}
+}
+
+func mustOut(app *App) string {
+	out, _ := bufs(app)
+	return out
+}
+
+func TestListAllWarnsFromTenPages(t *testing.T) {
+	// without TTY: warning, no prompt, all pages
+	app, srv := apiApp(t)
+	pagedUsers(srv, 10)
+	wantExit(t, app, Run(app, []string{"user", "list", "--all", "-o", "json"}), 0)
+	wantRequests(t, srv, 10)
+	_, errs := bufs(app)
+	if !strings.Contains(errs, "Warnung: --all lädt 10 Seiten (10 Credits)") || strings.Contains(errs, "Fortfahren") {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// 9 pages: no warning
+	app, srv = apiApp(t)
+	pagedUsers(srv, 9)
+	wantExit(t, app, Run(app, []string{"user", "list", "--all", "-o", "json"}), 0)
+	wantRequests(t, srv, 9)
+	if _, errs := bufs(app); errs != "" {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// TTY, declined: only page 1 loaded, exit 8
+	for _, answer := range []string{"n\n", "\n", ""} {
+		app, srv = apiApp(t)
+		app.StdinTTY = true
+		app.In = strings.NewReader(answer)
+		pagedUsers(srv, 12)
+		wantExit(t, app, Run(app, []string{"user", "list", "--all"}), 8)
+		wantRequests(t, srv, 1)
+		out, errs := bufs(app)
+		if out != "" || !strings.Contains(errs, "Fortfahren? [j/N] ") {
+			t.Errorf("%q: stdout = %q, stderr = %q", answer, out, errs)
+		}
+	}
+
+	// TTY, confirmed
+	for _, answer := range []string{"j\n", "ja\r\n", "Y\n", "yes\n"} {
+		app, srv = apiApp(t)
+		app.StdinTTY = true
+		app.In = strings.NewReader(answer)
+		pagedUsers(srv, 12)
+		wantExit(t, app, Run(app, []string{"user", "list", "--all", "-o", "json"}), 0)
+		wantRequests(t, srv, 12)
+	}
+
+	// TTY with --yes or --no-input: no prompt
+	for _, flag := range []string{"--yes", "--no-input"} {
+		app, srv = apiApp(t)
+		app.StdinTTY = true
+		pagedUsers(srv, 12)
+		wantExit(t, app, Run(app, []string{"user", "list", "--all", "-o", "json", flag}), 0)
+		wantRequests(t, srv, 12)
+		if _, errs := bufs(app); strings.Contains(errs, "Fortfahren") || !strings.Contains(errs, "12 Seiten") {
+			t.Errorf("%s: stderr = %q", flag, errs)
+		}
+	}
+}
+
+func TestListAllMaxPagesCaps(t *testing.T) {
+	app, srv := apiApp(t)
+	pagedUsers(srv, 15)
+	wantExit(t, app, Run(app, []string{"user", "list", "--all", "--max-pages", "2", "-o", "json"}), 0)
+	wantRequests(t, srv, 2)
+	out, errs := bufs(app)
+	if !strings.Contains(out, `"has_more": true`) || !strings.Contains(out, `"total_pages": 15`) || strings.Count(out, `"id":`) != 2 {
+		t.Errorf("stdout = %s", out)
+	}
+	// capped at 2 pages: no 10-page warning, but a cap warning
+	if strings.Contains(errs, "15 Seiten (") || !strings.Contains(errs, "Warnung: --max-pages 2: 2 von 15 Seiten geladen") {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// cap above the total changes nothing
+	app, srv = apiApp(t)
+	pagedUsers(srv, 3)
+	wantExit(t, app, Run(app, []string{"user", "list", "--all", "--max-pages", "5", "-o", "json"}), 0)
+	wantRequests(t, srv, 3)
+	if out, errs := bufs(app); !strings.Contains(out, `"has_more": false`) || errs != "" {
+		t.Errorf("stdout = %s, stderr = %q", out, errs)
+	}
+}
+
+func TestListAllEmptyList(t *testing.T) {
+	app, srv := apiApp(t)
+	srv.On("GET", "/users", http.StatusOK, []byte(`{"type":"list","page":1,"page_size":100,"total_pages":0,"total_entries":0,"has_more":false,"entries":[]}`))
+	wantExit(t, app, Run(app, []string{"user", "list", "--all", "-o", "json"}), 0)
+	wantRequests(t, srv, 1)
+	want := "{\n  \"type\": \"list\",\n  \"page\": 1,\n  \"page_size\": 100,\n  \"total_pages\": 0,\n  \"total_entries\": 0,\n  \"has_more\": false,\n  \"entries\": []\n}\n"
+	if out := mustOut(app); out != want {
+		t.Errorf("stdout = %q", out)
+	}
+}
+
+func TestListAllInvalidEnvelopeIsNotUsageError(t *testing.T) {
+	app, srv := apiApp(t)
+	srv.On("GET", "/users", http.StatusOK, []byte(`{"type":"list","entries":"kaputt"}`))
+	wantExit(t, app, Run(app, []string{"user", "list", "--all"}), 1)
+	wantRequests(t, srv, 1)
+}
+
+func TestListInterruptAbortsRequest(t *testing.T) {
+	app, srv := apiApp(t)
+	started := make(chan struct{})
+	srv.OnFunc("GET", "/users", func(_ http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-started
+		cancel()
+	}()
+	done := make(chan int)
+	go func() { done <- runEntries(t, app, ctx, []string{"user", "list"}) }()
+	select {
+	case code := <-done:
+		wantExit(t, app, code, 10)
+	case <-time.After(10 * time.Second):
+		t.Fatal("Abbruch beendet die Anfrage nicht")
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Fehler: Abgebrochen") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
+
+func TestResourceGroupsAndAliases(t *testing.T) {
+	app, srv := apiApp(t)
+	wantExit(t, app, Run(app, []string{"benutzer", "list", "-o", "json"}), 0)
+	wantRequests(t, srv, 1)
+
+	app, _ = apiApp(t)
+	wantExit(t, app, Run(app, []string{"user"}), 0)
+	if out := mustOut(app); !strings.Contains(out, "describe") || !strings.Contains(out, "list") {
+		t.Errorf("Gruppenhilfe = %s", out)
+	}
+
+	app, srv = apiApp(t)
+	wantExit(t, app, Run(app, []string{"user", "bogus"}), 2)
+	wantRequests(t, srv, 0)
+
+	// resources without entries get no command yet
+	app, _ = apiApp(t)
+	root := NewRootCmd(app)
+	if c, _, err := root.Find([]string{"company"}); err == nil && c != root {
+		t.Errorf("company ohne Registry-Einträge hat einen Befehl")
+	}
+	if c, _, err := root.Find([]string{"info"}); err != nil || c.Name() != "info" || c.HasSubCommands() {
+		t.Errorf("info ist kein eigener Befehl: %v", err)
+	}
+}
+
+func TestEntryHelpGerman(t *testing.T) {
+	app, _ := apiApp(t)
+	wantExit(t, app, Run(app, []string{"transaction", "list", "--help"}), 0)
+	out := mustOut(app)
+	for _, want := range []string{"Bankumsätze auflisten", "papierkram transaction list --bank-connection 237",
+		"--bank-connection Zahl", "--limit Zahl", "(Standard: 25)", "--max-pages", "--sort Text", "--desc", "Credit"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Hilfe enthält %q nicht:\n%s", want, out)
+		}
+	}
+	app, _ = apiApp(t)
+	wantExit(t, app, Run(app, []string{"user", "describe", "--help"}), 0)
+	if out := mustOut(app); !strings.Contains(out, "papierkram user describe <id> [Optionen]") {
+		t.Errorf("Hilfe:\n%s", out)
+	}
+}
+
+// Path parameters before the last one come from required flags (person
+// commands, Task 25).
+func TestPathParamFlags(t *testing.T) {
+	get := specEntry(t, "GetPerson", "person", "describe", registry.ClassReadOnly)
+	list := specEntry(t, "ListPersons", "person", "list", registry.ClassReadOnly)
+	del := specEntry(t, "DeletePerson", "person", "delete", registry.ClassDestructive)
+
+	app, srv := apiApp(t)
+	wantExit(t, app, runEntries(t, app, nil, []string{"person", "describe", "5", "--company", "0", "-o", "json"}, get, list, del), 0)
+	if p := wantRequests(t, srv, 1)[0].Path; p != "/contact/companies/0/persons/5" {
+		t.Errorf("path = %q", p)
+	}
+
+	app, srv = apiApp(t)
+	wantExit(t, app, runEntries(t, app, nil, []string{"person", "list", "--company", "7", "-o", "json"}, get, list, del), 0)
+	if p := wantRequests(t, srv, 1)[0].Path; p != "/contact/companies/7/persons" {
+		t.Errorf("path = %q", p)
+	}
+
+	app, srv = apiApp(t)
+	wantExit(t, app, runEntries(t, app, nil, []string{"person", "delete", "5", "--company", "7", "-o", "json"}, get, list, del), 0)
+	if r := wantRequests(t, srv, 1)[0]; r.Method != "DELETE" || r.Path != "/contact/companies/7/persons/5" {
+		t.Errorf("request = %s %s", r.Method, r.Path)
+	}
+	if out := mustOut(app); out != "{\n  \"id\": 5,\n  \"deleted\": true\n}\n" {
+		t.Errorf("stdout = %q", out)
+	}
+
+	for _, args := range [][]string{
+		{"person", "describe", "5"},
+		{"person", "list"},
+		{"person", "describe", "5", "--company", "-1"},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, runEntries(t, app, nil, args, get, list, del), 2)
+		wantRequests(t, srv, 0)
+		if _, errs := bufs(app); !strings.Contains(errs, "--company") {
+			t.Errorf("%v: stderr = %q", args, errs)
+		}
+	}
+}
+
+func TestAfterRequestErrorsAreNeverUsage(t *testing.T) {
+	err := afterRequest(usageErr("kaputt"))
+	ce := cliErr(t, err, "error")
+	if ce.Exit() != 1 || !strings.HasPrefix(ce.Message, "Befehl ausgeführt, Ausgabe fehlgeschlagen") {
+		t.Errorf("err = %+v", ce)
+	}
+	if afterRequest(nil) != nil {
+		t.Error("nil bleibt nil")
+	}
+}
+
+// Pilot commands end to end: table and json output against the spec
+// examples of the mock.
+func TestPilotCommandsGolden(t *testing.T) {
+	cases := []struct {
+		name  string
+		args  []string
+		path  string
+		query url.Values
+	}{
+		{"user-list", []string{"user", "list"}, "/users", url.Values{"page_size": {"25"}}},
+		{"user-describe", []string{"user", "describe", "2516"}, "/users/2516", url.Values{}},
+		{"payment-term-list", []string{"payment-term", "list"}, "/income/payment_terms", url.Values{"page_size": {"25"}}},
+		{"payment-term-describe", []string{"payment-term", "describe", "1234"}, "/income/payment_terms/1234", url.Values{}},
+		{"bank-connection-list", []string{"bank-connection", "list"}, "/banking/bank_connections", url.Values{"page_size": {"25"}}},
+		{"bank-connection-describe", []string{"bank-connection", "describe", "237"}, "/banking/bank_connections/237", url.Values{}},
+		{"transaction-list", []string{"transaction", "list", "--bank-connection", "1"}, "/banking/transactions", url.Values{"bank_connection_id": {"1"}, "page_size": {"25"}}},
+		{"transaction-describe", []string{"transaction", "describe", "457"}, "/banking/transactions/457", url.Values{}},
+		{"info", []string{"info"}, "/info", url.Values{}},
+	}
+	for _, tc := range cases {
+		for _, format := range []string{"table", "json"} {
+			t.Run(tc.name+"/"+format, func(t *testing.T) {
+				app, srv := apiApp(t)
+				wantExit(t, app, Run(app, append(tc.args, "-o", format)), 0)
+				r := wantRequests(t, srv, 1)[0]
+				if r.Method != "GET" || r.Path != tc.path || r.Query.Encode() != tc.query.Encode() {
+					t.Errorf("request = %s %s?%s", r.Method, r.Path, r.Query.Encode())
+				}
+				out, errs := bufs(app)
+				if errs != "" {
+					t.Errorf("stderr = %q", errs)
+				}
+				ext := map[string]string{"table": "txt", "json": "json"}[format]
+				golden.Assert(t, "builder/"+tc.name+"."+ext, []byte(out))
+				assertNoToken(t, app)
+			})
+		}
+	}
+}

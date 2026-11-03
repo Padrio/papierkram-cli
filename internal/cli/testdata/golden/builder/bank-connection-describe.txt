@@ -1,0 +1,3 @@
+FELD  WERT
+ID    239
+NAME  Testbank

@@ -1,0 +1,3 @@
+FELD               WERT
+API-VERSION        1.0.0
+RECHNUNGSVORLAGEN

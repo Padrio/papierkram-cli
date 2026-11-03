@@ -1,0 +1,10 @@
+{
+  "api": {
+    "version": "1.0.0"
+  },
+  "settings": {
+    "custom_templates": {
+      "invoices": []
+    }
+  }
+}

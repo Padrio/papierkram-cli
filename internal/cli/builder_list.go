@@ -1,0 +1,333 @@
+package cli
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/Padrio/papierkram-cli/internal/api"
+	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/output"
+	"github.com/Padrio/papierkram-cli/internal/registry"
+	"github.com/Padrio/papierkram-cli/internal/spec"
+)
+
+const (
+	// defaultLimit is the page size of list without --limit (spec 7.1);
+	// allPageSize the page size of --all without --limit: the API maximum,
+	// so --all needs as few pages (credits) as possible.
+	defaultLimit = 25
+	allPageSize  = 100
+	maxLimit     = 100
+	// warnPages is the number of pages from which --all warns and, in a
+	// terminal, asks before loading more (spec 8.5).
+	warnPages = 10
+)
+
+// addListFlags adds the common list flags (spec 7.1) and the filter flags
+// of e: "id" filters are integer flags, all others text flags that
+// runList parses.
+func addListFlags(cmd *cobra.Command, e registry.Entry) {
+	f := cmd.Flags()
+	f.Int("page", 0, "nur diese Seite laden (ab 1)")
+	f.Int("limit", defaultLimit, "Einträge pro Seite, 1–100 (--all ohne --limit: 100)")
+	f.Bool("all", false, "alle Seiten laden und zusammenführen (1 Anfrage je Seite)")
+	f.Int("max-pages", 0, "mit --all höchstens so viele Seiten laden")
+	f.String("sort", "", "nach diesem Feld sortieren (setzt order_by und order_direction)")
+	f.Bool("desc", false, "absteigend sortieren (nur mit --sort)")
+	for _, flt := range e.Filters {
+		if flt.Kind == "id" {
+			f.Int64(flt.Flag, 0, flt.Help)
+		} else {
+			f.String(flt.Flag, "", flt.Help)
+		}
+	}
+}
+
+// listRequest is a validated list invocation.
+type listRequest struct {
+	query    url.Values // filters, sorting and page_size; page is set per request
+	page     int        // --page, 0 when not given
+	pageSize int
+	all      bool
+	maxPages int // 0: no cap
+}
+
+// parseListFlags validates every list flag and builds the query, before
+// any request (plan: flags first). Usage errors exit 2; filter values that
+// fail the spec (enum, date) are validation errors (exit 5, R30).
+func (a *App) parseListFlags(c *cobra.Command, e registry.Entry) (*listRequest, error) {
+	f := c.Flags()
+	lr := &listRequest{query: url.Values{}}
+	lr.page, _ = f.GetInt("page")
+	lr.pageSize, _ = f.GetInt("limit")
+	lr.all, _ = f.GetBool("all")
+	lr.maxPages, _ = f.GetInt("max-pages")
+	sort, _ := f.GetString("sort")
+	desc, _ := f.GetBool("desc")
+	switch {
+	case lr.pageSize < 1 || lr.pageSize > maxLimit:
+		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --limit: erlaubt ist 1–100", lr.pageSize))
+	case f.Changed("page") && lr.page < 1:
+		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --page: Seiten beginnen bei 1", lr.page))
+	case f.Changed("page") && lr.all:
+		return nil, listUsage(c, "--page und --all schließen sich aus")
+	case f.Changed("max-pages") && !lr.all:
+		return nil, listUsage(c, "--max-pages gilt nur zusammen mit --all")
+	case f.Changed("max-pages") && lr.maxPages < 1:
+		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --max-pages: mindestens 1", lr.maxPages))
+	case f.Changed("sort") && strings.TrimSpace(sort) == "":
+		return nil, listUsage(c, "--sort braucht einen Feldnamen")
+	case desc && sort == "":
+		return nil, listUsage(c, "--desc gilt nur zusammen mit --sort")
+	}
+	if lr.all && !f.Changed("limit") {
+		lr.pageSize = allPageSize
+	}
+	// R20: order_by only ever together with order_direction.
+	if sort != "" {
+		dir := "asc"
+		if desc {
+			dir = "desc"
+		}
+		lr.query.Set("order_by", sort)
+		lr.query.Set("order_direction", dir)
+	}
+	for _, flt := range e.Filters {
+		if !f.Changed(flt.Flag) {
+			continue
+		}
+		v, err := a.filterValue(c, e, flt)
+		if err != nil {
+			return nil, err
+		}
+		lr.query.Set(flt.Param, v)
+	}
+	lr.query.Set("page_size", strconv.Itoa(lr.pageSize))
+	return lr, nil
+}
+
+func listUsage(c *cobra.Command, msg string) error {
+	return clierr.New(clierr.CodeUsage, msg, "Verwendung: "+useLine(c))
+}
+
+// datetimeHint lists the accepted forms of the date-time filters.
+const datetimeHint = "erlaubt: YYYY-MM-DD, today/heute, yesterday/gestern oder RFC 3339 (z. B. 2026-10-25T08:00:00+02:00)"
+
+// filterValue parses the value of a filter flag by its kind: "id" an
+// integer ≥ 0; "date" a date (YYYY-MM-DD, today/heute, yesterday/gestern);
+// "datetime_from"/"datetime_to" a date-time in RFC 3339, where a date
+// means the start or the end of that day in the local time zone; "enum"
+// one of the values of the spec parameter, with suggestions.
+func (a *App) filterValue(c *cobra.Command, e registry.Entry, flt registry.Filter) (string, error) {
+	if flt.Kind == "id" {
+		v, _ := c.Flags().GetInt64(flt.Flag)
+		if v < 0 {
+			return "", listUsage(c, fmt.Sprintf("ungültiger Wert %d für --%s: ID muss ≥ 0 sein", v, flt.Flag))
+		}
+		return strconv.FormatInt(v, 10), nil
+	}
+	raw, _ := c.Flags().GetString(flt.Flag)
+	cc := spec.CoerceContext{Now: a.Now, Loc: a.Location}
+	field := spec.Field{Flag: flt.Flag, Path: []string{flt.Param}, Kind: spec.KindScalar, Type: "string"}
+	switch flt.Kind {
+	case "date":
+		field.Format = "date"
+		v, err := spec.CoerceFlag(cc, field, raw)
+		if err != nil {
+			return "", err
+		}
+		return v.(string), nil
+	case "datetime_from", "datetime_to":
+		return a.datetimeValue(cc, field, flt.Kind == "datetime_to", raw)
+	case "enum":
+		p := spec.QueryParams(e.OperationID)[flt.Param]
+		if p == nil || p.Schema == nil || p.Schema.Value == nil || len(p.Schema.Value.Enum) == 0 {
+			return "", clierr.New(clierr.CodeError, fmt.Sprintf("--%s: Parameter %s von %s hat in der Spec keine Werteliste", flt.Flag, flt.Param, e.OperationID), "")
+		}
+		for _, v := range p.Schema.Value.Enum {
+			field.Enum = append(field.Enum, fmt.Sprint(v))
+		}
+		field.Schema = p.Schema.Value
+		v, err := spec.CoerceFlag(cc, field, raw)
+		if err != nil {
+			return "", err
+		}
+		return v.(string), nil
+	}
+	return "", clierr.New(clierr.CodeError, fmt.Sprintf("--%s: unbekannte Filterart %q", flt.Flag, flt.Kind), "")
+}
+
+// datetimeValue accepts RFC 3339 as given; a date (any form of "date")
+// becomes 00:00:00 or, for the end of a range, 23:59:59 of that day in
+// a.Location, with the offset valid at that time (Review Focus 4).
+func (a *App) datetimeValue(cc spec.CoerceContext, field spec.Field, end bool, raw string) (string, error) {
+	if _, err := time.Parse(time.RFC3339, raw); err == nil {
+		return raw, nil
+	}
+	field.Format = "date"
+	v, err := spec.CoerceFlag(cc, field, raw)
+	if err != nil {
+		ce := clierr.From(err)
+		ce.Hint = datetimeHint
+		return "", ce
+	}
+	loc := a.Location
+	if loc == nil {
+		loc = time.Local
+	}
+	d, err := time.ParseInLocation("2006-01-02", v.(string), loc)
+	if err != nil { // CoerceFlag only returns valid dates
+		return "", err
+	}
+	if end {
+		d = time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, loc)
+	}
+	return d.Format(time.RFC3339), nil
+}
+
+// runList lists one page, or with --all every page merged into one
+// envelope (spec 10.3).
+func (a *App) runList(c *cobra.Command, e registry.Entry) error {
+	params, err := pathValues(c, e, nil)
+	if err != nil {
+		return err
+	}
+	lr, err := a.parseListFlags(c, e)
+	if err != nil {
+		return err
+	}
+	client, _, err := a.Client(c)
+	if err != nil {
+		return err
+	}
+	if !lr.all {
+		if lr.page > 0 {
+			lr.query.Set("page", strconv.Itoa(lr.page))
+		}
+		resp, err := client.Call(c.Context(), e.OperationID, params, lr.query, nil)
+		if err != nil {
+			return err
+		}
+		return a.render(c, resp.Body, e.Columns)
+	}
+	env, err := a.fetchAll(c, e, client, params, lr)
+	if err != nil {
+		return err
+	}
+	return afterRequest(output.RenderValue(a.outputOptions(c.Context(), a.outputFormat(a.resolved)), env, e.Columns))
+}
+
+// listPage is the part of a list envelope --all needs. Entries stay raw
+// bytes, so numbers and texts are merged exactly as the API sent them.
+type listPage struct {
+	TotalPages   json.RawMessage   `json:"total_pages"`
+	TotalEntries json.RawMessage   `json:"total_entries"`
+	Entries      []json.RawMessage `json:"entries"`
+}
+
+// mergedList is the envelope of --all: page 1, the page size used, the
+// totals as reported by the API and all loaded entries.
+type mergedList struct {
+	Type         string            `json:"type"`
+	Page         int               `json:"page"`
+	PageSize     int               `json:"page_size"`
+	TotalPages   json.RawMessage   `json:"total_pages"`
+	TotalEntries json.RawMessage   `json:"total_entries"`
+	HasMore      bool              `json:"has_more"`
+	Entries      []json.RawMessage `json:"entries"`
+}
+
+// fetchAll loads page 1, decides from total_pages how many pages to load
+// (capped by --max-pages), warns from warnPages on and asks in a terminal,
+// then loads the remaining pages.
+func (a *App) fetchAll(c *cobra.Command, e registry.Entry, client *api.Client, params []int64, lr *listRequest) (*mergedList, error) {
+	first, err := a.fetchPage(c, e, client, params, lr.query, 1)
+	if err != nil {
+		return nil, err
+	}
+	var total int64
+	if err := json.Unmarshal(first.TotalPages, &total); err != nil || total < 0 {
+		return nil, unexpectedList(fmt.Errorf("total_pages %s", first.TotalPages))
+	}
+	pages := max(total, 1)
+	capped := lr.maxPages > 0 && int64(lr.maxPages) < pages
+	if capped {
+		pages = int64(lr.maxPages)
+	}
+	if pages >= warnPages {
+		output.Warn(a.Err, fmt.Sprintf("--all lädt %d Seiten (%d Credits); mit --max-pages begrenzen", pages, pages*int64(e.Credits)))
+		if err := a.confirmAll(); err != nil {
+			return nil, err
+		}
+	}
+	merged := &mergedList{
+		Type: "list", Page: 1, PageSize: lr.pageSize,
+		TotalPages: first.TotalPages, TotalEntries: first.TotalEntries,
+		Entries: append([]json.RawMessage{}, first.Entries...),
+	}
+	for p := int64(2); p <= pages; p++ {
+		page, err := a.fetchPage(c, e, client, params, lr.query, p)
+		if err != nil {
+			return nil, err
+		}
+		if len(page.Entries) == 0 {
+			break
+		}
+		merged.Entries = append(merged.Entries, page.Entries...)
+	}
+	if capped {
+		merged.HasMore = true
+		output.Warn(a.Err, fmt.Sprintf("--max-pages %d: %d von %d Seiten geladen, weitere Einträge vorhanden", lr.maxPages, pages, total))
+	}
+	return merged, nil
+}
+
+// fetchPage loads one page of the list.
+func (a *App) fetchPage(c *cobra.Command, e registry.Entry, client *api.Client, params []int64, query url.Values, page int64) (*listPage, error) {
+	q := url.Values{}
+	for k, v := range query {
+		q[k] = v
+	}
+	q.Set("page", strconv.FormatInt(page, 10))
+	resp, err := client.Call(c.Context(), e.OperationID, params, q, nil)
+	if err != nil {
+		return nil, err
+	}
+	var lp listPage
+	dec := json.NewDecoder(bytes.NewReader(resp.Body))
+	if err := dec.Decode(&lp); err != nil {
+		return nil, unexpectedList(err)
+	}
+	return &lp, nil
+}
+
+func unexpectedList(err error) error {
+	e := clierr.New(clierr.CodeError, "unerwartete Listenantwort der Papierkram-API: "+err.Error(), "")
+	e.Cause = err
+	return e
+}
+
+// confirmAll asks "Fortfahren? [j/N]" when stdin is a terminal and neither
+// --yes nor --no-input is given; without a terminal --all proceeds (the
+// warning is on stderr). Declining is exit 8.
+func (a *App) confirmAll() error {
+	if !a.StdinTTY || a.Flags.Yes || a.Flags.NoInput {
+		return nil
+	}
+	_, _ = fmt.Fprint(a.Err, "Fortfahren? [j/N] ")
+	line, _ := bufio.NewReader(a.In).ReadString('\n')
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "j", "ja", "y", "yes":
+		return nil
+	}
+	return clierr.New(clierr.CodeConfirmation, "Abgebrochen: --all nicht fortgesetzt (nur Seite 1 geladen)",
+		"Mit --max-pages begrenzen oder mit --yes ohne Rückfrage laden")
+}

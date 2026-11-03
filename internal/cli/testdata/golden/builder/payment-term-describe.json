@@ -1,0 +1,22 @@
+{
+  "banking_bank_connection": null,
+  "cash_discount": null,
+  "cash_discount_time": null,
+  "cash_discount_unit": null,
+  "created_at": "2026-08-28T13:41:53.000+02:00",
+  "default_reminder_template": false,
+  "default_template": false,
+  "due_time": 0,
+  "due_time_unit": "day",
+  "dunning_fee": null,
+  "id": 1236,
+  "name": "My payment_term",
+  "number_dunnings": null,
+  "number_reminders": null,
+  "payment_required": true,
+  "template": true,
+  "template_id": null,
+  "template_text": null,
+  "type": "payment_term",
+  "updated_at": "2026-08-28T13:41:53.000+02:00"
+}
