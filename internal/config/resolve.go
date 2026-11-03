@@ -112,10 +112,20 @@ func Resolve(c *Config, in ResolveInput) (*Resolved, error) {
 		}
 	}
 
-	// Subdomain and base URL.
-	r.Subdomain = getenv("PAPIERKRAM_SUBDOMAIN")
-	if r.Subdomain == "" && ctx != nil {
-		r.Subdomain = ctx.Subdomain
+	// Subdomain and base URL. Every subdomain is validated before it is
+	// put into the URL, whatever its source.
+	if v := getenv("PAPIERKRAM_SUBDOMAIN"); v != "" {
+		s, err := NormalizeSubdomain(v, "PAPIERKRAM_SUBDOMAIN")
+		if err != nil {
+			return nil, err
+		}
+		r.Subdomain = s
+	} else if ctx != nil && ctx.Subdomain != "" {
+		s, err := NormalizeSubdomain(ctx.Subdomain, fmt.Sprintf("Kontext %q", r.Context))
+		if err != nil {
+			return nil, err
+		}
+		r.Subdomain = s
 	}
 	switch {
 	case getenv("PAPIERKRAM_BASE_URL") != "":
