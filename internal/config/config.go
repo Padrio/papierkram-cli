@@ -52,7 +52,8 @@ func Path(configDir string) (string, error) {
 	return filepath.Join(configDir, "papierkram", "config.toml"), nil
 }
 
-// Load reads the config file. A missing file yields an empty Config.
+// Load reads the config file. A missing file yields an empty Config. Unknown
+// keys are a usage error (a misspelled read_only must not be ignored).
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -62,7 +63,11 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config: Konfiguration lesen: %w", err)
 	}
 	c := &Config{}
-	if err := toml.Unmarshal(data, c); err != nil {
+	if err := decodeStrict(path, data, c); err != nil {
+		var ce *clierr.Error
+		if errors.As(err, &ce) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("config: Konfiguration %s ungültig: %w", path, err)
 	}
 	if c.Contexts == nil {

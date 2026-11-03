@@ -47,9 +47,10 @@ func newContextCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "context",
 		Short: "Kontexte (Account-Setups) verwalten",
-		Long:  "Kontexte verwalten, ähnlich wie bei hcloud: anlegen, wechseln, auflisten, umbenennen und löschen.",
-		Args:  noArgs,
-		RunE:  func(c *cobra.Command, _ []string) error { return c.Help() },
+		Long: "Kontexte verwalten, ähnlich wie bei hcloud: anlegen, wechseln, auflisten, umbenennen und löschen.\n" +
+			"Befehle, die die Konfiguration ändern, schreiben config.toml neu; Kommentare und eigene Formatierung gehen dabei verloren.",
+		Args: noArgs,
+		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	cmd.AddCommand(newContextCreateCmd(app), newContextUseCmd(app), newContextListCmd(app),
 		newContextActiveCmd(app), newContextDeleteCmd(app), newContextRenameCmd(app))

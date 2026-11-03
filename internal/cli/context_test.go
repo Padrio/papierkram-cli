@@ -296,3 +296,31 @@ func TestConfigDirEnvOverride(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestContextUnknownConfigKeyIsUsageError(t *testing.T) {
+	app, _, errb := newTestApp(t)
+	writeCfg(t, app, "active_context = \"a\"\n\n[contexts.a]\nsubdomain = \"firma-a\"\nreadonly = true\n")
+	before, _ := os.ReadFile(cfgFile(t, app))
+	if code := Run(app, []string{"context", "use", "a"}); code != 2 {
+		t.Fatalf("exit = %d, want 2; stderr = %s", code, errb.String())
+	}
+	for _, w := range []string{`unbekannter Schlüssel "readonly"`, cfgFile(t, app), `Meinten Sie "read_only"?`} {
+		if !strings.Contains(errb.String(), w) {
+			t.Errorf("stderr lacks %q: %s", w, errb.String())
+		}
+	}
+	after, _ := os.ReadFile(cfgFile(t, app))
+	if string(before) != string(after) {
+		t.Errorf("Config verändert:\n%s", after)
+	}
+}
+
+func TestContextHelpMentionsLostComments(t *testing.T) {
+	app, out, _ := newTestApp(t)
+	if code := Run(app, []string{"context", "--help"}); code != 0 {
+		t.Fatal(code)
+	}
+	if !strings.Contains(out.String(), "Kommentare") {
+		t.Errorf("Hilfe erwähnt verlorene Kommentare nicht:\n%s", out.String())
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
@@ -139,4 +140,61 @@ func TestCreateDuplicateUseDeleteRename(t *testing.T) {
 	if c.ActiveContext != "" || c.Contexts["c"] != nil {
 		t.Fatalf("delete: %+v", c)
 	}
+}
+
+func TestLoadRejectsUnknownKeys(t *testing.T) {
+	tests := []struct {
+		name, body          string
+		wantMsg, wantInHint []string
+	}{
+		{"readonly in context", "[contexts.a]\nsubdomain = \"a\"\nreadonly = true\n",
+			[]string{`unbekannter Schlüssel "readonly"`, "[contexts.a]"}, []string{`Meinten Sie "read_only"?`}},
+		{"read-only in context", "[contexts.a]\nsubdomain = \"a\"\nread-only = true\n",
+			[]string{`unbekannter Schlüssel "read-only"`, "[contexts.a]"}, []string{`Meinten Sie "read_only"?`}},
+		{"typo top-level", "activ_context = \"a\"\n",
+			[]string{`unbekannter Schlüssel "activ_context"`}, []string{`Meinten Sie "active_context"?`}},
+		{"unrelated top-level", "foo = 1\n",
+			[]string{`unbekannter Schlüssel "foo"`}, []string{"Erlaubte Schlüssel: active_context, contexts"}},
+		{"unrelated in context", "[contexts.a]\nbanana = 1\n",
+			[]string{`unbekannter Schlüssel "banana"`}, []string{"Erlaubte Schlüssel in [contexts.<name>]: subdomain, read_only, output, timeout, user, token, completion_lookup"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(p, []byte(tc.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(p)
+			wantCode(t, err, clierr.CodeUsage)
+			ce := clierr.From(err)
+			for _, w := range append(tc.wantMsg, p) {
+				if !strings.Contains(ce.Message, w) {
+					t.Errorf("message %q lacks %q", ce.Message, w)
+				}
+			}
+			for _, w := range tc.wantInHint {
+				if !strings.Contains(ce.Hint, w) {
+					t.Errorf("hint %q lacks %q", ce.Hint, w)
+				}
+			}
+			if strings.Contains(ce.Message+ce.Hint, "strict mode") {
+				t.Errorf("english go-toml text leaked: %q / %q", ce.Message, ce.Hint)
+			}
+			if ce.Cause == nil {
+				t.Error("original decode error must be kept as cause")
+			}
+		})
+	}
+	if _, err := Load(writeTemp(t, "[contexts.a]\nsubdomain = \"a\"\nread_only = true\n")); err != nil {
+		t.Fatalf("known keys must load: %v", err)
+	}
+}
+
+func writeTemp(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
