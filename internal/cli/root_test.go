@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/buildinfo"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 )
@@ -23,6 +24,7 @@ func newTestApp(t *testing.T) (*App, *bytes.Buffer, *bytes.Buffer) {
 	app.Env = func(string) string { return "" }
 	app.ConfigDir = t.TempDir()
 	app.CacheDir = t.TempDir()
+	app.Keyring = auth.NewMemory()
 	app.StdinTTY = false
 	app.StdoutTTY = false
 	return app, out, errb

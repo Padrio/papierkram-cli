@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"golang.org/x/term"
+
+	"github.com/Padrio/papierkram-cli/internal/auth"
 )
 
 // Flags holds the values of the global persistent flags.
@@ -37,6 +39,8 @@ type App struct {
 	ConfigDir  string
 	CacheDir   string
 	HTTPClient *http.Client
+	// Keyring stores the API tokens per context (tests use auth.NewMemory()).
+	Keyring auth.Store
 
 	// Flags receives the parsed global flag values.
 	Flags Flags
@@ -54,9 +58,11 @@ func NewApp() *App {
 		StdinTTY:   term.IsTerminal(int(os.Stdin.Fd())),
 		StdoutTTY:  term.IsTerminal(int(os.Stdout.Fd())),
 		HTTPClient: http.DefaultClient,
+		Keyring:    auth.Keyring(),
 	}
 	if dir, err := os.UserConfigDir(); err == nil {
-		app.ConfigDir = filepath.Join(dir, "papierkram")
+		// config.Path appends "papierkram/config.toml" itself.
+		app.ConfigDir = dir
 	}
 	if dir, err := os.UserCacheDir(); err == nil {
 		app.CacheDir = filepath.Join(dir, "papierkram")

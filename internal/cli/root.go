@@ -27,6 +27,19 @@ func noArgs(c *cobra.Command, args []string) error {
 	return nil
 }
 
+// exactArgs requires exactly n positional arguments with a German usage error.
+func exactArgs(n int) cobra.PositionalArgs {
+	return func(c *cobra.Command, args []string) error {
+		switch {
+		case len(args) < n:
+			return clierr.New(clierr.CodeUsage, fmt.Sprintf("zu wenige Argumente für %q (erwartet: %d, erhalten: %d)", c.CommandPath(), n, len(args)), "Verwendung: "+c.UseLine())
+		case len(args) > n:
+			return clierr.New(clierr.CodeUsage, fmt.Sprintf("unerwartetes Argument %q für %q", args[n], c.CommandPath()), "Verwendung: "+c.UseLine())
+		}
+		return nil
+	}
+}
+
 var (
 	invalidValueRe = regexp.MustCompile(`^invalid argument (".*?") for "(-[^"]+)" flag: (.*)$`)
 	strconvPrefix  = regexp.MustCompile(`strconv\.\w+: parsing "[^"]*": `)
@@ -90,6 +103,7 @@ func NewRootCmd(app *App) *cobra.Command {
 	f.BoolVar(&fl.NoColor, "no-color", false, "Farben abschalten")
 
 	root.AddCommand(newVersionCmd(app))
+	root.AddCommand(newContextCmd(app))
 	applyGerman(root)
 	return root
 }
