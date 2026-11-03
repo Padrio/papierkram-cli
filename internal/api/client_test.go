@@ -208,22 +208,6 @@ func TestEmptySuccessBody(t *testing.T) {
 	}
 }
 
-func TestNon2xxReturnsResponseAndHTTPError(t *testing.T) {
-	rec := &recorder{status: http.StatusNotFound, body: `{"type":"error"}`}
-	c := newTestClient(t, rec, nil)
-	resp, err := c.Call(context.Background(), "GetInvoice", []int64{9}, nil, nil)
-	var he *HTTPError
-	if !errors.As(err, &he) {
-		t.Fatalf("err = %v, want *HTTPError", err)
-	}
-	if he.Status != http.StatusNotFound || string(he.Body) != `{"type":"error"}` {
-		t.Errorf("HTTPError = %d %q", he.Status, he.Body)
-	}
-	if resp == nil || resp.Status != http.StatusNotFound || string(resp.Body) != `{"type":"error"}` {
-		t.Errorf("resp = %+v", resp)
-	}
-}
-
 func TestCallRaw(t *testing.T) {
 	rec := &recorder{body: "ok"}
 	c := newTestClient(t, rec, nil)
@@ -332,7 +316,8 @@ func TestTimeoutApplied(t *testing.T) {
 	}))
 	t.Cleanup(func() { close(block); srv.Close() })
 
-	c := New(Options{BaseURL: srv.URL + "/api/v1", Token: testToken, Timeout: 50 * time.Millisecond})
+	c := New(Options{BaseURL: srv.URL + "/api/v1", Token: testToken, Timeout: 50 * time.Millisecond,
+		Sleep: func(time.Duration) {}})
 	start := time.Now()
 	_, err := c.Call(context.Background(), "ListInvoices", nil, nil, nil)
 	if !errors.Is(err, context.DeadlineExceeded) {

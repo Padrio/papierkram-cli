@@ -1,6 +1,7 @@
 // Package api is the HTTP client of the Papierkram API: it builds requests
 // with the generated builders, sends them with the standard headers and
-// returns the raw response bytes plus the quota state.
+// returns the raw response bytes plus the quota state. Failures become
+// *clierr.Error values; only GET is retried (retry.go, errors.go).
 package api
 
 import (
@@ -32,36 +33,26 @@ type Options struct {
 	BaseURL, Token string
 	// UserAgent defaults to buildinfo.UserAgent().
 	UserAgent string
-	// Timeout is the deadline per request; zero means DefaultTimeout.
+	// Timeout is the deadline per attempt; zero means DefaultTimeout.
 	Timeout time.Duration
 	// HTTP is the client used to send requests; nil means a new http.Client.
 	HTTP *http.Client
 	// Debug receives the request log (--debug); used from Task 13 on.
 	Debug io.Writer
-	// Sleep waits between retries; used from Task 12 on.
+	// Sleep waits between GET retries; nil means time.Sleep.
 	Sleep func(time.Duration)
 	// OnQuota is called after every response that reports X-Remaining-Quota.
 	OnQuota func(Quota)
 }
 
 // Response is a raw API response. Body holds the complete body bytes and is
-// empty for responses without content; it is never parsed here.
+// empty for responses without content; it is never parsed here. For a
+// non-2xx status it is returned together with a *clierr.Error.
 type Response struct {
 	Status int
 	Header http.Header
 	Body   []byte
 	Quota  Quota
-}
-
-// HTTPError is returned together with the Response for every non-2xx status.
-// It is a minimal placeholder; Task 12 maps statuses to clierr codes.
-type HTTPError struct {
-	Status int
-	Body   []byte
-}
-
-func (e *HTTPError) Error() string {
-	return fmt.Sprintf("api: Server antwortete mit HTTP-Status %d", e.Status)
 }
 
 // Client sends requests to the Papierkram API.
@@ -82,6 +73,9 @@ func New(o Options) *Client {
 	}
 	if o.Timeout == 0 {
 		o.Timeout = DefaultTimeout
+	}
+	if o.Sleep == nil {
+		o.Sleep = time.Sleep
 	}
 	hc := o.HTTP
 	if hc == nil {
@@ -174,33 +168,4 @@ func (c *Client) callOp(ctx context.Context, opID string, pathParams []int64, qu
 		req.Header.Del("Content-Type")
 	}
 	return c.do(ctx, req)
-}
-
-// do sets the standard headers, sends req with the per-request timeout and
-// reads the whole body.
-func (c *Client) do(ctx context.Context, req *http.Request) (*Response, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.opts.Timeout)
-	defer cancel()
-	req = req.WithContext(ctx)
-	req.Header.Set("Authorization", "Bearer "+c.opts.Token)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", c.opts.UserAgent)
-
-	hr, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = hr.Body.Close() }()
-	data, err := io.ReadAll(hr.Body)
-	if err != nil {
-		return nil, err
-	}
-	resp := &Response{Status: hr.StatusCode, Header: hr.Header, Body: data, Quota: parseQuota(hr.Header)}
-	if resp.Quota.Known && c.opts.OnQuota != nil {
-		c.opts.OnQuota(resp.Quota)
-	}
-	if hr.StatusCode < 200 || hr.StatusCode > 299 {
-		return resp, &HTTPError{Status: hr.StatusCode, Body: data}
-	}
-	return resp, nil
 }
