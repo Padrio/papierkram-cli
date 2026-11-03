@@ -2,3 +2,8 @@
 # overlay run (generated spec) against them. Never convert line endings.
 api/openapi.json -text
 internal/spec/openapi.gen.json -text
+
+# Test fixtures (golden files, testscript txtar files) must stay byte-exact
+# on every OS: the code under test writes LF, so a CRLF checkout (Windows,
+# core.autocrlf) would break every comparison.
+**/testdata/** -text
