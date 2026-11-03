@@ -63,8 +63,9 @@ func newContextCreateCmd(app *App) *cobra.Command {
 	var readOnly bool
 	var userID int64
 	cmd := &cobra.Command{
-		Use:   "create <name>",
-		Short: "Kontext anlegen",
+		Use:         "create <name>",
+		Annotations: writesConfig(),
+		Short:       "Kontext anlegen",
 		Long: "Legt einen neuen Kontext an. Ist noch kein Kontext aktiv, wird der neue Kontext automatisch aktiv.\n" +
 			"Das Token wird separat mit \"papierkram auth login\" hinterlegt.",
 		Example: "  papierkram context create firma-gmbh --subdomain firma-gmbh\n" +
@@ -95,9 +96,6 @@ func newContextCreateCmd(app *App) *cobra.Command {
 			return nil
 		},
 		RunE: func(_ *cobra.Command, args []string) error {
-			if err := app.guardConfigWrite(); err != nil {
-				return err
-			}
 			cfg, path, err := app.loadConfig()
 			if err != nil {
 				return err
@@ -129,13 +127,11 @@ func newContextCreateCmd(app *App) *cobra.Command {
 
 func newContextUseCmd(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:   "use <name>",
-		Short: "Kontext aktivieren",
-		Args:  exactArgs(1),
+		Use:         "use <name>",
+		Annotations: writesConfig(),
+		Short:       "Kontext aktivieren",
+		Args:        exactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if err := app.guardConfigWrite(); err != nil {
-				return err
-			}
 			cfg, path, err := app.loadConfig()
 			if err != nil {
 				return err
@@ -232,14 +228,12 @@ func keyringErr(err error, what string) error {
 
 func newContextDeleteCmd(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete <name>",
-		Short: "Kontext löschen",
-		Long:  "Löscht den Kontext und das zugehörige Token im Schlüsselbund. Eine Bestätigung ist nicht nötig.",
-		Args:  exactArgs(1),
+		Use:         "delete <name>",
+		Annotations: writesConfig(),
+		Short:       "Kontext löschen",
+		Long:        "Löscht den Kontext und das zugehörige Token im Schlüsselbund. Eine Bestätigung ist nicht nötig.",
+		Args:        exactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if err := app.guardConfigWrite(); err != nil {
-				return err
-			}
 			name := args[0]
 			cfg, path, err := app.loadConfig()
 			if err != nil {
@@ -266,14 +260,12 @@ func newContextDeleteCmd(app *App) *cobra.Command {
 
 func newContextRenameCmd(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:   "rename <alt> <neu>",
-		Short: "Kontext umbenennen",
-		Long:  "Benennt einen Kontext um und verschiebt das Token im Schlüsselbund. Ein aktiver Kontext bleibt aktiv.",
-		Args:  exactArgs(2),
+		Use:         "rename <alt> <neu>",
+		Annotations: writesConfig(),
+		Short:       "Kontext umbenennen",
+		Long:        "Benennt einen Kontext um und verschiebt das Token im Schlüsselbund. Ein aktiver Kontext bleibt aktiv.",
+		Args:        exactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if err := app.guardConfigWrite(); err != nil {
-				return err
-			}
 			oldName, newName := args[0], args[1]
 			cfg, path, err := app.loadConfig()
 			if err != nil {

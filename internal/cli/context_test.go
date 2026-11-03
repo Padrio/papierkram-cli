@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/Padrio/papierkram-cli/internal/auth"
 )
@@ -355,5 +358,71 @@ func TestContextCreateValidatesSubdomain(t *testing.T) {
 	data, _ := os.ReadFile(cfgFile(t, app))
 	if !strings.Contains(string(data), "firma-gmbh") {
 		t.Errorf("Subdomain nicht normalisiert:\n%s", data)
+	}
+}
+
+// configWriteSampleArgs holds valid arguments for every command annotated as
+// config-writing; a new annotated command must be added here.
+var configWriteSampleArgs = map[string][]string{
+	"papierkram context create": {"c", "--subdomain", "x"},
+	"papierkram context use":    {"b"},
+	"papierkram context delete": {"b"},
+	"papierkram context rename": {"b", "c"},
+}
+
+func TestConfigWritingCommandsAnnotatedAndBlocked(t *testing.T) {
+	app, _, _ := newTestApp(t)
+	var annotated []string
+	walk(NewRootCmd(app), func(c *cobra.Command) {
+		if c.Annotations[annotWritesConfig] == "true" {
+			annotated = append(annotated, c.CommandPath())
+		}
+	})
+	for _, want := range []string{"papierkram context create", "papierkram context use", "papierkram context delete", "papierkram context rename"} {
+		if !slices.Contains(annotated, want) {
+			t.Errorf("%q ist nicht als config-schreibend annotiert", want)
+		}
+	}
+	for _, path := range annotated {
+		sample, ok := configWriteSampleArgs[path]
+		if !ok {
+			t.Errorf("Beispielargumente für %q fehlen in configWriteSampleArgs", path)
+			continue
+		}
+		app, _, errb := newTestApp(t)
+		app.Env = roEnv("1")
+		writeCfg(t, app, twoCtx)
+		args := append(strings.Fields(path)[1:], sample...)
+		if code := Run(app, args); code != 9 {
+			t.Errorf("%v: exit = %d, want 9; stderr = %s", args, code, errb.String())
+		}
+	}
+	for _, path := range []string{"papierkram context list", "papierkram context active", "papierkram version"} {
+		if slices.Contains(annotated, path) {
+			t.Errorf("%q schreibt nicht und darf nicht annotiert sein", path)
+		}
+	}
+}
+
+func TestConfigWriteGuardIsCentral(t *testing.T) {
+	app, _, errb := newTestApp(t)
+	app.Env = roEnv("1")
+	root := NewRootCmd(app)
+	ran := false
+	group := &cobra.Command{
+		Use:               "group",
+		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
+	}
+	group.AddCommand(&cobra.Command{
+		Use:         "write",
+		Annotations: map[string]string{annotWritesConfig: "true"},
+		RunE:        func(*cobra.Command, []string) error { ran = true; return nil },
+	})
+	root.AddCommand(group)
+	if code := execute(app, root, []string{"group", "write"}); code != 9 {
+		t.Errorf("exit = %d, want 9; stderr = %s", code, errb.String())
+	}
+	if ran {
+		t.Error("RunE lief trotz Schreibschutz")
 	}
 }

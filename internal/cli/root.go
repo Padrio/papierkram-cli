@@ -14,6 +14,10 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 )
 
+// The root PersistentPreRunE (flag checks, central config write guard) must
+// run even when a subcommand defines its own persistent hooks.
+func init() { cobra.EnableTraverseRunHooks = true }
+
 func usageErr(msg string) error { return clierr.New(clierr.CodeUsage, msg, "") }
 
 func unknownCommand(root *cobra.Command, name string) error {
@@ -119,6 +123,9 @@ func NewRootCmd(app *App) *cobra.Command {
 				return err
 			}
 			app.warnReadOnlyEnv()
+			if c.Annotations[annotWritesConfig] == "true" {
+				return app.guardConfigWrite()
+			}
 			return nil
 		},
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
