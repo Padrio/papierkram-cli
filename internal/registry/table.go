@@ -44,7 +44,7 @@ var (
 	infoColumns = output.Columns{
 		Table: []output.Column{
 			{Header: "API-VERSION", Path: "api.version"},
-			{Header: "RECHNUNGSVORLAGEN", Path: "settings.custom_templates.invoices"},
+			{Header: "RECHNUNGSVORLAGEN", Path: "settings.custom_templates.invoices", Fmt: output.FmtIDNameList},
 		},
 	}
 	userColumns = output.Columns{
@@ -133,7 +133,7 @@ var table = []Entry{
 		Resource: "info", Action: "", OperationID: "GetInfo",
 		Method: "GET", Path: "/info", Class: ClassReadOnly, Credits: 1,
 		Columns: infoColumns,
-		Short:   "Account-Informationen inkl. Rechnungsvorlagen anzeigen",
+		Short:   infoShort,
 		Examples: []string{
 			"papierkram info",
 			"papierkram info -o json",

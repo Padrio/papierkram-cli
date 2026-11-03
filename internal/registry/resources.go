@@ -1,5 +1,8 @@
 package registry
 
+// infoShort is the short help of the info resource and its command.
+const infoShort = "Account-Informationen inkl. Rechnungsvorlagen anzeigen"
+
 // resources are the command nouns of spec 7.1: English as in the API,
 // German aliases. info is a command of its own (Action "").
 var resources = []Resource{
@@ -17,5 +20,5 @@ var resources = []Resource{
 	{Name: "bank-connection", Aliases: []string{"bankverbindung"}, Short: "Bankverbindungen anzeigen"},
 	{Name: "transaction", Aliases: []string{"umsatz"}, Short: "Bankumsätze anzeigen"},
 	{Name: "user", Aliases: []string{"benutzer"}, Short: "Benutzer des Accounts anzeigen"},
-	{Name: "info", Short: "Account-Informationen inkl. Rechnungsvorlagen anzeigen"},
+	{Name: "info", Short: infoShort},
 }

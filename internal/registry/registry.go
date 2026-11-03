@@ -192,11 +192,20 @@ func newIndex(rs []Resource, es []Entry) (*index, error) {
 	return idx, nil
 }
 
+// reservedNames are top-level commands of their own (meta commands, cobra
+// built-ins); no resource name or alias may shadow them.
+var reservedNames = []string{"help", "completion", "context", "auth", "version", "api", "commands", "schema", "local", "gen-docs"}
+
 // checkResources requires unique names and aliases: no alias may repeat or
-// equal any resource name.
+// equal any resource name, and no name or alias may be reserved.
 func checkResources(rs []Resource) error {
 	names := map[string]bool{}
 	for _, r := range rs {
+		for _, n := range append([]string{r.Name}, r.Aliases...) {
+			if slices.Contains(reservedNames, n) {
+				return fmt.Errorf("registry: %q (resource %s) is a reserved command name", n, r.Name)
+			}
+		}
 		if names[r.Name] {
 			return fmt.Errorf("registry: duplicate resource %q", r.Name)
 		}

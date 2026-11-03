@@ -62,3 +62,33 @@ func TestFmtDate(t *testing.T) {
 		}
 	}
 }
+
+// FmtIDNameList shows a list of referenced objects (GET /info:
+// settings.custom_templates.invoices) as "id name, id name", untruncated.
+func TestFmtIDNameList(t *testing.T) {
+	raw := `{"invoices":[{"id":249,"name":"Invoice type 1","type":"template"},` +
+		`{"id":250,"name":"Invoice type 2","type":"template"},` +
+		`{"id":9007199254740993,"name":"Vorlage mit sehr langem Namen für Größenprüfung","type":"template"},` +
+		`{"id":7},{"name":"ohne ID"},"lose"]}`
+	v, err := decode([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, _ := lookup(v, []string{"invoices"})
+	want := "249 Invoice type 1, 250 Invoice type 2, " +
+		"9007199254740993 Vorlage mit sehr langem Namen für Größenprüfung, 7, ohne ID, lose"
+	if got := FmtIDNameList(list); got != want {
+		t.Errorf("FmtIDNameList = %q, want %q", got, want)
+	}
+	for in, want := range map[any]string{
+		"text":           "text",
+		json.Number("3"): "3",
+	} {
+		if got := FmtIDNameList(in); got != want {
+			t.Errorf("FmtIDNameList(%#v) = %q, want %q", in, got, want)
+		}
+	}
+	if got := FmtIDNameList([]any{}); got != "" {
+		t.Errorf("empty list = %q, want empty", got)
+	}
+}

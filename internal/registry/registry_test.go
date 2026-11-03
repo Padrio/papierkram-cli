@@ -1,6 +1,8 @@
 package registry
 
 import (
+	"bytes"
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -133,7 +135,7 @@ func checkColumns(t *testing.T, name string, op spec.Operation, cols output.Colu
 			}
 			continue
 		}
-		if !examplesHavePath(op, c.Path) {
+		if !examplesHavePath(t, op, c.Path) {
 			t.Errorf("%s: column path %q not in response examples", name, c.Path)
 		}
 	}
@@ -166,17 +168,36 @@ func schemaHasPath(s *openapi3.Schema, path string) bool {
 	return true
 }
 
-func examplesHavePath(op spec.Operation, path string) bool {
+// jsonExamples returns the values of the application/json examples of the
+// 200 response; an example without a value is reported and skipped.
+func jsonExamples(t *testing.T, op spec.Operation) []any {
+	t.Helper()
 	r := op.Op.Responses.Status(200)
 	if r == nil || r.Value == nil {
-		return false
+		return nil
 	}
 	mt := r.Value.Content.Get("application/json")
-	if mt == nil || len(mt.Examples) == 0 {
+	if mt == nil {
+		return nil
+	}
+	var out []any
+	for key, ex := range mt.Examples {
+		if ex == nil || ex.Value == nil {
+			t.Errorf("%s: example %q has no value", op.ID, key)
+			continue
+		}
+		out = append(out, ex.Value.Value)
+	}
+	return out
+}
+
+func examplesHavePath(t *testing.T, op spec.Operation, path string) bool {
+	t.Helper()
+	examples := jsonExamples(t, op)
+	if len(examples) == 0 {
 		return false
 	}
-	for _, ex := range mt.Examples {
-		v := any(ex.Value.Value)
+	for _, v := range examples {
 		for seg := range strings.SplitSeq(path, ".") {
 			m, ok := v.(map[string]any)
 			if !ok {
@@ -188,6 +209,35 @@ func examplesHavePath(op spec.Operation, path string) bool {
 		}
 	}
 	return true
+}
+
+// TestInfoTemplatesColumn renders the spec example of GET /info with the
+// info columns: the templates are listed as "id name", untruncated.
+func TestInfoTemplatesColumn(t *testing.T) {
+	op, _ := spec.OperationByID("GetInfo")
+	e, _ := Lookup("info", "")
+	found := false
+	for _, v := range jsonExamples(t, op) {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), "Invoice type 2") {
+			continue
+		}
+		found = true
+		var out, errOut bytes.Buffer
+		o := output.Options{Format: output.FormatTable, Out: &out, Err: &errOut}
+		if err := output.Render(o, raw, e.Columns); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), "RECHNUNGSVORLAGEN  249 Invoice type 1, 250 Invoice type 2\n") {
+			t.Errorf("templates not listed:\n%s", out.String())
+		}
+	}
+	if !found {
+		t.Fatal("no GET /info example with templates")
+	}
 }
 
 func TestReadOnlyEntriesRegistered(t *testing.T) {
@@ -280,6 +330,10 @@ func TestCheckResourcesRejectsDuplicates(t *testing.T) {
 		"alias is own name":    {{Name: "a", Aliases: []string{"a"}}},
 		"alias before a name":  {{Name: "b", Aliases: []string{"a"}}, {Name: "a"}},
 		"alias repeated local": {{Name: "a", Aliases: []string{"x", "x"}}},
+	}
+	for _, reserved := range []string{"help", "completion", "context", "auth", "version", "api", "commands", "schema", "local", "gen-docs"} {
+		tests["reserved name "+reserved] = []Resource{{Name: reserved}}
+		tests["reserved alias "+reserved] = []Resource{{Name: "a", Aliases: []string{reserved}}}
 	}
 	for name, rs := range tests {
 		if err := checkResources(rs); err == nil {

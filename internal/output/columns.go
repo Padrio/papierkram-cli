@@ -85,3 +85,30 @@ func FmtDate(v any) string {
 	}
 	return s
 }
+
+// FmtIDNameList shows a list of referenced objects (e.g. the invoice
+// templates of GET /info) as "249 Invoice type 1, 250 Invoice type 2":
+// id and name per element, comma-separated, untruncated. Elements without
+// id or name show what they have; other values are shown as plain cells.
+func FmtIDNameList(v any) string {
+	list, ok := v.([]any)
+	if !ok {
+		return plain(v)
+	}
+	parts := make([]string, 0, len(list))
+	for _, el := range list {
+		o, ok := el.(object)
+		if !ok {
+			parts = append(parts, plain(el))
+			continue
+		}
+		var words []string
+		for _, k := range []string{"id", "name"} {
+			if x, ok := o.get(k); ok && x != nil {
+				words = append(words, plain(x))
+			}
+		}
+		parts = append(parts, strings.Join(words, " "))
+	}
+	return strings.Join(parts, ", ")
+}
