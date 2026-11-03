@@ -32,9 +32,9 @@ func exactArgs(n int) cobra.PositionalArgs {
 	return func(c *cobra.Command, args []string) error {
 		switch {
 		case len(args) < n:
-			return clierr.New(clierr.CodeUsage, fmt.Sprintf("zu wenige Argumente für %q (erwartet: %d, erhalten: %d)", c.CommandPath(), n, len(args)), "Verwendung: "+c.UseLine())
+			return clierr.New(clierr.CodeUsage, fmt.Sprintf("zu wenige Argumente für %q (erwartet: %d, erhalten: %d)", c.CommandPath(), n, len(args)), "Verwendung: "+useLine(c))
 		case len(args) > n:
-			return clierr.New(clierr.CodeUsage, fmt.Sprintf("unerwartetes Argument %q für %q", args[n], c.CommandPath()), "Verwendung: "+c.UseLine())
+			return clierr.New(clierr.CodeUsage, fmt.Sprintf("unerwartetes Argument %q für %q", args[n], c.CommandPath()), "Verwendung: "+useLine(c))
 		}
 		return nil
 	}
@@ -43,12 +43,24 @@ func exactArgs(n int) cobra.PositionalArgs {
 var (
 	invalidValueRe = regexp.MustCompile(`^invalid argument (".*?") for "(-[^"]+)" flag: (.*)$`)
 	strconvPrefix  = regexp.MustCompile(`strconv\.\w+: parsing "[^"]*": `)
-	englishCauses  = strings.NewReplacer(
+	// time.ParseDuration: `time: unknown unit "x" in duration "1x"` and
+	// `time: missing unit in duration "30"`.
+	unknownUnitRe = regexp.MustCompile(`time: unknown unit (".*?") in duration (".*")`)
+	missingUnitRe = regexp.MustCompile(`time: missing unit in duration (".*")`)
+	englishCauses = strings.NewReplacer(
 		"time: invalid duration", "ungültige Dauer",
 		"invalid syntax", "ungültige Syntax",
 		"value out of range", "Wert außerhalb des Bereichs",
 	)
 )
+
+// germanCause translates the cause part of a pflag "invalid argument" error.
+func germanCause(s string) string {
+	s = strconvPrefix.ReplaceAllString(s, "")
+	s = unknownUnitRe.ReplaceAllString(s, "ungültige Dauer $2: unbekannte Einheit $1 (erlaubt: ms, s, m, h)")
+	s = missingUnitRe.ReplaceAllString(s, "ungültige Dauer $1: Einheit fehlt (z. B. 30s)")
+	return englishCauses.Replace(s)
+}
 
 // germanFlagError translates pflag error messages into German usage errors.
 func germanFlagError(_ *cobra.Command, err error) error {
@@ -60,9 +72,11 @@ func germanFlagError(_ *cobra.Command, err error) error {
 		msg = "unbekanntes Kurz-Flag: " + strings.TrimPrefix(msg, "unknown shorthand flag: ")
 	case strings.HasPrefix(msg, "flag needs an argument: "):
 		msg = "Flag benötigt einen Wert: " + strings.TrimPrefix(msg, "flag needs an argument: ")
+	case strings.HasPrefix(msg, "bad flag syntax: "):
+		msg = "ungültige Flag-Syntax: " + strings.TrimPrefix(msg, "bad flag syntax: ")
 	case invalidValueRe.MatchString(msg):
 		m := invalidValueRe.FindStringSubmatch(msg)
-		msg = fmt.Sprintf("ungültiger Wert %s für %s: %s", m[1], m[2], englishCauses.Replace(strconvPrefix.ReplaceAllString(m[3], "")))
+		msg = fmt.Sprintf("ungültiger Wert %s für %s: %s", m[1], m[2], germanCause(m[3]))
 	}
 	return usageErr(msg)
 }

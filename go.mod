@@ -14,7 +14,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/pelletier/go-toml/v2 v2.4.3
+require (
+	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/spf13/pflag v1.0.9
+)
 
 require (
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
@@ -31,7 +34,6 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/speakeasy-api/jsonpath v0.6.3 // indirect
-	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/vmware-labs/yaml-jsonpath v0.3.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/mod v0.41.0 // indirect

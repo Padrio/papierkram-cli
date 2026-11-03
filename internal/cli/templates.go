@@ -4,10 +4,23 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
+// useLine is cobra's UseLine with "[Optionen]" instead of "[flags]". Usage
+// hints must use it, never c.UseLine().
+func useLine(c *cobra.Command) string {
+	return strings.ReplaceAll(c.UseLine(), "[flags]", "[Optionen]")
+}
+
+// germanFlagUsages renders pflag's flag list with "(Standard: …)" instead of
+// "(default …)".
+func germanFlagUsages(fs *pflag.FlagSet) string {
+	return strings.ReplaceAll(fs.FlagUsages(), " (default ", " (Standard: ")
+}
+
 const usageTemplate = `Verwendung:{{if .Runnable}}
-  {{germanUseLine .UseLine}}{{end}}{{if .HasAvailableSubCommands}}
+  {{useLine .}}{{end}}{{if .HasAvailableSubCommands}}
   {{.CommandPath}} [Befehl]{{end}}{{if gt (len .Aliases) 0}}
 
 Aliase:
@@ -26,10 +39,10 @@ Weitere Befehle:{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableComman
   {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 
 Optionen:
-{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+{{germanFlagUsages .LocalFlags | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
 
 Globale Optionen:
-{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+{{germanFlagUsages .InheritedFlags | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
 
 Weitere Hilfethemen:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
   {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
@@ -44,7 +57,8 @@ const helpTemplate = `{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces}}
 // applyGerman installs the German templates and help texts on the whole
 // command tree. It must be called after all subcommands are added.
 func applyGerman(root *cobra.Command) {
-	cobra.AddTemplateFunc("germanUseLine", func(s string) string { return strings.ReplaceAll(s, "[flags]", "[Optionen]") })
+	cobra.AddTemplateFunc("useLine", useLine)
+	cobra.AddTemplateFunc("germanFlagUsages", germanFlagUsages)
 	root.SetUsageTemplate(usageTemplate)
 	root.SetHelpTemplate(helpTemplate)
 	help := &cobra.Command{
@@ -52,9 +66,12 @@ func applyGerman(root *cobra.Command) {
 		Short: "Hilfe zu einem Befehl anzeigen",
 		Long:  "Zeigt die Hilfe zu einem beliebigen Befehl an.",
 		RunE: func(c *cobra.Command, args []string) error {
-			target, _, err := c.Root().Find(args)
+			target, rest, err := c.Root().Find(args)
 			if target == nil || err != nil || (target == c.Root() && len(args) > 0) {
 				return unknownCommand(c.Root(), strings.Join(args, " "))
+			}
+			if len(rest) > 0 {
+				return unknownCommand(target, rest[0])
 			}
 			return target.Help()
 		},

@@ -74,7 +74,7 @@ func newContextCreateCmd(app *App) *cobra.Command {
 				return err
 			}
 			if subdomain == "" {
-				return clierr.New(clierr.CodeUsage, "Pflicht-Flag --subdomain fehlt", "Verwendung: "+c.UseLine())
+				return clierr.New(clierr.CodeUsage, "Pflicht-Flag --subdomain fehlt", "Verwendung: "+useLine(c))
 			}
 			if c.Flags().Changed("user") {
 				userID = 0

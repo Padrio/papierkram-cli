@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -114,6 +115,67 @@ func TestUnknownCommandGerman(t *testing.T) {
 	if code := Run(app, []string{"help", "nope"}); code != 2 {
 		t.Errorf("help nope: exit = %d", code)
 	}
+	app, out, errb := newTestApp(t)
+	if code := Run(app, []string{"help", "context", "nope"}); code != 2 {
+		t.Errorf("help context nope: exit = %d", code)
+	}
+	if out.Len() != 0 || !strings.Contains(errb.String(), `unbekannter Befehl "nope" für "papierkram context"`) {
+		t.Errorf("help context nope: stdout = %q, stderr = %q", out.String(), errb.String())
+	}
+}
+
+// TestHelpAndUsageHintsGermanEverywhere walks the whole command tree and
+// checks help output and usage-error hints for English cobra/pflag remnants.
+func TestHelpAndUsageHintsGermanEverywhere(t *testing.T) {
+	app, _, _ := newTestApp(t)
+	var paths [][]string
+	walk(NewRootCmd(app), func(c *cobra.Command) {
+		paths = append(paths, strings.Fields(c.CommandPath())[1:])
+	})
+	if len(paths) < 9 {
+		t.Fatalf("Baum unvollständig: %v", paths)
+	}
+	bad := []string{"(default", "[flags]", "Usage:"}
+	for _, p := range paths {
+		runs := map[string][]string{
+			"--help":        append(slices.Clone(p), "--help"),
+			"help cmd":      append([]string{"help"}, p...),
+			"too many args": append(slices.Clone(p), "x1", "x2", "x3", "x4"),
+			"no args":       slices.Clone(p),
+		}
+		for kind, args := range runs {
+			app, out, errb := newTestApp(t)
+			code := Run(app, args)
+			got := out.String() + errb.String()
+			for _, b := range bad {
+				if strings.Contains(got, b) {
+					t.Errorf("%v (%s, exit %d): enthält %q:\n%s", args, kind, code, b, got)
+				}
+			}
+		}
+	}
+}
+
+func TestFlagDefaultsRenderedGerman(t *testing.T) {
+	app, out, _ := newTestApp(t)
+	if code := Run(app, []string{"--help"}); code != 0 {
+		t.Fatal(code)
+	}
+	for _, want := range []string{`(Standard: "table")`, "(Standard: 30s)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("Hilfe enthält %q nicht:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestUsageHintUsesGermanUseLine(t *testing.T) {
+	app, _, errb := newTestApp(t)
+	if code := Run(app, []string{"context", "rename", "a"}); code != 2 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(errb.String(), "Hinweis: Verwendung: papierkram context rename <alt> <neu> [Optionen]") {
+		t.Errorf("stderr = %q", errb.String())
+	}
 }
 
 func TestSubcommandHelpGerman(t *testing.T) {
@@ -138,13 +200,16 @@ func TestFlagErrorsFullyGerman(t *testing.T) {
 		{"-y=maybe"},
 		{"--timeout"},
 		{"-x"},
+		{"--timeout", "1x"},
+		{"--timeout", "30"},
+		{"---x"},
 	}
 	for _, args := range cases {
 		app, _, errb := newTestApp(t)
 		if code := Run(app, args); code != 2 {
 			t.Errorf("%v: exit = %d, erwartet 2", args, code)
 		}
-		for _, bad := range []string{" for ", " flag:", "invalid", "unknown", "needs an argument", "shorthand"} {
+		for _, bad := range []string{" for ", " flag:", "invalid", "unknown", "needs an argument", "shorthand", "bad flag syntax", "unit", "duration", "missing", "time:"} {
 			if strings.Contains(errb.String(), bad) {
 				t.Errorf("%v: englisches Fragment %q in %q", args, bad, errb.String())
 			}
@@ -153,6 +218,16 @@ func TestFlagErrorsFullyGerman(t *testing.T) {
 	app, _, errb := newTestApp(t)
 	Run(app, []string{"--timeout", "abc"})
 	if !strings.Contains(errb.String(), `ungültiger Wert "abc" für --timeout: `) {
+		t.Errorf("stderr = %q", errb.String())
+	}
+	app, _, errb = newTestApp(t)
+	Run(app, []string{"--timeout", "1x"})
+	if !strings.Contains(errb.String(), `ungültiger Wert "1x" für --timeout: ungültige Dauer "1x": unbekannte Einheit "x"`) {
+		t.Errorf("stderr = %q", errb.String())
+	}
+	app, _, errb = newTestApp(t)
+	Run(app, []string{"---x"})
+	if errb.String() != "Fehler: ungültige Flag-Syntax: ---x\n" {
 		t.Errorf("stderr = %q", errb.String())
 	}
 	app, _, errb = newTestApp(t)
