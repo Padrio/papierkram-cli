@@ -19,9 +19,11 @@ lint:
 generate:
 	go generate ./...
 
+# Same package set and threshold logic as CI (scripts/coverage.sh).
+COVER_THRESHOLD ?= 0
+
 cover:
-	go test -coverprofile=coverage.out ./...
-	go tool cover -func=coverage.out | tail -n 1
+	scripts/coverage.sh $(COVER_THRESHOLD)
 
 snapshot:
 	go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean
