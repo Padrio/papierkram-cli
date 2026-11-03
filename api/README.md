@@ -44,7 +44,8 @@ Das Overlay
 - ergänzt `format: date` an Datumsfeldern der Request-Bodies (`supply_date` bleibt Freitext),
 - markiert String-Felder mit boolescher Bedeutung (`x-cli-bool-string`) und Enum-Hinweise (`x-cli-enum-hints`),
 - ersetzt `patternProperties` durch OpenAPI-3.0-Konstrukte (`x-cli-key-pattern` bewahrt das Schlüsselmuster),
-- passt die Response-Schemas an die aufgezeichneten Beispiele an.
+- passt die Response-Schemas an die aufgezeichneten Beispiele an,
+- macht den Dateiteil `file` beim Beleg-Upload (`UploadVoucherDocument`) zur Pflicht.
 
 Das Werkzeug `tools/applyoverlay` wendet das Overlay strikt an: Trifft ein Ziel keinen Knoten oder ändert eine Aktion nichts, bricht die Erzeugung ab. Behebt ein neuer Snapshot einen Mangel, fällt die zugehörige Aktion dadurch auf und wird aus dem Overlay entfernt.
 

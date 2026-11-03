@@ -657,3 +657,14 @@ func mapKeys[V any](m map[string]V) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+func TestUploadFileRequired(t *testing.T) {
+	op := opByID(t, loadDoc(t, generatedPath), "UploadVoucherDocument").op
+	mt := op.RequestBody.Value.Content["multipart/form-data"]
+	if mt == nil {
+		t.Fatal("UploadVoucherDocument: no multipart/form-data request body")
+	}
+	if s := mt.Schema.Value; !slices.Equal(s.Required, []string{"file"}) {
+		t.Errorf("UploadVoucherDocument: required = %v, want [file]", s.Required)
+	}
+}

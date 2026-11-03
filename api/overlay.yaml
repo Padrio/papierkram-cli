@@ -646,3 +646,15 @@ actions:
   # never as a plain date.
   - target: $.components.schemas.InvoiceFlat.allOf[1].properties.supply_date.format
     remove: true
+
+  # ---------------------------------------------------------------------------
+  # 13. Voucher document upload: the file part is required
+  # Why: the multipart schema of POST /expense/vouchers/{voucher_id}/documents
+  # declares the "file" part without marking it required, so an upload without
+  # a file would validate. The endpoint exists only to receive that file, and
+  # the mock server must reject an upload that lacks it.
+  # ---------------------------------------------------------------------------
+  - target: $.paths['/expense/vouchers/{voucher_id}/documents'].post.requestBody.content['multipart/form-data'].schema
+    update:
+      required:
+        - file

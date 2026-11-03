@@ -4795,7 +4795,7 @@ type PayVoucherJSONBodyDifferenceReason string
 
 // UploadVoucherDocumentMultipartBody defines parameters for UploadVoucherDocument.
 type UploadVoucherDocumentMultipartBody struct {
-	File *openapi_types.File `json:"file,omitempty"`
+	File openapi_types.File `json:"file"`
 }
 
 // ListEstimatesParams defines parameters for ListEstimates.

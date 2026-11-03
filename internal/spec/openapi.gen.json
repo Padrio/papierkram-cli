@@ -9901,6 +9901,9 @@
                     "type": "string"
                   }
                 },
+                "required": [
+                  "file"
+                ],
                 "type": "object"
               }
             }
