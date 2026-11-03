@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/spf13/cobra"
 
 	"github.com/Padrio/papierkram-cli/internal/api"
@@ -31,6 +32,29 @@ const (
 	warnPages = 10
 )
 
+// localKind is the filter kind the CLI applies itself: the API ignores the
+// parameter (company list --type, spec 9.7), so the list runner loads all
+// pages and keeps the entries whose property Param has the given value of
+// its enum.
+const localKind = "local_enum"
+
+// localFlags returns the flags of e's local filters, with dashes.
+func localFlags(e registry.Entry) []string {
+	var flags []string
+	for _, flt := range e.Filters {
+		if flt.Kind == localKind {
+			flags = append(flags, "--"+flt.Flag)
+		}
+	}
+	return flags
+}
+
+// loadAllFlags are the flags that make list load all pages: --all and the
+// local filters.
+func loadAllFlags(e registry.Entry) string {
+	return strings.Join(append([]string{"--all"}, localFlags(e)...), " oder ")
+}
+
 // addListFlags adds the common list flags (spec 7.1) and the filter flags
 // of e: "id" filters are integer flags, all others text flags that
 // runList parses.
@@ -39,7 +63,7 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 	f.Int("page", 0, "nur diese Seite laden (ab 1)")
 	f.Int("limit", defaultLimit, "Einträge pro Seite, 1–100 (--all ohne --limit: 100)")
 	f.Bool("all", false, "alle Seiten laden und zusammenführen (1 Anfrage je Seite)")
-	f.Int("max-pages", 0, "mit --all höchstens so viele Seiten laden")
+	f.Int("max-pages", 0, "mit "+loadAllFlags(e)+" höchstens so viele Seiten laden")
 	f.String("sort", "", "nach diesem Feld sortieren (setzt order_by und order_direction)")
 	f.Bool("desc", false, "absteigend sortieren (nur mit --sort)")
 	for _, flt := range e.Filters {
@@ -55,9 +79,13 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 type listRequest struct {
 	query    url.Values // filters, sorting and page_size; page is set per request
 	page     int        // --page, 0 when not given
-	pageSize int
+	pageSize int        // --limit: the API page size, with local filters the page size of the filtered result
 	all      bool
 	maxPages int // 0: no cap
+	// local are the values of the local filters by entry property; with
+	// any, all pages are loaded (via names the flag in warnings).
+	local map[string]string
+	via   string
 }
 
 // parseListFlags validates every list flag and builds the query, before
@@ -65,7 +93,13 @@ type listRequest struct {
 // fail the spec (enum, date) are validation errors (exit 5, R30).
 func (a *App) parseListFlags(c *cobra.Command, e registry.Entry) (*listRequest, error) {
 	f := c.Flags()
-	lr := &listRequest{query: url.Values{}}
+	lr := &listRequest{query: url.Values{}, local: map[string]string{}, via: "--all"}
+	for _, flt := range e.Filters {
+		if flt.Kind == localKind && f.Changed(flt.Flag) {
+			lr.via = "--" + flt.Flag
+		}
+	}
+	loadsAll := func() bool { return lr.all || lr.via != "--all" }
 	lr.page, _ = f.GetInt("page")
 	lr.pageSize, _ = f.GetInt("limit")
 	lr.all, _ = f.GetBool("all")
@@ -79,8 +113,8 @@ func (a *App) parseListFlags(c *cobra.Command, e registry.Entry) (*listRequest, 
 		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --page: Seiten beginnen bei 1", lr.page))
 	case f.Changed("page") && lr.all:
 		return nil, listUsage(c, "--page und --all schließen sich aus")
-	case f.Changed("max-pages") && !lr.all:
-		return nil, listUsage(c, "--max-pages gilt nur zusammen mit --all")
+	case f.Changed("max-pages") && !loadsAll():
+		return nil, listUsage(c, "--max-pages gilt nur zusammen mit "+loadAllFlags(e))
 	case f.Changed("max-pages") && lr.maxPages < 1:
 		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --max-pages: mindestens 1", lr.maxPages))
 	case f.Changed("sort") && strings.TrimSpace(sort) == "":
@@ -108,9 +142,17 @@ func (a *App) parseListFlags(c *cobra.Command, e registry.Entry) (*listRequest, 
 		if err != nil {
 			return nil, err
 		}
+		if flt.Kind == localKind {
+			lr.local[flt.Param] = v // never sent: the API ignores it
+			continue
+		}
 		lr.query.Set(flt.Param, v)
 	}
-	lr.query.Set("page_size", strconv.Itoa(lr.pageSize))
+	apiSize := lr.pageSize
+	if len(lr.local) > 0 {
+		apiSize = allPageSize // as few pages (credits) as possible
+	}
+	lr.query.Set("page_size", strconv.Itoa(apiSize))
 	return lr, nil
 }
 
@@ -125,7 +167,8 @@ const datetimeHint = "erlaubt: YYYY-MM-DD, today/heute, yesterday/gestern oder R
 // integer ≥ 0; "date" a date (YYYY-MM-DD, today/heute, yesterday/gestern);
 // "datetime_from"/"datetime_to" a date-time in RFC 3339, where a date
 // means the start or the end of that day in the local time zone; "enum"
-// one of the values of the spec parameter, with suggestions.
+// one of the values of the spec parameter, "local_enum" one of the values
+// of the list entry property, both with suggestions.
 func (a *App) filterValue(c *cobra.Command, e registry.Entry, flt registry.Filter) (string, error) {
 	if flt.Kind == "id" {
 		v, _ := c.Flags().GetInt64(flt.Flag)
@@ -147,15 +190,22 @@ func (a *App) filterValue(c *cobra.Command, e registry.Entry, flt registry.Filte
 		return v.(string), nil
 	case "datetime_from", "datetime_to":
 		return a.datetimeValue(cc, field, flt.Kind == "datetime_to", raw)
-	case "enum":
-		p := spec.QueryParams(e.OperationID)[flt.Param]
-		if p == nil || p.Schema == nil || p.Schema.Value == nil || len(p.Schema.Value.Enum) == 0 {
+	case "enum", localKind:
+		var s *openapi3.Schema
+		if flt.Kind == localKind {
+			s = spec.ListEntryProperty(e.OperationID, flt.Param)
+		} else if p := spec.QueryParams(e.OperationID)[flt.Param]; p != nil && p.Schema != nil {
+			s = p.Schema.Value
+		}
+		if s == nil || len(s.Enum) == 0 {
 			return "", clierr.New(clierr.CodeError, fmt.Sprintf("--%s: Parameter %s von %s hat in der Spec keine Werteliste", flt.Flag, flt.Param, e.OperationID), "")
 		}
-		for _, v := range p.Schema.Value.Enum {
-			field.Enum = append(field.Enum, fmt.Sprint(v))
+		for _, v := range s.Enum {
+			if v != nil { // nullable enums list null
+				field.Enum = append(field.Enum, fmt.Sprint(v))
+			}
 		}
-		field.Schema = p.Schema.Value
+		field.Schema = s
 		v, err := spec.CoerceFlag(cc, field, raw)
 		if err != nil {
 			return "", err
@@ -207,6 +257,9 @@ func (a *App) runList(c *cobra.Command, e registry.Entry) error {
 	client, _, err := a.Client(c)
 	if err != nil {
 		return err
+	}
+	if len(lr.local) > 0 {
+		return a.runLocalFilter(c, e, client, params, lr)
 	}
 	if !lr.all {
 		if lr.page > 0 {
@@ -268,8 +321,8 @@ func (a *App) fetchAll(c *cobra.Command, e registry.Entry, client *api.Client, p
 		pages = int64(lr.maxPages)
 	}
 	if pages >= warnPages {
-		output.Warn(a.Err, fmt.Sprintf("--all lädt %d Seiten (%d Credits); mit --max-pages begrenzen", pages, pages*int64(e.Credits)))
-		if err := a.confirmAll(c.Context()); err != nil {
+		output.Warn(a.Err, fmt.Sprintf("%s lädt %d Seiten (%d Credits); mit --max-pages begrenzen", lr.via, pages, pages*int64(e.Credits)))
+		if err := a.confirmAll(c.Context(), lr.via); err != nil {
 			return nil, err
 		}
 	}
@@ -330,8 +383,9 @@ func unexpectedList(err error) error {
 
 // confirmAll asks "Fortfahren? [j/N]" when stdin is a terminal and neither
 // --yes nor --no-input is given; without a terminal --all proceeds (the
-// warning is on stderr). Declining is exit 8, an interrupt exit 10.
-func (a *App) confirmAll(ctx context.Context) error {
+// warning is on stderr). Declining is exit 8, an interrupt exit 10. via is
+// the flag that loads all pages (--all or a local filter).
+func (a *App) confirmAll(ctx context.Context, via string) error {
 	if !a.StdinTTY || a.Flags.Yes || a.Flags.NoInput {
 		return nil
 	}
@@ -343,6 +397,6 @@ func (a *App) confirmAll(ctx context.Context) error {
 	case "j", "ja", "y", "yes":
 		return nil
 	}
-	return clierr.New(clierr.CodeConfirmation, "Abgebrochen: --all nicht fortgesetzt (nur Seite 1 geladen)",
+	return clierr.New(clierr.CodeConfirmation, fmt.Sprintf("Abgebrochen: %s nicht fortgesetzt (nur Seite 1 geladen)", via),
 		"Mit --max-pages begrenzen oder mit --yes ohne Rückfrage laden")
 }

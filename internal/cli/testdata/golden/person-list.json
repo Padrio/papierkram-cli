@@ -1,0 +1,50 @@
+{
+  "entries": [
+    {
+      "comment": null,
+      "created_at": "2026-08-28T13:39:58.000+02:00",
+      "default": null,
+      "department": "Purchasing",
+      "email": "foo@bar.com",
+      "fax": "+1 555-0125",
+      "first_name": "John",
+      "flagged": null,
+      "id": 1059,
+      "last_name": "Doe",
+      "mobile": "+1 555-0124",
+      "phone": "+1 555-0123",
+      "position": "Head of department",
+      "salutation": "Herr",
+      "skype": null,
+      "title": "Prof",
+      "type": "person",
+      "updated_at": "2026-08-28T13:39:58.000+02:00"
+    },
+    {
+      "comment": null,
+      "created_at": "2026-08-28T13:39:58.000+02:00",
+      "default": null,
+      "department": null,
+      "email": "lorenzo@oconnell.test",
+      "fax": null,
+      "first_name": "Lorenzo",
+      "flagged": null,
+      "id": 1060,
+      "last_name": "Lanig",
+      "mobile": null,
+      "phone": "+49 111 11111",
+      "position": null,
+      "salutation": "Herr",
+      "skype": null,
+      "title": null,
+      "type": "person",
+      "updated_at": "2026-08-28T13:39:58.000+02:00"
+    }
+  ],
+  "has_more": false,
+  "page": 1,
+  "page_size": 100,
+  "total_entries": 2,
+  "total_pages": 1,
+  "type": "list"
+}

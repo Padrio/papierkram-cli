@@ -32,7 +32,7 @@ var actionClass = map[string]Class{
 	"deliver":         ClassSend,
 }
 
-var filterKinds = []string{"id", "date", "datetime_from", "datetime_to", "enum"}
+var filterKinds = []string{"id", "date", "datetime_from", "datetime_to", "enum", "local_enum"}
 
 func TestRegistryEntriesMatchSpec(t *testing.T) {
 	entries := Entries()
@@ -89,7 +89,9 @@ func TestRegistryEntriesMatchSpec(t *testing.T) {
 		params := spec.QueryParams(e.OperationID)
 		flags := map[string]bool{}
 		for _, f := range e.Filters {
-			if params[f.Param] == nil {
+			if f.Kind == "local_enum" {
+				checkLocalEnum(t, name, e.OperationID, f, params)
+			} else if params[f.Param] == nil {
 				t.Errorf("%s: filter %s maps to unknown query parameter %q", name, f.Flag, f.Param)
 			}
 			if !slices.Contains(filterKinds, f.Kind) {
@@ -107,6 +109,19 @@ func TestRegistryEntriesMatchSpec(t *testing.T) {
 			t.Errorf("%s: no table columns", name)
 		}
 		checkColumns(t, name, op, e.Columns)
+	}
+}
+
+// checkLocalEnum checks a filter the CLI applies itself: the API has no
+// such query parameter (else it would be an "enum" filter), and the list
+// entries have the property with a value list.
+func checkLocalEnum(t *testing.T, name, opID string, f Filter, params map[string]*openapi3.Parameter) {
+	t.Helper()
+	if params[f.Param] != nil {
+		t.Errorf("%s: filter %s is local, but %q is a query parameter of the API", name, f.Flag, f.Param)
+	}
+	if p := spec.ListEntryProperty(opID, f.Param); p == nil || len(p.Enum) == 0 {
+		t.Errorf("%s: filter %s: list entries have no enum property %q", name, f.Flag, f.Param)
 	}
 }
 
@@ -268,6 +283,47 @@ func TestReadOnlyEntriesRegistered(t *testing.T) {
 	}
 	if _, ok := ByOperationID("Nope"); ok {
 		t.Error("unknown operation found")
+	}
+}
+
+func TestCompanyPersonEntriesRegistered(t *testing.T) {
+	// Spec 15 no. 5–16.
+	want := []struct {
+		resource, action, opID string
+		class                  Class
+		credits                int
+	}{
+		{"company", "list", "ListCompanies", ClassReadOnly, 1},
+		{"company", "create", "CreateCompany", ClassCreate, 10},
+		{"company", "describe", "GetCompany", ClassReadOnly, 1},
+		{"company", "update", "UpdateCompany", ClassUpdate, 1},
+		{"company", "delete", "DeleteCompany", ClassDestructive, 1},
+		{"company", "archive", "ArchiveCompany", ClassArchive, 1},
+		{"company", "unarchive", "UnarchiveCompany", ClassArchive, 1},
+		{"person", "list", "ListPersons", ClassReadOnly, 1},
+		{"person", "create", "CreatePerson", ClassCreate, 10},
+		{"person", "describe", "GetPerson", ClassReadOnly, 1},
+		{"person", "update", "UpdatePerson", ClassUpdate, 1},
+		{"person", "delete", "DeletePerson", ClassDestructive, 1},
+	}
+	for _, w := range want {
+		e, ok := Lookup(w.resource, w.action)
+		if !ok || e.OperationID != w.opID || e.Class != w.class || e.Credits != w.credits || e.Custom {
+			t.Errorf("Lookup(%q, %q) = %+v, %v; want %s %s %d credits, generic", w.resource, w.action, e, ok, w.opID, w.class, w.credits)
+		}
+	}
+}
+
+// company list --type: the API ignores contact_type (spec 4.6), so the
+// filter is local (spec 9.7).
+func TestCompanyListTypeFilter(t *testing.T) {
+	e, _ := Lookup("company", "list")
+	if len(e.Filters) != 1 {
+		t.Fatalf("filters = %+v, want one", e.Filters)
+	}
+	f := e.Filters[0]
+	if f.Flag != "type" || f.Param != "contact_type" || f.Kind != "local_enum" || !strings.Contains(f.Help, "alle Seiten") {
+		t.Fatalf("filter = %+v, want --type → contact_type (local_enum), help names loading all pages", f)
 	}
 }
 

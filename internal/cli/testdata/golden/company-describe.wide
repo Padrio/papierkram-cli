@@ -1,0 +1,10 @@
+FELD            WERT
+ID              2843
+NAME            ACME Corp.
+TYP             customer
+KUNDENNR.       K-00010
+LIEFERANTENNR.
+E-MAIL          contact@acme.com
+TELEFON         +1 555-0123
+ORT             Musterstadt
+STATUS          active

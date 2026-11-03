@@ -1,0 +1,98 @@
+{
+  "bank_account_holder_name": "Jane Doe",
+  "bank_account_no": "1234",
+  "bank_bic": "GENOXXX",
+  "bank_blz": "7212345",
+  "bank_iban": "DE123456789",
+  "bank_institute": "Gizmo Finances",
+  "bank_sepa_mandate_accepted": null,
+  "bank_sepa_mandate_reference": "SEPAMRK00010AC",
+  "color": null,
+  "contact_type": "customer",
+  "created_at": "2026-08-28T13:39:55.000+02:00",
+  "custom_attributes": {
+    "286": {
+      "id": 286,
+      "name": "Test Attribute",
+      "type": "custom_attribute",
+      "value": "Test Value"
+    }
+  },
+  "customer_no": "K-00010",
+  "delivery_method": "pdf",
+  "email": "contact@acme.com",
+  "fax": "+1 555-0124",
+  "flagged": null,
+  "id": 2843,
+  "inbound_address": "0jzb",
+  "invoices": {
+    "entries": [],
+    "has_more": false,
+    "type": "list",
+    "url": "/api/v1/income/invoices?company_id=2843"
+  },
+  "logo_content_type": null,
+  "logo_file_name": null,
+  "logo_file_size": null,
+  "logo_updated_at": null,
+  "name": "ACME Corp.",
+  "notes": "A note about that company",
+  "people": {
+    "entries": [
+      {
+        "first_name": "John",
+        "id": 1014,
+        "last_name": "Doe",
+        "type": "person"
+      },
+      {
+        "first_name": "Kevin",
+        "id": 1015,
+        "last_name": "Smart",
+        "type": "person"
+      }
+    ],
+    "has_more": false,
+    "type": "list",
+    "url": "/api/v1/contact/companies/2843/persons"
+  },
+  "phone": "+1 555-0123",
+  "physical_city": "Musterstadt",
+  "physical_country": "Deutschland",
+  "physical_street": "Musterstrasse 8",
+  "physical_zip": "12345",
+  "postal_city": "Musterstadt",
+  "postal_country": "Deutschland",
+  "postal_street": "Musterstrasse 8",
+  "postal_zip": "12345",
+  "projects": {
+    "entries": [
+      {
+        "id": 4092,
+        "name": "Kein Projekt",
+        "type": "project"
+      },
+      {
+        "id": 4093,
+        "name": "My first project",
+        "type": "project"
+      }
+    ],
+    "has_more": false,
+    "type": "list",
+    "url": "/api/v1/projects?company_id=2843"
+  },
+  "record_state": "active",
+  "supplier_no": null,
+  "twitter": "therealacme",
+  "type": "company",
+  "updated_at": "2026-08-28T13:39:55.000+02:00",
+  "ust_idnr": "11/234/34567",
+  "vouchers": {
+    "entries": [],
+    "has_more": false,
+    "type": "list",
+    "url": "/api/v1/expense/vouchers?company_id=2843"
+  },
+  "website": "acme.com"
+}

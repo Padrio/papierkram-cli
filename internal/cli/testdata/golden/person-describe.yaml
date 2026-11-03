@@ -1,0 +1,59 @@
+comment: null
+company:
+  bank_account_holder_name: null
+  bank_account_no: "789456123"
+  bank_bic: MARKDEFFXXX
+  bank_blz: "79351010"
+  bank_iban: DE68210501700012345678
+  bank_institute: Sparkasse Bad Kissingen
+  bank_sepa_mandate_accepted: null
+  bank_sepa_mandate_reference: SEPAMRK00010AC
+  color: null
+  contact_type: customer
+  created_at: "2026-08-28T13:39:59.000+02:00"
+  customer_no: K-00010
+  delivery_method: pdf
+  email: null
+  fax: null
+  flagged: null
+  id: 2862
+  inbound_address: xjmd
+  logo_content_type: null
+  logo_file_name: null
+  logo_file_size: null
+  logo_updated_at: null
+  name: ACME Corp.
+  notes: null
+  phone: null
+  physical_city: Wiesbaden
+  physical_country: Deutschland
+  physical_street: Dotzheimer Str. 36
+  physical_zip: "65185"
+  postal_city: Wiesbaden
+  postal_country: Deutschland
+  postal_street: Dotzheimer Str. 36
+  postal_zip: "65185"
+  record_state: active
+  supplier_no: null
+  twitter: null
+  type: company
+  updated_at: "2026-08-28T13:39:59.000+02:00"
+  ust_idnr: DE0999999999
+  website: null
+created_at: "2026-08-28T13:39:59.000+02:00"
+default: null
+department: Purchasing
+email: foo@bar.com
+fax: "+1 555-0125"
+first_name: John
+flagged: null
+id: 1063
+last_name: Doe
+mobile: "+1 555-0124"
+phone: "+1 555-0123"
+position: Head of department
+salutation: Herr
+skype: null
+title: Prof
+type: person
+updated_at: "2026-08-28T13:39:59.000+02:00"

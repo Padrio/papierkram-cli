@@ -211,6 +211,24 @@ func ResponseSchema(opID string) *openapi3.Schema {
 	return nil
 }
 
+// ListEntryProperty returns the schema of the property name of the entries
+// of a list operation (envelope with entries[], allOf resolved). It is nil
+// for unknown operations, operations without a list response and unknown
+// properties.
+func ListEntryProperty(opID, name string) *openapi3.Schema {
+	s := ResponseSchema(opID)
+	if s == nil {
+		return nil
+	}
+	if e := s.Properties["entries"]; e == nil || e.Value == nil {
+		return nil
+	}
+	if found := children(items([]*openapi3.Schema{s}), name); len(found) > 0 {
+		return found[0]
+	}
+	return nil
+}
+
 // QueryParams returns the query parameters of an operation by name, including
 // those declared on the path item (operation level wins).
 func QueryParams(opID string) map[string]*openapi3.Parameter {

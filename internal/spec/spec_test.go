@@ -131,6 +131,34 @@ func TestResponseSchema(t *testing.T) {
 	}
 }
 
+// The entries of GET /contact/companies have contact_type through allOf
+// (CompanyFlat → CompanyOnlyReference); the API ignores it as a filter, so
+// company list --type filters by this property locally (spec 9.7).
+func TestListEntryProperty(t *testing.T) {
+	ct := ListEntryProperty("ListCompanies", "contact_type")
+	if ct == nil {
+		t.Fatal("ListCompanies: contact_type not found in the entries")
+	}
+	var enum []string
+	for _, v := range ct.Enum {
+		if s, ok := v.(string); ok {
+			enum = append(enum, s)
+		}
+	}
+	if !slices.Equal(enum, []string{"customer", "supplier"}) {
+		t.Errorf("contact_type enum = %v", ct.Enum)
+	}
+	if ListEntryProperty("ListCompanies", "nope") != nil {
+		t.Error("unknown property, want nil")
+	}
+	if ListEntryProperty("GetCompany", "contact_type") != nil {
+		t.Error("GetCompany is no list, want nil")
+	}
+	if ListEntryProperty("Nope", "id") != nil {
+		t.Error("unknown op, want nil")
+	}
+}
+
 func TestQueryParams(t *testing.T) {
 	q := QueryParams("ListInvoices")
 	for _, name := range []string{"company_id", "order_direction"} {

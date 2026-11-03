@@ -42,7 +42,8 @@ func specEntry(t *testing.T, opID, resource, action string, class registry.Class
 }
 
 // runEntries runs args against the real root plus commands built by the
-// builder for the given extra entries.
+// builder for the given extra entries; an extra entry replaces a registered
+// command of the same name, so the test runs exactly the entry it built.
 func runEntries(t *testing.T, app *App, ctx context.Context, args []string, entries ...registry.Entry) int {
 	t.Helper()
 	root := NewRootCmd(app)
@@ -51,6 +52,11 @@ func runEntries(t *testing.T, app *App, ctx context.Context, args []string, entr
 		if err != nil || group == root {
 			group = &cobra.Command{Use: e.Resource}
 			root.AddCommand(group)
+		}
+		for _, c := range group.Commands() {
+			if c.Name() == e.Action {
+				group.RemoveCommand(c)
+			}
 		}
 		group.AddCommand(app.newEntryCmd(e))
 	}
@@ -624,8 +630,8 @@ func TestResourceGroupsAndAliases(t *testing.T) {
 	// resources without entries get no command yet
 	app, _ = apiApp(t)
 	root := NewRootCmd(app)
-	if c, _, err := root.Find([]string{"company"}); err == nil && c != root {
-		t.Errorf("company ohne Registry-Einträge hat einen Befehl")
+	if c, _, err := root.Find([]string{"estimate"}); err == nil && c != root {
+		t.Errorf("estimate ohne Registry-Einträge hat einen Befehl")
 	}
 	if c, _, err := root.Find([]string{"info"}); err != nil || c.Name() != "info" || c.HasSubCommands() {
 		t.Errorf("info ist kein eigener Befehl: %v", err)
