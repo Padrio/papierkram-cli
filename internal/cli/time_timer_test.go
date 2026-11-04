@@ -84,7 +84,8 @@ func TestTimerStartStatusStopFlow(t *testing.T) {
 	wantExit(t, app, at(app, morning(t), "time", "status", "-o", "json"), 0)
 	wantRequests(t, srv, 0)
 	out, _ := bufs(app)
-	want := `{"comment":"Abstimmung","context":"","duration":"1:47","duration_minutes":107,"running":true,` +
+	want := `{"account":"` + strings.TrimPrefix(strings.SplitN(srv.URL(), "/api", 2)[0], "http://") + `",` +
+		`"comment":"Abstimmung","context":"","duration":"1:47","duration_minutes":107,"running":true,` +
 		`"started_at":"2026-11-04T09:00:12+01:00","task":545,"user":1}`
 	if got := canonJSON(t, []byte(out)); got != want {
 		t.Errorf("status = %s\nwant     %s", got, want)
@@ -722,4 +723,22 @@ func TestTimerBrokenCacheDirectory(t *testing.T) {
 	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 1)
 	wantStderr(t, app, "Timer nicht gespeichert", "Cache-Verzeichnis")
 	wantRequests(t, srv, 0)
+}
+
+// Review M8: time status names the account (host) of the timer and warns
+// when it is not the effective one, since time stop would refuse.
+func TestTimerStatusShowsAccount(t *testing.T) {
+	app, srv := logApp(t, nine(t))
+	host := func(u string) string { return strings.TrimPrefix(strings.SplitN(u, "/api", 2)[0], "http://") }
+	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 0)
+	wantExit(t, app, at(app, morning(t), "time", "status", "-o", "wide"), 0)
+	if out, errs := bufs(app); !strings.Contains(out, "KONTO") || !strings.Contains(out, host(srv.URL())) || errs != "" {
+		t.Errorf("stdout = %s\nstderr = %s", out, errs)
+	}
+	other := mockapi.New(t)
+	app.Env = envMap(map[string]string{"PAPIERKRAM_BASE_URL": other.URL(), "PAPIERKRAM_TOKEN": "test-token-log"})
+	wantExit(t, app, at(app, morning(t), "time", "status"), 0)
+	wantStderr(t, app, host(srv.URL()), host(other.URL()), "papierkram time discard")
+	wantRequests(t, srv, 0)
+	wantRequests(t, other, 0)
 }

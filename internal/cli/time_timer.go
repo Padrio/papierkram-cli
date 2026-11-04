@@ -63,7 +63,8 @@ func (a *App) newTimeStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Laufenden Timer anzeigen",
 		Long: "Zeigt den Timer des wirksamen Kontexts: Start, bisherige Dauer (h:mm nach Uhrzeit, wie time stop sie bucht, auch an Tagen der Zeitumstellung), " +
-			"Aufgabe, Benutzer und Kommentar. Ohne Timer: „Kein Timer läuft“, mit -o json {\"running\":false} (Exit 0). " +
+			"Aufgabe, Benutzer, Kommentar und das Konto (Host), für das er gestartet wurde (-o wide, JSON account; " +
+			"gilt jetzt ein anderes, warnt der Befehl, denn time stop bucht dann nicht). Ohne Timer: „Kein Timer läuft“, mit -o json {\"running\":false} (Exit 0). " +
 			"Sendet keine Anfrage. " + timerNote,
 		Example:     "  papierkram time status\n  papierkram time status -o json",
 		Annotations: readsOnly(),
@@ -203,6 +204,9 @@ type timerStatusJSON struct {
 	Task            int64  `json:"task"`
 	User            int64  `json:"user"`
 	Comment         string `json:"comment"`
+	// Account is the host of the base URL the timer was started for, ""
+	// for a state of the first format (review M8).
+	Account string `json:"account"`
 }
 
 // timerStoppedJSON is the output of time status without a timer.
@@ -218,7 +222,7 @@ var timerColumns = output.Columns{
 		{Header: "BENUTZER", Path: "user"},
 		{Header: "KOMMENTAR", Path: "comment"},
 	},
-	Wide: []output.Column{{Header: "KONTEXT", Path: "context"}},
+	Wide: []output.Column{{Header: "KONTEXT", Path: "context"}, {Header: "KONTO", Path: "account"}},
 }
 
 // timerStatus is st as output, its duration at the app clock.
@@ -234,7 +238,16 @@ func (a *App) timerStatus(st timer.State) timerStatusJSON {
 		Task:            st.Task,
 		User:            st.User,
 		Comment:         printable(st.Comment),
+		Account:         accountHost(st.BaseURL),
 	}
+}
+
+// accountHost is the printable host of a base URL, "" without one.
+func accountHost(baseURL string) string {
+	if baseURL == "" {
+		return ""
+	}
+	return printable(urlHost(baseURL))
 }
 
 // timerMinutes is the wall-clock difference from start to now (both in
@@ -264,6 +277,11 @@ func (a *App) runTimeStatus(c *cobra.Command) error {
 	_, st, err := a.loadTimer(r)
 	if err != nil {
 		return err
+	}
+	if st != nil && st.BaseURL != r.BaseURL {
+		// time stop would refuse (controller ruling C1): say so now
+		ce := clierr.From(errTimerAccount(st.BaseURL, r.BaseURL))
+		output.Warn(a.Err, ce.Message+". "+ce.Hint)
 	}
 	o := a.outputOptions(c.Context(), a.outputFormat(r))
 	switch {
