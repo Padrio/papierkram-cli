@@ -56,6 +56,8 @@ So gebaut meldet `papierkram version` die Version `dev`, und es gibt keinen Alia
 
 Homebrew, Scoop, deb und rpm installieren zusätzlich die Kurzform `pk` (ab erstem Release). `pk invoice list` ist dasselbe wie `papierkram invoice list`. Hinweis: [pkram](https://github.com/mickeyl/pkram) legt ebenfalls einen Befehl `pk` an. Wer beides installiert, bekommt das Programm, das zuerst im `PATH` steht; `papierkram` ist immer eindeutig.
 
+Die Vervollständigung aus den Paketen (Homebrew, deb, rpm) und aus den Release-Archiven gilt auch für `pk`; das Skript, das `completion` direkt ausgibt, registriert nur `papierkram` (Details in [docs/release.md](docs/release.md#kurzform-pk)).
+
 ## Schnellstart
 
 1. In Papierkram unter **Einstellungen → API** ein API-Token anlegen.
