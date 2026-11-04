@@ -166,23 +166,30 @@ func (a *App) presetFile() (*projectfile.File, error) {
 // Client does, but without the keychain: the token does not decide the
 // context, and the keychain is read once, by Client.
 func (a *App) effectiveContext() (name, source string, err error) {
-	if a.resolved != nil {
-		return a.resolved.Context, a.resolved.ContextSource, nil
-	}
-	cfg, _, err := a.loadConfig()
-	if err != nil {
-		return "", "", err
-	}
-	in, err := a.resolveInput()
-	if err != nil {
-		return "", "", err
-	}
-	in.Store = nil
-	r, err := config.Resolve(cfg, in)
+	r, err := a.resolveWithoutToken()
 	if err != nil {
 		return "", "", err
 	}
 	return r.Context, r.ContextSource, nil
+}
+
+// resolveWithoutToken is the configuration of this invocation: the one
+// resolved by Client, or before that resolved like Client does but
+// without the keychain (local show, effectiveContext).
+func (a *App) resolveWithoutToken() (*config.Resolved, error) {
+	if a.resolved != nil {
+		return a.resolved, nil
+	}
+	cfg, _, err := a.loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	in, err := a.resolveInput()
+	if err != nil {
+		return nil, err
+	}
+	in.Store = nil
+	return config.Resolve(cfg, in)
 }
 
 // contextSourceName names where a context choice comes from.

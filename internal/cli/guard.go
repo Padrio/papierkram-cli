@@ -21,13 +21,13 @@ const annotWritesConfig = "pk:writes-config"
 // writesConfig is the Annotations value for config-writing commands.
 func writesConfig() map[string]string { return map[string]string{annotWritesConfig: "true"} }
 
-// guardConfigWrite blocks every write to config or keychain while the
-// hard read-only mode PAPIERKRAM_READ_ONLY is enabled (spec 8.3, see
+// guardConfigWrite blocks every write to config, keychain or project file
+// while the hard read-only mode PAPIERKRAM_READ_ONLY is enabled (spec 8.3, see
 // config.EnvReadOnly). It must be called before any file access.
 func (a *App) guardConfigWrite() error {
 	if config.EnvReadOnly(a.Env) {
 		return clierr.New(clierr.CodeReadOnly,
-			"Schreibschutz aktiv (PAPIERKRAM_READ_ONLY ist gesetzt): Konfiguration kann nicht geändert werden",
+			"Schreibschutz aktiv (PAPIERKRAM_READ_ONLY ist gesetzt): Konfiguration und Projektdatei können nicht geändert werden",
 			"Die Umgebungsvariable wurde von dem gesetzt, der diesen Prozess gestartet hat, und lässt sich weder per Flag noch per Config oder Projektdatei aufheben.")
 	}
 	return nil

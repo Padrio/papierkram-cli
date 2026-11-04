@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -233,6 +234,41 @@ func TestShellWords(t *testing.T) {
 	for _, bad := range []string{`a "b`, `a | b`, `a ; b`, `a &`, `a >`} {
 		if _, err := shellWords(bad); err == nil {
 			t.Errorf("shellWords(%q): kein Fehler", bad)
+		}
+	}
+}
+
+// The examples of the commands outside the registry (time log, local
+// init|show, context create) parse against their command like the
+// registry examples: TestExamplesAreValidCommands covers registry entries
+// only. auth login is left out: its argument check wants a terminal for
+// the hidden token input, which its example assumes.
+func TestCustomCommandExamplesAreValid(t *testing.T) {
+	app, _ := apiApp(t)
+	registered := map[string]bool{}
+	for _, e := range registry.Entries() {
+		registered[strings.TrimSpace("papierkram "+e.Resource+" "+e.Action)] = true
+	}
+	var checked []string
+	walk(NewRootCmd(app), func(c *cobra.Command) {
+		if c.Example == "" || registered[c.CommandPath()] || c.CommandPath() == "papierkram auth login" {
+			return
+		}
+		name := strings.TrimPrefix(c.CommandPath(), "papierkram ")
+		checked = append(checked, name)
+		lines := strings.Split(c.Example, "\n")
+		if len(lines) < 2 {
+			t.Errorf("%s: %d Beispiele, erwartet mindestens 2", name, len(lines))
+		}
+		for _, line := range lines {
+			if err := exampleProblem(t, name, strings.TrimSpace(line)); err != nil {
+				t.Errorf("%s: Beispiel %q: %v", name, line, err)
+			}
+		}
+	})
+	for _, want := range []string{"time log", "local init", "local show"} {
+		if !slices.Contains(checked, want) {
+			t.Errorf("%s: keine Beispiele geprüft (geprüft: %v)", want, checked)
 		}
 	}
 }
