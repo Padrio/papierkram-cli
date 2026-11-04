@@ -227,6 +227,10 @@ func (a *App) checkAPIFlags(c *cobra.Command, args []string) (*apiCall, error) {
 	case call.paginate && !call.target.isList():
 		return usage("--paginate braucht eine Liste der API-Spec (Seiten mit page/page_size und entries)",
 			"ohne --paginate eine Seite laden oder einen Listenpfad wie /income/invoices angeben")
+	case !call.target.known && call.ambiguous != "" && call.ambiguous == p.match:
+		// the loose form is the input itself: only an ID beyond int64
+		// keeps MatchPath from matching
+		return usage("ID zu groß: IDs reichen höchstens bis 9223372036854775807", "ID prüfen")
 	case !call.target.known && call.ambiguous != "":
 		return usage("Pfad nicht eindeutig: gemeint ist "+call.ambiguous,
 			"den Pfad genau so angeben: Kleinschreibung wie in der API, IDs nur aus Ziffern")

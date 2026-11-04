@@ -767,3 +767,15 @@ func TestAPIBasePrefixOtherCase(t *testing.T) {
 		wantStderrHas(t, app, "/api/v1 nur einmal")
 	}
 }
+
+// Review N2: an ID beyond int64 matches only loosely, and its canonical
+// form is the input itself; the message says what is wrong.
+func TestAPIIDTooLarge(t *testing.T) {
+	app, srv := apiApp(t)
+	wantExit(t, app, runAPI(app, "POST", "/income/invoices/99999999999999999999/deliver", "-F", "send_via=email", "--yes"), 2)
+	wantRequests(t, srv, 0)
+	wantStderrHas(t, app, "ID zu groß", "9223372036854775807")
+	if _, errs := bufs(app); strings.Contains(errs, "nicht eindeutig") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
