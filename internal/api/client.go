@@ -138,7 +138,8 @@ func (c *Client) CallRaw(ctx context.Context, method, path string, query url.Val
 	}
 	req, err := http.NewRequest(method, u.String(), body)
 	if err != nil {
-		return nil, fmt.Errorf("api: Anfrage %s %s kann nicht gebaut werden: %w", method, path, err)
+		// a parse error would repeat u with its userinfo (redact)
+		return nil, fmt.Errorf("api: Anfrage %s %s kann nicht gebaut werden: %w", method, path, redact.Wrap(err))
 	}
 	if body != nil && contentType != "" {
 		req.Header.Set("Content-Type", contentType)
