@@ -202,7 +202,7 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 		return err
 	}
 	if s.from != nil {
-		if err := s.from.check(c); err != nil {
+		if err := s.from.check(c, ws); err != nil {
 			return err
 		}
 	}
@@ -233,6 +233,9 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 	}
 	body, _, err := a.buildBodyFrom(c, e, isUpdate, load)
 	if err != nil {
+		if s.from != nil && s.from.loaded {
+			return s.from.bodyErr(err)
+		}
 		return err
 	}
 	a.flushPresetHints()

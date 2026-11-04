@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"strings"
@@ -110,19 +111,17 @@ func (a *App) addFromEstimate(e registry.Entry, cmd *cobra.Command) {
 // fromEstimate is the estimate an invoice is created from: the read entry
 // (estimate describe) and the ID as given.
 type fromEstimate struct {
-	read registry.Entry
-	raw  string
-	id   int64
+	read   registry.Entry
+	raw    string
+	id     int64
+	loaded bool // the estimate is read and its values are checked
 }
-
-// paymentTermFlag is the flag of the required payment_term.
-const paymentTermFlag = "payment-term"
 
 // check runs the usage checks of --from-estimate (exit 2), before anything
 // is resolved or read: an ID like describe takes it (integer ≥ 0, 0 is
 // valid, R24), no --input (the body comes from the estimate) and
 // --payment-term (estimates have none).
-func (f *fromEstimate) check(c *cobra.Command) error {
+func (f *fromEstimate) check(c *cobra.Command, ws writeSpec) error {
 	id, ok := parseID(f.raw)
 	if !ok {
 		return clierr.New(clierr.CodeUsage, fmt.Sprintf("ungültige ID %q für --from-estimate: ganze Zahl ≥ 0 erwartet", f.raw), "Verwendung: "+useLine(c))
@@ -132,9 +131,14 @@ func (f *fromEstimate) check(c *cobra.Command) error {
 		return clierr.New(clierr.CodeUsage, "--from-estimate und --input nicht zusammen verwenden",
 			"der Body kommt aus dem Angebot; einzelne Felder per Flag überschreiben")
 	}
-	if !c.Flags().Changed(paymentTermFlag) {
-		return clierr.New(clierr.CodeUsage, "Pflichtangabe --payment-term fehlt: Angebote haben keine Zahlungsbedingung",
-			"Zahlungsbedingungen: papierkram payment-term list; Verwendung: "+useLine(c)+" --from-estimate <id> --payment-term <id>")
+	flag := fieldFlag(ws, "payment_term")
+	if flag == "" {
+		// fail closed: without the flag no invoice could be created
+		return errUnavailable(fmt.Errorf("kein Flag für payment_term"))
+	}
+	if !c.Flags().Changed(flag) {
+		return clierr.New(clierr.CodeUsage, fmt.Sprintf("Pflichtangabe --%s fehlt: Angebote haben keine Zahlungsbedingung", flag),
+			fmt.Sprintf("Zahlungsbedingungen: papierkram payment-term list; Verwendung: %s --from-estimate <id> --%s <id>", useLine(c), flag))
 	}
 	return nil
 }
@@ -158,7 +162,8 @@ func (f *fromEstimate) load(c *cobra.Command, client *api.Client, req *openapi3.
 	var est map[string]any
 	dec := json.NewDecoder(bytes.NewReader(resp.Body))
 	dec.UseNumber()
-	if dec.Decode(&est) != nil || est == nil {
+	// nothing may follow the object, as with json.Unmarshal (readBack)
+	if dec.Decode(&est) != nil || est == nil || !atEOF(dec) {
 		return nil, nil, clierr.New(clierr.CodeError, fmt.Sprintf("Angebot %d: Antwort ist kein JSON-Objekt, keine Rechnung angelegt", f.id), "")
 	}
 	body, nulls := estimateBody(est, req)
@@ -175,6 +180,18 @@ func (a *App) estimateBase(c *cobra.Command, client *api.Client, ws writeSpec, f
 		return nil, err
 	}
 	a.pruneHints(spec.PruneResult{DroppedNulls: nulls})
+	// a value of the estimate that cannot be sent (vat_rate "abc") is
+	// reported as the estimate's; positions replaced by --item/--items
+	// are not checked
+	check := base
+	if ws.items != nil && (c.Flags().Changed("items") || c.Flags().Changed(ws.items.Flag)) {
+		check = maps.Clone(base)
+		delete(check, itemsKey(ws))
+	}
+	if _, err := spec.CoerceValue(ws.req, check, ""); err != nil {
+		return nil, f.wrap(err, fmt.Sprintf("aus Angebot %d: ", f.id), "Wert im Angebot korrigieren oder die Positionen per --item/--items ersetzen")
+	}
+	f.loaded = true
 	a.dropForeignRefs(c, ws, base)
 	return base, nil
 }
@@ -227,6 +244,34 @@ func fieldFlag(ws writeSpec, path ...string) string {
 		}
 	}
 	return ""
+}
+
+// bodyErr is an error of the body after the estimate was read (coercion,
+// validation): it names the invoice built from the estimate, and a
+// validation error says how to fill in what the estimate lacks.
+func (f *fromEstimate) bodyErr(err error) error {
+	ce := clierr.From(err)
+	hint := ce.Hint
+	if ce.Code == clierr.CodeValidation {
+		hint = strings.TrimPrefix(hint+"; fehlende oder ungültige Werte per Flag setzen (z. B. --name) bzw. Positionen per --item/--items angeben", "; ")
+	}
+	return f.wrap(err, fmt.Sprintf("Rechnung aus Angebot %d: ", f.id), hint)
+}
+
+// wrap is err with prefix before its message and hint as its hint; code,
+// HTTP status and correlation ID stay.
+func (f *fromEstimate) wrap(err error, prefix, hint string) error {
+	ce := *clierr.From(err)
+	ce.Message = prefix + ce.Message
+	ce.Hint = hint
+	ce.Cause = err
+	return &ce
+}
+
+// atEOF reports whether dec has nothing left but white space.
+func atEOF(dec *json.Decoder) bool {
+	_, err := dec.Token()
+	return err == io.EOF
 }
 
 // readInfo is the read as --dry-run shows it: it has been sent.

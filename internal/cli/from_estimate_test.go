@@ -519,3 +519,41 @@ func TestInvoiceFromEstimateDroppedNullsHint(t *testing.T) {
 		t.Errorf("stderr = %q", errs)
 	}
 }
+
+// Errors found after the read name the estimate they come from.
+func TestInvoiceFromEstimateErrorOrigin(t *testing.T) {
+	// a value of the estimate that cannot be sent
+	app, srv := apiApp(t)
+	estimateJSON(srv, `{"name":"A","line_items":[{"name":"X","quantity":1,"unit":"x","vat_rate":"abc"}]}`)
+	wantExit(t, app, Run(app, fromEstimateCmd()), 5)
+	wantRequests(t, srv, 1)
+	if _, errs := bufs(app); !strings.Contains(errs, "aus Angebot 349: line_items[0].vat_rate") || !strings.Contains(errs, "--item/--items") {
+		t.Errorf("stderr = %q", errs)
+	}
+	// replaced positions are not checked
+	app, srv = apiApp(t)
+	estimateJSON(srv, `{"name":"A","line_items":[{"name":"X","quantity":1,"unit":"x","vat_rate":"abc"}]}`)
+	wantExit(t, app, Run(app, fromEstimateCmd("--item", item1, "-o", "json")), 0)
+	wantRequests(t, srv, 2)
+
+	// the body validation names the invoice built from the estimate
+	app, srv = apiApp(t)
+	estimateJSON(srv, `{"name":null,"line_items":[{"name":"X","quantity":1,"unit":"x","vat_rate":"19%"}]}`)
+	wantExit(t, app, Run(app, fromEstimateCmd()), 5)
+	wantRequests(t, srv, 1)
+	if _, errs := bufs(app); !strings.Contains(errs, "Rechnung aus Angebot 349: ") || !strings.Contains(errs, "--name") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
+
+// Data after the JSON object of the read is an error like any other
+// broken answer: nothing is created.
+func TestInvoiceFromEstimateTrailingData(t *testing.T) {
+	app, srv := apiApp(t)
+	estimateJSON(srv, `{"name":"A","line_items":[{"name":"X","quantity":1,"unit":"x","vat_rate":"19%"}]} {"name":"B"}`)
+	wantExit(t, app, Run(app, fromEstimateCmd()), 1)
+	wantRequests(t, srv, 1)
+	if _, errs := bufs(app); !strings.Contains(errs, "kein JSON-Objekt") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
