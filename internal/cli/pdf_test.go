@@ -160,7 +160,7 @@ func TestPdfChmodFailureKeepsDownload(t *testing.T) {
 		t.Fatal(err)
 	}
 	orig := chmodFile
-	chmodFile = func(string, fs.FileMode) error { return errors.New("Operation nicht erlaubt") }
+	chmodFile = func(*os.File, fs.FileMode) error { return errors.New("Operation nicht erlaubt") }
 	t.Cleanup(func() { chmodFile = orig })
 	app, srv := apiApp(t)
 	onPDF(srv, binaryPDF)
@@ -171,6 +171,41 @@ func TestPdfChmodFailureKeepsDownload(t *testing.T) {
 	wantDirFiles(t, dir, "rechnung.pdf")
 	if _, errs := bufs(app); !strings.Contains(errs, "Warnung: ") || !strings.Contains(errs, "Operation nicht erlaubt") {
 		t.Errorf("stderr = %q", errs)
+	}
+}
+
+// The mode of a replaced file is set through the open handle of the
+// temporary file, after the write and before it is closed, never by name
+// (a name can be swapped for something else in between).
+func TestPdfChmodUsesOpenHandle(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rechnung.pdf")
+	if err := os.WriteFile(path, []byte("alt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	orig := chmodFile
+	chmodFile = func(f *os.File, mode fs.FileMode) error {
+		calls++
+		fi, err := f.Stat() // fails on a closed handle
+		if err != nil {
+			t.Errorf("Handle nicht offen: %v", err)
+			return err
+		}
+		if fi.Size() != int64(len(binaryPDF)) || !strings.HasPrefix(filepath.Base(f.Name()), ".rechnung.pdf.") {
+			t.Errorf("Handle %s mit %d Bytes", f.Name(), fi.Size())
+		}
+		return orig(f, mode)
+	}
+	t.Cleanup(func() { chmodFile = orig })
+	app, srv := apiApp(t)
+	onPDF(srv, binaryPDF)
+	wantExit(t, app, Run(app, []string{"invoice", "pdf", "459", "-O", path}), 0)
+	if calls != 1 {
+		t.Errorf("%d chmod-Aufrufe, erwartet 1", calls)
+	}
+	if got, _ := os.ReadFile(path); string(got) != binaryPDF {
+		t.Errorf("Datei = %q", got)
 	}
 }
 

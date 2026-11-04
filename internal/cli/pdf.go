@@ -355,18 +355,13 @@ func createPDFFile(path string, existing fs.FileInfo) (*pdfFile, error) {
 }
 
 // commit writes data to the temporary file and renames it to the target.
-// When it replaces existing, it sets its exact mode (the umask may have
-// cut bits at creation) best effort: a failed
-// chmod (file systems without Unix modes) never discards the paid
-// download, it only returns a warning.
+// When it replaces existing, writeAll sets its exact mode (the umask may
+// have cut bits at creation); a failed chmod (file systems without Unix
+// modes) never discards the paid download, it only returns a warning.
 func (f *pdfFile) commit(data []byte, existing fs.FileInfo) (warning string, err error) {
-	if err := writeAll(f.tmp, data); err != nil {
+	warning, err = writeAll(f.tmp, data, existing)
+	if err != nil {
 		return "", err
-	}
-	if existing != nil {
-		if err := chmodFile(f.tmp.Name(), existing.Mode().Perm()); err != nil {
-			warning = "Rechte der ersetzten Datei nicht übernommen: " + err.Error()
-		}
 	}
 	if err := os.Rename(f.tmp.Name(), f.path); err != nil {
 		return "", err
@@ -375,23 +370,31 @@ func (f *pdfFile) commit(data []byte, existing fs.FileInfo) (warning string, err
 	return warning, nil
 }
 
-// chmodFile sets the mode of a file by name; tests replace it.
-var chmodFile = os.Chmod
+// chmodFile sets the mode through the open handle of a file; tests replace
+// it.
+var chmodFile = (*os.File).Chmod
 
 // pdfTempCreated runs right after the temporary file was created, before
 // anything is written to it; tests inspect its mode there.
 var pdfTempCreated = func(string) {}
 
-// writeAll writes data to f, syncs and closes it.
-func writeAll(f *os.File, data []byte) error {
-	_, err := f.Write(data)
+// writeAll writes data to f, sets the mode of existing (when not nil)
+// through the open handle, syncs and closes f. The chmod is best effort:
+// its failure is the warning, never an error.
+func writeAll(f *os.File, data []byte, existing fs.FileInfo) (warning string, err error) {
+	_, err = f.Write(data)
+	if err == nil && existing != nil {
+		if cerr := chmodFile(f, existing.Mode().Perm()); cerr != nil {
+			warning = "Rechte der ersetzten Datei nicht übernommen: " + cerr.Error()
+		}
+	}
 	if err == nil {
 		err = f.Sync()
 	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
-	return err
+	return warning, err
 }
 
 // pdfDeviceOpening runs before a device target is opened; tests use it to

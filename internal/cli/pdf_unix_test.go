@@ -140,8 +140,8 @@ func TestPdfForeignTargetGetsNewFileMode(t *testing.T) {
 			created = append(created, fi.Mode().Perm())
 		}
 	}
-	chmodFile = func(name string, mode os.FileMode) error {
-		t.Errorf("chmod %s auf %v", name, mode)
+	chmodFile = func(f *os.File, mode os.FileMode) error {
+		t.Errorf("chmod %s auf %v", f.Name(), mode)
 		return nil
 	}
 	t.Cleanup(func() { pdfTempCreated, chmodFile = origCreated, origChmod })
