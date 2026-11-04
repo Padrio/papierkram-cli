@@ -33,8 +33,9 @@ func TestReferenceUpToDate(t *testing.T) {
 }
 
 // referenceDiff compares the committed reference with a fresh one: files
-// missing in committed, extra files there and files whose bytes differ
-// (with the first differing line).
+// missing in committed, extra files there (stale pages, which gen-docs
+// removes, or foreign files to remove by hand; hidden files are skipped)
+// and files whose bytes differ (with the first differing line).
 func referenceDiff(t *testing.T, committed, fresh string) []string {
 	t.Helper()
 	if _, err := os.Stat(committed); err != nil {
@@ -53,8 +54,13 @@ func referenceDiff(t *testing.T, committed, fresh string) []string {
 		}
 	}
 	for _, name := range have {
-		if !slices.Contains(want, name) {
-			out = append(out, fmt.Sprintf("%s wird nicht mehr erzeugt (entfernen); %s", name, regenerateHint))
+		switch {
+		case slices.Contains(want, name) || strings.HasPrefix(name, "."):
+			// compared above; hidden files (.DS_Store) are never committed
+		case generatedPage[".md"].MatchString(name): // gen-docs removes it
+			out = append(out, fmt.Sprintf("%s wird nicht mehr erzeugt; %s", name, regenerateHint))
+		default: // gen-docs never touches other files
+			out = append(out, name+" gehört nicht zur generierten Referenz; von Hand entfernen")
 		}
 	}
 	return out
@@ -79,13 +85,16 @@ func firstLineDiff(got, want string) string {
 }
 
 // The comparison finds missing, extra and changed files, including a
-// changed line ending, and names the command that regenerates them.
+// changed line ending. Each finding names its fix: make docs for what
+// gen-docs writes or removes (its file names), removal by hand for any
+// other file (review M6). Hidden files (.DS_Store) are not compared.
 func TestReferenceDiffFindsEveryDifference(t *testing.T) {
 	base := t.TempDir()
 	committed, fresh := filepath.Join(base, "committed"), filepath.Join(base, "fresh")
 	for dir, files := range map[string]map[string]string{
-		fresh:     {"a.md": "x\ny\n", "b.md": "b\n", "c.md": "c\n", "d.md": "d\n"},
-		committed: {"a.md": "x\nz\n", "c.md": "c\n", "d.md": "d\r\n", "alt.md": "alt\n"},
+		fresh: {"papierkram.md": "x\ny\n", "papierkram_b.md": "b\n", "papierkram_c.md": "c\n", "papierkram_d.md": "d\n"},
+		committed: {"papierkram.md": "x\nz\n", "papierkram_c.md": "c\n", "papierkram_d.md": "d\r\n",
+			"papierkram_alt.md": "alt\n", "notizen.txt": "n\n", ".DS_Store": "\x00"},
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -98,18 +107,14 @@ func TestReferenceDiffFindsEveryDifference(t *testing.T) {
 	}
 	got := referenceDiff(t, committed, fresh)
 	want := []string{
-		`a.md veraltet (Zeile 2: "z\n", erwartet "y\n")`,
-		"b.md fehlt",
-		`d.md veraltet (Zeile 1: "d\r\n", erwartet "d\n")`,
-		"alt.md wird nicht mehr erzeugt (entfernen)",
+		`papierkram.md veraltet (Zeile 2: "z\n", erwartet "y\n"); ` + regenerateHint,
+		"papierkram_b.md fehlt; " + regenerateHint,
+		`papierkram_d.md veraltet (Zeile 1: "d\r\n", erwartet "d\n"); ` + regenerateHint,
+		"notizen.txt gehört nicht zur generierten Referenz; von Hand entfernen",
+		"papierkram_alt.md wird nicht mehr erzeugt; " + regenerateHint,
 	}
-	if len(got) != len(want) {
-		t.Fatalf("Unterschiede = %q, want %q", got, want)
-	}
-	for i := range want {
-		if !strings.HasPrefix(got[i], want[i]+"; ") || !strings.HasSuffix(got[i], regenerateHint) {
-			t.Errorf("Unterschied %d = %q, want %q + Hinweis", i, got[i], want[i])
-		}
+	if !slices.Equal(got, want) {
+		t.Errorf("Unterschiede\n got: %q\nwant: %q", got, want)
 	}
 	if p := referenceDiff(t, filepath.Join(base, "nichts"), fresh); len(p) != 1 || !strings.Contains(p[0], regenerateHint) {
 		t.Errorf("fehlendes Verzeichnis: %q", p)
