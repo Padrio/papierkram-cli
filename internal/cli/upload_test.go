@@ -404,12 +404,12 @@ func TestR39_VoucherFileUploadPartial(t *testing.T) {
 		{"500", func(srv *mockapi.Server) {
 			srv.On("POST", "/expense/vouchers/290/documents", http.StatusInternalServerError,
 				[]byte(`{"type":"error","message":"kaputt"}`))
-		}, "Ergebnis des Hochladens unbekannt (kaputt): die Datei ist möglicherweise schon angehängt – vor dem Nachholen per papierkram voucher describe 290 prüfen"},
+		}, "Ergebnis des Hochladens unbekannt: kaputt – die Datei ist möglicherweise schon angehängt; vor dem Nachholen per papierkram voucher describe 290 prüfen"},
 		{"keine Antwort nach dem Senden", func(srv *mockapi.Server) {
 			srv.OnFunc("POST", "/expense/vouchers/290/documents", func(_ http.ResponseWriter, r *http.Request) {
 				<-r.Context().Done() // request fully read, no answer until the client gives up
 			})
-		}, "die Datei ist möglicherweise schon angehängt – vor dem Nachholen per papierkram voucher describe 290 prüfen"},
+		}, "die Datei ist möglicherweise schon angehängt; vor dem Nachholen per papierkram voucher describe 290 prüfen"},
 		{"Verbindung nach dem Senden geschlossen", func(srv *mockapi.Server) {
 			srv.OnFunc("POST", "/expense/vouchers/290/documents", func(w http.ResponseWriter, _ *http.Request) {
 				conn, _, err := http.NewResponseController(w).Hijack() // request fully read
@@ -417,7 +417,7 @@ func TestR39_VoucherFileUploadPartial(t *testing.T) {
 					_ = conn.Close()
 				}
 			})
-		}, "(Verbindung vom Server geschlossen)): die Datei ist möglicherweise schon angehängt"},
+		}, "(Verbindung vom Server geschlossen) – die Datei ist möglicherweise schon angehängt"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -450,6 +450,9 @@ func TestR39_VoucherFileUploadPartial(t *testing.T) {
 			}
 			if !strings.Contains(errs, `"code":"partial"`) || !strings.Contains(errs, `"exit_code":11`) || !strings.Contains(errs, retry) {
 				t.Errorf("stderr = %s", errs)
+			}
+			if strings.Contains(out+errs, "))") {
+				t.Errorf("doppelte Klammer im Text:\n%s\n%s", out, errs)
 			}
 			if timedOut := strings.HasPrefix(tc.name, "keine Antwort"); timedOut != strings.Contains(errs, "--timeout 120s") {
 				t.Errorf("Hinweis auf --timeout nur bei Zeitüberschreitung: %s", errs)

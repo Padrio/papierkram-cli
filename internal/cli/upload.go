@@ -458,7 +458,7 @@ func (a *App) uploadPartial(o output.Options, e registry.Entry, up *createUpload
 		retry = &cmd
 		describe := fmt.Sprintf("papierkram %s describe %d", e.Resource, *id)
 		if uploadUncertain(ce) {
-			warning = fmt.Sprintf("%s %d angelegt; Ergebnis des Hochladens unbekannt (%s): die Datei ist möglicherweise schon angehängt – vor dem Nachholen per %s prüfen, dann nur das Hochladen nachholen: %s; %s",
+			warning = fmt.Sprintf("%s %d angelegt; Ergebnis des Hochladens unbekannt: %s – die Datei ist möglicherweise schon angehängt; vor dem Nachholen per %s prüfen, dann nur das Hochladen nachholen: %s; %s",
 				noun, *id, ce.Message, describe, cmd, again)
 			out.Message = fmt.Sprintf("%s %d angelegt, Ergebnis des Hochladens unbekannt: %s", noun, *id, ce.Message)
 			out.Hint = fmt.Sprintf("vor dem Nachholen per %s prüfen, ob die Datei schon angehängt ist; sonst nur das Hochladen nachholen: %s – %s", describe, cmd, again)
