@@ -90,7 +90,7 @@ Die CI führt denselben Snapshot im Job `snapshot` aus (`.github/workflows/ci.ym
 
 Committen und pushen (`papierkram: add pk shim`). Das nächste Release überschreibt das Manifest wieder; der Schritt ist also jedes Mal nötig. Prüfen mit `scoop update papierkram` und `pk version`.
 
-**Vervollständigung:** `papierkram completion <shell>` gibt ein Skript aus, das auch `pk` registriert (eine Quelle: `internal/cli/completion.go`); `scripts/completions.sh` ruft nur diesen Befehl auf. Die Skripte rufen das Programm auf, das sie vervollständigen (`pk __complete …`), daher genügt die Registrierung:
+**Vervollständigung:** `papierkram completion <shell>` gibt ein Skript aus, das auch `pk` registriert (eine Quelle: `internal/cli/completion.go`); `scripts/completions.sh` ruft nur diesen Befehl auf. bash, zsh und PowerShell rufen das Programm auf, das in der Befehlszeile steht (`pk __complete …`); fish vervollständigt `pk` über `complete -w papierkram` und ruft dabei `papierkram __complete …` auf. Beide Namen sind dasselbe Programm, daher genügt die Registrierung:
 
 - bash: `complete -o default -F __start_papierkram pk` (wie bei `papierkram` mit `-o nospace` für eine bash ohne `compopt`).
 - zsh: Kopfzeilen `#compdef papierkram pk` und `compdef _papierkram papierkram pk`. Eine angehängte `compdef`-Zeile würde bei Installation über `fpath` nur innerhalb der Funktion laufen; deshalb ändert der Befehl die ersten beiden Zeilen von cobra.

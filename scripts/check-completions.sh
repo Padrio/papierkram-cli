@@ -6,13 +6,18 @@
 #
 # bash and zsh: the registration (complete -p, $_comps; zsh both from fpath
 # like the packages install it and sourced). fish and PowerShell: a real
-# completion of "pk " against a stub pk in PATH that answers __complete,
-# so the real binary is never run.
+# completion of "pk " against a stub in PATH that answers __complete, so the
+# real binary is never run. The stub exists as pk and as papierkram:
+# PowerShell runs "pk __complete", fish runs the wrapped command through
+# "complete -w" ("papierkram __complete").
 set -eu
 
-dir="${1:-completions}"
-cd "$(dirname "$0")/.."
-dir="$(cd "$dir" && pwd)"
+# a relative dir is relative to the caller, the default to the repository
+if [ $# -gt 0 ]; then
+	dir="$(cd "$1" && pwd)"
+else
+	dir="$(cd "$(dirname "$0")/.." && pwd)/completions"
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT INT TERM
@@ -24,6 +29,7 @@ cat >"$tmp/bin/pk" <<'EOF'
 printf 'invoice\tRechnungen\n:4\n'
 EOF
 chmod +x "$tmp/bin/pk"
+ln -s pk "$tmp/bin/papierkram"
 
 failed=0
 fail() {
@@ -40,8 +46,13 @@ missing() {
 
 if command -v bash >/dev/null 2>&1; then
 	got="$(bash --norc --noprofile -c '. "$1/papierkram.bash" && complete -p papierkram pk' bash "$dir")" || got=""
-	want="complete -o default -F __start_papierkram papierkram
-complete -o default -F __start_papierkram pk"
+	# the script adds -o nospace in a bash without compopt (bash 3.2 of macOS)
+	opts="-o default"
+	if [ "$(bash --norc --noprofile -c 'type -t compopt' || true)" != builtin ]; then
+		opts="-o default -o nospace"
+	fi
+	want="complete $opts -F __start_papierkram papierkram
+complete $opts -F __start_papierkram pk"
 	if [ "$got" = "$want" ]; then echo "ok bash"; else fail bash "$got"; fi
 else
 	missing bash

@@ -457,8 +457,10 @@ func apiArgCompletion(_ *cobra.Command, args []string, toComplete string) ([]str
 const shortForm = "pk"
 
 // withShortForm adds the short form pk to cobra's script for shell: the
-// same registration as papierkram (each script runs the program it
-// completes, "pk __complete", so nothing else is needed). For zsh the two
+// same registration as papierkram, nothing else is needed. bash, zsh and
+// PowerShell run the program named on the command line ("pk __complete");
+// fish completes pk through "complete -w papierkram" and runs
+// "papierkram __complete" (both names are the same binary). For zsh the two
 // header lines name both commands: compinit binds the #compdef names when
 // the file is found in fpath, the compdef line when it is sourced, and an
 // appended compdef line would only run inside the autoloaded function.
