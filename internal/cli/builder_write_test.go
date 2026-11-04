@@ -678,7 +678,7 @@ func TestWriteHelpGerman(t *testing.T) {
 
 	app, _ = apiApp(t)
 	wantExit(t, app, runGerman(t, app, []string{"time", "update", "--help"}, entries...), 0)
-	if out, _ := bufs(app); !slices.Contains(helpLines(out), "--billable-duration Zahl Wert für billable_duration") {
+	if out, _ := bufs(app); !slices.Contains(helpLines(out), "--billable-duration Zahl Abrechenbare Dauer in Sekunden") {
 		t.Errorf("Hilfe:\n%s", out)
 	}
 }

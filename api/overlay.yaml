@@ -688,3 +688,18 @@ actions:
     update:
       pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
       x-cli-pattern-format: 'HH:MM'
+
+  # ---------------------------------------------------------------------------
+  # 15. Unit of billable_duration in time entry bodies
+  # Why: the request schema gives no unit. duration and billable_duration in
+  # the responses are seconds (examples: 10:00–12:00 = 7200), and the tables
+  # show them as h:mm, so without a unit "90" (meant as minutes) would book
+  # 1.5 minutes. The description is the flag help. Assumed from the
+  # responses; the E2E suite still has to confirm seconds for requests.
+  # ---------------------------------------------------------------------------
+  - target: $.paths['/tracker/time_entries'].post.requestBody.content['application/json'].schema.properties.billable_duration
+    update:
+      description: Abrechenbare Dauer in Sekunden
+  - target: $.paths['/tracker/time_entries/{id}'].put.requestBody.content['application/json'].schema.properties.billable_duration
+    update:
+      description: Abrechenbare Dauer in Sekunden

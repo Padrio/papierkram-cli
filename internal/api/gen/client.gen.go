@@ -5488,6 +5488,7 @@ type ListTimeEntriesParamsBillingState string
 
 // CreateTimeEntryJSONBody defines parameters for CreateTimeEntry.
 type CreateTimeEntryJSONBody struct {
+	// BillableDuration Abrechenbare Dauer in Sekunden
 	BillableDuration *int               `json:"billable_duration,omitempty"`
 	Comments         *string            `json:"comments,omitempty"`
 	EndedAtTime      string             `json:"ended_at_time"`
@@ -5504,6 +5505,7 @@ type CreateTimeEntryJSONBody struct {
 
 // UpdateTimeEntryJSONBody defines parameters for UpdateTimeEntry.
 type UpdateTimeEntryJSONBody struct {
+	// BillableDuration Abrechenbare Dauer in Sekunden
 	BillableDuration *int                `json:"billable_duration,omitempty"`
 	Comments         *string             `json:"comments,omitempty"`
 	EndedAtTime      *string             `json:"ended_at_time,omitempty"`

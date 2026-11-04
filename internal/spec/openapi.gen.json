@@ -25282,6 +25282,7 @@
                 "nullable": false,
                 "properties": {
                   "billable_duration": {
+                    "description": "Abrechenbare Dauer in Sekunden",
                     "nullable": true,
                     "type": "integer"
                   },
@@ -25739,6 +25740,7 @@
                 "nullable": false,
                 "properties": {
                   "billable_duration": {
+                    "description": "Abrechenbare Dauer in Sekunden",
                     "nullable": true,
                     "type": "integer"
                   },

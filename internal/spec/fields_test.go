@@ -381,6 +381,11 @@ func TestFieldsPatternFormatHelp(t *testing.T) {
 			if !strings.HasSuffix(f.Help, " (HH:MM)") {
 				t.Errorf("--%s: help %q", f.Flag, f.Help)
 			}
+		case "billable-duration":
+			// the unit of duration in the responses; E2E still has to confirm it
+			if f.Help != "Abrechenbare Dauer in Sekunden" {
+				t.Errorf("--%s: help %q", f.Flag, f.Help)
+			}
 		case "entry-date":
 			if !strings.Contains(f.Help, "YYYY-MM-DD") {
 				t.Errorf("--%s: help %q", f.Flag, f.Help)

@@ -705,3 +705,15 @@ func TestTimeEntryTimesHHMM(t *testing.T) {
 		}
 	}
 }
+
+// billable_duration in a time entry body is in seconds like duration in
+// the responses (examples: 10:00–12:00 = 7200); the description says so
+// in the flag help. E2E still has to confirm the unit for requests.
+func TestTimeEntryBillableDurationInSeconds(t *testing.T) {
+	doc := loadDoc(t, generatedPath)
+	for _, id := range []string{"CreateTimeEntry", "UpdateTimeEntry"} {
+		if d := property(t, requestSchema(t, doc, id), "billable_duration").Description; d != "Abrechenbare Dauer in Sekunden" {
+			t.Errorf("%s: billable_duration description %q", id, d)
+		}
+	}
+}
