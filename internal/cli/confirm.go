@@ -30,11 +30,12 @@ type Summary struct {
 
 // actionVerbs are the German infinitives of the confirmed actions.
 var actionVerbs = map[string]string{
-	"delete":  "löschen",
-	"cancel":  "stornieren",
-	"reverse": "mit Gegenbuchung stornieren",
-	"pay":     "als bezahlt buchen",
-	"deliver": "versenden",
+	"delete":          "löschen",
+	"document delete": "löschen",
+	"cancel":          "stornieren",
+	"reverse":         "mit Gegenbuchung stornieren",
+	"pay":             "als bezahlt buchen",
+	"deliver":         "versenden",
 }
 
 func actionVerb(action string) string {
@@ -97,7 +98,7 @@ func (a *App) confirm(ctx context.Context, e registry.Entry, s Summary) error {
 		_, _ = fmt.Fprintf(a.Err, "Betreff:   %s\n", s.Subject)
 	}
 	id := strconv.FormatInt(s.ID, 10)
-	if e.Action == "delete" {
+	if isDelete(e.Action) {
 		line, err := a.prompt(ctx, head+" löschen? Zur Bestätigung ID eingeben: ")
 		if err != nil {
 			return err
@@ -119,16 +120,28 @@ func (a *App) confirm(ctx context.Context, e registry.Entry, s Summary) error {
 	return clierr.New(clierr.CodeConfirmation, "Abgebrochen durch Nutzer", "Nichts gesendet. Ohne Rückfrage mit --yes")
 }
 
+// isDelete reports a delete action: delete, or the delete of a sub-object
+// (document delete). They want the ID typed in (spec 8.2).
+func isDelete(action string) bool {
+	return action == "delete" || strings.HasSuffix(action, " delete")
+}
+
 // printable replaces control characters (line breaks, \r, tabs, the ESC
 // of ANSI sequences) and invisible format characters (bidi overrides,
 // zero-width spaces, which could disguise a recipient) with a space.
 func printable(s string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+		if invisible(r) {
 			return ' '
 		}
 		return r
 	}, s)
+}
+
+// invisible reports a control character or an invisible format character
+// (Unicode Cf).
+func invisible(r rune) bool {
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r)
 }
 
 // lastID is the ID of the object a command acts on: the last path

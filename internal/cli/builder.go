@@ -70,15 +70,29 @@ func buildResourceCommands(app *App, root *cobra.Command, resources []registry.R
 // mutationClient, then the body, then beforeMutation, and its command
 // carries the pk:class annotation.
 var customCmds = map[string]func(*App, registry.Entry) *cobra.Command{
-	"deliver": (*App).newDeliverCmd,
-	"pdf":     (*App).newPDFCmd,
+	"deliver":         (*App).newDeliverCmd,
+	"pdf":             (*App).newPDFCmd,
+	"upload":          (*App).newUploadCmd,
+	"document delete": (*App).newDocumentCmd,
 }
 
-// entryCmd builds the command of e: the generic one, the one of its Custom
-// handler, or nil for a Custom entry whose handler does not exist yet.
+// entryExtras add a step of their own to a generic command, by operation
+// (voucher create --file, spec 9.3). Without their flags the command runs
+// exactly as the builder made it.
+var entryExtras = map[string]func(*App, registry.Entry, *cobra.Command){
+	"CreateVoucher": (*App).addCreateFile,
+}
+
+// entryCmd builds the command of e: the generic one (with its extras), the
+// one of its Custom handler, or nil for a Custom entry whose handler does
+// not exist yet.
 func (a *App) entryCmd(e registry.Entry) *cobra.Command {
 	if generic(e) {
-		return a.newEntryCmd(e)
+		cmd := a.newEntryCmd(e)
+		if extend := entryExtras[e.OperationID]; extend != nil {
+			extend(a, e, cmd)
+		}
+		return cmd
 	}
 	if build := customCmds[e.Action]; e.Custom && build != nil {
 		return build(a, e)
@@ -333,6 +347,20 @@ func afterRequest(err error) error {
 // body is the request body, nil for actions without one. proceed reports
 // whether the caller sends the request.
 func (a *App) beforeMutation(c *cobra.Command, e registry.Entry, client *api.Client, params []int64, body map[string]any) (proceed bool, err error) {
+	return a.beforeSend(c, e, client, params, body, sendExtras{})
+}
+
+// sendExtras are what a handler adds to beforeMutation: the file of an
+// upload, shown by --dry-run (spec 8.4), and a summary of its own for the
+// confirmation, used instead of the one loaded by fetchSummary (an object
+// without a GET of its own, such as a document of a voucher).
+type sendExtras struct {
+	upload  *UploadInfo
+	summary *Summary
+}
+
+// beforeSend is beforeMutation with the extras of a handler.
+func (a *App) beforeSend(c *cobra.Command, e registry.Entry, client *api.Client, params []int64, body map[string]any, x sendExtras) (proceed bool, err error) {
 	if err := a.guardMutation(e, a.resolved); err != nil {
 		return false, err
 	}
@@ -345,21 +373,26 @@ func (a *App) beforeMutation(c *cobra.Command, e registry.Entry, client *api.Cli
 		if body != nil {
 			b = body
 		}
-		return false, a.dryRun(c.Context(), e, method, url, b, nil)
+		return false, a.dryRun(c.Context(), e, method, url, b, x.upload)
 	}
 	if !confirmed(e) {
 		return true, nil
 	}
-	ask, err := a.mustAsk(e, Summary{Resource: resourceNoun(e.Resource), ID: lastID(params)})
+	s := Summary{Resource: resourceNoun(e.Resource), ID: lastID(params)}
+	if x.summary != nil {
+		s = *x.summary
+	}
+	ask, err := a.mustAsk(e, s)
 	if err != nil {
 		return false, err
 	}
 	if !ask {
 		return true, nil
 	}
-	s, err := a.fetchSummary(c.Context(), client, e, params)
-	if err != nil {
-		return false, err
+	if x.summary == nil {
+		if s, err = a.fetchSummary(c.Context(), client, e, params); err != nil {
+			return false, err
+		}
 	}
 	if e.Class == registry.ClassSend {
 		s.Via, s.Recipient, s.Subject = sendSummary(body)

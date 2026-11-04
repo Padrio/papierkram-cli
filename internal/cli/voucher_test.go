@@ -9,8 +9,9 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/testutil/golden"
 )
 
-// voucher commands (spec 7.1, 15 no. 19–27). pay, pdf, upload and document
-// delete are registered as Custom (Tasks 32, 33, 35) and not built yet.
+// voucher commands (spec 7.1, 15 no. 19–27). pdf, upload and document
+// delete have their own handlers (pdf.go, upload.go); pay is registered as
+// Custom and not built yet (Task 35).
 
 // TestVoucherCommandsGolden renders list and describe of voucher from the
 // spec examples of the mock in every output format.
@@ -308,34 +309,27 @@ func TestVoucherCancelAndReverseNeedConfirmation(t *testing.T) {
 	}
 }
 
-// pay, upload and document delete are Custom entries: registered, but no
-// command until their handlers exist (Tasks 33, 35); pdf has its handler.
+// pay is the only voucher action without a command until its handler
+// exists (Task 35); upload and document delete are built.
 func TestVoucherCustomActionsNotBuilt(t *testing.T) {
-	for _, args := range [][]string{
-		{"voucher", "pay", "7", "--yes"},
-		{"voucher", "upload", "7", "beleg.pdf"},
-		{"voucher", "document", "delete", "7", "3", "--yes"},
-	} {
-		app, srv := apiApp(t)
-		wantExit(t, app, Run(app, args), 2)
-		wantRequests(t, srv, 0)
-	}
-	app, _ := apiApp(t)
+	app, srv := apiApp(t)
+	wantExit(t, app, Run(app, []string{"voucher", "pay", "7", "--yes"}), 2)
+	wantRequests(t, srv, 0)
+
+	app, _ = apiApp(t)
 	wantExit(t, app, Run(app, []string{"voucher"}), 0)
 	help := mustOut(app)
 	var actions []string
-	for _, a := range []string{"list", "describe", "create", "update", "delete", "archive", "unarchive", "cancel", "reverse", "pdf"} {
+	for _, a := range []string{"list", "describe", "create", "update", "delete", "archive", "unarchive", "cancel", "reverse", "pdf", "upload", "document"} {
 		if strings.Contains(help, "  "+a+" ") {
 			actions = append(actions, a)
 		}
 	}
-	if len(actions) != 10 {
+	if len(actions) != 12 {
 		t.Errorf("Gruppenhilfe %v:\n%s", actions, help)
 	}
-	for _, a := range []string{"pay", "upload", "document"} {
-		if strings.Contains(help, "  "+a+" ") {
-			t.Errorf("Gruppenhilfe nennt %s:\n%s", a, help)
-		}
+	if strings.Contains(help, "  pay ") {
+		t.Errorf("Gruppenhilfe nennt pay:\n%s", help)
 	}
 }
 

@@ -164,6 +164,16 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 // response prints {"id":N,"ok":true} on update and {"ok":true} with a
 // warning on create.
 func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error {
+	return a.runWriteThen(c, e, args, nil)
+}
+
+// runWriteThen is runWrite with an optional upload after create (up, see
+// createUpload; nil runs runWrite unchanged). The file is checked with the
+// flags (exit 2, before anything is resolved or sent); --dry-run shows the
+// create with the file and the credits of both, the confirmation is that of
+// both classes, asked once before the create (createUpload.run). After the
+// create the file goes to the new object (uploadCreated).
+func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, up *createUpload) error {
 	params, err := pathValues(c, e, args)
 	if err != nil {
 		return err
@@ -176,6 +186,16 @@ func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error 
 	if err := checkWriteFlags(c, ws, isUpdate); err != nil {
 		return err
 	}
+	run, extras := e, sendExtras{}
+	if up != nil {
+		if err := up.open(); err != nil {
+			return err
+		}
+		defer up.close()
+		run, extras.upload = up.run(e), up.file.info()
+	}
+	// the read-only gate depends on the class only, and create and upload
+	// are both mutations: the gate of e is that of the whole run
 	client, r, err := a.mutationClient(e)
 	if err != nil {
 		return err
@@ -185,12 +205,15 @@ func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error 
 		return err
 	}
 	a.flushPresetHints()
-	if proceed, err := a.beforeMutation(c, e, client, params, body); !proceed || err != nil {
+	if proceed, err := a.beforeSend(c, run, client, params, body, extras); !proceed || err != nil {
 		return err
 	}
 	resp, err := client.Call(c.Context(), e.OperationID, params, nil, body)
 	if err != nil {
 		return err
+	}
+	if up != nil {
+		return a.uploadCreated(c, e, client, r, resp, up)
 	}
 	if len(bytes.TrimSpace(resp.Body)) > 0 {
 		return a.render(c, resp.Body, e.Columns)
