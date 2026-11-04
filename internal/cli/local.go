@@ -163,6 +163,8 @@ func (a *App) runLocalInit(c *cobra.Command, in localInit) error {
 	}
 	if ch.Context != nil {
 		a.warnUnknownContext(*ch.Context)
+	} else if f != nil && f.Context != "" {
+		a.warnOtherContext(f.Context)
 	}
 	res, err := a.saveProjectFile(path, ch)
 	if err != nil {
@@ -222,6 +224,22 @@ func (a *App) warnUnknownContext(name string) {
 		return
 	}
 	output.Warn(a.Err, fmt.Sprintf("Kontext %q ist in der Konfiguration nicht angelegt; anlegen: papierkram context create %s --subdomain <subdomain>", name, name))
+}
+
+// warnOtherContext warns when the file being written belongs to another
+// than the effective context (PAPIERKRAM_CONTEXT, or none in direct
+// mode): its values only apply under its own context (review M3). Best
+// effort: a configuration that cannot be resolved gives no warning.
+func (a *App) warnOtherContext(fileCtx string) {
+	ctx, source, err := a.effectiveContext()
+	if err != nil || ctx == fileCtx {
+		return
+	}
+	active := "kein Kontext ist aktiv"
+	if ctx != "" {
+		active = fmt.Sprintf("aktiv ist Kontext %q (%s)", ctx, contextSourceName(source))
+	}
+	output.Warn(a.Err, fmt.Sprintf("Die Projektdatei gilt für Kontext %q, %s: die geschriebenen Werte gelten nur unter Kontext %q", fileCtx, active, fileCtx))
 }
 
 // askLocalInit asks for each value on stderr (terminal); Enter keeps the

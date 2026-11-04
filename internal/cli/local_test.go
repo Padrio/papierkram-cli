@@ -468,3 +468,35 @@ func TestLocalShowContextOutput(t *testing.T) {
 		t.Errorf("-o table: %q", out)
 	}
 }
+
+// Review M3: local init warns when it writes into a file of another than
+// the effective context (PAPIERKRAM_CONTEXT): its values only apply there.
+func TestLocalInitWarnsFileOfOtherContext(t *testing.T) {
+	app, _ := contextApp(t, map[string]string{"PAPIERKRAM_CONTEXT": "a"})
+	path := writeProjectFile(t, app, "context = \"b\"\nproject = 4\n")
+	wantExit(t, app, Run(app, []string{"local", "init", "--project", "5"}), 0)
+	if f := loadFile(t, path); f.Project != 5 || f.Context != "b" {
+		t.Errorf("file = %+v", f)
+	}
+	_, errs := bufs(app)
+	for _, w := range []string{"Warnung:", `Kontext "b"`, `Kontext "a"`, "PAPIERKRAM_CONTEXT"} {
+		if !strings.Contains(errs, w) {
+			t.Errorf("stderr ohne %q: %s", w, errs)
+		}
+	}
+	// no warning without the mismatch or when --context sets the context
+	for _, tc := range []struct {
+		env  map[string]string
+		args []string
+	}{
+		{nil, []string{"--project", "6"}},
+		{map[string]string{"PAPIERKRAM_CONTEXT": "a"}, []string{"--project", "6", "--context", "a"}},
+	} {
+		app, _ := contextApp(t, tc.env)
+		writeProjectFile(t, app, "context = \"b\"\nproject = 4\n")
+		wantExit(t, app, Run(app, append([]string{"local", "init"}, tc.args...)), 0)
+		if _, errs := bufs(app); strings.Contains(errs, "Warnung") {
+			t.Errorf("%v: unexpected warning: %s", tc.args, errs)
+		}
+	}
+}
