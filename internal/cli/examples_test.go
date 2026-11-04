@@ -238,11 +238,12 @@ func TestShellWords(t *testing.T) {
 	}
 }
 
-// The examples of the commands outside the registry (time log, local
-// init|show, context create) parse against their command like the
-// registry examples: TestExamplesAreValidCommands covers registry entries
-// only. auth login is left out: its argument check wants a terminal for
-// the hidden token input, which its example assumes.
+// The examples of the commands outside the registry (time log, the timer
+// commands time start|status|stop|discard, local init|show, context
+// create) parse against their command like the registry examples:
+// TestExamplesAreValidCommands covers registry entries only. auth login
+// is left out: its argument check wants a terminal for the hidden token
+// input, which its example assumes.
 func TestCustomCommandExamplesAreValid(t *testing.T) {
 	app, _ := apiApp(t)
 	registered := map[string]bool{}
@@ -266,7 +267,7 @@ func TestCustomCommandExamplesAreValid(t *testing.T) {
 			}
 		}
 	})
-	for _, want := range []string{"time log", "local init", "local show"} {
+	for _, want := range []string{"time log", "time start", "time status", "time stop", "time discard", "local init", "local show"} {
 		if !slices.Contains(checked, want) {
 			t.Errorf("%s: keine Beispiele geprüft (geprüft: %v)", want, checked)
 		}

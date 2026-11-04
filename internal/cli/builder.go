@@ -81,10 +81,11 @@ var customCmds = map[string]func(*App, registry.Entry) *cobra.Command{
 }
 
 // groupCmds are custom commands of a resource group without a registry
-// entry of their own (time log, spec 9.6: the operation belongs to time
-// create, whose entry they use for class, credits and guards).
+// entry of their own (time log and the timer, spec 9.6: the operation
+// belongs to time create, whose entry they use for class, credits and
+// guards).
 var groupCmds = map[string][]func(*App) *cobra.Command{
-	"time": {(*App).newTimeLogCmd},
+	"time": {(*App).newTimeLogCmd, (*App).newTimeStartCmd, (*App).newTimeStatusCmd, (*App).newTimeStopCmd, (*App).newTimeDiscardCmd},
 }
 
 // entryExtras add a step of their own to a generic command, by operation

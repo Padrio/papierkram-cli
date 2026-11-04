@@ -82,8 +82,8 @@ func escape(s string) string {
 	return b.String()
 }
 
-// discardHint is the way out of a state that cannot be used.
-const discardHint = "Timer-Datei verwerfen: papierkram time discard (die bisher erfasste Zeit des Timers geht dabei verloren)"
+// DiscardHint is the way out of a state that cannot be used.
+const DiscardHint = "Timer-Datei verwerfen: papierkram time discard (die bisher erfasste Zeit des Timers geht dabei verloren)"
 
 // Load reads the state at path; nil without a file. A file that is no
 // regular file (also a symbolic link), larger than MaxSize, no valid
@@ -123,7 +123,7 @@ func Load(path string) (*State, error) {
 // printable (the cache directory may come from PAPIERKRAM_CACHE_DIR).
 func invalid(path, why string, cause error) error {
 	e := clierr.New(clierr.CodeError,
-		fmt.Sprintf("Timer-Datei %s ist ungültig: %s", output.Printable(path), why), discardHint)
+		fmt.Sprintf("Timer-Datei %s ist ungültig: %s", output.Printable(path), why), DiscardHint)
 	e.Cause = cause
 	return e
 }
