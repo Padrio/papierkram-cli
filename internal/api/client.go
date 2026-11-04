@@ -247,6 +247,13 @@ func (c *Client) Preview(opID string, pathParams []int64, query url.Values) (met
 	return req.Method, req.URL.String(), nil
 }
 
+// TemplateURL is the URL of path, a path template of the spec, against the
+// base URL, with its parameters left as they are ({voucher_id}). It is for
+// display only: a dry run shows a request whose ID is not known yet.
+func (c *Client) TemplateURL(path string) string {
+	return strings.TrimSuffix(c.opts.BaseURL, "/") + "/" + strings.TrimPrefix(path, "/")
+}
+
 // buildOp builds the request of opID with the generated builder against the
 // base URL; callOp and Preview share it, so a dry run shows exactly what
 // would be sent. body must be an untyped nil when there is no body; then no

@@ -566,3 +566,12 @@ func TestMediaType(t *testing.T) {
 		}
 	}
 }
+
+func TestTemplateURL(t *testing.T) {
+	for _, base := range []string{"https://firma.papierkram.de/api/v1", "https://firma.papierkram.de/api/v1/"} {
+		c := New(Options{BaseURL: base})
+		if got := c.TemplateURL("/expense/vouchers/{voucher_id}/documents"); got != "https://firma.papierkram.de/api/v1/expense/vouchers/{voucher_id}/documents" {
+			t.Errorf("%s: TemplateURL = %q", base, got)
+		}
+	}
+}
