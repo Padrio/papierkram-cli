@@ -416,3 +416,30 @@ func TestDeliverHelp(t *testing.T) {
 		}
 	}
 }
+
+// An error answer to the deliver POST ends the command without readback;
+// the POST is never repeated. 422 (e.g. a broken placeholder, spec 4.5)
+// means not sent; after a 5xx the mail may have gone out, so the hint asks
+// to check with describe and never invites a plain retry.
+func TestDeliverPostError(t *testing.T) {
+	for _, tc := range []struct {
+		status, exit int
+		hint         string
+	}{
+		{http.StatusUnprocessableEntity, 5, "Eingaben prüfen"},
+		{http.StatusInternalServerError, 1, "vor Wiederholung per describe prüfen: papierkram invoice describe 459"},
+		{http.StatusBadGateway, 1, "vor Wiederholung per describe prüfen: papierkram invoice describe 459"},
+	} {
+		app, srv := apiApp(t)
+		srv.On("POST", "/income/invoices/459/deliver", tc.status, []byte(`{"type":"error","message":"Du hast einen Fehler in einem der verwendeten Platzhalter."}`))
+		wantExit(t, app, Run(app, []string{"invoice", "deliver", "459", "--via", "email", "--to", "k@example.org",
+			"--subject", "{{rechnung.nummer}}", "--body", "B", "--yes"}), tc.exit)
+		if r := wantRequests(t, srv, 1)[0]; r.Method != "POST" {
+			t.Errorf("%d: request = %s %s", tc.status, r.Method, r.Path)
+		}
+		out, errs := bufs(app)
+		if out != "" || !strings.Contains(errs, "\nHinweis: ") || !strings.Contains(errs, tc.hint) || strings.Contains(errs, "erneut versuchen") {
+			t.Errorf("%d: stdout = %q, stderr = %q", tc.status, out, errs)
+		}
+	}
+}

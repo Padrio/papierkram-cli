@@ -119,7 +119,7 @@ func (a *App) runDeliver(c *cobra.Command, e registry.Entry, args []string) erro
 	}
 	_, sendErr := client.Call(c.Context(), e.OperationID, params, nil, body)
 	if sendErr != nil && clierr.From(sendErr).Code != clierr.CodeOutcomeUnknown {
-		return sendErr
+		return deliverFailed(e, lastID(params), sendErr)
 	}
 	doc, readErr := a.readBack(c, e, client, params)
 	o := a.outputOptions(c.Context(), a.outputFormat(r))
@@ -138,6 +138,20 @@ func (a *App) runDeliver(c *cobra.Command, e registry.Entry, args []string) erro
 		return afterRequest(output.RenderValue(o, deliveredJSON{ID: id, Delivered: true, Warnings: []string{warning}}, output.Columns{}))
 	}
 	return afterRequest(output.Render(o, doc.result(cols, nil), cols))
+}
+
+// deliverFailed is the error of a deliver POST that got an error answer.
+// A 5xx or an unexpected status does not prove that no mail went out, so
+// the hint names the describe command to check before repeating; client
+// errors (422: broken placeholder, 404, …) keep theirs, nothing was sent.
+func deliverFailed(e registry.Entry, id int64, err error) error {
+	ce := clierr.From(err)
+	if ce.Code != clierr.CodeServer && ce.Code != clierr.CodeError {
+		return err
+	}
+	out := *ce
+	out.Hint = fmt.Sprintf("Papierkram-Fehler – der Versand kann trotzdem erfolgt sein: vor Wiederholung per describe prüfen: papierkram %s describe %d", e.Resource, id)
+	return &out
 }
 
 // deliveredJSON is the result when deliver succeeded but the readback
