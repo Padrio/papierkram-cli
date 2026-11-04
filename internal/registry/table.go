@@ -241,7 +241,7 @@ var (
 			{Header: "KOMMENTAR", Path: "comments"},
 		},
 		Wide: []output.Column{
-			{Header: "ABRECHENBAR", Path: "billable_duration", Fmt: output.FmtDurationHM},
+			{Header: "ABRECHENB. DAUER", Path: "billable_duration", Fmt: output.FmtDurationHM},
 			{Header: "NICHT ABRECHENBAR", Path: "unbillable"},
 			{Header: "BENUTZER-ID", Path: "user_id"},
 			{Header: "RECHNUNGS-ID", Path: "invoice_id"},

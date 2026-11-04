@@ -933,4 +933,14 @@ func TestTimeColumns(t *testing.T) {
 			t.Errorf("time %s: table columns %v, want %v", action, got, paths)
 		}
 	}
+	// wide: the billable duration (h:mm) must not read like the boolean
+	// unbillable next to it
+	e, _ := Lookup("time", "list")
+	headers := map[string]string{}
+	for _, c := range e.Columns.Wide {
+		headers[c.Path] = c.Header
+	}
+	if headers["billable_duration"] != "ABRECHENB. DAUER" || headers["unbillable"] != "NICHT ABRECHENBAR" {
+		t.Errorf("time list: wide headers %v", headers)
+	}
 }
