@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/testutil/golden"
 )
 
@@ -362,5 +363,41 @@ func TestTimeListProjectSourcesSendSameQuery(t *testing.T) {
 		if q != want {
 			t.Errorf("source %d: %s, want %s", i, q, want)
 		}
+	}
+}
+
+// Help and check of an enum filter name the same values: every value the
+// flag help offers is accepted (filterEnum is their one source).
+func TestEnumFilterHelpValuesAreAccepted(t *testing.T) {
+	n := 0
+	for _, e := range registry.Entries() {
+		for _, flt := range e.Filters {
+			if flt.Kind != "enum" {
+				continue
+			}
+			app, _ := apiApp(t)
+			cmd, _, err := NewRootCmd(app).Find([]string{e.Resource, e.Action})
+			if err != nil {
+				t.Fatal(err)
+			}
+			usage := cmd.Flags().Lookup(flt.Flag).Usage
+			_, list, ok := strings.Cut(usage, "(erlaubt: ")
+			if !ok {
+				t.Errorf("%s %s --%s: Hilfe ohne Werte: %q", e.Resource, e.Action, flt.Flag, usage)
+				continue
+			}
+			list, _, _ = strings.Cut(list, ")")
+			for _, v := range strings.Split(list, ", ") {
+				n++
+				app, srv := apiApp(t)
+				wantExit(t, app, Run(app, []string{e.Resource, e.Action, "--" + flt.Flag, v, "-o", "json"}), 0)
+				if q := wantRequests(t, srv, 1)[0].Query; q.Get(flt.Param) != v {
+					t.Errorf("%s %s --%s %s: query = %v", e.Resource, e.Action, flt.Flag, v, q)
+				}
+			}
+		}
+	}
+	if n == 0 {
+		t.Error("keine Enum-Filter geprüft")
 	}
 }

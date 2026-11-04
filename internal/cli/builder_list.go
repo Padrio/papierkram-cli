@@ -75,7 +75,7 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 	for _, flt := range e.Filters {
 		help := flt.Help
 		if flt.Kind == "enum" {
-			if values := queryEnum(e, flt); len(values) > 0 {
+			if _, values := filterEnum(e, flt); len(values) > 0 {
 				help += " (erlaubt: " + strings.Join(values, ", ") + ")"
 			}
 		}
@@ -90,20 +90,27 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 	}
 }
 
-// queryEnum returns the values of the query parameter of an "enum" filter
-// from the spec (time list --state: billing_state), without null.
-func queryEnum(e registry.Entry, flt registry.Filter) []string {
-	p := spec.QueryParams(e.OperationID)[flt.Param]
-	if p == nil || p.Schema == nil || p.Schema.Value == nil {
-		return nil
+// filterEnum returns the schema and the values (without null) of an enum
+// filter: the query parameter of "enum" (time list --state:
+// billing_state), the list entry property of "local_enum". The flag help
+// and the check in filterValue both use it, so they name the same values.
+func filterEnum(e registry.Entry, flt registry.Filter) (*openapi3.Schema, []string) {
+	var s *openapi3.Schema
+	if flt.Kind == localKind {
+		s = spec.ListEntryProperty(e.OperationID, flt.Param)
+	} else if p := spec.QueryParams(e.OperationID)[flt.Param]; p != nil && p.Schema != nil {
+		s = p.Schema.Value
 	}
-	var out []string
-	for _, v := range p.Schema.Value.Enum {
-		if v != nil {
-			out = append(out, fmt.Sprint(v))
+	if s == nil {
+		return nil, nil
+	}
+	var values []string
+	for _, v := range s.Enum {
+		if v != nil { // nullable enums list null
+			values = append(values, fmt.Sprint(v))
 		}
 	}
-	return out
+	return s, values
 }
 
 // listRequest is a validated list invocation.
@@ -236,21 +243,11 @@ func (a *App) filterValue(c *cobra.Command, e registry.Entry, flt registry.Filte
 	case "datetime_from", "datetime_to":
 		return a.datetimeValue(cc, field, flt.Kind == "datetime_to", raw)
 	case "enum", localKind:
-		var s *openapi3.Schema
-		if flt.Kind == localKind {
-			s = spec.ListEntryProperty(e.OperationID, flt.Param)
-		} else if p := spec.QueryParams(e.OperationID)[flt.Param]; p != nil && p.Schema != nil {
-			s = p.Schema.Value
-		}
-		if s == nil || len(s.Enum) == 0 {
+		s, values := filterEnum(e, flt)
+		if len(values) == 0 {
 			return "", clierr.New(clierr.CodeError, fmt.Sprintf("--%s: Parameter %s von %s hat in der Spec keine Werteliste", flt.Flag, flt.Param, e.OperationID), "")
 		}
-		for _, v := range s.Enum {
-			if v != nil { // nullable enums list null
-				field.Enum = append(field.Enum, fmt.Sprint(v))
-			}
-		}
-		field.Schema = s
+		field.Enum, field.Schema = values, s
 		v, err := spec.CoerceFlag(cc, field, raw)
 		if err != nil {
 			return "", err
