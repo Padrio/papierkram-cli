@@ -229,3 +229,27 @@ func TestMatchPathCandidatesSorted(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchPathLoose(t *testing.T) {
+	tests := []struct {
+		method, path  string
+		id, canonical string
+		ok            bool
+	}{
+		{"POST", "/income/invoices/12-x/deliver", "DeliverInvoice", "/income/invoices/12/deliver", true},
+		{"POST", "/income/invoices/12/Deliver", "DeliverInvoice", "/income/invoices/12/deliver", true},
+		{"post", "/Income/INVOICES/7x/deliver", "DeliverInvoice", "/income/invoices/7/deliver", true},
+		{"GET", "/income/invoices/abc", "GetInvoice", "/income/invoices/{id}", true},
+		{"GET", "/Income/Invoices", "ListInvoices", "/income/invoices", true},
+		{"DELETE", "/contact/companies/1a/persons/2b", "DeletePerson", "/contact/companies/1/persons/2", true},
+		{"GET", "/x/y", "", "", false},
+		{"PATCH", "/income/invoices/12", "", "", false},
+		{"POST", "/income/invoices/12/deliver/x", "", "", false},
+	}
+	for _, tt := range tests {
+		op, canonical, ok := MatchPathLoose(tt.method, tt.path)
+		if ok != tt.ok || op.ID != tt.id || canonical != tt.canonical {
+			t.Errorf("MatchPathLoose(%s %s) = %s %q %v, want %s %q %v", tt.method, tt.path, op.ID, canonical, ok, tt.id, tt.canonical, tt.ok)
+		}
+	}
+}

@@ -141,6 +141,61 @@ func MatchPath(method, concretePath string) (Operation, []int64, bool) {
 	return best, bestIDs, found
 }
 
+// MatchPathLoose finds the operation a concrete path probably means when
+// MatchPath finds none: literal segments compared without case, and any
+// non-empty segment where the template has a parameter. canonical is the
+// template path with its literals and, for each parameter, the leading
+// digits of the given segment (12-x → 12) or the parameter itself ({id})
+// when there are none. Prefix, query and trailing slash are handled like in
+// MatchPath; the template with most literals wins, ties go to the
+// lexically smallest. papierkram api rejects such a path (exit 2), so a
+// form the server may route to that operation never escapes its rules.
+func MatchPathLoose(method, concretePath string) (op Operation, canonical string, ok bool) {
+	load()
+	p, _, _ := strings.Cut(concretePath, "?")
+	if rest, found := strings.CutPrefix(p, apiPrefix); found && (rest == "" || rest[0] == '/') {
+		p = rest
+	}
+	p = strings.Trim(p, "/")
+	if p == "" {
+		return Operation{}, "", false
+	}
+	segs := strings.Split(p, "/")
+	bestLiterals := -1
+	for _, t := range byShape[strings.ToUpper(method)+" "+strconv.Itoa(len(segs))] {
+		c, matched := t.looseMatch(segs)
+		if matched && t.literals > bestLiterals {
+			op, canonical, ok, bestLiterals = t.op, c, true, t.literals
+		}
+	}
+	return op, canonical, ok
+}
+
+// looseMatch is match for MatchPathLoose; it returns the canonical path.
+func (t template) looseMatch(segs []string) (string, bool) {
+	out := make([]string, len(segs))
+	for i, ts := range t.segments {
+		switch {
+		case !isParam(ts) && !strings.EqualFold(ts, segs[i]):
+			return "", false
+		case !isParam(ts):
+			out[i] = ts
+		case segs[i] == "":
+			return "", false
+		default:
+			digits := segs[i]
+			if n := strings.IndexFunc(digits, func(r rune) bool { return r < '0' || r > '9' }); n >= 0 {
+				digits = digits[:n]
+			}
+			if digits == "" {
+				digits = ts
+			}
+			out[i] = digits
+		}
+	}
+	return "/" + strings.Join(out, "/"), true
+}
+
 func (t template) match(segs []string) ([]int64, bool) {
 	var ids []int64
 	for i, ts := range t.segments {
