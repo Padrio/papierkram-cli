@@ -9,6 +9,7 @@ import (
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
+	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/projectfile"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/spec"
@@ -117,14 +118,39 @@ func fileValue(f *projectfile.File, key string) int64 {
 }
 
 // preset resolves key for this invocation without a flag: environment,
-// project file and, for user, the context default once
+// project file (see presetFile) and, for user, the context default once
 // the configuration is resolved.
 func (a *App) preset(key string) (preset, error) {
-	src := presetSources{Env: a.Env, File: a.projectFile}
+	src := presetSources{Env: a.Env, File: a.presetFile}
 	if key == presetUser && a.resolved != nil {
 		src.Context, src.ContextName = a.resolved.User, a.resolved.Context
 	}
 	return resolvePreset(key, src)
+}
+
+// presetFile is the project file as a source of presets. Its IDs belong
+// to the account of its context: when --context or PAPIERKRAM_CONTEXT
+// choose another context, it presets nothing (controller ruling, never
+// write into a project of the wrong account) and a warning names both
+// contexts, once per invocation. Environment presets are not affected.
+func (a *App) presetFile() (*projectfile.File, error) {
+	f, err := a.projectFile()
+	if err != nil || f == nil || f.Context == "" {
+		return f, err
+	}
+	chosen, how := a.Flags.Context, "--context"
+	if chosen == "" {
+		chosen, how = a.Env("PAPIERKRAM_CONTEXT"), "PAPIERKRAM_CONTEXT"
+	}
+	if chosen == "" || chosen == f.Context {
+		return f, nil
+	}
+	if !a.pfile.warned {
+		a.pfile.warned = true
+		output.Warn(a.Err, fmt.Sprintf("Projektdatei %s gilt für Kontext %q, gewählt ist Kontext %q (%s): "+
+			"ihre Voreinstellungen (company, project, task, user) werden ignoriert", f.Path, f.Context, chosen, how))
+	}
+	return nil, nil
 }
 
 // presetNote names the sources of a preset after flag or ID for help texts.

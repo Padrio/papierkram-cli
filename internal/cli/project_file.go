@@ -8,10 +8,11 @@ import (
 )
 
 // projectFileCache is the project file of one invocation.
+// warned records the warning of presetFile.
 type projectFileCache struct {
-	loaded bool
-	file   *projectfile.File
-	err    error
+	loaded, warned bool
+	file           *projectfile.File
+	err            error
 }
 
 // projectFile returns the project file of this invocation, nil without
