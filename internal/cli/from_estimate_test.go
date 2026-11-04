@@ -105,8 +105,8 @@ func TestInvoiceFromEstimateWithoutCustomer(t *testing.T) {
 }
 
 // --dry-run reads the estimate (that is the only way to show the body) and
-// creates nothing: the credits are those of the create, the read is named
-// on its own.
+// creates nothing: the credits are those of the real call, which reads the
+// estimate again (51, M2); the read already spent is named on its own.
 func TestInvoiceFromEstimateDryRun(t *testing.T) {
 	app, srv := apiApp(t)
 	wantExit(t, app, Run(app, fromEstimateCmd("--dry-run", "-o", "json")), 0)
@@ -129,7 +129,7 @@ func TestInvoiceFromEstimateDryRun(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	if !got.DryRun || got.Method != "POST" || got.URL != srv.URL()+"/income/invoices" || got.Credits != 50 {
+	if !got.DryRun || got.Method != "POST" || got.URL != srv.URL()+"/income/invoices" || got.Credits != 51 {
 		t.Errorf("dry run = %s", out)
 	}
 	if got.Read.Method != "GET" || got.Read.URL != srv.URL()+"/income/estimates/349" || got.Read.Credits != 1 {
@@ -143,7 +143,7 @@ func TestInvoiceFromEstimateDryRun(t *testing.T) {
 	wantRequests(t, srv, 1)
 	text := mustOut(app)
 	head := "Probelauf – nichts angelegt\nGelesen: GET " + srv.URL() + "/income/estimates/349 (1 Credit, bereits verbraucht)\n" +
-		"Methode: POST\nURL:     " + srv.URL() + "/income/invoices\nCredits: 50\nBody:\n"
+		"Methode: POST\nURL:     " + srv.URL() + "/income/invoices\nCredits: 51 (erneutes Lesen und Anlegen)\nBody:\n"
 	if !strings.HasPrefix(text, head) || !strings.Contains(text, `"vat_rate": 0.19`) {
 		t.Errorf("stdout = %s", text)
 	}

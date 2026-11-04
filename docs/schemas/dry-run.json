@@ -74,7 +74,7 @@
       }
     },
     "read": {
-      "description": "Leseanfrage, die für den Body schon gesendet wurde (invoice create --from-estimate); ihre Credits sind verbraucht und nicht in credits enthalten.",
+      "description": "Leseanfrage, die für den Body schon gesendet wurde (invoice create --from-estimate); ihre Credits sind verbraucht. Der echte Aufruf sendet sie erneut, daher sind sie in credits oben ebenfalls enthalten.",
       "type": "object",
       "additionalProperties": false,
       "required": ["method", "url", "credits"],
@@ -97,7 +97,7 @@
       }
     },
     "credits": {
-      "description": "Credits, die der Befehl ohne --dry-run kosten würde (alle Anfragen, z. B. Anlegen und Hochladen oder Versand und Nachlesen).",
+      "description": "Credits, die der Befehl ohne --dry-run kosten würde (alle Anfragen, z. B. Anlegen und Hochladen, Versand und Nachlesen oder Lesen des Angebots und Anlegen).",
       "type": "integer",
       "minimum": 1
     }

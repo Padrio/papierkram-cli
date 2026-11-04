@@ -28,7 +28,8 @@ type UploadInfo struct {
 
 // ReadInfo is a read already sent to build the body of the dry run
 // (invoice create --from-estimate): method, URL and its credits, which
-// are spent; the credits of the dry run are those of the mutation.
+// are spent. The real call sends the read again, so the credits of the
+// dry run include it (all requests of the real call).
 type ReadInfo struct {
 	Method  string `json:"method"`
 	URL     string `json:"url"`
@@ -70,8 +71,11 @@ func (a *App) dryRun(ctx context.Context, e registry.Entry, method, url string, 
 		b.WriteString("Probelauf – nichts gesendet\n")
 	}
 	fmt.Fprintf(&b, "Methode: %s\nURL:     %s\nCredits: %d", method, url, e.Credits)
-	if upload.step() {
+	switch {
+	case upload.step():
 		b.WriteString(" (beide Anfragen)")
+	case x.read != nil:
+		b.WriteString(" (erneutes Lesen und Anlegen)")
 	}
 	b.WriteByte('\n')
 	if upload != nil && !upload.step() {

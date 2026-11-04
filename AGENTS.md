@@ -90,9 +90,9 @@ papierkram voucher create --name "Büromaterial" --provenance domestic --credito
 ```
 
 - Gilt für jede Änderung, auch `papierkram api` mit anderen Methoden als GET. Das CLI prüft Flags, Argumente und den Body gegen das Request-Schema (Fehler: Exit 2 oder 5), sendet nichts und endet mit Exit 0.
-- `credits` sind die Kosten des echten Aufrufs, alle Schritte zusammen (Anlegen und Upload, Versand und Nachlesen).
+- `credits` sind die Kosten des echten Aufrufs, alle Schritte zusammen (Anlegen und Upload, Versand und Nachlesen, Lesen des Angebots und Anlegen).
 - `upload` nennt Dateiname, Größe und MIME-Typ; ist das Hochladen ein zweiter Schritt (`voucher create --file`), steht in `upload.url` eine Vorlage mit Platzhalter für die ID.
-- `read` nennt eine Leseanfrage, die schon gesendet wurde: `invoice create --from-estimate` liest das Angebot auch bei `--dry-run` (1 Credit, verbraucht).
+- `read` nennt eine Leseanfrage, die schon gesendet wurde: `invoice create --from-estimate` liest das Angebot auch bei `--dry-run` (1 Credit, verbraucht). Der echte Aufruf liest es erneut; `credits` enthält das (51).
 - Unter Schreibschutz (`PAPIERKRAM_READ_ONLY` oder `read_only` im Kontext) endet auch `--dry-run` einer Änderung mit Exit 9.
 
 ### Bestätigungen: `--yes` und `--no-input`

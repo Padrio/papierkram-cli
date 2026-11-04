@@ -241,6 +241,10 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 	}
 	var load func() (map[string]any, error)
 	if s.from != nil {
+		// the real call reads the estimate again: like the upload of
+		// create --file and the readback of deliver, its credits belong
+		// to the run (the read of a dry run is shown as spent on its own)
+		run.Credits += s.from.read.Credits
 		load = func() (map[string]any, error) { return a.estimateBase(c, client, ws, s.from) }
 		if extras.read, err = s.from.readInfo(client); err != nil {
 			return err

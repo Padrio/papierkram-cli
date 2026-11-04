@@ -51,10 +51,11 @@ stdout '"name": "X"'
 # up to here: not a single request
 mockreq 0
 
-# --from-estimate reads the estimate (the only request) and names that read
+# --from-estimate reads the estimate (the only request) and names that read;
+# credits are those of the real call, which reads it again (51)
 papierkram invoice create --from-estimate 349 --payment-term 1130 --dry-run -o json
 jsonschema stdout dry-run
-stdout '"credits": 50'
+stdout '"credits": 51'
 papierkram invoice create --from-estimate 349 --payment-term 1130 --dry-run -o json --jq .read
 cmpenv stdout read.json
 mockreq 2
