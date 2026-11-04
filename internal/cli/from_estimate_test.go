@@ -232,21 +232,19 @@ func TestInvoiceFromEstimateIDZero(t *testing.T) {
 	}
 }
 
-// Every other flag overrides its field of the estimate; a reference flag
-// keeps the other references below customer, like with --input.
+// Every other flag overrides its field of the estimate (--customer: see
+// TestInvoiceFromEstimateOtherCustomer).
 func TestInvoiceFromEstimateFlagsOverride(t *testing.T) {
 	app, srv := apiApp(t)
 	wantExit(t, app, Run(app, fromEstimateCmd("--name", "Rechnung Website", "--document-date", "2026-11-04",
-		"--billing-zip", "10115", "--gross", "--customer", "7", "-o", "json")), 0)
+		"--billing-zip", "10115", "--gross", "-o", "json")), 0)
 	var body map[string]any
 	if err := json.Unmarshal(wantRequests(t, srv, 2)[1].Body, &body); err != nil {
 		t.Fatal(err)
 	}
 	billing, _ := body["billing"].(map[string]any)
-	customer, _ := body["customer"].(map[string]any)
 	if body["name"] != "Rechnung Website" || body["document_date"] != "2026-11-04" || body["gross"] != true ||
-		billing["zip"] != "10115" || billing["city"] != "Wiesbaden" ||
-		customer["id"] != 7.0 || customer["contact_person"] == nil || len(body["line_items"].([]any)) != 2 {
+		billing["zip"] != "10115" || billing["city"] != "Wiesbaden" || len(body["line_items"].([]any)) != 2 {
 		t.Errorf("body = %v", body)
 	}
 }
@@ -421,5 +419,62 @@ func TestFromEstimateMappingMatchesSchemas(t *testing.T) {
 		if schemaAt(est, f) == nil {
 			t.Errorf("Angebot hat kein Feld %s", f)
 		}
+	}
+}
+
+// --customer with another customer than the estimate's drops the
+// estimate's contact person and project (they belong to its customer),
+// with a hint; explicit flags still set them. The same customer keeps
+// both.
+func TestInvoiceFromEstimateOtherCustomer(t *testing.T) {
+	customer := func(t *testing.T, raw []byte) string {
+		t.Helper()
+		var body struct {
+			Customer json.RawMessage `json:"customer"`
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatal(err)
+		}
+		return canonJSON(t, body.Customer)
+	}
+	for _, tc := range []struct {
+		name  string
+		extra []string
+		want  string
+		hint  bool
+	}{
+		{"anderer Kunde", []string{"--customer", "7"}, `{"id":7}`, true},
+		{"gleicher Kunde", []string{"--customer", "3052"}, `{"contact_person":{"id":1116},"id":3052,"project":{"id":4316}}`, false},
+		{"anderer Kunde mit Ansprechpartner", []string{"--customer", "7", "--contact-person", "8"}, `{"contact_person":{"id":8},"id":7}`, true},
+		{"anderer Kunde mit beiden", []string{"--customer", "7", "--contact-person", "8", "--customer-project", "9"},
+			`{"contact_person":{"id":8},"id":7,"project":{"id":9}}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, srv := apiApp(t)
+			wantExit(t, app, Run(app, fromEstimateCmd(append(tc.extra, "-o", "json")...)), 0)
+			if got := customer(t, wantRequests(t, srv, 2)[1].Body); got != tc.want {
+				t.Errorf("customer = %s, erwartet %s", got, tc.want)
+			}
+			_, errs := bufs(app)
+			if !tc.hint {
+				if errs != "" {
+					t.Errorf("stderr = %q", errs)
+				}
+				return
+			}
+			if !strings.Contains(errs, "Kunde 7 statt 3052") || !strings.Contains(errs, "--customer-project") {
+				t.Errorf("stderr = %q", errs)
+			}
+			if strings.Contains(tc.name, "Ansprechpartner") && strings.Contains(errs, "contact_person") {
+				t.Errorf("Hinweis nennt das gesetzte contact_person: %q", errs)
+			}
+		})
+	}
+	// the dry run drops them as well
+	app, srv := apiApp(t)
+	wantExit(t, app, Run(app, fromEstimateCmd("--customer", "7", "--dry-run", "-o", "json")), 0)
+	wantRequests(t, srv, 1)
+	if out := mustOut(app); !strings.Contains(canonJSON(t, []byte(out)), `"customer":{"id":7}`) {
+		t.Errorf("stdout = %s", out)
 	}
 }

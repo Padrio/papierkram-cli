@@ -80,7 +80,7 @@ const fromEstimateLong = `
 
 --from-estimate <id> liest das Angebot (1 weiterer Credit) und übernimmt daraus name, description, gross, billing, customer (mit contact_person und project des Angebots) und alle Positionen (name, description, quantity, unit, price, price_gross, discount_percentage, discount_calculated, discount_calculated_gross, proposition, type_of, vat_rate; "19%" wird zu 0.19). --payment-term ist Pflicht, weil Angebote keine Zahlungsbedingung haben.
 
-Alle anderen Flags überschreiben die Werte des Angebots; --item/--items ersetzen alle Positionen. --customer ändert nur die Kunden-ID: contact_person und project des Angebots bleiben, sofern nicht per --contact-person bzw. --customer-project ersetzt. --input ist zusammen mit --from-estimate nicht möglich.
+Alle anderen Flags überschreiben die Werte des Angebots; --item/--items ersetzen alle Positionen. Nennt --customer einen anderen Kunden als das Angebot, werden contact_person und project des Angebots nicht übernommen (Hinweis auf stderr); sie lassen sich per --contact-person bzw. --customer-project setzen. --input ist zusammen mit --from-estimate nicht möglich.
 
 Nicht übernommen werden: document_date (Rechnungsdatum per --document-date), custom_template (Angebotsvorlagen gelten nicht für Rechnungen; --custom-template), document_charges und je Position document_charge, document_charge_gross und position_in_group. supply_date, flagged und start_new_item_group hat das Angebot nicht. Leere Werte (null) des Angebots werden übernommen, wo die Rechnung sie erlaubt, sonst weggelassen.
 
@@ -160,6 +160,68 @@ func (f *fromEstimate) load(c *cobra.Command, client *api.Client, req *openapi3.
 		return nil, clierr.New(clierr.CodeError, fmt.Sprintf("Angebot %d: Antwort ist kein JSON-Objekt, keine Rechnung angelegt", f.id), "")
 	}
 	return estimateBody(est, req), nil
+}
+
+// estimateBase is the base body of the invoice: the estimate read by
+// load, without the references of its customer when --customer names
+// another one (dropForeignRefs).
+func (a *App) estimateBase(c *cobra.Command, client *api.Client, ws writeSpec, f *fromEstimate) (map[string]any, error) {
+	base, err := f.load(c, client, ws.req)
+	if err != nil {
+		return nil, err
+	}
+	a.dropForeignRefs(c, ws, base)
+	return base, nil
+}
+
+// customerRefs are the references below customer that belong to the
+// estimate's customer.
+var customerRefs = []string{"contact_person", "project"}
+
+// dropForeignRefs removes the estimate's contact person and project from
+// base when --customer names another customer than the estimate's: they
+// belong to the estimate's customer. Their own flags still set them; for
+// the others a hint names what was dropped and the flags that set it. The
+// same customer keeps both.
+func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]any) {
+	flag := fieldFlag(ws, "customer")
+	cust, ok := base["customer"].(map[string]any)
+	if flag == "" || !c.Flags().Changed(flag) || !ok {
+		return
+	}
+	given := strings.TrimSpace(rawText(c, flag))
+	newID, okNew := parseID(given)
+	oldID, okOld := parseID(fmt.Sprint(cust["id"]))
+	if okNew && okOld && newID == oldID {
+		return
+	}
+	var dropped, flags []string
+	for _, k := range customerRefs {
+		if _, has := cust[k]; !has {
+			continue
+		}
+		delete(cust, k)
+		f := fieldFlag(ws, "customer", k)
+		if f != "" && c.Flags().Changed(f) {
+			continue // set by its flag
+		}
+		dropped = append(dropped, k)
+		flags = append(flags, "--"+f)
+	}
+	if len(dropped) > 0 {
+		_, _ = fmt.Fprintf(a.Err, "Hinweis: Kunde %s statt %v aus dem Angebot: %s nicht übernommen (setzen per %s)\n",
+			given, cust["id"], strings.Join(dropped, " und "), strings.Join(flags, " bzw. "))
+	}
+}
+
+// fieldFlag is the flag of the field at path, "" without one.
+func fieldFlag(ws writeSpec, path ...string) string {
+	for _, f := range ws.fields {
+		if slices.Equal(f.Path, path) {
+			return f.Flag
+		}
+	}
+	return ""
 }
 
 // readInfo is the read as --dry-run shows it: it has been sent.

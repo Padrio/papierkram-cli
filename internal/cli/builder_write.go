@@ -226,7 +226,7 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 	}
 	var load func() (map[string]any, error)
 	if s.from != nil {
-		load = func() (map[string]any, error) { return s.from.load(c, client, ws.req) }
+		load = func() (map[string]any, error) { return a.estimateBase(c, client, ws, s.from) }
 		if extras.read, err = s.from.readInfo(client); err != nil {
 			return err
 		}
