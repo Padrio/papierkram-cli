@@ -39,9 +39,16 @@ läuft nur auf `main` (`if: github.ref == 'refs/heads/main'`); von einem
 anderen Branch gestartet, wird er übersprungen. Er nutzt die GitHub-Umgebung
 `sandbox` (`environment: sandbox`): Subdomain und Token gehören dort als
 Secrets `PAPIERKRAM_E2E_SUBDOMAIN` und `PAPIERKRAM_E2E_TOKEN` hinein. Umgebung,
-Secrets und Schutzregeln (z. B. Pflicht-Freigabe, nur Branch `main`) richtet
-der Repository-Inhaber in den Repository-Einstellungen ein; das Repository
-selbst legt sie nicht an.
+Secrets und Schutzregeln richtet der Repository-Inhaber in den
+Repository-Einstellungen ein; das Repository selbst legt sie nicht an.
+
+**Wichtig:** Secrets `PAPIERKRAM_E2E_*` dürfen **nur** in der Umgebung
+`sandbox` liegen, **nie** als Repository-Secrets. Die Umgebung `sandbox`
+braucht eine Branch-Regel (Deployment-Branch nur `main`), sinnvollerweise
+auch eine Pflicht-Freigabe. Grund: `workflow_dispatch` führt die
+Workflow-Datei des gewählten Branches aus. Ein Branch kann `if:` und
+`environment:` entfernen; an Umgebungs-Secrets mit Branch-Regel kommt er
+trotzdem nicht heran, an Repository-Secrets schon.
 
 Ohne die Variablen (Nachweis, dass alles überspringt):
 
@@ -49,6 +56,23 @@ Ohne die Variablen (Nachweis, dass alles überspringt):
 go vet -tags e2e ./e2e/...
 go test -tags e2e -v ./e2e/...
 ```
+
+Nachweis, dass ohne Freigabe kein Request hinausgeht: das Testbinary ohne
+jeden Netzzugang laufen lassen. Jeder Test muss `SKIP` melden, der Lauf mit
+`PASS` enden.
+
+```sh
+go test -c -tags e2e -o /tmp/e2e.test ./e2e
+
+# macOS: Sandbox ohne Netz (Gegenprobe: curl scheitert darin)
+sandbox-exec -p '(version 1)(allow default)(deny network*)' /tmp/e2e.test -test.v
+
+# Linux: eigener Netz-Namespace ohne Schnittstellen
+unshare -rn /tmp/e2e.test -test.v
+```
+
+Ein gesetzter Dead-Proxy (`HTTPS_PROXY=http://127.0.0.1:9`) taugt nicht als
+Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
 
 ## Sicherheitsregeln
 
