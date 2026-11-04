@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
@@ -74,6 +75,11 @@ func (a *App) confirm(ctx context.Context, e registry.Entry, s Summary) error {
 	if err != nil || !ask {
 		return err
 	}
+	// texts from --input or the API: no \r, escape or line break may
+	// overwrite or hide what is being confirmed
+	for _, f := range []*string{&s.Name, &s.Amount, &s.Via, &s.Recipient, &s.Subject} {
+		*f = printable(*f)
+	}
 	head := fmt.Sprintf("%s %d", s.Resource, s.ID)
 	if s.Name != "" {
 		head += " „" + s.Name + "“"
@@ -111,6 +117,17 @@ func (a *App) confirm(ctx context.Context, e registry.Entry, s Summary) error {
 		return nil
 	}
 	return clierr.New(clierr.CodeConfirmation, "Abgebrochen durch Nutzer", "Nichts gesendet. Ohne Rückfrage mit --yes")
+}
+
+// printable replaces control characters (line breaks, \r, tabs, the ESC
+// of ANSI sequences) with a space, like the table output does.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s)
 }
 
 // lastID is the ID of the object a command acts on: the last path

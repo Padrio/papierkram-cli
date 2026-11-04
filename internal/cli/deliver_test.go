@@ -522,3 +522,25 @@ func TestDeliverPDFWithNullEmail(t *testing.T) {
 		}
 	}
 }
+
+// The confirmation shows recipient, subject and name without control
+// characters: a \r or an ANSI escape from an --input file or the API must
+// not overwrite or hide what the user approves.
+func TestDeliverConfirmationSanitized(t *testing.T) {
+	app, srv := apiApp(t)
+	app.StdinTTY = true
+	path := writeFile(t, "in.json", `{"send_via":"email","email":{"recipient":"boese@example.org\rkunde@example.org",`+
+		`"subject":"Rechnung\n\u001b[2KBetreff","body":"B"}}`)
+	app.In = strings.NewReader("nein\n")
+	srv.On("GET", "/income/invoices/459", http.StatusOK, []byte(`{"id":459,"name":"Beratung\r\u001b[31mRot","total_gross":"1190.00"}`))
+	wantExit(t, app, Run(app, []string{"invoice", "deliver", "459", "--input", path}), 8)
+	_, errs := bufs(app)
+	if strings.ContainsAny(errs, "\r\x1b") {
+		t.Errorf("Steuerzeichen in der Rückfrage: %q", errs)
+	}
+	for _, want := range []string{"Empfänger: boese@example.org kunde@example.org\n", "Betreff:   Rechnung  [2KBetreff\n", "„Beratung  [31mRot“"} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("stderr ohne %q: %q", want, errs)
+		}
+	}
+}
