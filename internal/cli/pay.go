@@ -198,7 +198,7 @@ func (a *App) payBody(c *cobra.Command, e registry.Entry, fields map[string]spec
 		a.pruneHints(pr)
 		body = pr.Body
 	}
-	cc := spec.CoerceContext{Now: a.Now, Loc: a.Location}
+	cc := a.dateContext()
 	for _, pf := range payFlags {
 		if !c.Flags().Changed(pf.flag) {
 			continue

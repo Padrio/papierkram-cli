@@ -16,8 +16,9 @@ import (
 )
 
 // CoerceContext is the clock for relative dates (today/heute,
-// yesterday/gestern): the CLI passes App.Now and App.Location. A nil Now
-// means time.Now, a nil Loc time.Local.
+// yesterday/gestern): the CLI passes App.Now and the zone of the day
+// (Europe/Berlin, or the host zone for time log). A nil Now means
+// time.Now, a nil Loc time.Local.
 type CoerceContext struct {
 	Now func() time.Time
 	Loc *time.Location

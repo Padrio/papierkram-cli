@@ -197,5 +197,6 @@ Papierkram berechnet Monats-Credits; danach 429 (Exit 6). `credits` in `commands
 - Kontexte: `--context <name>` wählt einen Kontext; `papierkram auth status -o json` zeigt den wirksamen Kontext, Token-Quelle und Schreibschutz (`read_only`, `read_only_source`).
 - IDs statt Namen: Flags nehmen IDs (`--customer 3214`), keine Namen. IDs liefert `list`.
 - Steuersätze: `vat=19`, `19%`, `0.19` und `0,19` ergeben 0.19.
+- Relative Daten: `heute`/`today` und `gestern`/`yesterday` sind Tage nach deutscher Zeit (Europe/Berlin), auch in einem UTC-Container: in Beleg- und Zahlungsdaten und in Listenfiltern. Nur `time log` (und `time stop`) rechnet mit der Uhr des Rechners, weil Datum und Uhrzeiten des Eintrags zusammenpassen müssen.
 - Positionen ändern: `update` mit `--item`/`--items` verlangt `--replace-items` und ersetzt **alle** Positionen.
 - Befehlsreferenz: [docs/reference/](docs/reference/); offene Fragen zur API: [docs/offene-punkte.md](docs/offene-punkte.md).

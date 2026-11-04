@@ -303,7 +303,7 @@ func (a *App) presetBody(c *cobra.Command, e registry.Entry, ws writeSpec, body 
 		if p.Source == "" {
 			return f.Required, nil
 		}
-		v, err := spec.CoerceFlag(spec.CoerceContext{Now: a.Now, Loc: a.Location}, f, strconv.FormatInt(p.ID, 10))
+		v, err := spec.CoerceFlag(a.dateContext(), f, strconv.FormatInt(p.ID, 10))
 		if err != nil {
 			return false, err
 		}

@@ -43,7 +43,8 @@ func TestVoucherPayBody(t *testing.T) {
 	}
 }
 
-// --date takes the relative dates of spec 6.1 on the day of App.Location.
+// --date takes the relative dates of spec 6.1 on the day of Papierkram
+// (Europe/Berlin, dateContext).
 func TestVoucherPayRelativeDate(t *testing.T) {
 	loc, err := time.LoadLocation("Europe/Berlin")
 	if err != nil {

@@ -239,7 +239,7 @@ func (a *App) checkTimeLog(c *cobra.Command, e registry.Entry) (timeLogInput, er
 	if fs.Changed("date") {
 		rawDate = rawText(c, "date")
 	}
-	v, err := spec.CoerceFlag(spec.CoerceContext{Now: a.Now, Loc: a.Location}, f, rawDate)
+	v, err := spec.CoerceFlag(a.wallClockContext(), f, rawDate)
 	if err != nil {
 		return timeLogInput{dateErr: err}, nil
 	}
@@ -485,7 +485,7 @@ func (a *App) timeLogBody(e registry.Entry, fields map[string]spec.Field, te tim
 	if te.unbillable != nil {
 		raw["unbillable"] = *te.unbillable
 	}
-	cc := spec.CoerceContext{Now: a.Now, Loc: a.Location}
+	cc := a.wallClockContext()
 	body := map[string]any{}
 	for _, tf := range timeLogFields {
 		text, ok := raw[tf.flag]

@@ -470,7 +470,7 @@ type fieldSet struct {
 // custom_attributes). Invalid values are German validation errors naming
 // the flag (exit 5).
 func (a *App) flagSets(c *cobra.Command, ws writeSpec) ([]fieldSet, error) {
-	cc := spec.CoerceContext{Now: a.Now, Loc: a.Location}
+	cc := a.dateContext()
 	var sets []fieldSet
 	for _, f := range ws.fields {
 		if f.Flag == "" || f.Kind == spec.KindItems || !c.Flags().Changed(f.Flag) {
