@@ -348,6 +348,7 @@ Fehler stehen auf stderr als `Fehler: …` mit `Hinweis: …` und ggf. `Correlat
 - [docs/schemas/](docs/schemas/): JSON-Schemas der Ausgaben
 - [docs/offene-punkte.md](docs/offene-punkte.md): offene Fragen zur API und wie die E2E-Suite sie misst
 - [CHANGELOG.md](CHANGELOG.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+- [docs/release.md](docs/release.md): Release mit GoReleaser, Snapshot-Test, Kurzform `pk` je Paketquelle
 - Design: [Spezifikation](docs/specs/2026-11-03-papierkram-cli-design.md), [Implementierungsplan](docs/plans/2026-11-03-papierkram-cli.md), [API-Snapshot](api/)
 
 ## Dank
