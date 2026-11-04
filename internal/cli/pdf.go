@@ -29,7 +29,7 @@ const pdfStdout = "-"
 
 const pdfLong = `
 
--O datei.pdf speichert das PDF in der Datei; eine vorhandene Datei wird erst ersetzt, wenn das PDF vollständig geladen ist, und behält ihre Rechte (eine neue Datei erhält die Rechte gemäß umask). Eine schreibgeschützte Datei wird nicht ersetzt; ein symbolischer Verweis bleibt erhalten, ersetzt wird die Datei, auf die er zeigt; Gerätedateien wie /dev/null werden direkt beschrieben. -O - schreibt das PDF nach stdout. Ohne -O geht es nur dann nach stdout, wenn stdout kein Terminal ist (Umleitung oder Pipe); im Terminal bricht der Befehl ohne Anfrage ab.
+-O datei.pdf speichert das PDF in der Datei; eine vorhandene Datei wird erst ersetzt, wenn das PDF vollständig geladen ist, und behält ihre Rechte, wenn sie dem Nutzer gehört (eine neue oder fremde Datei erhält die Rechte gemäß umask). Eine schreibgeschützte Datei wird nicht ersetzt; ein symbolischer Verweis bleibt erhalten, ersetzt wird die Datei, auf die er zeigt – nur wenn alle Verweise und die Datei dem Nutzer gehören; Gerätedateien wie /dev/null werden direkt beschrieben. -O - schreibt das PDF nach stdout. Ohne -O geht es nur dann nach stdout, wenn stdout kein Terminal ist (Umleitung oder Pipe); im Terminal bricht der Befehl ohne Anfrage ab.
 
 Danach meldet der Befehl Pfad und Größe ({"path":…,"bytes":…}, path "-" für stdout) auf stderr, bei -O datei mit -o json|yaml, --fields oder --jq auf stdout. Geht das PDF nach stdout, bleibt die Meldung auf stderr; --fields und --jq sind dann nicht erlaubt.`
 
@@ -79,7 +79,7 @@ func (a *App) runPDF(c *cobra.Command, e registry.Entry, args []string) error {
 	}
 	var file *pdfFile
 	if !dest.stdout() && !dest.device() {
-		if file, err = createPDFFile(dest.path, dest.info); err != nil {
+		if file, err = createPDFFile(dest.path, dest.modeFrom); err != nil {
 			return err
 		}
 		defer file.discard()
@@ -104,7 +104,7 @@ func (a *App) runPDF(c *cobra.Command, e registry.Entry, args []string) error {
 			return pdfSaveFailed(err, e)
 		}
 	default:
-		warning, err := file.commit(resp.Body, dest.info)
+		warning, err := file.commit(resp.Body, dest.modeFrom)
 		if err != nil {
 			return pdfSaveFailed(err, e)
 		}
@@ -120,6 +120,10 @@ type pdfDest struct {
 	arg  string      // the value of -O, pdfStdout for stdout; the path of the message
 	path string      // the file written: arg with symbolic links resolved
 	info fs.FileInfo // the existing file at path, nil when there is none
+	// modeFrom is info when the user owns that file: only then is its mode
+	// taken over. A file of another user is replaced like a new one (0666
+	// minus umask), so its looser mode never applies to the PDF.
+	modeFrom fs.FileInfo
 }
 
 func (d pdfDest) stdout() bool { return d.arg == pdfStdout }
@@ -163,10 +167,9 @@ func (a *App) pdfTarget(c *cobra.Command) (pdfDest, error) {
 func pdfFileDest(arg string) (pdfDest, error) {
 	d := pdfDest{arg: arg, path: arg}
 	if fi, err := os.Lstat(arg); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
-		real, err := filepath.EvalSymlinks(arg)
+		real, err := resolvePDFLink(arg)
 		if err != nil {
-			return d, clierr.New(clierr.CodeUsage, fmt.Sprintf("-O %s: symbolischer Verweis zeigt auf kein vorhandenes Ziel", arg),
-				"Ziel des Verweises anlegen oder einen anderen Pfad angeben")
+			return d, err
 		}
 		d.path = real
 	}
@@ -193,8 +196,73 @@ func pdfFileDest(arg string) (pdfDest, error) {
 			"Schreibschutz aufheben oder einen anderen Dateinamen wählen; es wurde nichts angefragt")
 	}
 	d.info = fi
+	if ownedByMe(fi) {
+		d.modeFrom = fi
+	}
 	return d, nil
 }
+
+// maxLinkHops limits the symbolic links resolvePDFLink follows (like
+// the 40 of Linux).
+const maxLinkHops = 40
+
+// resolvePDFLink follows the symbolic link arg hop by hop with Lstat and
+// returns the final file. Every link and the final file must belong to the
+// user (ownedByMe), like the kernel's protected_symlinks; otherwise, and
+// for a link that leads nowhere, it is a usage error before the request.
+// Links in the directory part of a hop are resolved by the system, as for
+// any path. The final file's mode and ownership are taken at check time
+// (pdfFileDest), so swapping a file later never loosens the mode of the
+// PDF; a directory swapped between check and write only moves the
+// temporary file, which is created exclusively with that checked mode.
+func resolvePDFLink(arg string) (string, error) {
+	p := arg
+	for range maxLinkHops {
+		fi, err := os.Lstat(p)
+		switch {
+		case errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR):
+			return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("-O %s: symbolischer Verweis zeigt auf kein vorhandenes Ziel", arg),
+				"Ziel des Verweises anlegen oder einen anderen Pfad angeben")
+		case err != nil:
+			return "", pdfTargetUnusable(arg, err)
+		}
+		link := fi.Mode()&fs.ModeSymlink != 0
+		if !ownedByMe(fi) {
+			what := "Ziel ist ein Symlink, der einem anderen Nutzer gehört"
+			if !link {
+				what = "Symlink zeigt auf eine Datei, die einem anderen Nutzer gehört"
+			}
+			return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("-O %s: %s (%s)", arg, what, p), "anderen Pfad angeben")
+		}
+		if !link {
+			return p, nil
+		}
+		dest, err := os.Readlink(p)
+		if err != nil {
+			return "", pdfTargetUnusable(arg, err)
+		}
+		p = linkTarget(p, dest)
+	}
+	return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("-O %s: zu viele symbolische Verweise hintereinander", arg),
+		"anderen Pfad angeben")
+}
+
+// linkTarget is the path dest of the link at p: absolute, or relative to
+// the directory of p. It is not cleaned lexically, so ".." is resolved by
+// the system like when the link is followed.
+func linkTarget(p, dest string) string {
+	if filepath.IsAbs(dest) {
+		return dest
+	}
+	i := strings.LastIndexAny(p, `/`+string(filepath.Separator))
+	if i < 0 {
+		return dest
+	}
+	return p[:i+1] + dest
+}
+
+// ownedByMe reports whether a file belongs to the user; tests replace it.
+var ownedByMe = ownedByEUID
 
 // pdfTargetUnusable is the error of a target that cannot be checked
 // (permission, I/O): exit 1, nothing was requested.

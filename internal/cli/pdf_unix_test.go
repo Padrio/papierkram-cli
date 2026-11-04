@@ -102,3 +102,128 @@ func TestPdfTempFileOfPrivateTargetStaysPrivate(t *testing.T) {
 		t.Errorf("Modus = %v", fi.Mode().Perm())
 	}
 }
+
+// foreignNames makes ownedByMe report the files (or links) with these base
+// names as owned by another user.
+func foreignNames(t *testing.T, names ...string) {
+	t.Helper()
+	orig := ownedByMe
+	ownedByMe = func(fi os.FileInfo) bool {
+		for _, n := range names {
+			if fi.Name() == n {
+				return false
+			}
+		}
+		return orig(fi)
+	}
+	t.Cleanup(func() { ownedByMe = orig })
+}
+
+// A file of another user is replaced like a new file: 0666 minus the
+// umask, never its own (looser) mode, and no chmod at all.
+func TestPdfForeignTargetGetsNewFileMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "fremd.pdf")
+	if err := os.WriteFile(path, []byte("alt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	foreignNames(t, "fremd.pdf")
+	var created []os.FileMode
+	origCreated, origChmod := pdfTempCreated, chmodFile
+	pdfTempCreated = func(name string) {
+		if fi, err := os.Stat(name); err == nil {
+			created = append(created, fi.Mode().Perm())
+		}
+	}
+	chmodFile = func(name string, mode os.FileMode) error {
+		t.Errorf("chmod %s auf %v", name, mode)
+		return nil
+	}
+	t.Cleanup(func() { pdfTempCreated, chmodFile = origCreated, origChmod })
+
+	old := syscall.Umask(0o077)
+	app, srv := apiApp(t)
+	onPDF(srv, binaryPDF)
+	code := Run(app, []string{"invoice", "pdf", "459", "-O", path})
+	syscall.Umask(old)
+	wantExit(t, app, code, 0)
+	if len(created) != 1 || created[0] != 0o600 {
+		t.Errorf("Modus der Temp-Datei: %v, erwartet 0600", created)
+	}
+	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
+		t.Errorf("Modus = %v, erwartet 0600", fi.Mode().Perm())
+	}
+	if got, _ := os.ReadFile(path); string(got) != binaryPDF {
+		t.Errorf("Datei = %q", got)
+	}
+}
+
+// A symbolic link is only followed when every link of the chain and the
+// final file belong to the user; otherwise exit 2 before the request and
+// nothing is written.
+func TestPdfForeignSymlinkRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		foreign string
+	}{
+		{"fremder Verweis", "aktuell.pdf"},
+		{"fremder Zwischenverweis", "zwischen.pdf"},
+		{"fremdes Ziel", "rechnung.pdf"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			real := filepath.Join(dir, "ablage", "rechnung.pdf")
+			if err := os.MkdirAll(filepath.Dir(real), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(real, []byte("alt"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			// aktuell.pdf -> zwischen.pdf -> ablage/rechnung.pdf (relative)
+			if err := os.Symlink(filepath.Join("ablage", "rechnung.pdf"), filepath.Join(dir, "zwischen.pdf")); err != nil {
+				t.Fatal(err)
+			}
+			link := filepath.Join(dir, "aktuell.pdf")
+			if err := os.Symlink("zwischen.pdf", link); err != nil {
+				t.Fatal(err)
+			}
+
+			// all own: followed through the chain
+			app, srv := apiApp(t)
+			onPDF(srv, binaryPDF)
+			wantExit(t, app, Run(app, []string{"invoice", "pdf", "459", "-O", link}), 0)
+			if got, _ := os.ReadFile(real); string(got) != binaryPDF {
+				t.Fatalf("eigene Kette nicht gefolgt: %q", got)
+			}
+			if err := os.WriteFile(real, []byte("alt"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			foreignNames(t, tc.foreign)
+			app, srv = apiApp(t)
+			wantExit(t, app, Run(app, []string{"invoice", "pdf", "459", "-O", link}), 2)
+			wantRequests(t, srv, 0)
+			if _, errs := bufs(app); !strings.Contains(errs, "anderen Nutzer") {
+				t.Errorf("stderr = %q", errs)
+			}
+			if got, _ := os.ReadFile(real); string(got) != "alt" {
+				t.Errorf("Ziel geändert: %q", got)
+			}
+			wantDirFiles(t, filepath.Dir(real), "rechnung.pdf")
+		})
+	}
+}
+
+// Real ownership: the user's own files count as owned.
+func TestOwnedByEUID(t *testing.T) {
+	fi, err := os.Stat(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ownedByEUID(fi) {
+		t.Error("eigenes Verzeichnis gilt als fremd")
+	}
+}
