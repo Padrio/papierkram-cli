@@ -168,4 +168,22 @@ func TestInvoiceUpdateKeepPaymentTermContract(t *testing.T) {
 	if out := mustOut(app); !strings.Contains(out, "Kosten: 1 Credit je Anfrage") || !strings.Contains(out, "liest das CLI die Rechnung vorher") {
 		t.Errorf("help = %s", out)
 	}
+	// the flag says that it saves the read (review M5); commands --json
+	// carries the same description
+	out := mustOut(app)
+	i := strings.Index(out, "--payment-term ID")
+	if line, _, _ := strings.Cut(out[max(i, 0):], "\n"); i < 0 || !strings.Contains(line, "spart das Lesen der Rechnung (1 Credit)") {
+		t.Errorf("--payment-term: %q", line)
+	}
+	app, _ = apiApp(t)
+	wantExit(t, app, Run(app, []string{"commands", "--json", "--jq",
+		`.commands[] | select(.command == "invoice update") | .flags[] | select(.name == "payment-term") | .description`}), 0)
+	if out := mustOut(app); !strings.Contains(out, "spart das Lesen der Rechnung") {
+		t.Errorf("commands --json: %q", out)
+	}
+	app, _ = apiApp(t)
+	wantExit(t, app, Run(app, []string{"estimate", "update", "--help"}), 0)
+	if strings.Contains(mustOut(app), "spart das Lesen") {
+		t.Error("estimate update nennt ein Lesen")
+	}
 }

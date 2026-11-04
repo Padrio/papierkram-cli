@@ -48,6 +48,11 @@ func (a *App) addKeepPaymentTerm(e registry.Entry, cmd *cobra.Command) {
 		panic(fmt.Sprintf("registry: %s update ohne lesenden Eintrag %s describe", e.Resource, e.Resource))
 	}
 	cmd.Long += fmt.Sprintf(keepPaymentTermLong, moreCredits(read.Credits))
+	// the flag of payment_term saves the read (spec-driven: the flag of
+	// the field, not a fixed name)
+	if f := cmd.Flags().Lookup(fieldFlag(newWriteSpec(e), "payment_term")); f != nil {
+		f.Usage += fmt.Sprintf("; spart das Lesen der Rechnung (%s)", creditsText(read.Credits))
+	}
 	cmd.Annotations[annotExtraCredits] = strconv.Itoa(read.Credits)
 	cmd.RunE = func(c *cobra.Command, args []string) error {
 		return a.runWriteThen(c, e, args, writeSteps{keep: &keepPaymentTerm{read: read}})

@@ -40,7 +40,7 @@ Optionen:
       --item Texte                    Position als key=wert,key=wert (wiederholbar)
       --items Text                    Positionen als JSON-Array aus Datei oder - für die Standardeingabe
       --name Text                     Wert für name
-      --payment-term ID               ID für payment_term
+      --payment-term ID               ID für payment_term; spart das Lesen der Rechnung (1 Credit)
       --replace-items                 alle Positionen ersetzen (nötig für --item/--items; ohne Positionen werden alle gelöscht)
       --supply-date Text              Wert für supply_date
 
