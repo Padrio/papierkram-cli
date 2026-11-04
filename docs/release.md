@@ -5,14 +5,14 @@ Wie ein Release von papierkram-cli entsteht. Die Konfiguration steht in [`.gorel
 ## Was ein Release erzeugt
 
 - Archive für darwin, linux und windows, je amd64 und arm64: `tar.gz`, unter Windows `zip`. Jedes Archiv enthält das Programm, `LICENSE`, `README.md`, `CHANGELOG.md`, `THIRD_PARTY_NOTICES.md`, die Vervollständigung (`completions/`: bash, zsh, fish, PowerShell) und die Man-Pages (`man/`, Abschnitt 1, deutsch).
-- Pakete `deb` und `rpm` für amd64 und arm64: Programm unter `/usr/bin/papierkram`, Kurzform `/usr/bin/pk` als symbolischer Link, Man-Pages unter `/usr/share/man/man1/`, Vervollständigung für bash (`/usr/share/bash-completion/completions/`), zsh (`/usr/share/zsh/site-functions/`) und fish (`/usr/share/fish/vendor_completions.d/`), Lizenzen unter `/usr/share/doc/papierkram/`.
+- Pakete `deb` und `rpm` für amd64 und arm64: Programm unter `/usr/bin/papierkram`, Kurzform `/usr/bin/pk` als symbolischer Link, Man-Pages gzip-komprimiert unter `/usr/share/man/man1/`, Vervollständigung für bash (`/usr/share/bash-completion/completions/`), zsh (`deb`: `/usr/share/zsh/vendor-completions/`, weil das zsh von Debian und Ubuntu `/usr/share/zsh/site-functions/` nicht durchsucht; `rpm`: `/usr/share/zsh/site-functions/`) und fish (`/usr/share/fish/vendor_completions.d/`), Lizenzen unter `/usr/share/doc/papierkram/`.
 - `checksums.txt` (SHA-256 aller Archive und Pakete).
 - Homebrew-Cask `papierkram` in `Padrio/homebrew-tap` (`brew install Padrio/tap/papierkram`).
 - Scoop-Manifest `papierkram` in `Padrio/scoop-bucket` (`scoop install papierkram`).
 
-Vervollständigung und Man-Pages entstehen erst beim Release: die Hooks `scripts/completions.sh` und `scripts/manpages.sh` bauen das Programm einmal in ein temporäres Verzeichnis und schreiben nach `completions/` und `man/` im Repository. Beide Verzeichnisse und `dist/` stehen in `.gitignore`. Beide Befehle (`completion`, `gen-docs --man`) senden keine Anfrage.
+Vervollständigung und Man-Pages entstehen erst beim Release: die Hooks `scripts/completions.sh` und `scripts/manpages.sh` bauen das Programm einmal in ein temporäres Verzeichnis und schreiben nach `completions/`, `man/` und `man-gz/` (die Man-Pages mit `gzip -9 -n` komprimiert, für die Pakete) im Repository. Diese Verzeichnisse und `dist/` stehen in `.gitignore`. Beide Befehle (`completion`, `gen-docs --man`) senden keine Anfrage.
 
-Die Builds sind reproduzierbar: `-trimpath`, `CGO_ENABLED=0`, Dateizeiten und `buildinfo.Date` aus dem Commit-Datum. Zwei Läufe auf demselben Commit ergeben dieselbe `checksums.txt`.
+Die Builds sind reproduzierbar: `-trimpath`, `CGO_ENABLED=0`, Dateizeiten und `buildinfo.Date` aus dem Commit-Datum, Archiv-Einträge mit Besitzer und Gruppe `root` und festen Modi (unabhängig von Benutzer und umask). Zwei Läufe auf demselben Commit ergeben dieselbe `checksums.txt`. Auf einer anderen Maschine gilt das nur mit derselben Go-Version und, für `deb` und `rpm`, derselben gzip-Implementierung (GNU gzip auf dem Runner, Apple gzip unter macOS).
 
 ## Voraussetzungen (einmalig, Pascal)
 
@@ -37,12 +37,12 @@ Die Builds sind reproduzierbar: `-trimpath`, `CGO_ENABLED=0`, Dateizeiten und `b
    git push origin vX.Y.Z
    ```
 
-4. Der Push des Tags startet `.github/workflows/release.yml`. Der Workflow läuft nur bei Tags `v*` im Repository `Padrio/papierkram-cli`, nie bei Branches, Pull Requests oder in Forks. Er zieht mit `scripts/release-notes.sh` den Abschnitt des Tags aus `CHANGELOG.md` (fehlt der Abschnitt oder ist er leer, bricht er ab), prüft, dass `PACKAGES_GITHUB_TOKEN` gesetzt ist, und führt GoReleaser v2.19.0 aus: `release --clean --release-notes <Datei>`.
+4. Der Push des Tags startet `.github/workflows/release.yml`. Der Workflow läuft nur bei Tags `v*` im Repository `Padrio/papierkram-cli`, nie bei Branches, Pull Requests oder in Forks. Er zieht mit `scripts/release-notes.sh` den Abschnitt des Tags aus `CHANGELOG.md` (nur SemVer-Tags wie `v1.2.3` oder `v1.2.3-rc.1`; fehlt der Abschnitt oder ist er leer, bricht er ab; `## [` und Link-Definitionen in Code-Blöcken gehören zu den Notizen), prüft, dass `PACKAGES_GITHUB_TOKEN` gesetzt ist, und führt GoReleaser v2.19.0 aus: `release --clean --release-notes <Datei>`. Der Job bricht nach 30 Minuten ab; der Checkout legt kein Token in `.git/config` ab (`persist-credentials: false`), GoReleaser veröffentlicht über die API.
 5. Nachbearbeitung Scoop (siehe unten), danach prüfen: Release-Seite mit 6 Archiven, 4 Paketen und `checksums.txt`; `brew install Padrio/tap/papierkram` und `pk version`; `scoop install papierkram` und `pk version`.
 
 Die Release-Notizen kommen aus `CHANGELOG.md` (Keep a Changelog). Der Abschnitt `changelog` in `.goreleaser.yaml` (Git-Log ohne `docs`, `test`, `ci`, `chore`) ist nur der Rückfall für einen Lauf ohne `--release-notes`. Er bleibt eingeschaltet, weil GoReleaser `--release-notes` bei abgeschaltetem Changelog ignoriert.
 
-Tags mit Vorabversion (z. B. `v1.0.0-rc.1`) erzeugen das GitHub-Release, aktualisieren Tap und Bucket aber nicht (`skip_upload: auto`). Auch dafür braucht `CHANGELOG.md` einen Abschnitt `## [1.0.0-rc.1]`.
+Tags mit Vorabversion (z. B. `v1.0.0-rc.1`) erzeugen ein GitHub-Release, das als Vorabversion markiert ist und nie „latest“ wird (`release.prerelease: auto`), und aktualisieren Tap und Bucket nicht (`skip_upload: auto`). Auch dafür braucht `CHANGELOG.md` einen Abschnitt `## [1.0.0-rc.1]`.
 
 ### Rückfall: lokaler Release
 
@@ -65,7 +65,7 @@ go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean
 
 Der Snapshot baut alles nach `dist/`, veröffentlicht nichts und braucht kein Token; Cask und Manifest liegen nur unter `dist/homebrew/` und `dist/scoop/`. Die Version lautet `<nächster Patch>-snapshot+<Commit>`, z. B. `0.0.1-snapshot+351a12c`. Die Konfiguration allein prüft `go run github.com/goreleaser/goreleaser/v2@v2.19.0 check`.
 
-Die CI führt denselben Snapshot im Job `snapshot` aus (`.github/workflows/ci.yml`, ohne Token) und prüft danach: 6 Archive, `deb` und `rpm` für amd64 und arm64, `checksums.txt`, den Link `/usr/bin/pk` im `deb`, Man-Pages und Vervollständigung in Paket und Archiv, die Vervollständigung von `papierkram` und `pk` in bash, zsh, fish und PowerShell (`scripts/check-completions.sh`), `scripts/release-notes.sh` sowie einen sauberen Arbeitsbaum. Lokal prüft `sh scripts/check-completions.sh` die installierten Shells und überspringt die übrigen.
+Die CI führt denselben Snapshot im Job `snapshot` aus (`.github/workflows/ci.yml`, ohne Token) und prüft danach: 6 Archive, `deb` und `rpm` für amd64 und arm64, `checksums.txt`, den Link `/usr/bin/pk` im `deb`, Man-Pages (`.1.gz`) und Vervollständigung in Paket und Archiv (zsh im `deb` unter `vendor-completions`), die Vervollständigung von `papierkram` und `pk` in bash, zsh, fish und PowerShell (`scripts/check-completions.sh`), `scripts/release-notes.sh` sowie einen sauberen Arbeitsbaum. Lokal prüft `sh scripts/check-completions.sh` die installierten Shells und überspringt die übrigen. Alle Actions der Workflows sind per Commit-SHA gepinnt, der Release-Tag steht als Kommentar dahinter; `scripts/check-action-pins.sh` (Job `checks`) lehnt jede andere Form ab, Dependabot aktualisiert die Pins wöchentlich.
 
 ## Kurzform `pk`
 
@@ -97,6 +97,6 @@ Committen und pushen (`papierkram: add pk shim`). Das nächste Release überschr
 - fish: `complete -c pk -w papierkram`.
 - PowerShell: `Register-ArgumentCompleter -CommandName 'pk'` mit demselben Skriptblock.
 
-bash-completion und fish laden ein Skript erst beim ersten Tab für den jeweiligen Befehlsnamen. Die Pakete legen daher zusätzlich `/usr/share/bash-completion/completions/pk` → `papierkram` und `/usr/share/fish/vendor_completions.d/pk.fish` → `papierkram.fish` an; der Cask verlinkt das fish-Skript ein zweites Mal als `pk.fish`. zsh bindet `pk` über die `#compdef`-Zeile, bash unter Homebrew lädt `etc/bash_completion.d` beim Start. Wer selbst einrichtet (`completion --help`), braucht für fish zusätzlich `pk.fish` als zweiten Namen. Fehlt eine der Zeilen von cobra, auf die sich der Befehl stützt (z. B. nach einem cobra-Update mit anderen Funktionsnamen), meldet `completion` einen Fehler statt ein Skript ohne `pk` auszugeben; `TestCompletionShortForm` prüft die Zeilen je Shell, und der Release bricht ab.
+bash-completion und fish laden ein Skript erst beim ersten Tab für den jeweiligen Befehlsnamen. Die Pakete legen daher zusätzlich `/usr/share/bash-completion/completions/pk` → `papierkram` und `/usr/share/fish/vendor_completions.d/pk.fish` → `papierkram.fish` an; der Cask verlinkt das fish-Skript ein zweites Mal als `pk.fish`. zsh bindet `pk` über die `#compdef`-Zeile (aus `vendor-completions` bzw. `site-functions`), bash unter Homebrew lädt `etc/bash_completion.d` beim Start. Wer selbst einrichtet (`completion --help`), braucht für fish zusätzlich `pk.fish` als zweiten Namen. Fehlt eine der Zeilen von cobra, auf die sich der Befehl stützt (z. B. nach einem cobra-Update mit anderen Funktionsnamen), meldet `completion` einen Fehler statt ein Skript ohne `pk` auszugeben; `TestCompletionShortForm` prüft die Zeilen je Shell, und der Release bricht ab.
 
 **Namenskonflikt:** [pkram](https://github.com/mickeyl/pkram) legt ebenfalls `pk` an (README, „Kurzform `pk`“). Ist `pk` schon von einem anderen Paket belegt, brechen Homebrew und deb/rpm die Installation mit einem Dateikonflikt ab; `papierkram` bleibt immer eindeutig.
