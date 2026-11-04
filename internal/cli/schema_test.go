@@ -218,7 +218,9 @@ func TestSchemaUsageErrors(t *testing.T) {
 		{[]string{"api"}, "papierkram schema invoice create"},
 		{[]string{"version"}, "unbekannte Ressource"},
 		{[]string{"info", "x"}, `unbekannte Aktion "x"`},
-		{[]string{"voucher", "document"}, `unbekannte Aktion "document"`},
+		{[]string{"voucher", "document"}, "voucher document ist eine Gruppe: Aktion angeben, z. B. document delete"},
+		{[]string{"auth", "status"}, "papierkram schema info"},
+		{[]string{"zeit", "start"}, "time start sendet keine Anfrage"},
 		{nil, "zu wenige Argumente"},
 	} {
 		app, _, _ := newTestApp(t)
@@ -266,5 +268,15 @@ func TestResolveValue(t *testing.T) {
 	}
 	if _, err := resolveValue(map[string]any{"$ref": componentPrefix + "InvoiceFlat"}, []string{"InvoiceFlat"}); err == nil || !strings.Contains(err.Error(), "zyklisch") {
 		t.Errorf("Zyklus: %v", err)
+	}
+}
+
+// The long help says what null means: the spec describes no schema (the
+// API may still answer with JSON, e.g. info, upload).
+func TestSchemaLongExplainsNull(t *testing.T) {
+	app, _, _ := newTestApp(t)
+	wantExit(t, app, Run(app, []string{"schema", "--help"}), 0)
+	if out, _ := bufs(app); !strings.Contains(out, "null = die Spec beschreibt kein Schema") {
+		t.Errorf("Hilfe erklärt null nicht:\n%s", out)
 	}
 }

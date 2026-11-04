@@ -24,7 +24,7 @@ import (
 // (aliases of resource and action work) and joined to its operation by
 // metaOf, like commands --json.
 
-const schemaLong = `Zeigt das Request- und das Response-Schema der API-Operation eines Befehls als {"request": …, "response": …} – aufgelöst ($ref ersetzt, allOf zusammengeführt) aus der eingebetteten, korrigierten Spec, mit den x-cli-*-Erweiterungen des CLI. null steht für keinen Body bzw. keine Antwort; PDF-Downloads antworten mit {"type": "string", "format": "binary"}.
+const schemaLong = `Zeigt das Request- und das Response-Schema der API-Operation eines Befehls als {"request": …, "response": …} – aufgelöst ($ref ersetzt, allOf zusammengeführt) aus der eingebetteten, korrigierten Spec, mit den x-cli-*-Erweiterungen des CLI. null = die Spec beschreibt kein Schema (kein Body; die Antwort kann trotzdem JSON sein, z. B. bei info und upload); PDF-Downloads antworten mit {"type": "string", "format": "binary"}.
 
 Ressource und Aktion dürfen Aliase sein (rechnung send). Ohne Aktion kommen alle Aktionen der Ressource, die eine Anfrage senden: {"resource": …, "actions": {"<aktion>": {"request": …, "response": …}}}. time log und time stop senden die Operation von time create.
 
@@ -89,8 +89,15 @@ func schemaOf(root *cobra.Command, args []string) (any, error) {
 	}
 	res, ok := findResource(args[0])
 	if !ok {
-		return nil, unknownName(fmt.Sprintf("unbekannte Ressource %q", args[0]), args[0], resourceCandidates(),
-			"Ressourcen: "+strings.Join(resourceNames(), ", "))
+		hint := "Ressourcen: " + strings.Join(resourceNames(), ", ")
+		// a meta command that sends an operation (auth status: GetInfo)
+		// points to the resource command of that operation
+		if c, rest, err := root.Find(args); err == nil && c != root && len(rest) == 0 && metaOf(c).op {
+			e := metaOf(c).entry
+			name := strings.TrimSpace(e.Resource + " " + e.Action)
+			hint = fmt.Sprintf("%s sendet %s wie %s: papierkram schema %s", strings.Join(commandWords(c), " "), e.OperationID, name, name)
+		}
+		return nil, unknownName(fmt.Sprintf("unbekannte Ressource %q", args[0]), args[0], resourceCandidates(), hint)
 	}
 	group, _, err := root.Find([]string{res.Name})
 	if err != nil || group == root {
@@ -119,7 +126,19 @@ func schemaOf(root *cobra.Command, args []string) (any, error) {
 	}
 	action := strings.Join(args[1:], " ")
 	c, rest, err := group.Find(args[1:])
-	if err != nil || c == group || len(rest) > 0 || c.HasSubCommands() {
+	if err == nil && c != group && len(rest) == 0 && c.HasSubCommands() {
+		// a group below the resource (voucher document)
+		var sub []string
+		for _, n := range names {
+			if strings.HasPrefix(n, action+" ") {
+				sub = append(sub, n)
+			}
+		}
+		if len(sub) > 0 {
+			return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("%s %s ist eine Gruppe: Aktion angeben, z. B. %s", res.Name, action, strings.Join(sub, ", ")), hint)
+		}
+	}
+	if err != nil || c == group || len(rest) > 0 {
 		return nil, unknownName(fmt.Sprintf("unbekannte Aktion %q für %s", action, res.Name), action, names, hint)
 	}
 	if !metaOf(c).op {
