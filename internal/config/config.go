@@ -110,7 +110,8 @@ func (c *Config) Save(path string) error {
 }
 
 // ValidateName checks a context name: non-empty, no whitespace, no dots
-// (a dot would split the TOML table key [contexts.<name>]).
+// (a dot would split the TOML table key [contexts.<name>]), no control or
+// invisible format characters.
 func ValidateName(name string) error {
 	hint := "Erlaubt sind Namen ohne Leerzeichen und Punkte, z. B. firma-gmbh."
 	if name == "" {
@@ -121,6 +122,11 @@ func ValidateName(name string) error {
 	}
 	if strings.Contains(name, ".") {
 		return clierr.New(clierr.CodeUsage, fmt.Sprintf("Kontextname %q darf keine Punkte enthalten", name), hint)
+	}
+	// names are printed in messages (also from a project file of a cloned
+	// repository): no terminal escapes or invisible characters
+	if strings.ContainsFunc(name, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) {
+		return clierr.New(clierr.CodeUsage, fmt.Sprintf("Kontextname %q darf keine Steuerzeichen oder unsichtbaren Zeichen enthalten", name), hint)
 	}
 	return nil
 }

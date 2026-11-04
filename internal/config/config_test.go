@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -197,4 +198,20 @@ func writeTemp(t *testing.T, body string) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+// A context name with a control or invisible format character is
+// rejected: names from a project file of a cloned repository are printed
+// in messages and must not carry terminal escape sequences.
+func TestValidateNameRejectsControlCharacters(t *testing.T) {
+	for _, name := range []string{"a\x1b[31mb", "a\u202eb", "a\x00b"} {
+		err := ValidateName(name)
+		var ce *clierr.Error
+		if !errors.As(err, &ce) || ce.Code != clierr.CodeUsage || strings.ContainsAny(ce.Message, "\x1b\u202e\x00") {
+			t.Errorf("ValidateName(%q) = %v", name, err)
+		}
+	}
+	if err := ValidateName("firma-gmbh"); err != nil {
+		t.Errorf("valid name: %v", err)
+	}
 }
