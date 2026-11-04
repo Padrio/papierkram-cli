@@ -284,7 +284,7 @@ Papierkram rechnet in Monats-Credits (Paket M 10 000, L 20 000); danach antworte
 | 1 | alles andere: Liste je Seite, Abruf, Änderung, Archivieren, Löschen, Aktion, PDF, `GET /info` |
 | 0 | lokale Befehle (`context`, `local`, `commands`, `schema`, `completion`, `version`, `time start|status|discard`) |
 
-Zusammengesetzte Befehle kosten die Summe: `deliver` 2 (Versand und Nachlesen), `voucher create --file` 60, `invoice create --from-estimate` 51, `auth login` und `auth status` je 1. `--all` kostet 1 Credit je geladener Seite; ab 10 Seiten warnt das CLI und fragt im Terminal nach, `--max-pages` begrenzt. `company list --type` lädt immer alle Seiten (die API filtert nicht). Die Vervollständigung von IDs kostet je Abfrage 1 Credit. Fällt das Restkontingent unter 100, warnt das CLI auf stderr.
+Zusammengesetzte Befehle kosten die Summe: `deliver` 2 (Versand und Nachlesen), `voucher create --file` 60, `invoice create --from-estimate` 51, `invoice update` 2 (liest die Rechnung, um ihre Zahlungsbedingung mitzusenden; 1 mit `--payment-term`), `auth login` und `auth status` je 1. `--all` kostet 1 Credit je geladener Seite; ab 10 Seiten warnt das CLI und fragt im Terminal nach, `--max-pages` begrenzt. `company list --type` lädt immer alle Seiten (die API filtert nicht). Die Vervollständigung von IDs kostet je Abfrage 1 Credit. Fällt das Restkontingent unter 100, warnt das CLI auf stderr.
 
 ## Umgebungsvariablen
 
@@ -350,7 +350,7 @@ Live gemessen gegen einen Sandbox-Account (Stand 2026-11-04, Einzelheiten in [do
 
 - **Angebote brauchen ein Datum:** `estimate create` ohne `--document-date` lehnt die API ab und berechnet trotzdem 50 Credits; das CLI prüft das deshalb vorher (Exit 5).
 - **Abgelehnte Anfragen kosten:** Auch ein mit 422 abgelehntes Anlegen kostet die vollen Credits.
-- **Rechnung ändern:** Nach `invoice update` (auch wenn nur z. B. `--description` gesendet wird) kann `payment_term` eine andere ID haben; die Ursache ist noch offen. Soll die Zahlungsbedingung sicher bleiben, `--payment-term` mitgeben und danach per `invoice describe` prüfen.
+- **Rechnung ändern:** Ein `PUT` ohne Zahlungsbedingung stellt eine Rechnung auf die Standard-Zahlungsbedingung des Accounts um und ändert das Fälligkeitsdatum. `invoice update` liest die Rechnung deshalb vorher und sendet ihre aktuelle Zahlungsbedingung mit (1 Credit mehr; nicht mit `--payment-term` oder `payment_term` in `--input`). `papierkram api PUT` tut das nicht.
 - **`--billable-duration` ist wirkungslos:** Die API setzt beim Anlegen und Ändern eines Zeiteintrags die Dauer aus Beginn und Ende ein.
 - **PDF-Versand:** `deliver --via pdf` vergibt die Nummer und setzt den Status (z. B. `sent`), aber weder `sent_on` noch `sent_via`.
 - **Upload:** PDF, PNG und JPG werden angenommen; andere Typen (z. B. TXT) lehnt die API mit HTTP 500 ab (Exit 1). Das ist kein vorübergehender Fehler, also nicht wiederholen.
