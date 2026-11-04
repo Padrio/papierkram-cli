@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
@@ -137,23 +136,12 @@ func isDelete(action string) bool {
 	return action == "delete" || strings.HasSuffix(action, " delete")
 }
 
-// printable replaces control characters (line breaks, \r, tabs, the ESC
-// of ANSI sequences) and invisible format characters (bidi overrides,
-// zero-width spaces, which could disguise a recipient) with a space.
-func printable(s string) string {
-	return strings.Map(func(r rune) rune {
-		if invisible(r) {
-			return ' '
-		}
-		return r
-	}, s)
-}
+// printable is output.Printable: control and invisible format
+// characters become spaces (confirmation summaries, project file content).
+func printable(s string) string { return output.Printable(s) }
 
-// invisible reports a control character or an invisible format character
-// (Unicode Cf).
-func invisible(r rune) bool {
-	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r)
-}
+// invisible is output.Invisible.
+func invisible(r rune) bool { return output.Invisible(r) }
 
 // lastID is the ID of the object a command acts on: the last path
 // parameter (0 without one).
