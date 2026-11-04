@@ -4,9 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/Padrio/papierkram-cli/internal/projectfile"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 )
 
@@ -15,10 +17,27 @@ import (
 // flag types and read-only blocking are checked by what the CLI does.
 
 // runFixtures are the input files the examples name (voucher upload,
-// voucher create --file); every run gets them in a fresh directory.
+// voucher create --file, --input, --items, --body-file, the task alias of
+// the project file); every run gets them in a fresh directory. The JSON
+// bodies are valid create bodies; update drops their line items without
+// --replace-items (with a hint).
 var runFixtures = map[string]string{
-	"beleg.pdf":    pdfContent,
-	"quittung.jpg": "\xff\xd8\xff\xe0\x00\x10JFIF\x00",
+	"beleg.pdf":       pdfContent,
+	"quittung.jpg":    "\xff\xd8\xff\xe0\x00\x10JFIF\x00",
+	"mail.txt":        "Guten Tag,\n\nanbei {{rechnung.rechnungsnummer}}.\n",
+	"positionen.json": `[{"name":"Wartung","quantity":1,"unit":"Monat","price":250,"vat_rate":0.19}]`,
+	"firma.json":      `{"name":"Muster GmbH","contact_type":"customer","email":"info@example.org"}`,
+	"datenfeld.json":  `{"name":"Kostenstelle"}`,
+	"angebot.json":    `{"name":"Website","customer":{"id":3052},"line_items":[{"name":"Konzept","quantity":2,"unit":"Tag","price":800,"vat_rate":0.19}]}`,
+	"rechnung.json":   `{"name":"Wartung","customer":{"id":3214},"payment_term":{"id":1130},"line_items":[{"name":"Wartung","quantity":1,"unit":"Monat","price":250,"vat_rate":0.19}]}`,
+	"projekt.json":    `{"name":"Relaunch","customer":{"id":3214}}`,
+	"artikel.json":    `{"name":"Beratung","article_no":"B-01","time_unit":"hour","proposition_type":"service","price":"100","vat_rate":"0.19"}`,
+	"aufgabe.json":    `{"name":"Konzept","project":{"id":4963}}`,
+	"zeit.json":       `{"entry_date":"2026-11-03","started_at_time":"09:00","ended_at_time":"10:30","task":{"id":545},"user":{"id":1}}`,
+	"beleg.json":      `{"name":"Büromaterial","provenance":"domestic","line_items":[{"name":"Papier","amount":11.9,"vat_rate":0.19,"category":"Bürobedarf"}]}`,
+	// task and the alias "tickets" of the examples (time log, time start,
+	// local init); no context, so it presets in every context
+	projectfile.FileName: "task = 545\n\n[tasks]\ntickets = 57\n",
 }
 
 // runLine runs one command line in a fresh working directory with the
@@ -39,6 +58,8 @@ func runLine(t *testing.T, env map[string]string, words []string) (int, string) 
 		all[k] = v
 	}
 	app, _ := mockApp(t, all)
+	// the project file of the fixtures is found in the run directory
+	app.Getwd = func() (string, error) { return dir, nil }
 	code := Run(app, words)
 	assertNoToken(t, app)
 	_, errs := bufs(app)
@@ -269,5 +290,37 @@ func TestDeliverViaAlternativeRuns(t *testing.T) {
 		if code, errs := runLine(t, nil, []string{res, "deliver", "5", "--dry-run"}); code != 2 || !strings.Contains(errs, "--via") {
 			t.Errorf("%s deliver ohne --via und Alternative: exit %d, %q", res, code, errs)
 		}
+	}
+}
+
+// Every example of a mutation runs with --dry-run against the mock and
+// ends with exit 0 (task 28 M2): the examples are not only parseable but
+// valid requests (body checked against the request schema, references
+// and files present). Examples of time stop need a running timer and are
+// covered by its own tests.
+func TestMutationExamplesDryRun(t *testing.T) {
+	d := decodeCommands(t, runCommandsJSON(t, "--json"))
+	checked := 0
+	for _, c := range d.Commands {
+		if !dryRunnable(c) || c.Command == "time stop" {
+			continue
+		}
+		for _, ex := range c.Examples {
+			words, err := shellWords(ex)
+			if err != nil {
+				t.Fatalf("%s: %v", ex, err)
+			}
+			words = words[1:]
+			if !slices.Contains(words, "--dry-run") {
+				words = append(words, "--dry-run")
+			}
+			checked++
+			if code, errs := runLine(t, nil, words); code != 0 {
+				t.Errorf("%s: exit %d, stderr %q", strings.Join(words, " "), code, errs)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("keine Beispiele geprüft")
 	}
 }
