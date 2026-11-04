@@ -352,3 +352,35 @@ func TestPruneSuggestsTheOnlyMissingRequiredField(t *testing.T) {
 		t.Errorf("message = %q", msg)
 	}
 }
+
+// The rule counts only the unknown fields and missing required fields of
+// the object itself: an unknown field in a nested object or line item never
+// gets the missing required field of its parent.
+func TestPruneMissingRequiredSuggestionStaysInItsObject(t *testing.T) {
+	// email lacks only recipient; the missing send_via of the parent does
+	// not count
+	body := map[string]any{"email": map[string]any{"address": "a@example.org", "subject": "S", "body": "B"}}
+	_, err := Prune(body, RequestSchema("DeliverInvoice"), nil)
+	wantValidation(t, err, `unbekanntes Feld "email.address" – meintest du "recipient"?`)
+
+	for _, tc := range []struct {
+		name, op string
+		body     map[string]any
+		want     string
+	}{
+		// email lacks recipient and subject; the parent lacks only send_via
+		{"nested", "DeliverInvoice", map[string]any{"email": map[string]any{"address": "a@example.org", "body": "B"}},
+			`unbekanntes Feld "email.address"`},
+		// customer has no required field; the parent lacks only name
+		{"reference", "CreateProject", map[string]any{"customer": map[string]any{"kundennummer": json.Number("5")}},
+			`unbekanntes Feld "customer.kundennummer"`},
+		// the parent lacks only payment_term
+		{"line item", "CreateInvoice", map[string]any{"name": "R", "line_items": []any{map[string]any{"name": "A", "zzzzzzzz": 1}}},
+			`unbekanntes Feld "line_items[].zzzzzzzz"`},
+	} {
+		_, err := Prune(tc.body, RequestSchema(tc.op), ResourceResponseSchema(tc.op))
+		if msg := validationError(t, err).Message; msg != tc.want {
+			t.Errorf("%s: message = %q, want %q", tc.name, msg, tc.want)
+		}
+	}
+}

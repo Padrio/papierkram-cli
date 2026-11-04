@@ -82,7 +82,7 @@ func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi
 		return cloneValue(in).(map[string]any)
 	}
 	out := make(map[string]any, len(in))
-	first := len(p.unknown)
+	var own []int // indexes in p.unknown of the unknown keys of this object
 	for _, k := range slices.Sorted(maps.Keys(in)) {
 		v := in[k]
 		cp := dotPath(path, k)
@@ -100,12 +100,15 @@ func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi
 		default:
 			if !p.unknownSeen[cp] {
 				p.unknownSeen[cp] = true
+				own = append(own, len(p.unknown))
 				p.unknown = append(p.unknown, unknownField{cp, suggestKey(k, req)})
 			}
 		}
 	}
-	if added := p.unknown[first:]; len(added) == 1 && added[0].suggestion == "" {
-		added[0].suggestion = onlyMissingRequired(in, req)
+	// only this object's own unknown keys count: nested objects and line
+	// items append theirs to p.unknown too, with their own missing fields
+	if len(own) == 1 && p.unknown[own[0]].suggestion == "" {
+		p.unknown[own[0]].suggestion = onlyMissingRequired(in, req)
 	}
 	return out
 }
