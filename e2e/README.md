@@ -53,7 +53,8 @@ go test -tags e2e -v ./e2e/...
 - Anfragen gehen nur an `https://<subdomain>.papierkram.de`; alles andere
   lehnt der Transport der Suite ab.
 - `deliver` geht nur mit `--via pdf` hinaus. Eine E-Mail verschickt die
-  Suite nie; auch das erzwingt der Transport.
+  Suite nie; auch das erzwingt der Transport (`send_via` genau `"pdf"`,
+  kein `email`-Schlüssel).
 - Alles, was die Suite anlegt, heißt `pk-e2e-<lauf-id>-…` (Lauf-ID:
   `GITHUB_RUN_ID`, bei einer Wiederholung mit Versuchsnummer, sonst eine
   Zufallszahl). Aufgeräumt werden nur Objekte,
@@ -65,9 +66,15 @@ go test -tags e2e -v ./e2e/...
   Entwurf angelegt; versendet wird nur ein eigenes Angebot, keine Rechnung
   (keine Lücke im Rechnungsnummernkreis).
 - Die Suite bezahlt nie etwas: `voucher pay` wird nur mit `value: null` und
-  einer Bankumsatz-ID gemessen, die es nicht gibt (ohne Betrag); einen
-  pay-Request mit Betrag lehnt der Transport ab. Echte Bankumsätze bleiben
-  unberührt.
+  der Bankumsatz-ID 999999999 gemessen, die es nicht gibt (ohne Betrag). Der
+  Transport lässt für `pay` genau diesen Body durch,
+  `{"value": null, "banking_transaction": {"id": 999999999}}`, und lehnt
+  alles andere vor dem Senden ab: einen Betrag, eine andere Bankumsatz-ID,
+  einen Body ohne `value`, `{}`, zusätzliche oder doppelte Schlüssel. Echte
+  Bankumsätze bleiben unberührt.
+- Für `deliver` und `pay` lehnt der Transport außerdem jeden Body ab, in dem
+  ein Schlüssel doppelt vorkommt oder sich nur in Groß-/Kleinschreibung von
+  einem anderen unterscheidet, auf jeder Ebene.
 - Das Token erscheint nie in der Testausgabe: Jede Logzeile wird vorher
   geschwärzt und danach auf Reste geprüft; die CLI-Ausgaben werden auf das
   Token geprüft.

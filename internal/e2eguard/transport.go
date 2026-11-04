@@ -7,9 +7,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 )
+
+// NoTransactionID is a banking transaction ID that does not exist. The
+// only pay request the transport lets through names it (with value null):
+// the live suite measures the shape of a pay body, it never pays.
+const NoTransactionID = 999999999
 
 // ErrRefused is returned by Transport for a request it does not send.
 var ErrRefused = errors.New("e2e: Anfrage abgelehnt")
@@ -29,10 +35,10 @@ type Exchange struct {
 // request is sent it checks, in this order:
 //   - scheme and host are exactly Scheme and Host (the sandbox), so
 //     nothing else is ever contacted;
-//   - a deliver request carries a JSON body with send_via "pdf" (the
-//     suite never sends mail);
-//   - a pay request carries a JSON body with value null or without value
-//     (the suite never pays);
+//   - a deliver request carries a strict JSON body with send_via "pdf"
+//     and no email (the suite never sends mail);
+//   - a pay request carries exactly {"value": null, "banking_transaction":
+//     {"id": NoTransactionID}} (the suite never pays);
 //   - the documented cost still fits the budget of Meter.
 //
 // A refused request is not sent; RoundTrip returns ErrRefused or
@@ -66,7 +72,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("%w: deliver nur mit send_via \"pdf\"", ErrRefused)
 	}
 	if isAction(req.URL.Path, "pay") && !paysNothing(body) {
-		return nil, fmt.Errorf("%w: pay nur mit value null (die Suite bezahlt nie)", ErrRefused)
+		return nil, fmt.Errorf("%w: pay nur mit value null und der Bankumsatz-ID %d, die es nicht gibt (die Suite bezahlt nie)", ErrRefused, NoTransactionID)
 	}
 	if err := t.Meter.Reserve(req.Method, req.URL.Path); err != nil {
 		return nil, err
@@ -131,24 +137,109 @@ func isAction(path, action string) bool {
 	return strings.HasSuffix(strings.TrimRight(path, "/"), "/"+action)
 }
 
-// paysNothing reports whether body is a JSON object whose value is null
-// or absent: the API gets no amount to book.
-func paysNothing(body []byte) bool {
-	var b map[string]json.RawMessage
-	if err := json.Unmarshal(body, &b); err != nil {
+// deliversPDF reports whether body is a strict JSON object (see
+// strictObject) with the key send_via, exactly so spelled, set to "pdf",
+// and no key named email in any spelling.
+func deliversPDF(body []byte) bool {
+	m, ok := strictObject(body)
+	if !ok {
 		return false
 	}
-	v, ok := b["value"]
-	return !ok || string(v) == "null"
+	for k := range m {
+		if strings.EqualFold(k, "email") {
+			return false
+		}
+	}
+	var via string
+	raw, ok := m["send_via"]
+	return ok && json.Unmarshal(raw, &via) == nil && via == "pdf"
 }
 
-// deliversPDF reports whether body is a JSON object with send_via "pdf".
-func deliversPDF(body []byte) bool {
-	var b struct {
-		SendVia *string `json:"send_via"`
-	}
-	if err := json.Unmarshal(body, &b); err != nil || b.SendVia == nil {
+// paysNothing reports whether body is exactly
+// {"value": null, "banking_transaction": {"id": NoTransactionID}}: value
+// present and null, the sentinel ID as an integer, no other key at any
+// level, keys unique (see strictObject).
+func paysNothing(body []byte) bool {
+	m, ok := strictObject(body)
+	if !ok || len(m) != 2 || string(bytes.TrimSpace(m["value"])) != "null" {
 		return false
 	}
-	return *b.SendVia == "pdf"
+	bt, ok := strictObject(m["banking_transaction"])
+	return ok && len(bt) == 1 &&
+		string(bytes.TrimSpace(bt["id"])) == strconv.Itoa(NoTransactionID)
+}
+
+// strictObject parses body as exactly one JSON object and returns its
+// members. It refuses (false) anything else: invalid JSON, another type,
+// trailing data, and keys of one object that are equal or differ only by
+// case, at any depth. The check walks the tokens (json.Decoder.Token):
+// a map decode would silently keep one of the duplicates, and
+// encoding/json matches struct fields ignoring case.
+func strictObject(body []byte) (map[string]json.RawMessage, bool) {
+	d := json.NewDecoder(bytes.NewReader(body))
+	d.UseNumber()
+	if tok, err := d.Token(); err != nil || tok != json.Delim('{') {
+		return nil, false
+	}
+	if checkObject(d) != nil {
+		return nil, false
+	}
+	if _, err := d.Token(); err != io.EOF {
+		return nil, false
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(body, &m); err != nil || m == nil {
+		return nil, false
+	}
+	return m, true
+}
+
+var errDuplicateKey = errors.New("e2e: doppelter JSON-Schlüssel")
+
+// checkObject reads the members of an object whose "{" was read, up to
+// and including its "}".
+func checkObject(d *json.Decoder) error {
+	var keys []string
+	for d.More() {
+		tok, err := d.Token()
+		if err != nil {
+			return err
+		}
+		key, ok := tok.(string)
+		if !ok {
+			return errDuplicateKey
+		}
+		for _, k := range keys {
+			if strings.EqualFold(k, key) {
+				return errDuplicateKey
+			}
+		}
+		keys = append(keys, key)
+		if err := checkValue(d); err != nil {
+			return err
+		}
+	}
+	_, err := d.Token() // "}"
+	return err
+}
+
+// checkValue reads one value; objects and arrays are checked to the end.
+func checkValue(d *json.Decoder) error {
+	tok, err := d.Token()
+	if err != nil {
+		return err
+	}
+	switch tok {
+	case json.Delim('{'):
+		return checkObject(d)
+	case json.Delim('['):
+		for d.More() {
+			if err := checkValue(d); err != nil {
+				return err
+			}
+		}
+		_, err := d.Token() // "]"
+		return err
+	}
+	return nil
 }

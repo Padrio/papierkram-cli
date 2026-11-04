@@ -11,13 +11,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
-)
 
-// noTransaction is a banking transaction ID that does not exist. Carry 10
-// measures the shape of a pay body with it: the suite never pays and never
-// links a real bank transaction (that would change an object it does not
-// own).
-const noTransaction = "999999999"
+	"github.com/Padrio/papierkram-cli/internal/e2eguard"
+)
 
 // TestE2E_Carries holds the additional live measurements carried over from
 // the reviews of tasks 26 to 39 (task-44-carries.md), one subtest each.
@@ -196,14 +192,14 @@ func TestE2E_Carries(t *testing.T) {
 	})
 
 	// 10. voucher pay: is value null next to banking_transaction accepted?
-	// Measured with a transaction ID that does not exist and no amount
-	// (controller ruling: the suite never pays; the transport refuses a
-	// pay body with a value). amount together with a transaction is not
+	// Measured with a transaction ID that does not exist
+	// (e2eguard.NoTransactionID) and no amount (controller ruling: the
+	// suite never pays; the transport lets only exactly this body through). amount together with a transaction is not
 	// measured live (open point, docs/offene-punkte.md).
 	t.Run("10_VoucherPayValueNull", func(t *testing.T) {
 		v := idOf(s.voucher(t))
 		s.need(t, 1)
-		body := `{"value":null,"banking_transaction":{"id":` + noTransaction + `}}`
+		body := fmt.Sprintf(`{"value":null,"banking_transaction":{"id":%d}}`, e2eguard.NoTransactionID)
 		r := s.run(t, body, "voucher", "pay", ids(v), "--input", "-", "--yes", "-o", "json")
 		x := lastExchange(r, "POST", "/pay")
 		if x == nil {

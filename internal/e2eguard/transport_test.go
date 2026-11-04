@@ -124,6 +124,17 @@ func TestTransportRefusesDeliverOtherThanPDF(t *testing.T) {
 		``,
 		`not json`,
 		`{"send_via":"pdf","send_via":"email"}`,
+		// keys that differ only by case: encoding/json would match either
+		`{"send_via":"email","SEND_VIA":"pdf"}`,
+		`{"send_via":"email","Send_Via":"pdf"}`,
+		`{"SEND_VIA":"pdf"}`,
+		`{"send_via":"pdf","Email":{"recipient":"a@example.org"}}`,
+		`{"send_via":"pdf","email":null}`,
+		`{"send_via":"pdf","x":{"a":1,"A":2}}`,
+		`{"send_via":"pdf","x":[{"a":1,"a":2}]}`,
+		`{"send_via":"pdf"} {"send_via":"email"}`,
+		`["send_via","pdf"]`,
+		`{"send_via":"pdf"`,
 	} {
 		for _, path := range []string{"/income/invoices/7/deliver", "/income/estimates/7/deliver", "/income/estimates/7/deliver/"} {
 			if _, err := send(t, tr, "POST", u.String()+path, body); !errors.Is(err, ErrRefused) {
@@ -152,18 +163,36 @@ func TestTransportStopsAtBudget(t *testing.T) {
 	}
 }
 
-// Ruling: the suite never pays. A pay request goes out only with value
-// null (or without value); any amount is refused before sending.
-func TestTransportRefusesPayWithAmount(t *testing.T) {
+// Ruling (fix round 1): the suite never pays. A pay request goes out only
+// with exactly {"value": null, "banking_transaction": {"id": NoTransactionID}};
+// everything else is refused before sending.
+func TestTransportPayOnlyWithSentinel(t *testing.T) {
 	srv := mockapi.New(t, mockapi.WithoutAutoFail())
 	tr, u := newTestTransport(t, srv, 100)
 	for _, body := range []string{
 		`{"value":1,"banking_transaction":{"id":999999999}}`,
 		`{"value":"1"}`,
 		`{"value":0}`,
+		`{"value":null}`,
 		`{"value":null,"value":5}`,
+		`{}`,
 		``,
 		`not json`,
+		`null`,
+		// the documented way to pay with a bank transaction (no value)
+		`{"banking_transaction":{"id":999999999}}`,
+		`{"banking_transaction":{"id":471}}`,
+		`{"value":null,"banking_transaction":{"id":471}}`,
+		`{"value":null,"banking_transaction":{"id":"999999999"}}`,
+		`{"value":null,"banking_transaction":{"id":999999999.0}}`,
+		`{"value":null,"banking_transaction":{"id":999999999,"x":1}}`,
+		`{"value":null,"banking_transaction":null}`,
+		`{"value":null,"banking_transaction":{"id":999999999},"payment_date":"2026-01-01"}`,
+		`{"payment_date":"2026-01-01"}`,
+		`{"value":null,"banking_transaction":{"id":999999999},"Value":5}`,
+		`{"value":null,"banking_transaction":{"id":999999999,"ID":471}}`,
+		`{"value":null,"banking_transaction":{"id":999999999},"banking_transaction":{"id":471}}`,
+		`{"value":null,"banking_transaction":{"id":999999999}} {}`,
 	} {
 		if _, err := send(t, tr, "POST", u.String()+"/expense/vouchers/7/pay", body); !errors.Is(err, ErrRefused) {
 			t.Errorf("pay %q: err %v, want ErrRefused", body, err)
@@ -174,7 +203,7 @@ func TestTransportRefusesPayWithAmount(t *testing.T) {
 	}
 	for _, body := range []string{
 		`{"value":null,"banking_transaction":{"id":999999999}}`,
-		`{"banking_transaction":{"id":999999999}}`,
+		` { "banking_transaction" : { "id" : 999999999 } , "value" : null } `,
 	} {
 		resp, err := send(t, tr, "POST", u.String()+"/expense/vouchers/7/pay", body)
 		if err != nil {
@@ -186,4 +215,21 @@ func TestTransportRefusesPayWithAmount(t *testing.T) {
 	if n := len(srv.Requests()); n != 2 {
 		t.Errorf("server got %d requests, want 2", n)
 	}
+}
+
+func TestNoTransactionID(t *testing.T) {
+	if NoTransactionID != 999999999 {
+		t.Errorf("NoTransactionID = %d", NoTransactionID)
+	}
+}
+
+// A deliver as PDF with an ordinary body still goes out.
+func TestTransportAllowsPlainDeliverPDF(t *testing.T) {
+	srv := mockapi.New(t)
+	tr, u := newTestTransport(t, srv, 100)
+	resp, err := send(t, tr, "POST", u.String()+"/income/estimates/7/deliver", ` {"send_via" : "pdf"} `)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
 }
