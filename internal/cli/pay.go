@@ -75,6 +75,7 @@ func (a *App) newPayCmd(e registry.Entry) *cobra.Command {
 			continue
 		}
 		fs.Var(&rawValue{typ: flagType(f)}, pf.flag, pf.help+spec.HelpSuffix(f))
+		markEnum(fs, pf.flag, f.Enum)
 	}
 	fs.String("input", "", "Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder")
 	return cmd

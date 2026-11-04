@@ -161,6 +161,7 @@ func (a *App) newEntryCmd(e registry.Entry) *cobra.Command {
 	for _, p := range params {
 		if p.flag != "" {
 			cmd.Flags().Int64(p.flag, 0, fmt.Sprintf("ID des übergeordneten Objekts (%s, Pflicht)", p.name))
+			markRequired(cmd.Flags(), p.flag)
 		}
 	}
 	switch kind {

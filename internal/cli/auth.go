@@ -21,6 +21,17 @@ import (
 // maxTokenInput bounds what auth login reads from stdin.
 const maxTokenInput = 64 << 10
 
+// opGetInfo is the operation auth login (token check) and auth status
+// (quota) send; their pk:operation annotation names it for commands
+// --json.
+const opGetInfo = "GetInfo"
+
+// withOperation adds the pk:operation annotation op to annotations.
+func withOperation(annotations map[string]string, op string) map[string]string {
+	annotations[annotOperation] = op
+	return annotations
+}
+
 func newAuthCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
@@ -51,7 +62,7 @@ func newAuthLoginCmd(app *App) *cobra.Command {
 	var tokenStdin, insecure bool
 	cmd := &cobra.Command{
 		Use:         "login",
-		Annotations: writesConfig(),
+		Annotations: withOperation(writesConfig(), opGetInfo),
 		Short:       "Token prüfen und speichern",
 		Long: "Liest das API-Token (Papierkram: Einstellungen → API) verdeckt vom Terminal oder mit --token-stdin\n" +
 			"von der Standardeingabe, prüft es mit GET /info (1 Credit) und speichert es erst danach im\n" +
@@ -151,7 +162,7 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 	if err != nil {
 		return err
 	}
-	if _, err := client.Call(c.Context(), "GetInfo", nil, nil, nil); err != nil {
+	if _, err := client.Call(c.Context(), opGetInfo, nil, nil, nil); err != nil {
 		ce := clierr.From(err)
 		ce.Message += "; das Token wurde nicht gespeichert"
 		return ce
@@ -377,7 +388,7 @@ type statusJSON struct {
 func newAuthStatusCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:         "status",
-		Annotations: readsOnly(),
+		Annotations: withOperation(readsOnly(), opGetInfo),
 		Short:       "Kontext, Token-Quelle, Schreibschutz und Restkontingent anzeigen",
 		Long: "Zeigt den wirksamen Kontext (mit Herkunft), Subdomain, Basis-URL, die Quelle des Tokens (env, keychain\n" +
 			"oder config; das Token selbst nie), die Schreibschutzstufe und das Restkontingent.\n" +
@@ -391,7 +402,7 @@ func newAuthStatusCmd(app *App) *cobra.Command {
 			}
 			client, callErr := app.clientFor(r)
 			if callErr == nil {
-				_, callErr = client.Call(c.Context(), "GetInfo", nil, nil, nil)
+				_, callErr = client.Call(c.Context(), opGetInfo, nil, nil, nil)
 			}
 			st := statusJSON{
 				Context: r.Context, ContextSource: r.ContextSource,

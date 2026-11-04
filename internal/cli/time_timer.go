@@ -55,6 +55,8 @@ func (a *App) newTimeStartCmd() *cobra.Command {
 	fs := cmd.Flags()
 	fs.String("task", "", "Aufgabe: ID oder Alias aus [tasks] der Projektdatei; ohne Angabe "+presetNote(presetTask))
 	fs.Var(&rawValue{typ: "id"}, "user", "Benutzer-ID; ohne Angabe "+presetNote(presetUser)+" oder user des Kontexts")
+	markPreset(fs, "task", presetTask, true)
+	markPreset(fs, "user", presetUser, true)
 	fs.StringP("comments", "m", "", "Kommentar (time stop -m ersetzt ihn)")
 	return cmd
 }
@@ -90,7 +92,7 @@ func (a *App) newTimeStopCmd() *cobra.Command {
 			"(dann von Hand mit papierkram time log buchen oder mit papierkram time discard verwerfen)." +
 			"\n\nKosten: " + creditsText(e.Credits) + " je Zeiteintrag.",
 		Example:     "  papierkram time stop\n  papierkram time stop -m \"Fehler behoben\" --yes",
-		Annotations: map[string]string{annotClass: string(registry.ClassCreate)},
+		Annotations: map[string]string{annotClass: string(registry.ClassCreate), annotOperation: e.OperationID},
 		Args:        noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			if !ok || e.Class != registry.ClassCreate {

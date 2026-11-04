@@ -70,7 +70,7 @@ func newAPICmd(app *App) *cobra.Command {
 		Short:       apiShort,
 		Long:        apiLong,
 		Example:     strings.Join(lines, "\n"),
-		Annotations: map[string]string{annotClass: string(registry.ClassDestructive)},
+		Annotations: map[string]string{annotClass: string(registry.ClassDestructive), annotPerRequest: "true"},
 		Args:        apiArgs,
 		RunE:        func(c *cobra.Command, args []string) error { return app.runAPI(c, args) },
 	}

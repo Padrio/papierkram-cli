@@ -58,7 +58,7 @@ func (a *App) newTimeLogCmd() *cobra.Command {
 		Short:       "Zeit erfassen (Zeiteintrag mit Zeitraum, Aufgabe und Benutzer)",
 		Long:        timeLogLong + "\n\nKosten: " + creditsText(e.Credits) + " je Zeiteintrag.",
 		Example:     "  " + strings.Join(timeLogExamples, "\n  "),
-		Annotations: map[string]string{annotClass: string(registry.ClassCreate)},
+		Annotations: map[string]string{annotClass: string(registry.ClassCreate), annotOperation: e.OperationID},
 		Args:        noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			if !ok || e.Class != registry.ClassCreate {
@@ -70,6 +70,8 @@ func (a *App) newTimeLogCmd() *cobra.Command {
 	fs := cmd.Flags()
 	fs.String("task", "", "Aufgabe: ID oder Alias aus [tasks] der Projektdatei; ohne Angabe "+presetNote(presetTask))
 	fs.Var(&rawValue{typ: "id"}, "user", "Benutzer-ID; ohne Angabe "+presetNote(presetUser)+" oder user des Kontexts")
+	markPreset(fs, "task", presetTask, true)
+	markPreset(fs, "user", presetUser, true)
 	fs.Var(&rawValue{typ: "date"}, "date", "Datum: YYYY-MM-DD, today/heute, yesterday/gestern (Standard: heute)")
 	fs.String("from", "", "Beginn als H:MM oder HH:MM")
 	fs.String("to", "", "Ende als H:MM oder HH:MM (nicht mit --duration)")

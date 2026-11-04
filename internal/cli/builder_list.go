@@ -74,10 +74,13 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 	f.Bool("desc", false, "absteigend sortieren (nur mit --sort)")
 	for _, flt := range e.Filters {
 		help := flt.Help
-		if flt.Kind == "enum" {
-			if _, values := filterEnum(e, flt); len(values) > 0 {
-				help += " (erlaubt: " + strings.Join(values, ", ") + ")"
-			}
+		// the values filterValue accepts (enum and local filters)
+		var values []string
+		if flt.Kind == "enum" || flt.Kind == localKind {
+			_, values = filterEnum(e, flt)
+		}
+		if flt.Kind == "enum" && len(values) > 0 {
+			help += " (erlaubt: " + strings.Join(values, ", ") + ")"
 		}
 		if flt.Flag == e.Preset {
 			help += "; ohne Angabe " + presetNote(e.Preset)
@@ -86,6 +89,17 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 			f.Int64(flt.Flag, 0, help)
 		} else {
 			f.String(flt.Flag, "", help)
+		}
+		markEnum(f, flt.Flag, values)
+		if flt.Kind == "date" {
+			annotate(f, flt.Flag, flagValueType, "date") // parsed like a date field
+		}
+		if flt.Kind == localKind {
+			annotate(f, flt.Flag, flagLocalFilter, "true")
+		}
+		if flt.Flag == e.Preset {
+			// presetQuery runs before the configuration is resolved
+			markPreset(f, flt.Flag, e.Preset, false)
 		}
 	}
 }

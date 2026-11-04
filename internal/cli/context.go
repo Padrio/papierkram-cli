@@ -122,6 +122,7 @@ func newContextCreateCmd(app *App) *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&subdomain, "subdomain", "", "Papierkram-Subdomain (Pflicht)")
+	markRequired(f, "subdomain")
 	f.BoolVar(&readOnly, "read-only", false, "Kontext gegen Schreibzugriffe sperren")
 	f.StringVar(&user, "user", "", "Standard-User-ID für Zeiteinträge")
 	return cmd

@@ -143,11 +143,16 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 		}
 		if f.Repeatable {
 			fs.StringArray(f.Flag, nil, usage)
-			continue
-		}
-		fl := fs.VarPF(&rawValue{typ: flagType(f)}, f.Flag, "", usage)
-		if f.IsBool() {
+		} else if fl := fs.VarPF(&rawValue{typ: flagType(f)}, f.Flag, "", usage); f.IsBool() {
 			fl.NoOptDefVal = "true"
+		}
+		if f.Required {
+			markRequired(fs, f.Flag)
+		}
+		markEnum(fs, f.Flag, f.Enum)
+		if f.Flag == e.Preset {
+			// presetBody runs after the configuration is resolved
+			markPreset(fs, f.Flag, e.Preset, true)
 		}
 	}
 	if ws.items != nil {

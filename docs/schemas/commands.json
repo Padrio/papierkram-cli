@@ -1,0 +1,222 @@
+{
+  "title": "papierkram commands --json",
+  "description": "Maschinenlesbare Liste aller Befehle des papierkram-CLI (Vertrag für Agents, Version 1). OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "commands", "global_flags"],
+  "properties": {
+    "version": {
+      "description": "Version des Vertrags; ändert sich nur bei inkompatiblen Änderungen.",
+      "type": "integer",
+      "enum": [1]
+    },
+    "commands": {
+      "description": "Alle sichtbaren ausführbaren Befehle, sortiert nach command. Befehlsgruppen (invoice, auth, …) zeigen nur Hilfe und fehlen; ihre Aliase stecken in den aliases der Befehle.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "aliases", "short", "class", "credits", "flags", "examples"],
+        "oneOf": [
+          {
+            "description": "Befehl mit fester Operation: operation_id, method und path zusammen, mindestens 1 Credit.",
+            "required": ["operation_id", "method", "path"],
+            "properties": {
+              "class": {"type": "string", "enum": ["read_only", "create", "update", "archive", "destructive", "send", "local"]},
+              "credits": {"type": "integer", "minimum": 1}
+            }
+          },
+          {
+            "description": "Lokaler Befehl ohne Operation: kostet nichts.",
+            "not": {"anyOf": [{"required": ["operation_id"]}, {"required": ["method"]}, {"required": ["path"]}]},
+            "properties": {
+              "class": {"type": "string", "enum": ["local"]},
+              "credits": {"type": "integer", "enum": [0]}
+            }
+          },
+          {
+            "description": "Befehl, dessen Operation, Klasse und Kosten sich je Anfrage entscheiden (papierkram api): credits null.",
+            "not": {"anyOf": [{"required": ["operation_id"]}, {"required": ["method"]}, {"required": ["path"]}]},
+            "properties": {
+              "class": {"type": "string", "enum": ["per_request"]},
+              "credits": {"type": "integer", "nullable": true, "enum": [null]}
+            }
+          }
+        ],
+        "properties": {
+          "command": {
+            "description": "Befehlspfad ohne „papierkram“, z. B. „invoice create“.",
+            "type": "string",
+            "pattern": "^[a-z][a-z-]*( [a-z][a-z-]*)*$"
+          },
+          "aliases": {
+            "description": "Alle anderen Schreibweisen des Befehlspfads (deutsche Ressourcen-Aliase, Aktions-Aliase wie send), sortiert.",
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z-]*( [a-z][a-z-]*)*$"
+            }
+          },
+          "short": {
+            "description": "Kurzhilfe (Deutsch).",
+            "type": "string",
+            "minLength": 1
+          },
+          "class": {
+            "description": "Aktionsklasse (Spec 8.1): read_only, create, update, archive, destructive, send. Zusätzlich local: der Befehl wirkt nur lokal (Konfiguration, Schlüsselbund, Projektdatei, Timer, Ausgabe des CLI) und kostet nichts, außer er nennt eine Operation (auth login prüft das Token per GET /info); per_request: die Klasse entscheidet sich je Anfrage (papierkram api: Klasse der Operation zu Methode und Pfad, unbekannte Pfade bei GET read_only, sonst destructive).",
+            "type": "string",
+            "enum": ["read_only", "create", "update", "archive", "destructive", "send", "local", "per_request"]
+          },
+          "credits": {
+            "description": "Credits je Anfrage (Spec 4.3); 0 ohne Anfrage; null bei class per_request (Kosten der jeweiligen Operation).",
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          },
+          "operation_id": {
+            "description": "operationId der API-Operation, die der Befehl sendet; fehlt bei Befehlen ohne feste Operation.",
+            "type": "string",
+            "pattern": "^[A-Z][A-Za-z]+$"
+          },
+          "method": {
+            "description": "HTTP-Methode der Operation.",
+            "type": "string",
+            "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          },
+          "path": {
+            "description": "Pfad-Template der Operation relativ zu /api/v1.",
+            "type": "string",
+            "pattern": "^/"
+          },
+          "flags": {
+            "description": "Eigene Flags des Befehls, sortiert nach name (ohne --help und ohne die globalen Flags).",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "type", "required", "repeatable", "enum", "description"],
+              "properties": {
+                "name": {
+                  "description": "Flag-Name ohne Bindestriche.",
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "type": {
+                  "description": "Werttyp: string, boolean (Schalter), integer, number (Dezimalpunkt), id (ganze Zahl ≥ 0), date (YYYY-MM-DD, heute, gestern), duration (z. B. 30s).",
+                  "type": "string",
+                  "enum": ["string", "boolean", "integer", "number", "id", "date", "duration"]
+                },
+                "required": {
+                  "description": "Pflichtangabe (in der Hilfe „Pflicht“): per Flag oder, wo der Befehl es anbietet, per --input bzw. Voreinstellung (default_from).",
+                  "type": "boolean"
+                },
+                "repeatable": {
+                  "description": "Das Flag darf mehrfach angegeben werden.",
+                  "type": "boolean"
+                },
+                "enum": {
+                  "description": "Erlaubte Werte; leer, wenn jeder Wert des Typs erlaubt ist.",
+                  "type": "array",
+                  "items": {"type": "string"}
+                },
+                "description": {
+                  "description": "Hilfetext des Flags (Deutsch).",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "local_filter": {
+                  "description": "Filter, den die API ignoriert: das CLI lädt alle Seiten (je Seite Credits) und filtert lokal (Spec 9.7).",
+                  "type": "boolean",
+                  "enum": [true]
+                },
+                "default_from": {
+                  "description": "Quellen des Werts in Vorrangreihenfolge, wenn das Flag fehlt (Spec 9.8): flag, env (siehe env), projectfile (.papierkram.toml), context (Standardwert des Kontexts).",
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": ["flag", "env", "projectfile", "context"]
+                  }
+                },
+                "env": {
+                  "description": "Umgebungsvariable, die den Wert setzt, wenn das Flag fehlt.",
+                  "type": "string",
+                  "pattern": "^PAPIERKRAM_[A-Z_]+$"
+                }
+              }
+            }
+          },
+          "examples": {
+            "description": "Beispielaufrufe, je einer pro Eintrag.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^papierkram "
+            }
+          }
+        }
+      }
+    },
+    "global_flags": {
+      "description": "Globale Flags, gültig für jeden Befehl, sortiert nach name.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type", "required", "repeatable", "enum", "description"],
+        "properties": {
+          "name": {
+            "description": "Flag-Name ohne Bindestriche.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "type": {
+            "description": "Werttyp: string, boolean (Schalter), integer, number (Dezimalpunkt), id (ganze Zahl ≥ 0), date (YYYY-MM-DD, heute, gestern), duration (z. B. 30s).",
+            "type": "string",
+            "enum": ["string", "boolean", "integer", "number", "id", "date", "duration"]
+          },
+          "required": {
+            "description": "Pflichtangabe (in der Hilfe „Pflicht“): per Flag oder, wo der Befehl es anbietet, per --input bzw. Voreinstellung (default_from).",
+            "type": "boolean"
+          },
+          "repeatable": {
+            "description": "Das Flag darf mehrfach angegeben werden.",
+            "type": "boolean"
+          },
+          "enum": {
+            "description": "Erlaubte Werte; leer, wenn jeder Wert des Typs erlaubt ist.",
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "description": {
+            "description": "Hilfetext des Flags (Deutsch).",
+            "type": "string",
+            "minLength": 1
+          },
+          "local_filter": {
+            "description": "Filter, den die API ignoriert: das CLI lädt alle Seiten (je Seite Credits) und filtert lokal (Spec 9.7).",
+            "type": "boolean",
+            "enum": [true]
+          },
+          "default_from": {
+            "description": "Quellen des Werts in Vorrangreihenfolge, wenn das Flag fehlt (Spec 9.8): flag, env (siehe env), projectfile (.papierkram.toml), context (Standardwert des Kontexts).",
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": ["flag", "env", "projectfile", "context"]
+            }
+          },
+          "env": {
+            "description": "Umgebungsvariable, die den Wert setzt, wenn das Flag fehlt.",
+            "type": "string",
+            "pattern": "^PAPIERKRAM_[A-Z_]+$"
+          }
+        }
+      }
+    }
+  }
+}

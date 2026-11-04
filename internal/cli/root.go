@@ -166,12 +166,16 @@ func NewRootCmd(app *App) *cobra.Command {
 	f.BoolVarP(&fl.Yes, "yes", "y", false, "Bestätigungen automatisch bejahen")
 	f.BoolVar(&fl.DryRun, "dry-run", false, "Mutation nur anzeigen, nicht senden")
 	f.BoolVar(&fl.NoColor, "no-color", false, "Farben abschalten")
+	markEnum(f, "output", outputFormats)
+	annotate(f, "context", flagEnv, "PAPIERKRAM_CONTEXT")
 
 	root.AddCommand(newVersionCmd(app))
 	root.AddCommand(newContextCmd(app))
 	root.AddCommand(newAuthCmd(app))
 	root.AddCommand(newLocalCmd(app))
 	root.AddCommand(newAPICmd(app))
+	root.AddCommand(newCommandsCmd(app))
+	root.AddCommand(newSchemaCmd(app))
 	BuildResourceCommands(app, root)
 	applyGerman(root)
 	return root
