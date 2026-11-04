@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -75,29 +74,18 @@ func (a *App) newPayCmd(e registry.Entry) *cobra.Command {
 			fs.String(pf.flag, "", pf.help)
 			continue
 		}
-		fs.Var(&rawValue{typ: flagType(f)}, pf.flag, payHelp(pf.help, f))
+		fs.Var(&rawValue{typ: flagType(f)}, pf.flag, pf.help+spec.HelpSuffix(f))
 	}
 	fs.String("input", "", "Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder")
 	return cmd
 }
 
-// payHelp is the help of a pay flag: its text plus what the spec allows
-// (date forms, enum values).
-func payHelp(text string, f spec.Field) string {
-	if f.Format == "date" {
-		text += " (YYYY-MM-DD, heute, gestern)"
-	}
-	if len(f.Enum) > 0 {
-		text += " (erlaubt: " + strings.Join(f.Enum, ", ") + ")"
-	}
-	return text
-}
-
 // runPay records a payment of a voucher (spec 9.5). Order (plan, as in
 // runWriteThen): the ID, the fields of the request schema (exit 1 when the
 // spec lacks one, like newWriteSpec), the flags (exit 2: without --input,
-// --amount or --transaction is required), configuration and read-only gate (mutationClient, exit 9,
-// before --input is read or a value checked), body (payBody, exit 5),
+// --amount or --transaction is required), configuration and read-only
+// gate (mutationClient, exit 9, before --input is read or a value
+// checked), body (payBody, exit 5),
 // --dry-run and confirmation (beforeSend, exit 8 without terminal and
 // --yes), then the request. Output is the API object (the voucher); an
 // empty answer prints {"id":N,"ok":true}.

@@ -396,3 +396,35 @@ func TestFieldsPatternFormatHelp(t *testing.T) {
 		t.Errorf("%d time flags found, want 2", n)
 	}
 }
+
+// HelpSuffix is the part of Help after the field's own text, so commands
+// with their own flag texts (voucher pay) add the same date forms and enum
+// values as the generic flags.
+func TestHelpSuffix(t *testing.T) {
+	byPath := map[string]Field{}
+	for _, f := range mustFields(t, "PayVoucher") {
+		byPath[strings.Join(f.Path, ".")] = f
+	}
+	for path, want := range map[string]string{
+		"payment_date":        " (YYYY-MM-DD, heute, gestern)",
+		"difference_reason":   " (erlaubt: sonstige, mahnung, teilzahlung, skonto, schmaelerung)",
+		"value":               "",
+		"banking_transaction": "",
+	} {
+		f, ok := byPath[path]
+		if !ok {
+			t.Fatalf("%s fehlt", path)
+		}
+		if got := HelpSuffix(f); got != want {
+			t.Errorf("HelpSuffix(%s) = %q, erwartet %q", path, got, want)
+		}
+		if !strings.HasSuffix(f.Help, want) {
+			t.Errorf("Help(%s) = %q endet nicht auf %q", path, f.Help, want)
+		}
+	}
+	for _, f := range mustFields(t, "CreateVoucher") {
+		if f.Flag == "category" && HelpSuffix(f) != " (siehe Completion)" {
+			t.Errorf("category: HelpSuffix = %q", HelpSuffix(f))
+		}
+	}
+}

@@ -335,6 +335,15 @@ func help(f Field, s *openapi3.Schema) string {
 	default:
 		h = "Wert für " + path
 	}
+	return h + HelpSuffix(f)
+}
+
+// HelpSuffix is what the help of a field flag adds to its text: the date
+// forms, VAT forms, bool values or pattern, the enum values (or a pointer
+// to the completion for huge enums) and whether it repeats. Commands with
+// texts of their own (voucher pay) append it like the generic flags do.
+func HelpSuffix(f Field) string {
+	h := ""
 	switch {
 	case f.Format == "date":
 		h += " (YYYY-MM-DD, heute, gestern)"
@@ -342,8 +351,8 @@ func help(f Field, s *openapi3.Schema) string {
 		h += " (19, 19%, 0,19 oder 0.19)"
 	case f.IsBool():
 		h += " (true/false)"
-	case patternFormat(s) != "":
-		h += " (" + patternFormat(s) + ")"
+	case patternFormat(f.Schema) != "":
+		h += " (" + patternFormat(f.Schema) + ")"
 	}
 	switch n := len(f.Enum); {
 	case n > bigEnum:
