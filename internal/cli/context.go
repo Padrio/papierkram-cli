@@ -131,11 +131,12 @@ func newContextCreateCmd(app *App) *cobra.Command {
 
 func newContextUseCmd(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:         "use <name>",
-		Annotations: writesConfig(),
-		Short:       "Kontext aktivieren",
-		Example:     "  papierkram context use firma-gmbh\n  papierkram context use agent",
-		Args:        exactArgs(1),
+		Use:               "use <name>",
+		ValidArgsFunction: app.contextArgCompletion,
+		Annotations:       writesConfig(),
+		Short:             "Kontext aktivieren",
+		Example:           "  papierkram context use firma-gmbh\n  papierkram context use agent",
+		Args:              exactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, path, err := app.loadConfig()
 			if err != nil {
@@ -258,12 +259,13 @@ func keyringErr(err error, what string) error {
 
 func newContextDeleteCmd(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:         "delete <name>",
-		Annotations: writesConfig(),
-		Short:       "Kontext löschen",
-		Long:        "Löscht den Kontext und das zugehörige Token im Schlüsselbund. Eine Bestätigung ist nicht nötig.",
-		Example:     "  papierkram context delete agent\n  papierkram context delete firma-alt",
-		Args:        exactArgs(1),
+		Use:               "delete <name>",
+		ValidArgsFunction: app.contextArgCompletion,
+		Annotations:       writesConfig(),
+		Short:             "Kontext löschen",
+		Long:              "Löscht den Kontext und das zugehörige Token im Schlüsselbund. Eine Bestätigung ist nicht nötig.",
+		Example:           "  papierkram context delete agent\n  papierkram context delete firma-alt",
+		Args:              exactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			name := args[0]
 			cfg, path, err := app.loadConfig()
@@ -291,12 +293,13 @@ func newContextDeleteCmd(app *App) *cobra.Command {
 
 func newContextRenameCmd(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:         "rename <alt> <neu>",
-		Annotations: writesConfig(),
-		Short:       "Kontext umbenennen",
-		Long:        "Benennt einen Kontext um und verschiebt das Token im Schlüsselbund. Ein aktiver Kontext bleibt aktiv.",
-		Example:     "  papierkram context rename firma firma-gmbh\n  papierkram context rename agent agent-lesend",
-		Args:        exactArgs(2),
+		Use:               "rename <alt> <neu>",
+		ValidArgsFunction: app.contextArgCompletion,
+		Annotations:       writesConfig(),
+		Short:             "Kontext umbenennen",
+		Long:              "Benennt einen Kontext um und verschiebt das Token im Schlüsselbund. Ein aktiver Kontext bleibt aktiv.",
+		Example:           "  papierkram context rename firma firma-gmbh\n  papierkram context rename agent agent-lesend",
+		Args:              exactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			oldName, newName := args[0], args[1]
 			cfg, path, err := app.loadConfig()

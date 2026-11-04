@@ -146,6 +146,11 @@ func NewRootCmd(app *App) *cobra.Command {
 			return nil
 		},
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
+			if isCompletionCmd(c) {
+				// the completion request parses the flags of the completed
+				// command itself and stays silent (no warnings)
+				return nil
+			}
 			if err := app.checkGlobalFlags(c); err != nil {
 				return err
 			}
@@ -191,6 +196,8 @@ func NewRootCmd(app *App) *cobra.Command {
 	root.AddCommand(newAPICmd(app))
 	root.AddCommand(newCommandsCmd(app))
 	root.AddCommand(newSchemaCmd(app))
+	root.AddCommand(newCompletionCmd(app))
+	root.AddCommand(newGenDocsCmd(app))
 	BuildResourceCommands(app, root)
 	applyGerman(root)
 	return root
@@ -219,6 +226,9 @@ func execute(app *App, root *cobra.Command, args []string) int {
 
 // executeContext runs root with ctx as the command context (cmd.Context()).
 func executeContext(ctx context.Context, app *App, root *cobra.Command, args []string) int {
+	if isCompletionRequest(args) {
+		app.registerCompletions(root)
+	}
 	root.SetArgs(args)
 	err := root.ExecuteContext(ctx)
 	if err == nil {

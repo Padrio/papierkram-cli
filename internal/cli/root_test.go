@@ -50,7 +50,11 @@ func TestRootHelpGerman(t *testing.T) {
 			t.Errorf("Hilfe enthält %q nicht:\n%s", want, got)
 		}
 	}
-	for _, bad := range []string{"Usage:", "help for", "Available Commands:", "Flags:\n", "Global Flags:", "completion", "[flags]"} {
+	// completion is the German command of task 40, not cobra's English default
+	if !strings.Contains(got, "Skript für die Shell-Vervollständigung ausgeben") {
+		t.Errorf("Hilfe ohne deutschen completion-Befehl:\n%s", got)
+	}
+	for _, bad := range []string{"Usage:", "help for", "Available Commands:", "Flags:\n", "Global Flags:", "autocompletion", "[flags]"} {
 		if strings.Contains(got, bad) {
 			t.Errorf("Hilfe enthält unerwartet %q:\n%s", bad, got)
 		}
