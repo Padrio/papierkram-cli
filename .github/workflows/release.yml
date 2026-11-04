@@ -20,6 +20,7 @@ jobs:
     # a fork that copies the tag never publishes
     if: github.repository == 'Padrio/papierkram-cli' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -27,6 +28,10 @@ jobs:
         with:
           # GoReleaser reads tags and the commit date from the history
           fetch-depth: 0
+          # GoReleaser publishes through the API (GITHUB_TOKEN and
+          # PACKAGES_GITHUB_TOKEN from env), never by git push: no token in
+          # .git/config for the hooks and later steps
+          persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: '1.27.x'
