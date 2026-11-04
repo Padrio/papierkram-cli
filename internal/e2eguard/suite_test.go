@@ -27,8 +27,10 @@ var outputCalls = []string{"Log", "Logf", "Error", "Errorf", "Fatal", "Fatalf", 
 //   - every _test.go file carries //go:build e2e; other files declare
 //     nothing (the package doc only);
 //   - TestMain starts with e2eguard.Decide (nothing before the decision);
+//     no init and no package variable initialised by a call other than a
+//     pure one (allowedVarCalls, conversions), since those run earlier;
 //   - every other Test function starts with live(t), so a skipped suite
-//     sends no request;
+//     sends no request; no Example, Fuzz or Benchmark functions;
 //   - only log_test.go writes output (t.Log …, fmt.Print …, os.Stdout,
 //     os.Stderr, package log): all output goes through the redaction;
 //   - no string literal "email" (deliver only --via pdf).
@@ -66,11 +68,28 @@ func checkSuiteSource(dir string) ([]string, error) {
 			}
 		}
 		for _, d := range f.Decls {
+			if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.VAR {
+				for _, call := range varCalls(gd) {
+					add(fset.Position(call.Pos()), "Paketvariable mit Aufruf "+callName(call)+" läuft vor TestMain")
+				}
+				continue
+			}
 			fn, ok := d.(*ast.FuncDecl)
-			if !ok || fn.Recv != nil || !strings.HasPrefix(fn.Name.Name, "Test") {
+			if !ok || fn.Recv != nil {
 				continue
 			}
 			pos := fset.Position(fn.Pos())
+			name := fn.Name.Name
+			switch {
+			case name == "init":
+				add(pos, "init läuft vor TestMain")
+				continue
+			case strings.HasPrefix(name, "Example"), strings.HasPrefix(name, "Fuzz"), strings.HasPrefix(name, "Benchmark"):
+				add(pos, name+": Example-, Fuzz- und Benchmark-Funktionen laufen ohne live(t)")
+				continue
+			case !strings.HasPrefix(name, "Test"):
+				continue
+			}
 			switch {
 			case fn.Name.Name == "TestMain":
 				sawMain = true
@@ -103,6 +122,63 @@ func checkSuiteSource(dir string) ([]string, error) {
 		bad = append(bad, "kein TestMain")
 	}
 	return bad, nil
+}
+
+// allowedVarCalls are the calls a package variable of the suite may be
+// initialised with: pure, no I/O (they run before TestMain).
+var allowedVarCalls = []string{"e2eguard.CleanupReserve"}
+
+// conversions are the type names whose conversion is allowed.
+var conversions = []string{"string", "rune", "byte", "int", "int64", "uint", "float64"}
+
+// varCalls returns the calls in the initialisers of a var declaration
+// that are not allowed; function literals do not run at initialisation
+// and are skipped.
+func varCalls(gd *ast.GenDecl) []*ast.CallExpr {
+	var out []*ast.CallExpr
+	for _, spec := range gd.Specs {
+		vs, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			continue
+		}
+		for _, v := range vs.Values {
+			ast.Inspect(v, func(n ast.Node) bool {
+				switch x := n.(type) {
+				case *ast.FuncLit:
+					return false
+				case *ast.CallExpr:
+					if !allowedCall(x) {
+						out = append(out, x)
+					}
+				}
+				return true
+			})
+		}
+	}
+	return out
+}
+
+func allowedCall(c *ast.CallExpr) bool {
+	switch f := c.Fun.(type) {
+	case *ast.ArrayType:
+		return true // conversion such as []byte("…")
+	case *ast.Ident:
+		return slices.Contains(conversions, f.Name)
+	}
+	return slices.Contains(allowedVarCalls, callName(c))
+}
+
+// callName is pkg.Func or Func of a call, or "?" for other forms.
+func callName(c *ast.CallExpr) string {
+	switch f := c.Fun.(type) {
+	case *ast.Ident:
+		return f.Name
+	case *ast.SelectorExpr:
+		if id, ok := f.X.(*ast.Ident); ok {
+			return id.Name + "." + f.Sel.Name
+		}
+	}
+	return "?"
 }
 
 func hasE2ETag(f *ast.File) bool {
@@ -325,5 +401,79 @@ func TestMain(m *testing.M) {
 	}
 	if bad, _ := checkSuiteSource(dir); !slices.Contains(bad, "kein TestMain") {
 		t.Errorf("violations without TestMain: %v", bad)
+	}
+}
+
+// Nothing may run before TestMain decides, and nothing next to the tests
+// without live(t): no init, no package variable initialised by a call
+// (except the pure ones of allowedVarCalls), no Example, Fuzz or
+// Benchmark functions.
+func TestCheckSuiteSourceBeforeTestMain(t *testing.T) {
+	dir := t.TempDir()
+	src := `//go:build e2e
+
+package e2e
+
+import (
+	"net/http"
+	"os"
+	"testing"
+
+	"github.com/Padrio/papierkram-cli/internal/e2eguard"
+)
+
+func TestMain(m *testing.M) {
+	run, _ := e2eguard.Decide(os.Getenv)
+	_ = run
+	os.Exit(m.Run())
+}
+
+var (
+	okReserve = e2eguard.CleanupReserve(1, 2, 3)
+	okBytes   = []byte("pdf")
+	okConv    = string(rune(65))
+	okFunc    = func() string { return os.Getenv("X") }
+	okMap     = map[string]bool{"a": true}
+)
+
+var badEnv = os.Getenv("PAPIERKRAM_E2E_TOKEN")
+
+var badNested = map[string]string{"a": os.Getenv("X")}
+
+var badResp, _ = http.Get("https://example.org")
+
+func init() {}
+
+func ExampleLive() {}
+
+func FuzzLive(f *testing.F) {}
+
+func BenchmarkLive(b *testing.B) {}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main_test.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bad, err := checkSuiteSource(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(bad, "\n")
+	for _, want := range []string{
+		"main_test.go:27: Paketvariable mit Aufruf os.Getenv",
+		"main_test.go:29: Paketvariable mit Aufruf os.Getenv",
+		"main_test.go:31: Paketvariable mit Aufruf http.Get",
+		"main_test.go:33: init",
+		"main_test.go:35: ExampleLive",
+		"main_test.go:37: FuzzLive",
+		"main_test.go:39: BenchmarkLive",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing violation %q in:\n%s", want, joined)
+		}
+	}
+	for _, line := range []string{":20:", ":21:", ":22:", ":23:", ":24:"} {
+		if strings.Contains(joined, "main_test.go"+line) {
+			t.Errorf("allowed variable reported (%s):\n%s", line, joined)
+		}
 	}
 }
