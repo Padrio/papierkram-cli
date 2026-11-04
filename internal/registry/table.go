@@ -168,6 +168,65 @@ var (
 			{Header: "RECHNUNGSVORLAGEN", Path: "settings.custom_templates.invoices", Fmt: output.FmtIDNameList},
 		},
 	}
+	// project (spec 10.3); company_id is the customer. Only the object
+	// responses embed the customer, so only they show its name in wide.
+	projectColumns = output.Columns{
+		Table: []output.Column{
+			{Header: "ID", Path: "id"},
+			{Header: "NAME", Path: "name"},
+			{Header: "KUNDEN-ID", Path: "company_id"},
+			{Header: "STATUS", Path: "record_state"},
+			{Header: "START", Path: "start_date", Fmt: output.FmtDate},
+			{Header: "ENDE", Path: "end_date", Fmt: output.FmtDate},
+		},
+		Wide: []output.Column{
+			{Header: "BUDGETART", Path: "budget_type"},
+			{Header: "BUDGET", Path: "budget_money", Fmt: output.FmtMoney},
+			{Header: "ZEITBUDGET", Path: "budget_time"},
+			{Header: "ZEITEINHEIT", Path: "budget_time_unit"},
+		},
+	}
+	projectDetailColumns = output.Columns{
+		Table: projectColumns.Table,
+		Wide: append([]output.Column{
+			{Header: "KUNDE", Path: "customer.name"},
+		}, projectColumns.Wide...),
+	}
+	// task (spec 10.3); the object responses embed project, user and
+	// proposition, list entries only have project_id.
+	taskColumns = output.Columns{
+		Table: []output.Column{
+			{Header: "ID", Path: "id"},
+			{Header: "NAME", Path: "name"},
+			{Header: "PROJEKT-ID", Path: "project_id"},
+			{Header: "ERLEDIGT", Path: "complete"},
+			{Header: "FRIST", Path: "deadline", Fmt: output.FmtDate},
+		},
+		Wide: []output.Column{
+			{Header: "MARKIERT", Path: "flagged"},
+			{Header: "STATUS", Path: "record_state"},
+		},
+	}
+	taskDetailColumns = output.Columns{
+		Table: taskColumns.Table,
+		Wide: append([]output.Column{
+			{Header: "PROJEKT", Path: "project.name"},
+			{Header: "BENUTZER", Path: "user.full_name"},
+			{Header: "ARTIKEL", Path: "proposition.name"},
+		}, taskColumns.Wide...),
+	}
+	customAttributeColumns = output.Columns{
+		Table: []output.Column{
+			{Header: "ID", Path: "id"},
+			{Header: "NAME", Path: "name"},
+			{Header: "GILT FÜR", Path: "attributable_type"},
+			{Header: "DATENTYP", Path: "data_type"},
+		},
+		Wide: []output.Column{
+			{Header: "PLATZHALTER", Path: "placeholder"},
+			{Header: "STATUS", Path: "record_state"},
+		},
+	}
 	userColumns = output.Columns{
 		Table: []output.Column{
 			{Header: "ID", Path: "id"},
@@ -824,6 +883,236 @@ var table = []Entry{
 			"papierkram info",
 			"papierkram info -o json",
 			"papierkram info --jq '.settings.custom_templates.invoices[].name'",
+		},
+	},
+	// 60–66
+	{
+		Resource: "project", Action: "list", OperationID: "ListProjects",
+		Method: "GET", Path: "/projects", Class: ClassReadOnly, Credits: 1,
+		Filters: []Filter{
+			{Flag: "company", Param: "company_id", Kind: "id", Help: "Nur Projekte dieses Kunden (Firmen-ID)"},
+		},
+		Columns: projectColumns,
+		Short:   "Projekte auflisten",
+		Examples: []string{
+			"papierkram project list",
+			"papierkram project list --company 3283",
+			"papierkram project list --all -o json",
+		},
+	},
+	{
+		Resource: "project", Action: "create", OperationID: "CreateProject",
+		Method: "POST", Path: "/projects", Class: ClassCreate, Credits: 10,
+		Columns: projectDetailColumns,
+		Short:   "Projekt anlegen",
+		Examples: []string{
+			`papierkram project create --name "Website-Relaunch" --customer 3283 --budget-type money --budget-money 5000`,
+			"papierkram project create --name Wartung --customer 3283 --start-date 2026-11-01 --end-date 2026-12-31 --color green --dry-run",
+			"papierkram project create --input projekt.json",
+		},
+	},
+	{
+		// spec 9.8: without ID the project of the project file
+		Resource: "project", Action: "describe", OperationID: "GetProject",
+		Method: "GET", Path: "/projects/{id}", Class: ClassReadOnly, Credits: 1,
+		Columns: projectDetailColumns,
+		Short:   "Projekt anzeigen",
+		Examples: []string{
+			"papierkram project describe 4710",
+			"papierkram project describe",
+			"papierkram project describe 4710 -o json",
+		},
+		Preset: "project",
+	},
+	{
+		Resource: "project", Action: "update", OperationID: "UpdateProject",
+		Method: "PUT", Path: "/projects/{id}", Class: ClassUpdate, Credits: 1,
+		Columns: projectDetailColumns,
+		Short:   "Projekt ändern",
+		Examples: []string{
+			"papierkram project update 4710 --end-date 2027-03-31",
+			"papierkram project update 4710 --budget-type working_time --budget-time 120 --budget-time-unit hour",
+			"papierkram project update 4710 --attr 338=42",
+		},
+	},
+	{
+		Resource: "project", Action: "delete", OperationID: "DeleteProject",
+		Method: "DELETE", Path: "/projects/{id}", Class: ClassDestructive, Credits: 1,
+		Short: "Projekt löschen",
+		Examples: []string{
+			"papierkram project delete 4710",
+			"papierkram project delete 4710 --yes",
+		},
+	},
+	{
+		Resource: "project", Action: "archive", OperationID: "ArchiveProject",
+		Method: "POST", Path: "/projects/{id}/archive", Class: ClassArchive, Credits: 1,
+		Columns: projectDetailColumns,
+		Short:   "Projekt archivieren",
+		Examples: []string{
+			"papierkram project archive 4710",
+			"papierkram project archive 4710 -o json",
+		},
+	},
+	{
+		Resource: "project", Action: "unarchive", OperationID: "UnarchiveProject",
+		Method: "POST", Path: "/projects/{id}/unarchive", Class: ClassArchive, Credits: 1,
+		Columns: projectDetailColumns,
+		Short:   "Projekt aus dem Archiv holen",
+		Examples: []string{
+			"papierkram project unarchive 4710",
+			"papierkram project unarchive 4710 -o json",
+		},
+	},
+	// 67–73
+	{
+		Resource: "custom-attribute", Action: "list", OperationID: "ListCustomAttributes",
+		Method: "GET", Path: "/settings/custom_attributes", Class: ClassReadOnly, Credits: 1,
+		Columns: customAttributeColumns,
+		Short:   "Benutzerdefinierte Datenfelder auflisten",
+		Examples: []string{
+			"papierkram custom-attribute list",
+			"papierkram custom-attribute list -o wide",
+		},
+	},
+	{
+		Resource: "custom-attribute", Action: "create", OperationID: "CreateCustomAttribute",
+		Method: "POST", Path: "/settings/custom_attributes", Class: ClassCreate, Credits: 10,
+		Columns: customAttributeColumns,
+		Short:   "Benutzerdefiniertes Datenfeld anlegen",
+		Examples: []string{
+			"papierkram custom-attribute create --name Kostenstelle --attributable-type Project --data-type string",
+			`papierkram custom-attribute create --name "Rabatt in %" --attributable-type Contact::Company --data-type decimal --dry-run`,
+		},
+	},
+	{
+		Resource: "custom-attribute", Action: "describe", OperationID: "GetCustomAttribute",
+		Method: "GET", Path: "/settings/custom_attributes/{id}", Class: ClassReadOnly, Credits: 1,
+		Columns: customAttributeColumns,
+		Short:   "Benutzerdefiniertes Datenfeld anzeigen",
+		Examples: []string{
+			"papierkram custom-attribute describe 338",
+			"papierkram custom-attribute describe 338 -o json",
+		},
+	},
+	{
+		Resource: "custom-attribute", Action: "update", OperationID: "UpdateCustomAttribute",
+		Method: "PUT", Path: "/settings/custom_attributes/{id}", Class: ClassUpdate, Credits: 1,
+		Columns: customAttributeColumns,
+		Short:   "Benutzerdefiniertes Datenfeld ändern",
+		Examples: []string{
+			"papierkram custom-attribute update 338 --name Kostenträger",
+			"papierkram custom-attribute update 338 --input datenfeld.json",
+		},
+	},
+	{
+		Resource: "custom-attribute", Action: "delete", OperationID: "DeleteCustomAttribute",
+		Method: "DELETE", Path: "/settings/custom_attributes/{id}", Class: ClassDestructive, Credits: 1,
+		Short: "Benutzerdefiniertes Datenfeld löschen",
+		Examples: []string{
+			"papierkram custom-attribute delete 338",
+			"papierkram custom-attribute delete 338 --yes",
+		},
+	},
+	{
+		Resource: "custom-attribute", Action: "archive", OperationID: "ArchiveCustomAttribute",
+		Method: "POST", Path: "/settings/custom_attributes/{id}/archive", Class: ClassArchive, Credits: 1,
+		Columns: customAttributeColumns,
+		Short:   "Benutzerdefiniertes Datenfeld archivieren",
+		Examples: []string{
+			"papierkram custom-attribute archive 338",
+			"papierkram custom-attribute archive 338 -o json",
+		},
+	},
+	{
+		Resource: "custom-attribute", Action: "unarchive", OperationID: "UnarchiveCustomAttribute",
+		Method: "POST", Path: "/settings/custom_attributes/{id}/unarchive", Class: ClassArchive, Credits: 1,
+		Columns: customAttributeColumns,
+		Short:   "Benutzerdefiniertes Datenfeld aus dem Archiv holen",
+		Examples: []string{
+			"papierkram custom-attribute unarchive 338",
+			"papierkram custom-attribute unarchive 338 -o json",
+		},
+	},
+	// 74–80
+	{
+		// spec 9.8: without --project the project of the project file
+		Resource: "task", Action: "list", OperationID: "ListTasks",
+		Method: "GET", Path: "/tracker/tasks", Class: ClassReadOnly, Credits: 1,
+		Filters: []Filter{
+			{Flag: "project", Param: "project_id", Kind: "id", Help: "Nur Aufgaben dieses Projekts (ID); ohne Angabe PAPIERKRAM_PROJECT oder project aus der Projektdatei .papierkram.toml"},
+			{Flag: "proposition", Param: "proposition_id", Kind: "id", Help: "Nur Aufgaben mit diesem Artikel (ID)"},
+		},
+		Columns: taskColumns,
+		Short:   "Aufgaben auflisten",
+		Examples: []string{
+			"papierkram task list",
+			"papierkram task list --project 4823",
+			"papierkram task list --proposition 386 --all -o json",
+		},
+		Preset: "project",
+	},
+	{
+		// spec 9.8: without --project the project of the project file
+		Resource: "task", Action: "create", OperationID: "CreateTask",
+		Method: "POST", Path: "/tracker/tasks", Class: ClassCreate, Credits: 10,
+		Columns: taskDetailColumns,
+		Short:   "Aufgabe anlegen",
+		Examples: []string{
+			`papierkram task create --name "Konzept erstellen" --project 4823 --deadline 2026-12-15`,
+			"papierkram task create --name Support --proposition 386 --flagged --dry-run",
+			"papierkram task create --input aufgabe.json",
+		},
+		Preset: "project",
+	},
+	{
+		Resource: "task", Action: "describe", OperationID: "GetTask",
+		Method: "GET", Path: "/tracker/tasks/{id}", Class: ClassReadOnly, Credits: 1,
+		Columns: taskDetailColumns,
+		Short:   "Aufgabe anzeigen",
+		Examples: []string{
+			"papierkram task describe 488",
+			"papierkram task describe 488 -o wide",
+		},
+	},
+	{
+		Resource: "task", Action: "update", OperationID: "UpdateTask",
+		Method: "PUT", Path: "/tracker/tasks/{id}", Class: ClassUpdate, Credits: 1,
+		Columns: taskDetailColumns,
+		Short:   "Aufgabe ändern",
+		Examples: []string{
+			"papierkram task update 488 --complete",
+			"papierkram task update 488 --deadline 2027-01-31 --flagged=false",
+			"papierkram task update 488 --input aufgabe.json",
+		},
+	},
+	{
+		Resource: "task", Action: "delete", OperationID: "DeleteTask",
+		Method: "DELETE", Path: "/tracker/tasks/{id}", Class: ClassDestructive, Credits: 1,
+		Short: "Aufgabe löschen",
+		Examples: []string{
+			"papierkram task delete 488",
+			"papierkram task delete 488 --yes",
+		},
+	},
+	{
+		Resource: "task", Action: "archive", OperationID: "ArchiveTask",
+		Method: "POST", Path: "/tracker/tasks/{id}/archive", Class: ClassArchive, Credits: 1,
+		Columns: taskDetailColumns,
+		Short:   "Aufgabe archivieren",
+		Examples: []string{
+			"papierkram task archive 488",
+			"papierkram task archive 488 -o json",
+		},
+	},
+	{
+		Resource: "task", Action: "unarchive", OperationID: "UnarchiveTask",
+		Method: "POST", Path: "/tracker/tasks/{id}/unarchive", Class: ClassArchive, Credits: 1,
+		Columns: taskDetailColumns,
+		Short:   "Aufgabe aus dem Archiv holen",
+		Examples: []string{
+			"papierkram task unarchive 488",
+			"papierkram task unarchive 488 -o json",
 		},
 	},
 	// 88–89

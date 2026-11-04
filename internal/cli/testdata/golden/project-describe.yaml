@@ -1,0 +1,103 @@
+budget_money: "50000.0"
+budget_time: null
+budget_time_unit: null
+budget_type: money
+color: null
+company_id: 3294
+created_at: "2026-08-28T13:44:20.000+02:00"
+custom_attributes:
+  "300":
+    id: 300
+    name: Test Attribute
+    type: custom_attribute
+    value: Test Value
+customer:
+  bank_account_holder_name: null
+  bank_account_no: "789456123"
+  bank_bic: MARKDEFFXXX
+  bank_blz: "79351010"
+  bank_iban: DE68210501700012345678
+  bank_institute: Sparkasse Bad Kissingen
+  bank_sepa_mandate_accepted: null
+  bank_sepa_mandate_reference: SEPAMRK00010AC
+  color: null
+  contact_type: customer
+  created_at: "2026-08-28T13:44:20.000+02:00"
+  customer_no: K-00010
+  delivery_method: pdf
+  email: null
+  fax: null
+  flagged: null
+  id: 3294
+  inbound_address: mlc2
+  logo_content_type: null
+  logo_file_name: null
+  logo_file_size: null
+  logo_updated_at: null
+  name: ACME Corp.
+  notes: null
+  phone: null
+  physical_city: Wiesbaden
+  physical_country: Deutschland
+  physical_street: Dotzheimer Str. 36
+  physical_zip: "65185"
+  postal_city: Wiesbaden
+  postal_country: Deutschland
+  postal_street: Dotzheimer Str. 36
+  postal_zip: "65185"
+  record_state: active
+  supplier_no: null
+  twitter: null
+  type: company
+  updated_at: "2026-08-28T13:44:20.000+02:00"
+  ust_idnr: DE0999999999
+  website: null
+customer_default: false
+default_proposition:
+  article_no: AN-00001
+  created_at: "2026-08-28T13:44:20.000+02:00"
+  description: ""
+  favorite: null
+  flagged: null
+  id: 399
+  name: ACME Instant Tunnels
+  price: "101.0"
+  proposition_type: product
+  record_state: active
+  time_unit: hour
+  type: proposition
+  unit_name_1: Produkt
+  unit_name_n: Produkte
+  updated_at: "2026-08-28T13:44:20.000+02:00"
+description: This is my first project to make money.
+end_date: "2020-05-31"
+flagged: true
+id: 4727
+invoices:
+  entries:
+  - id: 489
+    name: Eine Rechnung
+    type: invoice
+  has_more: false
+  type: list
+  url: /api/v1/income/invoices?project_id=4727
+name: My first project
+record_state: active
+start_date: "2020-05-01"
+tasks:
+  entries:
+  - id: 452
+    name: My first task
+    project_id: 4727
+    type: task
+  has_more: false
+  type: list
+  url: /api/v1/tracker/tasks?project_id=4727
+team_members: []
+type: project
+updated_at: "2026-08-28T13:44:21.000+02:00"
+vouchers:
+  entries: []
+  has_more: false
+  type: list
+  url: /api/v1/expense/vouchers?project_id=4727

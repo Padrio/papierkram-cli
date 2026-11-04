@@ -758,3 +758,113 @@ func TestExpectedCreditsSpecMatrix(t *testing.T) {
 		t.Fatalf("%d operations, want 89", len(ops))
 	}
 }
+
+// Spec 15 no. 60–80: project, custom-attribute and task, all built
+// generically.
+func TestProjectTaskCustomAttributeEntriesRegistered(t *testing.T) {
+	for resource, op := range map[string]string{"project": "Project", "custom-attribute": "CustomAttribute", "task": "Task"} {
+		want := []struct {
+			action, opID string
+			class        Class
+			credits      int
+		}{
+			{"list", "List" + op + "s", ClassReadOnly, 1},
+			{"create", "Create" + op, ClassCreate, 10},
+			{"describe", "Get" + op, ClassReadOnly, 1},
+			{"update", "Update" + op, ClassUpdate, 1},
+			{"delete", "Delete" + op, ClassDestructive, 1},
+			{"archive", "Archive" + op, ClassArchive, 1},
+			{"unarchive", "Unarchive" + op, ClassArchive, 1},
+		}
+		for _, w := range want {
+			e, ok := Lookup(resource, w.action)
+			if !ok || e.OperationID != w.opID || e.Class != w.class || e.Credits != w.credits || e.Custom {
+				t.Errorf("Lookup(%s, %q) = %+v, %v; want %s %s %d credits, generic", resource, w.action, e, ok, w.opID, w.class, w.credits)
+			}
+		}
+	}
+}
+
+// Spec 4.2, 7.1: project list filters by company, task list by project
+// and proposition; custom-attribute list has no filter.
+func TestProjectTaskCustomAttributeListFilters(t *testing.T) {
+	type filter struct{ flag, param, kind string }
+	for resource, want := range map[string][]filter{
+		"project":          {{"company", "company_id", "id"}},
+		"task":             {{"project", "project_id", "id"}, {"proposition", "proposition_id", "id"}},
+		"custom-attribute": nil,
+	} {
+		e, _ := Lookup(resource, "list")
+		if len(e.Filters) != len(want) {
+			t.Errorf("%s list: filters = %+v, want %d", resource, e.Filters, len(want))
+			continue
+		}
+		for i, w := range want {
+			if f := e.Filters[i]; f.Flag != w.flag || f.Param != w.param || f.Kind != w.kind || f.Help == "" {
+				t.Errorf("%s list: filter %d = %+v, want --%s → %s (%s)", resource, i, f, w.flag, w.param, w.kind)
+			}
+		}
+	}
+}
+
+// Spec 10.3: the default columns of project, task and custom-attribute.
+func TestProjectTaskCustomAttributeColumns(t *testing.T) {
+	want := map[string][]string{
+		"project":          {"id", "name", "company_id", "record_state", "start_date", "end_date"},
+		"task":             {"id", "name", "project_id", "complete", "deadline"},
+		"custom-attribute": {"id", "name", "attributable_type", "data_type"},
+	}
+	for resource, paths := range want {
+		for _, action := range []string{"list", "describe", "create", "update", "archive", "unarchive"} {
+			e, _ := Lookup(resource, action)
+			var got []string
+			for _, c := range e.Columns.Table {
+				got = append(got, c.Path)
+			}
+			if !slices.Equal(got, paths) {
+				t.Errorf("%s %s: table columns %v, want %v", resource, action, got, paths)
+			}
+		}
+	}
+}
+
+// Spec 9.8: project describe without ID, task list and task create take
+// the project from the project file; no other command has a preset.
+func TestProjectFilePresets(t *testing.T) {
+	want := map[string]string{"project describe": "project", "task list": "project", "task create": "project"}
+	for _, e := range Entries() {
+		name := strings.TrimSpace(e.Resource + " " + e.Action)
+		if e.Preset != want[name] {
+			t.Errorf("%s: Preset %q, want %q", name, e.Preset, want[name])
+		}
+	}
+}
+
+// A preset is a project file key (spec 9.8) and only exists where the
+// builder applies it: the positional ID of describe, a list filter flag of
+// that name, or create (whose field flag the CLI tests check).
+func TestPresetsAreApplicable(t *testing.T) {
+	keys := []string{"company", "project", "task", "user"}
+	for _, e := range Entries() {
+		if e.Preset == "" {
+			continue
+		}
+		name := strings.TrimSpace(e.Resource + " " + e.Action)
+		if !slices.Contains(keys, e.Preset) {
+			t.Errorf("%s: Preset %q is no project file key %v", name, e.Preset, keys)
+		}
+		switch e.Action {
+		case "describe":
+			if !strings.HasSuffix(e.Path, "{id}") {
+				t.Errorf("%s: Preset on describe without positional {id}", name)
+			}
+		case "list":
+			if !slices.ContainsFunc(e.Filters, func(f Filter) bool { return f.Flag == e.Preset && f.Kind == "id" }) {
+				t.Errorf("%s: Preset %q without id filter --%s", name, e.Preset, e.Preset)
+			}
+		case "create":
+		default:
+			t.Errorf("%s: Preset on action %q", name, e.Action)
+		}
+	}
+}

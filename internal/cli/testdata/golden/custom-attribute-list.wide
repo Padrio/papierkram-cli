@@ -1,0 +1,3 @@
+ID   NAME        GILT FÜR          DATENTYP  PLATZHALTER             STATUS
+338  voluptatem  Project           integer   projekt.338_voluptatem  active
+339  velit       Contact::Company  boolean   kunde.339_velit         active

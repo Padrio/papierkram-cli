@@ -91,23 +91,28 @@ func (a *App) newEntryCmd(e registry.Entry) *cobra.Command {
 	if e.Action == "" {
 		cmd.Use = e.Resource
 	}
+	kind, err := entryKind(e)
+	if err != nil {
+		// fail closed: a command that could send a mutation past the
+		// guards is never built (registry defect, caught by every test)
+		panic(err)
+	}
 	positional := len(params) > 0 && params[len(params)-1].flag == ""
-	if positional {
+	switch {
+	case positional && kind == kindDescribe && e.Preset != "":
+		// spec 9.8: without ID the preset (project file) decides
+		cmd.Use += " [<id>]"
+		cmd.Args = optionalIDArgs
+	case positional:
 		cmd.Use += " <id>"
 		cmd.Args = idArgs
-	} else {
+	default:
 		cmd.Args = noArgs
 	}
 	for _, p := range params {
 		if p.flag != "" {
 			cmd.Flags().Int64(p.flag, 0, fmt.Sprintf("ID des übergeordneten Objekts (%s, Pflicht)", p.name))
 		}
-	}
-	kind, err := entryKind(e)
-	if err != nil {
-		// fail closed: a command that could send a mutation past the
-		// guards is never built (registry defect, caught by every test)
-		panic(err)
 	}
 	switch kind {
 	case kindList:
@@ -159,7 +164,7 @@ func entryKind(e registry.Entry) (string, error) {
 }
 
 // entryLong is the German long help of an entry command: the short help
-// plus the credit cost.
+// plus the credit cost and, with a preset, where the value comes from.
 func entryLong(e registry.Entry) string {
 	unit := "Credits"
 	if e.Credits == 1 {
@@ -170,6 +175,13 @@ func entryLong(e registry.Entry) string {
 		long += " (mit --all je geladener Seite; ab 10 Seiten fragt --all im Terminal nach)"
 	}
 	long += "."
+	if e.Preset != "" {
+		given := "--" + e.Preset
+		if e.Action == "describe" {
+			given = "die ID"
+		}
+		long += fmt.Sprintf("\n\nOhne %s gilt %s (anlegen: papierkram local init).", given, presetNote(e.Preset))
+	}
 	for _, flag := range localFlags(e) {
 		long += fmt.Sprintf("\n\nDie API ignoriert diesen Filter: Mit %[1]s lädt das CLI alle Seiten wie --all "+
 			"(je Seite %[2]d %[3]s, Warnung ab 10 Seiten, im Terminal mit Rückfrage; --max-pages begrenzt) und filtert lokal. "+
@@ -230,6 +242,15 @@ func idArgs(c *cobra.Command, args []string) error {
 		return clierr.New(clierr.CodeUsage, fmt.Sprintf("ungültige ID %q: ganze Zahl ≥ 0 erwartet", args[0]), "Verwendung: "+useLine(c))
 	}
 	return nil
+}
+
+// optionalIDArgs allows no argument or one ID; without it the ID comes
+// from the preset (see presetArgs).
+func optionalIDArgs(c *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	return idArgs(c, args)
 }
 
 // pathValues collects the path parameter values of e in template order:

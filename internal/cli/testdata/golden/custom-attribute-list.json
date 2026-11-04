@@ -1,0 +1,28 @@
+{
+  "entries": [
+    {
+      "attributable_type": "Project",
+      "data_type": "integer",
+      "id": 338,
+      "name": "voluptatem",
+      "placeholder": "projekt.338_voluptatem",
+      "record_state": "active",
+      "type": "custom_attribute"
+    },
+    {
+      "attributable_type": "Contact::Company",
+      "data_type": "boolean",
+      "id": 339,
+      "name": "velit",
+      "placeholder": "kunde.339_velit",
+      "record_state": "active",
+      "type": "custom_attribute"
+    }
+  ],
+  "has_more": false,
+  "page": 1,
+  "page_size": 100,
+  "total_entries": 2,
+  "total_pages": 1,
+  "type": "list"
+}

@@ -134,6 +134,9 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 			continue
 		}
 		usage := f.Help
+		if f.Flag == e.Preset {
+			usage += "; ohne Angabe " + presetNote(e.Preset)
+		}
 		if f.Required {
 			usage += " (Pflicht)"
 		}
@@ -261,7 +264,8 @@ func errUnavailable(err error) error {
 // buildBody builds the request body of create/update (spec 6.1–6.4, 6.3a):
 // --input (pruned against the request schema, hints on stderr) → the
 // changed field flags at their path (references as {id}, nested objects
-// created as needed, maps merged) → --attr into custom_attributes → line
+// created as needed, maps merged) → --attr into custom_attributes → the
+// preset field of create when still unset (spec 9.8) → line
 // items (--items pruned like --input, or --item) → CoerceValue → Validate.
 // It returns the body and the response-only fields removed from --input and
 // --items.
@@ -342,6 +346,12 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 			}
 			setPath(body, f.Path, v)
 		}
+	}
+
+	// spec 9.8: the preset field (task create --project), after --input
+	// and the flags, which win
+	if err := a.presetBody(c, e, ws, body); err != nil {
+		return nil, nil, err
 	}
 
 	if ws.items != nil {

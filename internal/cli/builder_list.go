@@ -144,6 +144,10 @@ func (a *App) parseListFlags(c *cobra.Command, e registry.Entry) (*listRequest, 
 	}
 	for _, flt := range e.Filters {
 		if !f.Changed(flt.Flag) {
+			// spec 9.8: the preset filter (task list --project)
+			if err := a.presetQuery(e, flt, lr); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		v, err := a.filterValue(c, e, flt)

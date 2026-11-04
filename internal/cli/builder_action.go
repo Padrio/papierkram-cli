@@ -23,7 +23,12 @@ type okJSON struct {
 }
 
 // runDescribe sends a GET for one object (describe, info) and renders it.
+// Without ID a describe entry with a preset takes it from there (spec 9.8).
 func (a *App) runDescribe(c *cobra.Command, e registry.Entry, args []string) error {
+	args, err := a.presetArgs(c, e, args)
+	if err != nil {
+		return err
+	}
 	params, err := pathValues(c, e, args)
 	if err != nil {
 		return err
