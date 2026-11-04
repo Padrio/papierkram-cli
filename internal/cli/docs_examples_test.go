@@ -341,62 +341,174 @@ func flagValue(words []string, name string) (string, bool) {
 	return value, found
 }
 
-// fieldsProblem checks --fields paths against the resolved response
-// schema of the command's operation; commands without an operation or
-// without a JSON response schema are not checked. Lists are checked per
-// entry, like --fields applies them.
+// fieldsProblem checks --fields paths the way the CLI applies them: each
+// path is projected by the output package (output.RenderValue with
+// Fields) onto a skeleton of the value the command prints, and must come
+// out again. The printed value is the one the CLI really writes:
+//   - --dry-run: docs/schemas/dry-run.json
+//   - pdf: the message {path, bytes} (pdfSaved), only with -O datei; a
+//     PDF on stdout takes no --fields (the CLI refuses it too)
+//   - deliver: docs/schemas/deliver.json; delete: docs/schemas/delete.json
+//   - voucher create --file: the voucher or, on exit 11,
+//     docs/schemas/partial.json (a path of either passes)
+//   - otherwise the response schema of the operation.
+//
+// Commands without an operation or without a JSON response schema (local
+// commands, api, upload, info) print a shape no schema describes; they
+// are not checked.
 func fieldsProblem(app *App, words, fields []string) error {
 	cmd, _, err := NewRootCmd(app).Find(words[1:])
-	if err != nil || !metaOf(cmd).op {
-		return nil
-	}
-	pair, err := operationSchemas(metaOf(cmd).entry.OperationID)
 	if err != nil {
-		return err
-	}
-	schema, ok := pair.Response.(map[string]any)
-	if !ok {
 		return nil
 	}
-	if props, _ := schema["properties"].(map[string]any); props != nil {
-		if entries, ok := props["entries"].(map[string]any); ok && entries["items"] != nil {
-			schema = entries
+	name := strings.Join(commandWords(cmd), " ")
+	contract := func(n string) func([]string) any {
+		return func(p []string) any { return skeleton(contractMap(n), p) }
+	}
+	var shapes []func([]string) any
+	switch {
+	case slices.Contains(words, "--dry-run"):
+		shapes = append(shapes, contract("dry-run"))
+	case cmd.Name() == "pdf":
+		if dest, ok := pdfTarget(words); !ok || dest == pdfStdout {
+			return errors.New("--fields gilt nicht für ein PDF auf stdout; nur mit -O datei")
+		}
+		shapes = append(shapes, func([]string) any { return pdfSaved{} })
+	case cmd.Name() == "deliver":
+		shapes = append(shapes, contract("deliver"))
+	case cmd.Name() == "delete":
+		shapes = append(shapes, contract("delete"))
+	case !metaOf(cmd).op:
+		return nil
+	default:
+		pair, err := operationSchemas(metaOf(cmd).entry.OperationID)
+		if err != nil {
+			return err
+		}
+		schema, ok := pair.Response.(map[string]any)
+		if !ok || schema["format"] == "binary" {
+			return nil
+		}
+		shapes = append(shapes, func(p []string) any { return skeleton(schema, p) })
+		if name == "voucher create" && hasFlag(words, "--file") {
+			shapes = append(shapes, contract("partial"))
 		}
 	}
 	for _, f := range fields {
-		if !schemaHasPath(schema, strings.Split(f, ".")) {
-			return fmt.Errorf("--fields: %q gibt es in der Antwort von %s nicht (papierkram schema %s)",
-				f, metaOf(cmd).entry.OperationID, strings.Join(commandWords(cmd), " "))
+		path := strings.Split(f, ".")
+		if !slices.ContainsFunc(shapes, func(shape func([]string) any) bool { return projects(shape(path), f, path) }) {
+			return fmt.Errorf("--fields: %q steht nicht in der Ausgabe von papierkram %s", f, name)
 		}
 	}
 	return nil
 }
 
-// schemaHasPath reports whether path can exist in a value of schema:
-// arrays are looked into (their items), objects must declare each name
-// unless they allow other properties, scalars have no children.
-func schemaHasPath(schema map[string]any, path []string) bool {
-	s := schema
-	for _, name := range path {
-		for s["items"] != nil {
-			items, ok := s["items"].(map[string]any)
-			if !ok {
-				return true
-			}
-			s = items
+// hasFlag reports whether the long flag is given ("--name x" or "--name=x").
+func hasFlag(words []string, name string) bool {
+	_, ok := flagValue(words, name)
+	return ok
+}
+
+// pdfTarget returns the value of -O/--output-file.
+func pdfTarget(words []string) (string, bool) {
+	dest, ok := flagValue(words, "--output-file")
+	if v, short := flagValue(words, "-O"); short {
+		dest, ok = v, true
+	}
+	return dest, ok
+}
+
+// contractMap is the contract docs/schemas/<name>.json as plain JSON.
+func contractMap(name string) map[string]any {
+	s, err := contractSchema(name)
+	if err != nil {
+		panic(err)
+	}
+	raw, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		panic(err)
+	}
+	return m
+}
+
+// skeleton is a value of schema with every declared property (scalars
+// null, enums their first value, arrays one element). A free-form object
+// (no declared properties, or additionalProperties) gets the key the
+// path asks for, so any name passes there. A list envelope (type "list")
+// carries the path into its entries, which --fields projects one by one.
+func skeleton(schema map[string]any, path []string) any {
+	if enum, _ := schema["enum"].([]any); len(enum) > 0 {
+		return enum[0]
+	}
+	if items, ok := schema["items"].(map[string]any); ok {
+		return []any{skeleton(items, path)}
+	}
+	props, _ := schema["properties"].(map[string]any)
+	extra, extraSet := schema["additionalProperties"]
+	freeForm := (extraSet && extra != false) || (props == nil && (schema["type"] == "object" || schema["type"] == nil))
+	if props == nil && !freeForm {
+		return nil // scalar
+	}
+	out := map[string]any{}
+	for k, ps := range props {
+		var rest []string
+		if len(path) > 0 && path[0] == k {
+			rest = path[1:]
 		}
-		props, _ := s["properties"].(map[string]any)
-		if child, ok := props[name].(map[string]any); ok {
-			s = child
-			continue
+		child, _ := ps.(map[string]any)
+		out[k] = skeleton(child, rest)
+	}
+	if _, declared := props[firstOf(path)]; freeForm && len(path) > 0 && !declared {
+		child, _ := extra.(map[string]any)
+		out[path[0]] = skeleton(child, path[1:])
+	}
+	if t, _ := out["type"].(string); t == "list" {
+		if entries, ok := props["entries"].(map[string]any); ok {
+			items, _ := entries["items"].(map[string]any)
+			out["entries"] = []any{skeleton(items, path)}
 		}
-		if extra, set := s["additionalProperties"]; set && extra != false {
-			return true // free-form object: any name
-		}
-		if props == nil && s["type"] == nil {
-			return true // nothing declared: not checkable
-		}
+	}
+	return out
+}
+
+func firstOf(path []string) string {
+	if len(path) == 0 {
+		return ""
+	}
+	return path[0]
+}
+
+// projects reports whether --fields f keeps path of v: v is rendered with
+// the CLI's own projection and the path looked up in the result (in the
+// first entry of a list).
+func projects(v any, f string, path []string) bool {
+	var b strings.Builder
+	if err := output.RenderValue(output.Options{Format: output.FormatJSON, Fields: []string{f}, Out: &b}, v, output.Columns{}); err != nil {
 		return false
+	}
+	var got any
+	if err := json.Unmarshal([]byte(b.String()), &got); err != nil {
+		return false
+	}
+	if m, ok := got.(map[string]any); ok && m["type"] == "list" {
+		entries, _ := m["entries"].([]any)
+		if len(entries) == 0 {
+			return false
+		}
+		got = entries[0]
+	}
+	for _, k := range path {
+		m, ok := got.(map[string]any)
+		if !ok {
+			return false
+		}
+		if got, ok = m[k]; !ok {
+			return false
+		}
 	}
 	return true
 }
@@ -515,7 +627,7 @@ func TestDocCommandProblemDetectsInvalidLines(t *testing.T) {
 		"papierkram auth login --context firma-gmbh --subdomain firma-gmbh",
 		`papierkram invoice list --jq '(now | strftime("%Y-%m-%d")) as $heute | .entries[] | select(.due_date < $heute)'`,
 		"papierkram invoice list --fields id,billing.company,due_date",
-		"papierkram invoice describe 459 --fields=id,line_items.name",
+		"papierkram invoice describe 459 --fields=id,line_items",
 		"papierkram time status --fields running",
 		"papierkram commands --json --jq .commands[].command",
 	} {
@@ -663,5 +775,55 @@ func TestSkillOpenItemsJQ(t *testing.T) {
 			t.Errorf("%s\nexit %d, stdout:\n%s\nwant:\n%s\nstderr %q", strings.Join(c.words, " "), code, out, want[i], errs)
 		}
 		assertNoToken(t, app)
+	}
+}
+
+// --fields is checked against the shape the CLI really prints and with
+// the CLI's own projection (review round 2): a path never runs through an
+// array but the entries of a list, and outputs the CLI builds itself are
+// checked against their contract in docs/schemas (dry-run, deliver,
+// delete, the partial result of voucher create --file) or Go type (the
+// pdf message {path, bytes}). Per case: lines that pass, lines that fail.
+func TestDocFieldsFollowTheOutputShape(t *testing.T) {
+	const voucher = `papierkram voucher create --name X --provenance domestic --item "name=a,amount=1,vat=19" --file beleg.pdf`
+	const invoice = `papierkram invoice create --name X --customer 1 --payment-term 2 --item "name=a,qty=1,price=1,vat=19"`
+	for _, tc := range []struct {
+		name      string
+		good, bad []string
+	}{
+		{"array", // output.lookup reads objects only
+			[]string{"papierkram invoice describe 459 --fields id,line_items", "papierkram voucher describe 295 --fields documents",
+				"papierkram company describe 1 --fields custom_attributes.foo.value", "papierkram transaction list --fields from.name,saldo.value"},
+			[]string{"papierkram invoice describe 459 --fields id,line_items.name", "papierkram voucher describe 295 --fields documents.id"}},
+		{"dry-run",
+			[]string{invoice + " --dry-run --fields method,url,credits,body.name", "papierkram company delete 5 --dry-run --fields dry_run,url"},
+			[]string{invoice + " --dry-run --fields id", "papierkram company delete 5 --dry-run --fields deleted"}},
+		{"pdf",
+			[]string{"papierkram invoice pdf 459 -O r.pdf --fields path,bytes", "papierkram invoice pdf 459 --output-file=r.pdf --fields bytes"},
+			[]string{"papierkram invoice pdf 459 -O r.pdf --fields path,size", "papierkram invoice pdf 459 -O - --fields path", "papierkram invoice pdf 459 --fields path"}},
+		{"partial", // voucher create --file: the voucher, or partial.json on exit 11
+			[]string{voucher + " --fields id,name,completed,retry_command,warnings"},
+			[]string{voucher + " --fields id,bogus"}},
+		{"deliver",
+			[]string{"papierkram invoice deliver 459 --via pdf --yes --fields id,invoice_no,sent_on,delivered,warnings"},
+			[]string{"papierkram invoice deliver 459 --via pdf --yes --fields id,total_gross"}},
+		{"delete",
+			[]string{"papierkram company delete 5 --yes --fields id,deleted"},
+			[]string{"papierkram company delete 5 --yes --fields id,name"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, line := range append(append([]string{}, tc.good...), tc.bad...) {
+				words, err := shellWords(line)
+				if err != nil {
+					t.Fatal(err)
+				}
+				err = docCommandProblem(t, words)
+				if slices.Contains(tc.good, line) && err != nil {
+					t.Errorf("%q: %v", line, err)
+				} else if slices.Contains(tc.bad, line) && err == nil {
+					t.Errorf("%q gilt als gültig", line)
+				}
+			}
+		})
 	}
 }
