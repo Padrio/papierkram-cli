@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/Padrio/papierkram-cli/internal/redact"
 )
 
 // debugBodyLimit is the number of body bytes --debug shows (spec 5.5).
@@ -37,7 +39,7 @@ func (c *Client) debugRequest(req *http.Request, attempt int) {
 		return
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "> %s %s", req.Method, req.URL)
+	fmt.Fprintf(&b, "> %s %s", req.Method, redact.URLOf(req.URL)) // no userinfo (redact)
 	if attempt > 0 {
 		fmt.Fprintf(&b, " (Versuch %d)", attempt+1)
 	}
@@ -103,7 +105,7 @@ func (c *Client) debugError(err error, d time.Duration) {
 	if c.opts.Debug == nil {
 		return
 	}
-	c.debugWrite(fmt.Sprintf("< Fehler: %v (%dms)\n", err, d.Milliseconds()))
+	c.debugWrite(fmt.Sprintf("< Fehler: %s (%dms)\n", redact.Error(err), d.Milliseconds()))
 }
 
 // debugResponseHeaders are the response headers --debug shows besides

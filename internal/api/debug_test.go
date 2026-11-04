@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -396,4 +397,45 @@ func TestDebugResponseHeaderLines(t *testing.T) {
 	if strings.Contains(out, "Set-Cookie") {
 		t.Errorf("other response headers must not be dumped:\n%s", out)
 	}
+}
+
+// Controller ruling N1: userinfo of the base URL appears in no debug
+// line, dry-run URL or error, also when the base URL cannot be parsed;
+// the request may still use it.
+func TestNoCredentialsFromBaseURL(t *testing.T) {
+	leaks := func(t *testing.T, what, s string) {
+		t.Helper()
+		if strings.Contains(s, "alice") || strings.Contains(s, "s3cret") {
+			t.Errorf("%s shows credentials: %s", what, s)
+		}
+	}
+	srv, _ := closingServer(t, 1)
+	base := strings.Replace(srv.URL, "http://", "http://alice:s3cret@", 1) + "/api/v1"
+	var buf bytes.Buffer
+	c := New(Options{BaseURL: base, Token: testToken, Debug: &buf})
+	_, err := c.Call(context.Background(), "CreateInvoice", nil, nil, map[string]any{"name": "x"})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	leaks(t, "debug", buf.String())
+	leaks(t, "error", err.Error())
+	if !strings.Contains(buf.String(), "> POST "+srv.URL+"/api/v1/income/invoices") {
+		t.Errorf("request line:\n%s", buf.String())
+	}
+	_, u, err := c.Preview("GetInvoice", []int64{1}, nil)
+	leaks(t, "Preview", u)
+	if err != nil || u != srv.URL+"/api/v1/income/invoices/1" {
+		t.Errorf("Preview = %q, %v", u, err)
+	}
+	leaks(t, "TemplateURL", c.TemplateURL("/expense/vouchers/{voucher_id}/documents"))
+
+	bad := New(Options{BaseURL: "http://alice:s3cret@127.0.0.1:badport/api/v1", Token: testToken, Debug: &buf})
+	_, u, err = bad.Preview("GetInvoice", []int64{1}, nil)
+	leaks(t, "Preview (bad)", u+fmt.Sprint(err))
+	leaks(t, "TemplateURL (bad)", bad.TemplateURL("/expense/vouchers/{voucher_id}/documents"))
+	_, err = bad.Call(context.Background(), "GetInvoice", []int64{1}, nil, nil)
+	leaks(t, "Call (bad)", fmt.Sprint(err))
+	_, err = bad.CallRaw(context.Background(), "GET", "/info", nil, "", nil)
+	leaks(t, "CallRaw (bad)", fmt.Sprint(err))
+	leaks(t, "debug (bad)", buf.String())
 }

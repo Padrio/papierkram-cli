@@ -23,6 +23,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/api/gen"
 	"github.com/Padrio/papierkram-cli/internal/buildinfo"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/redact"
 )
 
 // DefaultTimeout applies when Options.Timeout is zero.
@@ -121,7 +122,7 @@ func (c *Client) Download(ctx context.Context, opID string, pathParams []int64, 
 // Content-Type is only set when body is non-nil.
 func (c *Client) CallRaw(ctx context.Context, method, path string, query url.Values, contentType string, body io.Reader) (*Response, error) {
 	if c.base == nil {
-		return nil, fmt.Errorf("api: ungültige Basis-URL %q", c.opts.BaseURL)
+		return nil, errBaseURL(c.opts.BaseURL)
 	}
 	// The "./" prefix keeps the request on the base host even for paths
 	// like "//other/x", so the token never leaves the API.
@@ -244,7 +245,7 @@ func (c *Client) Preview(opID string, pathParams []int64, query url.Values) (met
 	if err != nil {
 		return "", "", err
 	}
-	return req.Method, req.URL.String(), nil
+	return req.Method, redact.URLOf(req.URL), nil
 }
 
 // TemplateURL is the URL of path, a path template of the spec, resolved
@@ -256,14 +257,20 @@ func (c *Client) TemplateURL(path string) string {
 	rel := "./" + strings.TrimPrefix(path, "/")
 	base, err := url.Parse(c.opts.BaseURL)
 	if err != nil {
-		return c.opts.BaseURL + rel // Preview reports the broken base URL
+		return redact.Invalid + rel // Preview reports the broken base URL
 	}
 	u, err := base.Parse(rel)
 	if err != nil {
-		return c.opts.BaseURL + rel
+		return redact.URLOf(base) + rel
 	}
 	// the braces of the parameters are escaped in the path; shown as such
-	return strings.NewReplacer("%7B", "{", "%7D", "}").Replace(u.String())
+	return strings.NewReplacer("%7B", "{", "%7D", "}").Replace(redact.URLOf(u))
+}
+
+// errBaseURL reports a base URL that cannot be parsed, without showing it:
+// it may carry credentials (redact).
+func errBaseURL(raw string) error {
+	return fmt.Errorf("api: ungültige Basis-URL %s", redact.URL(raw))
 }
 
 // buildOp builds the request of opID with the generated builder against the
@@ -271,9 +278,13 @@ func (c *Client) TemplateURL(path string) string {
 // would be sent. body must be an untyped nil when there is no body; then no
 // Content-Type is set.
 func (c *Client) buildOp(opID string, pathParams []int64, query url.Values, contentType string, body io.Reader) (*http.Request, error) {
+	if c.base == nil {
+		return nil, errBaseURL(c.opts.BaseURL)
+	}
 	req, err := gen.BuildRequest(opID, c.opts.BaseURL, pathParams, query, contentType, body)
 	if err != nil {
-		return nil, fmt.Errorf("api: Anfrage für %s kann nicht gebaut werden: %w", opID, err)
+		// the text of a parse error repeats the URL with its userinfo
+		return nil, fmt.Errorf("api: Anfrage für %s kann nicht gebaut werden: %w", opID, redact.Wrap(err))
 	}
 	if body == nil {
 		// Builders of body operations always add Content-Type, even empty.
