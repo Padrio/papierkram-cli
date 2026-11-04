@@ -79,7 +79,7 @@ error:
   exit_code: 4
 ```
 
-`code` und `exit_code` gehören fest zusammen. `hint`, `http_status` und `correlation_id` fehlen, wenn sie nicht bekannt sind (nie leer oder `null`). Bei Exit 2, 8, 9 und 10 gibt es nie ein `http_status`: Dann wurde nichts gesendet bzw. keine Antwort empfangen. Beginnt `message` mit „Befehl ausgeführt, Ausgabe fehlgeschlagen“ (Exit 1), war die Anfrage erfolgreich und nur die Ausgabe scheiterte (z. B. ein `--jq`-Ausdruck): dann **nicht** wiederholen.
+`code` und `exit_code` gehören fest zusammen. `hint`, `http_status` und `correlation_id` fehlen, wenn sie nicht bekannt sind (nie leer oder `null`). Bei Exit 2, 8, 9 und 10 gibt es nie ein `http_status`: Dann wurde nichts gesendet bzw. keine Antwort empfangen. Beginnt `message` mit „Befehl ausgeführt, Ausgabe fehlgeschlagen“ (Exit 1), war die Anfrage erfolgreich und nur die Ausgabe scheiterte (z. B. ein `--jq`-Ausdruck, eine 2xx-Antwort, die kein JSON ist, oder ein Schreibfehler auf stdout): dann **nicht** wiederholen.
 
 ### `--dry-run`
 

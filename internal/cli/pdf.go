@@ -97,7 +97,7 @@ func (a *App) runPDF(c *cobra.Command, e registry.Entry, args []string) error {
 	switch {
 	case dest.stdout():
 		if _, err := a.Out.Write(resp.Body); err != nil {
-			return clierr.New(clierr.CodeError, "Befehl ausgeführt, Ausgabe fehlgeschlagen: PDF nicht nach stdout geschrieben: "+err.Error(), "")
+			return clierr.New(clierr.CodeError, outputFailed+"PDF nicht nach stdout geschrieben: "+err.Error(), "")
 		}
 	case file == nil:
 		if err := writeDevice(c.Context(), dest.path, resp.Body); err != nil {

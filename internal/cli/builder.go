@@ -336,21 +336,27 @@ func (a *App) render(c *cobra.Command, raw []byte, cols output.Columns) error {
 	return afterRequest(output.Render(a.outputOptions(c.Context(), a.outputFormat(a.resolved)), raw, cols))
 }
 
-// afterRequest maps an error that happens after a request was sent (output,
-// rendering) to exit 1: a usage error (exit 2) would tell agents that
-// nothing happened.
+// afterRequest maps every error that happens after a request was sent
+// (output, rendering, a 2xx answer that is no JSON, a failed write to
+// stdout) to exit 1 with the prefix outputFailed: a usage error (exit 2)
+// would tell agents that nothing happened, and without the prefix an
+// agent could not tell that the command itself went through.
 func afterRequest(err error) error {
 	if err == nil {
 		return nil
 	}
 	ce := clierr.From(err)
-	if ce.Code != clierr.CodeUsage {
+	if ce.Code == clierr.CodeError && strings.HasPrefix(ce.Message, outputFailed) {
 		return ce
 	}
-	out := clierr.New(clierr.CodeError, "Befehl ausgeführt, Ausgabe fehlgeschlagen: "+ce.Message, ce.Hint)
+	out := clierr.New(clierr.CodeError, outputFailed+ce.Message, ce.Hint)
 	out.Cause = err
 	return out
 }
+
+// outputFailed starts the message of an error after a sent request
+// (AGENTS.md: then do not repeat).
+const outputFailed = "Befehl ausgeführt, Ausgabe fehlgeschlagen: "
 
 // beforeMutation is the single hook every mutating builder path calls
 // after the body is built and validated, right before sending (plan order

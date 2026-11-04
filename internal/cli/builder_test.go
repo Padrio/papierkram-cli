@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/spec"
 	"github.com/Padrio/papierkram-cli/internal/testutil/golden"
@@ -720,5 +722,49 @@ func TestAfterRequestErrorsAreNeverUsage(t *testing.T) {
 	}
 	if afterRequest(nil) != nil {
 		t.Error("nil bleibt nil")
+	}
+}
+
+// Every error after a sent request gets the prefix, not only usage errors
+// (M1): a 2xx answer that is no JSON, a YAML error, a write error on stdout.
+func TestAfterRequestPrefixesEveryOutputError(t *testing.T) {
+	for _, in := range []error{
+		usageErr("kaputt"),
+		clierr.New(clierr.CodeError, "Antwort ist kein gültiges JSON", "Hinweis bleibt"),
+		errors.New("write |1: broken pipe"),
+	} {
+		ce := cliErr(t, afterRequest(in), "error")
+		if ce.Exit() != 1 || ce.Message != "Befehl ausgeführt, Ausgabe fehlgeschlagen: "+clierr.From(in).Message {
+			t.Errorf("%v: err = %+v", in, ce)
+		}
+		if !errors.Is(ce, in) {
+			t.Errorf("%v: cause lost", in)
+		}
+		if h := clierr.From(in).Hint; ce.Hint != h {
+			t.Errorf("%v: hint = %q, want %q", in, ce.Hint, h)
+		}
+		// applied twice, the prefix stays single
+		if again := clierr.From(afterRequest(ce)); again.Message != ce.Message {
+			t.Errorf("twice: %q", again.Message)
+		}
+	}
+}
+
+func TestMutationOutputFailureSaysExecuted(t *testing.T) {
+	archive := specEntry(t, "ArchiveCompany", "company", "archive", registry.ClassArchive)
+	// a 2xx answer that is not JSON
+	app, srv := apiApp(t)
+	srv.On("POST", "/contact/companies/{id}/archive", http.StatusOK, []byte("<html>ok</html>"), "Content-Type", "text/html")
+	wantExit(t, app, runEntries(t, app, nil, []string{"company", "archive", "12", "-o", "json"}, archive), 1)
+	if _, errs := bufs(app); !strings.Contains(errs, `"message":"Befehl ausgeführt, Ausgabe fehlgeschlagen: `) {
+		t.Errorf("stderr = %q", errs)
+	}
+	// stdout fails
+	app, srv = apiApp(t)
+	app.Out = failWriter{}
+	srv.On("POST", "/contact/companies/{id}/archive", http.StatusOK, []byte(`{"id":12}`))
+	wantExit(t, app, runEntries(t, app, nil, []string{"company", "archive", "12", "-o", "yaml"}, archive), 1)
+	if errs := app.Err.(interface{ String() string }).String(); !strings.Contains(errs, "Befehl ausgeführt, Ausgabe fehlgeschlagen: ") {
+		t.Errorf("stderr = %q", errs)
 	}
 }
