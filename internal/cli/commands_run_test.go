@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -76,6 +76,42 @@ func dryRunnable(c cmdInfo) bool {
 	return false
 }
 
+// valueRejected reports whether a run rejected the value of flag: a usage
+// or validation error (exit 2 or 5) whose message calls the value of that
+// flag invalid ("ungültiger Wert … für --flag", "ungültige ID … für
+// --flag", "--flag: ungültig…"), whatever the value. Other errors that
+// name the flag (--desc only with --sort) are no rejection of the value.
+func valueRejected(code int, errs, flag string) bool {
+	if code != 2 && code != 5 {
+		return false
+	}
+	name := `(-[A-Za-z], )?` + regexp.QuoteMeta(flag) + `([^a-z0-9-]|$)`
+	return regexp.MustCompile(`ungültig[^\n]*? für `+name).MatchString(errs) ||
+		regexp.MustCompile(`(?m)^Fehler: `+name+`[^\n]*ungültig`).MatchString(errs)
+}
+
+func TestValueRejected(t *testing.T) {
+	for _, tc := range []struct {
+		code       int
+		errs, flag string
+		want       bool
+	}{
+		{2, "Fehler: ungültiger Wert \"abc\" für --company: ungültige Syntax\n", "--company", true},
+		{5, "Fehler: ungültiger Wert für --team-member: ID muss eine ganze Zahl ≥ 0 sein\n", "--team-member", true}, // value not quoted
+		{2, "Fehler: ungültige ID \"x\" für --from-estimate: ganze Zahl ≥ 0 erwartet\n", "--from-estimate", true},
+		{2, "Fehler: ungültiger Wert \"x\" für -O, --output-file: …\n", "--output-file", true},
+		{5, "Fehler: --date: ungültiges Datum \"31.02.2026\"\n", "--date", true},
+		{2, "Fehler: ungültiger Wert \"x\" für --company-id: …\n", "--company", false},
+		{2, "Fehler: --desc nur zusammen mit --sort\n", "--desc", false},
+		{1, "Fehler: ungültiger Wert \"x\" für --company\n", "--company", false},
+		{0, "", "--company", false},
+	} {
+		if got := valueRejected(tc.code, tc.errs, tc.flag); got != tc.want {
+			t.Errorf("valueRejected(%d, %q, %s) = %v", tc.code, tc.errs, tc.flag, got)
+		}
+	}
+}
+
 // typeSamples are a value of each contract type the CLI must reject and
 // one it must accept.
 var typeSamples = map[string]struct{ bad, good string }{
@@ -124,20 +160,20 @@ func TestCommandsJSONFlagTypesMatchCLI(t *testing.T) {
 			flag := "--" + f.Name
 			if f.Type == "string" {
 				// text is accepted as text: no rejection as number or ID
-				_, errs := runLine(t, nil, append(append([]string{}, base...), flag+"=abc"))
-				if strings.Contains(errs, flag) && strings.Contains(errs, "Zahl") {
+				code, errs := runLine(t, nil, append(append([]string{}, base...), flag+"=abc"))
+				if valueRejected(code, errs, flag) && strings.Contains(errs, "Zahl") {
 					t.Errorf("%s %s=abc (string): als Zahl abgelehnt: %q", c.Command, flag, errs)
 				}
 				continue
 			}
 			s := typeSamples[f.Type]
 			code, errs := runLine(t, nil, append(append([]string{}, base...), flag+"="+s.bad))
-			if (code != 2 && code != 5) || !strings.Contains(errs, flag) {
+			if !valueRejected(code, errs, flag) {
 				t.Errorf("%s %s=%s (%s): exit %d, stderr %q – nicht abgelehnt", c.Command, flag, s.bad, f.Type, code, errs)
 			}
-			_, errs = runLine(t, nil, append(append([]string{}, base...), flag+"="+s.good))
-			if strings.Contains(errs, fmt.Sprintf("%q", s.good)) {
-				t.Errorf("%s %s=%s (%s): abgelehnt: %q", c.Command, flag, s.good, f.Type, errs)
+			code, errs = runLine(t, nil, append(append([]string{}, base...), flag+"="+s.good))
+			if valueRejected(code, errs, flag) {
+				t.Errorf("%s %s=%s (%s): abgelehnt: exit %d, %q", c.Command, flag, s.good, f.Type, code, errs)
 			}
 		}
 	}
