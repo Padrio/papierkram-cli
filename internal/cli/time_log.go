@@ -68,8 +68,8 @@ func (a *App) newTimeLogCmd() *cobra.Command {
 	}
 	fs := cmd.Flags()
 	fs.String("task", "", "Aufgabe: ID oder Alias aus [tasks] der Projektdatei; ohne Angabe "+presetNote(presetTask))
-	fs.String("user", "", "Benutzer-ID; ohne Angabe "+presetNote(presetUser)+" oder user des Kontexts")
-	fs.String("date", "", "Datum: YYYY-MM-DD, today/heute, yesterday/gestern (Standard: heute)")
+	fs.Var(&rawValue{typ: "id"}, "user", "Benutzer-ID; ohne Angabe "+presetNote(presetUser)+" oder user des Kontexts")
+	fs.Var(&rawValue{typ: "date"}, "date", "Datum: YYYY-MM-DD, today/heute, yesterday/gestern (Standard: heute)")
 	fs.String("from", "", "Beginn als H:MM oder HH:MM")
 	fs.String("to", "", "Ende als H:MM oder HH:MM (nicht mit --duration)")
 	fs.String("duration", "", "Dauer: 1h30m, 90m oder 1:30; ohne --from endet der Eintrag jetzt")
@@ -150,7 +150,7 @@ func (a *App) checkTimeLog(c *cobra.Command, e registry.Entry) (timeLogInput, er
 		if !fs.Changed(key) {
 			continue
 		}
-		v := flagString(c, key)
+		v := rawText(c, key)
 		if _, ok := parseID(v); ok || (key == presetTask && v != "" && !strings.HasPrefix(v, "-")) {
 			continue
 		}
@@ -199,7 +199,7 @@ func (a *App) checkTimeLog(c *cobra.Command, e registry.Entry) (timeLogInput, er
 	f.Flag = "date"
 	rawDate := "today"
 	if fs.Changed("date") {
-		rawDate = flagString(c, "date")
+		rawDate = rawText(c, "date")
 	}
 	v, err := spec.CoerceFlag(spec.CoerceContext{Now: a.Now, Loc: a.Location}, f, rawDate)
 	if err != nil {
@@ -353,7 +353,7 @@ func (a *App) timeLogPresets(c *cobra.Command, r *config.Resolved) (task, user p
 	src := func(key string) presetSources {
 		s := presetSources{Env: a.Env, File: a.presetFile}
 		if c.Flags().Changed(key) {
-			v := flagString(c, key)
+			v := rawText(c, key)
 			s.Flag = &v
 		}
 		return s

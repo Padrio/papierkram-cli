@@ -86,10 +86,10 @@ func newLocalInitCmd(app *App) *cobra.Command {
 		RunE: func(c *cobra.Command, _ []string) error { return app.runLocalInit(c, in) },
 	}
 	fs := cmd.Flags()
-	fs.String("company", "", "Firma-ID")
-	fs.String("project", "", "Projekt-ID")
+	fs.Var(&rawValue{typ: "id"}, "company", "Firma-ID")
+	fs.Var(&rawValue{typ: "id"}, "project", "Projekt-ID")
 	fs.String("task", "", "Aufgaben-ID oder Alias aus [tasks] der Projektdatei")
-	fs.String("user", "", "Benutzer-ID")
+	fs.Var(&rawValue{typ: "id"}, "user", "Benutzer-ID")
 	// shadows the global --context: the context of the file, not the
 	// context of this command
 	fs.String("context", "", "Kontext, für den die Projektdatei gilt")
@@ -104,7 +104,7 @@ func localInitFlags(c *cobra.Command) (localInit, error) {
 		if !c.Flags().Changed(k.key) {
 			continue
 		}
-		raw := flagString(c, k.key)
+		raw := rawText(c, k.key)
 		id, err := strconv.ParseInt(raw, 10, 64)
 		switch {
 		case err == nil && id > 0:
