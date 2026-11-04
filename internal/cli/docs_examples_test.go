@@ -17,7 +17,8 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/testutil/modroot"
 )
 
-// The command lines of the documentation (README.md, AGENTS.md) are valid
+// The command lines of the documentation (README.md, AGENTS.md and the
+// Claude Code skill) are valid
 // commands of the built tree: the command exists, every flag exists and
 // parses, and the positional arguments pass the argument check (task 45);
 // documented mutations also run with --dry-run against the mock.
@@ -25,8 +26,9 @@ import (
 // or without language); a line marked with the comment "# Platzhalter" is
 // a syntax sketch and is skipped.
 
-// docFiles are the documents whose command lines are checked.
-var docFiles = []string{"README.md", "AGENTS.md"}
+// docFiles are the documents whose command lines are checked, relative
+// to the module root with "/".
+var docFiles = []string{"README.md", "AGENTS.md", "skills/papierkram/SKILL.md"}
 
 // shellBlock matches the opening fence of a checked code block.
 var shellBlock = regexp.MustCompile("^```(sh|bash|shell|console|powershell)?\\s*$")
@@ -267,7 +269,7 @@ func TestDocCommandsAreValid(t *testing.T) {
 	root := modroot.Find(t)
 	d := decodeCommands(t, runCommandsJSON(t, "--json"))
 	for _, name := range docFiles {
-		lines := docCommandLines(t, filepath.Join(root, name))
+		lines := docCommandLines(t, filepath.Join(root, filepath.FromSlash(name)))
 		found, dryRuns := 0, 0
 		for _, l := range lines {
 			if strings.Contains(l.text, placeholderMark) {
@@ -470,5 +472,35 @@ func TestAgentsErrorRecipe(t *testing.T) {
 		if err != nil || code != 8 || d.Error.Code != "confirmation_required" || d.Error.ExitCode != 8 {
 			t.Errorf("%v: exit %d, %+v, %v; stderr %q", format, code, d, err, errs)
 		}
+	}
+}
+
+// The Claude Code skill starts with YAML frontmatter that names it and
+// says when to use it in one paragraph (task 46); a colon or # in the
+// description would make the YAML invalid and the skill unloadable.
+func TestSkillFrontmatter(t *testing.T) {
+	doc, err := os.ReadFile(filepath.Join(modroot.Find(t), "skills", "papierkram", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.ReplaceAll(string(doc), "\r\n", "\n")
+	rest, ok := strings.CutPrefix(text, "---\n")
+	front, body, closed := strings.Cut(rest, "\n---\n")
+	if !ok || !closed {
+		t.Fatal("SKILL.md: Frontmatter zwischen zwei Zeilen --- fehlt")
+	}
+	var meta map[string]string
+	if err := yaml.Unmarshal([]byte(front), &meta); err != nil {
+		t.Fatalf("SKILL.md: Frontmatter ist kein gültiges YAML: %v", err)
+	}
+	if meta["name"] != "papierkram" || len(meta) != 2 {
+		t.Errorf("SKILL.md: Frontmatter = %q, want name papierkram und description", meta)
+	}
+	desc := meta["description"]
+	if desc == "" || strings.Contains(desc, "\n") || len(desc) > 1024 {
+		t.Errorf("SKILL.md: description muss ein Absatz mit höchstens 1024 Zeichen sein: %q", desc)
+	}
+	if !strings.Contains(body, "AGENTS.md") {
+		t.Error("SKILL.md: Verweis auf AGENTS.md fehlt")
 	}
 }

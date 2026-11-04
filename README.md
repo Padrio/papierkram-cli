@@ -344,6 +344,7 @@ Fehler stehen auf stderr als `Fehler: …` mit `Hinweis: …` und ggf. `Correlat
 
 - [AGENTS.md](AGENTS.md): JSON-Vertrag, Exit-Codes und Regeln für KI-Agents
 - [docs/reference/](docs/reference/): Befehlsreferenz, aus der Hilfe generiert
+- [skills/papierkram/SKILL.md](skills/papierkram/SKILL.md): Claude-Code-Skill mit den Abläufen Beleg hochladen und zuordnen, Rechnung aus Angebot, offene Posten prüfen, Zeiten erfassen und abrechnen. Zum Einbinden den Ordner `skills/papierkram` nach `~/.claude/skills/` (für alle Projekte) oder nach `.claude/skills/` eines Projekts kopieren.
 - [docs/schemas/](docs/schemas/): JSON-Schemas der Ausgaben
 - [docs/offene-punkte.md](docs/offene-punkte.md): offene Fragen zur API und wie die E2E-Suite sie misst
 - [CHANGELOG.md](CHANGELOG.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
