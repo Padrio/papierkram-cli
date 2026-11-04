@@ -81,3 +81,8 @@ jobs:
       # Threshold is 0 for now; Task 43 raises it to 80.
       - name: coverage
         run: scripts/coverage.sh 0
+      # no test may leave files in the repository (untracked included)
+      - name: tests leave the tree clean
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)"
