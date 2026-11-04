@@ -115,25 +115,35 @@ func (a *App) warnEnvOverrides(r *config.Resolved) {
 
 // clientFor checks that r has a base URL and a token and builds the client.
 func (a *App) clientFor(r *config.Resolved) (*api.Client, error) {
+	if err := requireCredentials(r); err != nil {
+		return nil, err
+	}
+	return api.New(a.clientOptions(r)), nil
+}
+
+// requireCredentials checks that r has a base URL (usage error) and a
+// token (auth error); every client is built after it (clientFor, the ID
+// completion).
+func requireCredentials(r *config.Resolved) error {
 	if r.BaseURL == "" {
 		msg := "Keine Subdomain konfiguriert: kein Kontext gewählt und PAPIERKRAM_SUBDOMAIN nicht gesetzt"
 		if r.Context != "" {
 			msg = fmt.Sprintf("Kontext %q hat keine Subdomain", r.Context)
 		}
-		return nil, clierr.New(clierr.CodeUsage, msg,
+		return clierr.New(clierr.CodeUsage, msg,
 			"Kontext anlegen: papierkram context create <name> --subdomain <subdomain> (oder PAPIERKRAM_SUBDOMAIN setzen)")
 	}
 	if r.Token == "" {
 		if r.Context == "" {
-			return nil, clierr.New(clierr.CodeAuth, "Kein Token gesetzt",
+			return clierr.New(clierr.CodeAuth, "Kein Token gesetzt",
 				"Anmelden: papierkram auth login --context <name> (oder PAPIERKRAM_TOKEN setzen)")
 		}
 		e := clierr.New(clierr.CodeAuth, fmt.Sprintf("Kein Token für Kontext %q gespeichert", r.Context),
 			fmt.Sprintf("Anmelden: papierkram auth login --context %s (oder PAPIERKRAM_TOKEN setzen)", r.Context))
 		e.Cause = auth.ErrNotFound
-		return nil, e
+		return e
 	}
-	return api.New(a.clientOptions(r)), nil
+	return nil
 }
 
 // clientOptions maps r and the global flags to client options. An explicit
