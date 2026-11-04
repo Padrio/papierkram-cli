@@ -382,3 +382,77 @@ func TestSave_InvalidFileKept(t *testing.T) {
 		t.Errorf("file changed: %q", data)
 	}
 }
+
+// The context of a project file follows the rules of context names
+// (config.ValidateName); an invalid one is a usage error naming the file.
+func TestLoad_InvalidContext(t *testing.T) {
+	for _, ctx := range []string{"firma.gmbh", "firma gmbh", `a\u001b[2Jb`, ""} {
+		dir := t.TempDir()
+		p := write(t, dir, FileName, "context = \""+ctx+"\"\n")
+		_, err := Load(p)
+		var ce *clierr.Error
+		if !errors.As(err, &ce) || ce.Code != clierr.CodeUsage || !strings.Contains(ce.Message, p) || !strings.Contains(ce.Message, "context") {
+			t.Errorf("context %q: err = %v", ctx, err)
+			continue
+		}
+		if strings.Contains(ce.Message+ce.Hint, "\x1b") {
+			t.Errorf("context %q: escape in message %q", ctx, ce.Message)
+		}
+	}
+}
+
+// Messages never echo control characters of the file: alias names in the
+// hint of ResolveTask and the path are made printable.
+func TestMessagesArePrintable(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "evil\x1b[2J")
+	p := write(t, dir, FileName, "[tasks]\n\"x\\u001b[31m\" = 5\n")
+	f, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.ResolveTask("nix")
+	var ce *clierr.Error
+	if !errors.As(err, &ce) || strings.Contains(ce.Message+ce.Hint, "\x1b") {
+		t.Errorf("ResolveTask: %q / %q", ce.Message, ce.Hint)
+	}
+	bad := write(t, dir, FileName, "project = \n")
+	_, err = Load(bad)
+	if !errors.As(err, &ce) || strings.Contains(ce.Message+ce.Hint, "\x1b") {
+		t.Errorf("Load: %q / %q", ce.Message, ce.Hint)
+	}
+}
+
+// Save never writes through a symbolic link (a cloned repository could
+// point the project file at ~/.bashrc): it fails closed with a usage
+// error and the target stays unchanged.
+func TestSave_RefusesSymlink(t *testing.T) {
+	outside := write(t, t.TempDir(), ".bashrc", "export PATH=/usr/bin\n")
+	dir := t.TempDir()
+	link := filepath.Join(dir, FileName)
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("no symlinks: %v", err)
+	}
+	_, err := Save(link, Changes{Project: i64(34)})
+	var ce *clierr.Error
+	if !errors.As(err, &ce) || ce.Code != clierr.CodeUsage || !strings.Contains(ce.Message, "symbolischer Link") {
+		t.Fatalf("err = %v", err)
+	}
+	if data, _ := os.ReadFile(outside); string(data) != "export PATH=/usr/bin\n" {
+		t.Errorf("target changed: %q", data)
+	}
+	if st, err := os.Lstat(link); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("link replaced: %v %v", st, err)
+	}
+	// also a dangling link (no file yet behind it) is refused
+	dangling := filepath.Join(t.TempDir(), FileName)
+	target := filepath.Join(t.TempDir(), "neu")
+	if err := os.Symlink(target, dangling); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(dangling, Changes{Project: i64(34)}); !errors.As(err, &ce) || ce.Code != clierr.CodeUsage {
+		t.Errorf("dangling: err = %v", err)
+	}
+	if _, err := os.Stat(target); err == nil {
+		t.Error("file created behind a dangling link")
+	}
+}

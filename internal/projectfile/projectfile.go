@@ -13,6 +13,8 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/config"
+	"github.com/Padrio/papierkram-cli/internal/output"
 )
 
 // FileName is the name of the project file.
@@ -77,19 +79,29 @@ func gitRoot(dir string) (string, bool) {
 func Load(path string) (*File, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("%s lesen: %w", path, err)
+		return nil, fmt.Errorf("%s lesen: %w", output.Printable(path), err)
 	}
 	m, err := decode(path, data)
 	if err != nil {
 		return nil, err
 	}
+	// messages show the path without control characters (a directory of
+	// a cloned repository may be named with terminal escapes)
+	shown := output.Printable(path)
 	f := &File{Path: path}
 	if v, ok := m["context"]; ok {
 		ctx, isString := v.(string)
 		if !isString {
 			return nil, clierr.New(clierr.CodeUsage,
-				fmt.Sprintf("Projektdatei %s: %q muss eine Zeichenkette sein", path, "context"),
+				fmt.Sprintf("Projektdatei %s: %q muss eine Zeichenkette sein", shown, "context"),
 				`Beispiel: context = "firma-gmbh"`)
+		}
+		// the rules of context names: the file may come from a cloned
+		// repository, its context is printed in messages
+		if err := config.ValidateName(ctx); err != nil {
+			ce := clierr.From(err)
+			return nil, clierr.New(clierr.CodeUsage,
+				fmt.Sprintf("Projektdatei %s: ungültiger Wert für \"context\": %s", shown, ce.Message), ce.Hint)
 		}
 		f.Context = ctx
 	}
@@ -105,7 +117,7 @@ func Load(path string) (*File, error) {
 		id, isInt := v.(int64)
 		if !isInt || id <= 0 {
 			return nil, clierr.New(clierr.CodeUsage,
-				fmt.Sprintf("Projektdatei %s: %q muss eine positive ganze Zahl sein", path, key),
+				fmt.Sprintf("Projektdatei %s: %q muss eine positive ganze Zahl sein", shown, key),
 				fmt.Sprintf("Beispiel: %s = 34", key))
 		}
 		*dst = id
@@ -114,7 +126,7 @@ func Load(path string) (*File, error) {
 		tbl, isTable := v.(map[string]any)
 		if !isTable {
 			return nil, clierr.New(clierr.CodeUsage,
-				fmt.Sprintf("Projektdatei %s: %q muss eine Tabelle sein", path, "tasks"),
+				fmt.Sprintf("Projektdatei %s: %q muss eine Tabelle sein", shown, "tasks"),
 				"Beispiel: [tasks] tickets = 57")
 		}
 		f.Tasks = make(map[string]int64, len(tbl))
@@ -128,13 +140,13 @@ func Load(path string) (*File, error) {
 			// A numeric alias would be shadowed by the ID parsing in ResolveTask.
 			if _, err := strconv.ParseInt(alias, 10, 64); err == nil {
 				return nil, clierr.New(clierr.CodeUsage,
-					fmt.Sprintf("Projektdatei %s: Aufgaben-Alias %q darf keine Zahl sein (wird als Aufgaben-ID gelesen)", path, alias),
+					fmt.Sprintf("Projektdatei %s: Aufgaben-Alias %q darf keine Zahl sein (wird als Aufgaben-ID gelesen)", shown, alias),
 					"Alias mit Buchstaben benennen, z. B. [tasks] tickets = 57")
 			}
 			id, isInt := val.(int64)
 			if !isInt || id <= 0 {
 				return nil, clierr.New(clierr.CodeUsage,
-					fmt.Sprintf("Projektdatei %s: Aufgaben-Alias %q muss eine positive ganze Zahl sein", path, alias),
+					fmt.Sprintf("Projektdatei %s: Aufgaben-Alias %q muss eine positive ganze Zahl sein", shown, alias),
 					"Beispiel: [tasks] "+alias+" = 123")
 			}
 			f.Tasks[alias] = id
@@ -160,7 +172,7 @@ func decode(path string, data []byte) (map[string]any, error) {
 			row, col := de.Position()
 			hint = fmt.Sprintf("TOML-Syntax in Zeile %d, Spalte %d prüfen, z. B. project = 34", row, col)
 		}
-		e := clierr.New(clierr.CodeUsage, fmt.Sprintf("Projektdatei %s ist ungültig", path), hint)
+		e := clierr.New(clierr.CodeUsage, fmt.Sprintf("Projektdatei %s ist ungültig", output.Printable(path)), hint)
 		e.Cause = err
 		return nil, e
 	}
@@ -187,5 +199,5 @@ func (f *File) ResolveTask(v string) (int64, error) {
 		names = append(names, k)
 	}
 	sort.Strings(names)
-	return 0, clierr.New(clierr.CodeUsage, msg, "Verfügbare Aliase: "+strings.Join(names, ", "))
+	return 0, clierr.New(clierr.CodeUsage, msg, "Verfügbare Aliase: "+output.Printable(strings.Join(names, ", ")))
 }

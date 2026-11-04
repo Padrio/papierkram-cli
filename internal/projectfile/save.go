@@ -10,6 +10,9 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pelletier/go-toml/v2/unstable"
+
+	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/output"
 )
 
 // Changes are the keys local init sets; a nil field leaves its key as it
@@ -32,22 +35,40 @@ type SaveResult struct {
 // written, so an unchanged file keeps its comments. A file that is no
 // valid TOML is never overwritten (usage error). The write is atomic: a
 // temporary file in the same directory, with the mode of the existing
-// file (a new one gets 0666 minus the umask), renamed over the target. A
-// symbolic link is followed, so its target is updated.
+// file (a new one gets 0666 minus the umask), renamed over the target.
+//
+// Save never writes through a symbolic link: the file may come from a
+// cloned repository that points it at ~/.bashrc. A link at path (also a
+// dangling one) or anything else that is no regular file is a usage
+// error, and nothing is read or written. The rename replaces the entry
+// at path itself and the temporary file is created exclusively, so a link
+// placed after the check is not followed either.
 func Save(path string, ch Changes) (SaveResult, error) {
 	var res SaveResult
-	target := path
-	if p, err := filepath.EvalSymlinks(path); err == nil {
-		target = p
-	}
-	data, err := os.ReadFile(target)
+	shown := output.Printable(path)
+	st, err := os.Lstat(path)
 	exists := err == nil
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return res, fmt.Errorf("%s lesen: %w", path, err)
+	switch {
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
+		return res, fmt.Errorf("%s prüfen: %w", shown, err)
+	case exists && st.Mode()&fs.ModeSymlink != 0:
+		return res, clierr.New(clierr.CodeUsage,
+			fmt.Sprintf("Projektdatei %s ist ein symbolischer Link – nicht überschrieben", shown),
+			"Der Link kann aus einem fremden Repository stammen und auf eine andere Datei zeigen. "+
+				"Link prüfen und durch eine echte Datei ersetzen oder die Werte von Hand eintragen")
+	case exists && !st.Mode().IsRegular():
+		return res, clierr.New(clierr.CodeUsage,
+			fmt.Sprintf("Projektdatei %s ist keine reguläre Datei – nicht überschrieben", shown), "")
+	}
+	var data []byte
+	if exists {
+		if data, err = os.ReadFile(path); err != nil {
+			return res, fmt.Errorf("%s lesen: %w", shown, err)
+		}
 	}
 	m := map[string]any{}
 	if exists {
-		if m, err = decode(path, data); err != nil {
+		if m, err = decode(shown, data); err != nil {
 			return res, err
 		}
 		if m == nil {
@@ -76,16 +97,14 @@ func Save(path string, ch Changes) (SaveResult, error) {
 	}
 	out, err := toml.Marshal(m)
 	if err != nil {
-		return SaveResult{}, fmt.Errorf("%s kodieren: %w", path, err)
+		return SaveResult{}, fmt.Errorf("%s kodieren: %w", shown, err)
 	}
 	mode := fs.FileMode(0o666)
 	if exists {
-		if st, err := os.Stat(target); err == nil {
-			mode = st.Mode().Perm()
-		}
+		mode = st.Mode().Perm()
 	}
-	if err := writeAtomic(target, out, mode, exists); err != nil {
-		return SaveResult{}, fmt.Errorf("%s schreiben: %w", path, err)
+	if err := writeAtomic(path, out, mode, exists); err != nil {
+		return SaveResult{}, fmt.Errorf("%s schreiben: %w", shown, err)
 	}
 	res.Created = !exists
 	res.HadComments = exists && hasComments(data)
