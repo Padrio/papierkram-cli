@@ -117,6 +117,15 @@ nfpms:
         dst: /usr/share/fish/vendor_completions.d/papierkram.fish
         file_info:
           mode: 0644
+      # bash-completion and fish load a completion file by command name on
+      # first use; for pk they load the papierkram script, which also
+      # registers pk (scripts/completions.sh). zsh binds pk by #compdef.
+      - src: papierkram
+        dst: /usr/share/bash-completion/completions/pk
+        type: symlink
+      - src: papierkram.fish
+        dst: /usr/share/fish/vendor_completions.d/pk.fish
+        type: symlink
       - src: ./LICENSE
         dst: /usr/share/doc/papierkram/LICENSE
         file_info:
@@ -146,8 +155,12 @@ homebrew_casks:
     binaries: [papierkram]
     # GoReleaser has no target for binaries: the short form pk is a second
     # binary stanza with a target (Homebrew cask DSL), see docs/release.md.
+    # fish loads completions by command name, so the papierkram script (it
+    # registers pk too) is linked a second time as pk.fish; bash
+    # (etc/bash_completion.d) and zsh (#compdef) need nothing extra.
     custom_block: |
       binary "papierkram", target: "pk"
+      fish_completion "completions/papierkram.fish", target: "pk.fish"
     manpages:
       - man/*.1
     completions:

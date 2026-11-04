@@ -148,8 +148,15 @@ jobs:
           dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/bin/pk -> papierkram'
           dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/man/man1/papierkram.1'
           dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/bash-completion/completions/papierkram'
+          dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/bash-completion/completions/pk -> papierkram'
           tar -tzf dist/papierkram_*_linux_amd64.tar.gz | grep -Fx 'completions/_papierkram'
           tar -tzf dist/papierkram_*_linux_amd64.tar.gz | grep -Fx 'man/papierkram.1'
+      # papierkram and pk complete in every shell (pwsh ships with the runner)
+      - name: completions for papierkram and pk
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh fish
+          REQUIRE_ALL_SHELLS=1 sh scripts/check-completions.sh
       # dist/, completions/ and man/ are in .gitignore
       - name: snapshot leaves the tree clean
         run: |
