@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
@@ -50,6 +51,18 @@ var timeLogFields = []struct{ flag, field string }{
 	{"unbillable", "unbillable"},
 }
 
+// addTaskUserFlags adds --task and --user of time log and time start.
+// Both are required: without flag the preset decides (resolvePreset,
+// timeLogPresets), and without any value the command fails (exit 2, R15).
+func addTaskUserFlags(fs *pflag.FlagSet) {
+	fs.String("task", "", "Aufgabe: ID oder Alias aus [tasks] der Projektdatei; ohne Angabe "+presetNote(presetTask)+" (Pflicht)")
+	fs.Var(&rawValue{typ: "id"}, "user", "Benutzer-ID; ohne Angabe "+presetNote(presetUser)+" oder user des Kontexts (Pflicht)")
+	for _, key := range []string{presetTask, presetUser} {
+		markRequired(fs, key)
+		markPreset(fs, key, key, true)
+	}
+}
+
 // newTimeLogCmd builds time log for the time group.
 func (a *App) newTimeLogCmd() *cobra.Command {
 	e, ok := registry.Lookup("time", "create")
@@ -68,10 +81,7 @@ func (a *App) newTimeLogCmd() *cobra.Command {
 		},
 	}
 	fs := cmd.Flags()
-	fs.String("task", "", "Aufgabe: ID oder Alias aus [tasks] der Projektdatei; ohne Angabe "+presetNote(presetTask))
-	fs.Var(&rawValue{typ: "id"}, "user", "Benutzer-ID; ohne Angabe "+presetNote(presetUser)+" oder user des Kontexts")
-	markPreset(fs, "task", presetTask, true)
-	markPreset(fs, "user", presetUser, true)
+	addTaskUserFlags(fs)
 	fs.Var(&rawValue{typ: "date"}, "date", "Datum: YYYY-MM-DD, today/heute, yesterday/gestern (Standard: heute)")
 	fs.String("from", "", "Beginn als H:MM oder HH:MM")
 	fs.String("to", "", "Ende als H:MM oder HH:MM (nicht mit --duration)")

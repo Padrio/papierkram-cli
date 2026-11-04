@@ -410,10 +410,11 @@ func TestCommandsJSONFlags(t *testing.T) {
 	}
 	for _, name := range []string{"time log", "time start"} {
 		c := d.find(t, name)
-		if f := c.flag(t, "task"); !slices.Equal(f.DefaultFrom, []string{"flag", "env", "projectfile"}) || f.Env != "PAPIERKRAM_TASK" {
+		// required: a value must come from some source, here flag or preset
+		if f := c.flag(t, "task"); !f.Required || !slices.Equal(f.DefaultFrom, []string{"flag", "env", "projectfile"}) || f.Env != "PAPIERKRAM_TASK" {
 			t.Errorf("%s --task = %+v", name, f)
 		}
-		if f := c.flag(t, "user"); !slices.Equal(f.DefaultFrom, []string{"flag", "env", "projectfile", "context"}) || f.Env != "PAPIERKRAM_USER" || f.Type != "id" {
+		if f := c.flag(t, "user"); !f.Required || !slices.Equal(f.DefaultFrom, []string{"flag", "env", "projectfile", "context"}) || f.Env != "PAPIERKRAM_USER" || f.Type != "id" {
 			t.Errorf("%s --user = %+v", name, f)
 		}
 	}

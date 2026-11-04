@@ -53,10 +53,7 @@ func (a *App) newTimeStartCmd() *cobra.Command {
 		},
 	}
 	fs := cmd.Flags()
-	fs.String("task", "", "Aufgabe: ID oder Alias aus [tasks] der Projektdatei; ohne Angabe "+presetNote(presetTask))
-	fs.Var(&rawValue{typ: "id"}, "user", "Benutzer-ID; ohne Angabe "+presetNote(presetUser)+" oder user des Kontexts")
-	markPreset(fs, "task", presetTask, true)
-	markPreset(fs, "user", presetUser, true)
+	addTaskUserFlags(fs)
 	fs.StringP("comments", "m", "", "Kommentar (time stop -m ersetzt ihn)")
 	return cmd
 }

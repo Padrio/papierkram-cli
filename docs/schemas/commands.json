@@ -118,7 +118,7 @@
                   "enum": ["string", "boolean", "integer", "number", "id", "date", "duration"]
                 },
                 "required": {
-                  "description": "Pflichtangabe (in der Hilfe „Pflicht“): per Flag oder, wo der Befehl es anbietet, per --input bzw. Voreinstellung (default_from).",
+                  "description": "Ein Wert muss aus einer Quelle kommen – diesem Flag, --input oder einer Voreinstellung (default_from) –, sonst bricht der Befehl ab (in der Hilfe „Pflicht“). Bedingte Pflichtangaben (z. B. „Pflicht bei --via email“) stehen nur in description.",
                   "type": "boolean"
                 },
                 "repeatable": {
@@ -193,7 +193,7 @@
             "enum": ["string", "boolean", "integer", "number", "id", "date", "duration"]
           },
           "required": {
-            "description": "Pflichtangabe (in der Hilfe „Pflicht“): per Flag oder, wo der Befehl es anbietet, per --input bzw. Voreinstellung (default_from).",
+            "description": "Ein Wert muss aus einer Quelle kommen – diesem Flag, --input oder einer Voreinstellung (default_from) –, sonst bricht der Befehl ab (in der Hilfe „Pflicht“). Bedingte Pflichtangaben (z. B. „Pflicht bei --via email“) stehen nur in description.",
             "type": "boolean"
           },
           "repeatable": {
