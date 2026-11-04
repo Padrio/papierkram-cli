@@ -351,9 +351,9 @@ Live gemessen gegen einen Sandbox-Account (Stand 2026-11-04, Einzelheiten in [do
 - **Angebote brauchen ein Datum:** `estimate create` ohne `--document-date` lehnt die API ab und berechnet trotzdem 50 Credits; das CLI prüft das deshalb vorher (Exit 5).
 - **Abgelehnte Anfragen kosten:** Auch ein mit 422 abgelehntes Anlegen kostet die vollen Credits.
 - **Rechnung ändern:** Ein `PUT` ohne Zahlungsbedingung stellt eine Rechnung auf die Standard-Zahlungsbedingung des Accounts um und ändert das Fälligkeitsdatum. `invoice update` liest die Rechnung deshalb vorher und sendet ihre aktuelle Zahlungsbedingung mit (1 Credit mehr; nicht mit `--payment-term` oder `payment_term` in `--input`). `papierkram api PUT` tut das nicht.
-- **`--billable-duration` ist wirkungslos:** Die API setzt beim Anlegen und Ändern eines Zeiteintrags die Dauer aus Beginn und Ende ein.
+- **`--billable-duration` ist wirkungslos:** Gemessen wurde 1800 Sekunden bei einem Eintrag von 90 Minuten; gespeichert war beim Anlegen und beim Ändern die Dauer (5400).
 - **PDF-Versand:** `deliver --via pdf` vergibt die Nummer und setzt den Status (z. B. `sent`), aber weder `sent_on` noch `sent_via`.
-- **Upload:** PDF, PNG und JPG werden angenommen; andere Typen (z. B. TXT) lehnt die API mit HTTP 500 ab (Exit 1). Das ist kein vorübergehender Fehler, also nicht wiederholen.
+- **Upload:** PDF, PNG und JPG werden angenommen; TXT lehnt die API mit HTTP 500 ab (Exit 1), andere Typen sind nicht gemessen. Das ist kein vorübergehender Fehler, also nicht wiederholen.
 
 ## Weitere Dokumentation
 

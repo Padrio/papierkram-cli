@@ -25,7 +25,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 10 | `due_date` per `UpdateInvoice` nicht änderbar | Feld wird aus `--input` entfernt | – | nicht gemessen |
 | 11 | `sent_on`/`sent_to` als `null` im Angebots-`PUT` | wird akzeptiert | `TestE2E_Carries/03_EstimateNullSentFields` | hart |
 | 12 | `entertainment_persons: []` im Beleg-`PUT` | wird akzeptiert | `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` | hart (Bedeutung: Messung) |
-| 13 | `supply_date` im Antwortformat und Kontaktperson/Projekt im Rundlauf | wird akzeptiert; Kontaktperson und Projekt werden unter `customer` mitgesendet (seit Lauf 2) | `TestE2E_Carries/02_InvoiceRoundTrip` | hart |
+| 13 | `supply_date` im Antwortformat und Kontaktperson/Projekt im Rundlauf | Kontaktperson und Projekt werden unter `customer` mitgesendet und bleiben (gemessen Lauf 3 und 4); `supply_date` offen | `TestE2E_Carries/02_InvoiceRoundTrip` | hart |
 | 14 | Werte von `due_time_unit` | meist `day`; die Tabelle zeigt `ZIEL` und `EINHEIT` getrennt | `TestE2E_Carries/05_PaymentTermUnits` | Messung |
 | 15 | Einheit von `billable_duration` | Sekunden; die API ignoriert den Wert beim Anlegen und Ändern (gemessen) | `TestE2E_Carries/06_BillableDurationSeconds` | Messung |
 | 16 | Setzt `deliver --via pdf` `sent_on`? | nein (gemessen); abgebrochener PDF-Versand endet mit Exit 12 | `TestE2E_Carries/07_DeliverPdfSentOn` | Messung |
@@ -41,6 +41,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 26 | Person `default` als String | Request `"true"`/`"false"`; Antwort Boolean (gemessen) | `TestE2E_PersonDefaultIsString` | hart |
 | 27 | **Entscheidung offen (Pascal):** `PAPIERKRAM_COMPANY`/`company` aus der Projektdatei als Default für `person … --company`? | keine Voreinstellung; nur Anzeige in `local show` | – | keine API-Frage, nicht gemessen |
 | 28 | `document_date` Pflicht beim Anlegen | Angebot: Pflicht (gemessen); Rechnung: nicht Pflicht | `TestE2E_DeliverPdfEmptyBody` (Angebot, indirekt) | Angebot erledigt; Rechnung **offen**, nicht gemessen |
+| 29 | `invoice update --customer X` ohne Kontaktperson/Projekt | sendet `customer` nur mit `id`; die API leert dann `contact_person` und `project` (gemessen) | – (Lauf 2, Rundlauf) | **offen**, Verhalten unverändert |
 
 ## Punkte im Einzelnen
 
@@ -54,9 +55,9 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 ### 2. Erlaubte Upload-MIME-Typen
 
 - **Offen:** Welche Dateitypen nimmt `POST /expense/vouchers/{id}/documents` an?
-- **Annahme:** Keine lokale Einschränkung. Der MIME-Typ folgt aus der Dateiendung, unbekannte Endungen werden als `application/octet-stream` gesendet; eine Ablehnung der API kommt als Exit 5.
+- **Annahme:** Keine lokale Einschränkung. Der MIME-Typ folgt aus der Dateiendung, unbekannte Endungen werden als `application/octet-stream` gesendet. Eine Ablehnung mit 4xx käme als Exit 5; gemessen lehnt die API TXT aber mit HTTP 500 ab (Exit 1, siehe unten).
 - **E2E:** `TestE2E_UploadMimeTypes` lädt PDF, PNG, JPG und TXT hoch. Hart nur für PDF (`voucher create --file beleg.pdf` muss funktionieren), die übrigen sind Messung.
-- **Gemessen 2026-11-04 (Lauf 2):** PDF, PNG und JPG nimmt die API an (HTTP 201). TXT lehnt sie mit **HTTP 500** („Internal server error.“) ab statt mit 4xx; das CLI meldet das als Exit 1 (`server_error`), bei `voucher create --file` als Exit 11 mit „Ergebnis des Hochladens unbekannt“. Ein Upload eines nicht unterstützten Typs ist also nicht vorübergehend: nicht blind wiederholen, sondern den Dateityp ändern.
+- **Gemessen 2026-11-04 (Lauf 2):** PDF, PNG und JPG nimmt die API an (HTTP 201). TXT lehnt sie mit **HTTP 500** („Internal server error.“) ab statt mit 4xx (andere Typen nicht gemessen); das CLI meldet das als Exit 1 (`server_error`), bei `voucher create --file` als Exit 11 mit „Ergebnis des Hochladens unbekannt“. Ein Upload eines nicht unterstützten Typs ist also nicht vorübergehend: nicht blind wiederholen, sondern den Dateityp ändern.
 
 ### 3. Maximale Upload-Dateigröße — bewusst nicht gemessen
 
@@ -85,7 +86,8 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Annahme:** Teil-Update (so arbeitet auch papierkram-mcp-server live). `update` sendet nur die angegebenen Felder.
 - **E2E:** `TestE2E_PartialUpdateSemantics` (hart) mit je einem Subtest pro Ressource: `TestE2E_PartialUpdateSemantics/company`, `TestE2E_PartialUpdateSemantics/person`, `TestE2E_PartialUpdateSemantics/project`, `TestE2E_PartialUpdateSemantics/task`, `TestE2E_PartialUpdateSemantics/proposition`, `TestE2E_PartialUpdateSemantics/estimate`, `TestE2E_PartialUpdateSemantics/invoice`, `TestE2E_PartialUpdateSemantics/voucher`, `TestE2E_PartialUpdateSemantics/time`, `TestE2E_PartialUpdateSemantics/custom-attribute`. Jeder ändert ein Feld und prüft, dass die anderen (und die Positionen) bleiben.
 - **Gemessen 2026-11-04 (Lauf 2):** Teil-Update bestätigt für company, person, project, task, proposition, estimate, voucher, time und custom-attribute. **Rechnung:** nach `invoice update --description …` (gesendet nur `description`, per Test belegt) hatte `payment_term.id` einen anderen Wert (22 → 25). `payment_term` einer Rechnung ist eine Kopie der gewählten Vorlage (in allen Spec-Beispielen `id` = `template_id` + 1); ob nur die Kopie neu angelegt wurde (gleiche `template_id`) oder die Zahlungsbedingung auf einen Standard zurückfiel, ist offen. Lauf 3 misst `id`, `template_id` und `name` vorher und nachher und loggt die Schlüssel aller anderen geänderten Felder; der Subtest prüft jetzt hart nur noch `payment_term.template_id`. Bis dahin: wer sichergehen will, gibt bei `invoice update` `--payment-term` mit.
-- **Gemessen 2026-11-04 (Lauf 3):** Bei der Rechnung stellte der `PUT` mit nur `description` die Zahlungsbedingung von Vorlage 1 („Barzahlung“) auf Vorlage 16 („Auf Rechnung, 14 Tage“, Standard des Accounts) um und änderte `due_date`; Kontaktperson und Projekt blieben. Ein `PUT` mit der aktuellen `payment_term.id` (der Kopie, im Rundlauf) behielt die Zahlungsbedingung. Beim Angebot zeigte sich nichts dergleichen.
+- **Gemessen 2026-11-04 (Lauf 3):** Bei der Rechnung stellte der `PUT` mit nur `description` die Zahlungsbedingung von Vorlage 1 („Barzahlung“) auf Vorlage 16 („Auf Rechnung, 14 Tage“, Standard des Accounts) um und änderte `due_date`; Kontaktperson und Projekt blieben. Beim Angebot zeigte sich nichts dergleichen. (Der Rundlauf in Lauf 3 sendete die aktuelle `payment_term.id` und behielt sie, die Rechnung stand da aber schon auf der Standardvorlage; als Beleg taugt das nicht.)
+- **Gemessen 2026-11-04 (Lauf 4, mit dem Lesen):** Teil-Update und Rundlauf behalten die Zahlungsbedingung: Vorlage 1 „Barzahlung“, `payment_term.id` 34 vorher und nachher, in beiden Fällen. Damit ist belegt, dass ein `PUT` mit der aktuellen `payment_term.id` (der Kopie) sie behält und keine neue Kopie anlegt.
 - **Stand des CLI (Ruling E2E-A):** `invoice update` ohne `--payment-term` und ohne `payment_term` in `--input` liest die Rechnung vorher (1 Credit, bei `--dry-run` als `read` ausgewiesen) und sendet `payment_term: {id: <aktuelle payment_term.id>}` mit; scheitert das Lesen, wird nichts geändert. Der Subtest `TestE2E_PartialUpdateSemantics/invoice` prüft seitdem hart, dass `payment_term.template_id` und `due_date` bleiben. `papierkram api PUT` sendet weiter nur, was angegeben ist.
 
 ### 7. Positionen im `PUT` ersetzen
@@ -133,7 +135,8 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Annahme:** Ja zu beidem; `describe -o json | update --input -` ist ein dokumentierter Ablauf.
 - **E2E:** `TestE2E_Carries/02_InvoiceRoundTrip` (hart); loggt seit Lauf 3 die Schlüssel des gesendeten Bodys (ohne Werte) und die IDs unter `customer`.
 - **Gemessen 2026-11-04 (Lauf 2):** Gesendet wurde `customer` als `{id}` ohne Kontaktperson und Projekt (die Antwort hat beide auf oberster Ebene, die das CLI damals als nur lesbar entfernte). Danach waren `contact_person` und `project` der Rechnung leer. `supply_date` war im Lauf leer und ist damit weiter ungeprüft.
-- **Stand des CLI:** Die Bereinigung von `--input` übernimmt `contact_person` und `project` der Antwort jetzt als `customer.contact_person`/`customer.project` (`{id}`), wenn `customer` im Body steht (Hinweis „Referenzen übernommen“). Ob die API sie damit behält, zeigt Lauf 3.
+- **Stand des CLI:** Die Bereinigung von `--input` übernimmt `contact_person` und `project` der Antwort jetzt als `customer.contact_person`/`customer.project` (`{id}`), wenn `customer` im Body steht (Hinweis „Referenzen übernommen“); nennt `--customer` einen anderen Kunden, entfallen sie wieder (Hinweis „Kunde X statt Y aus --input“).
+- **Gemessen 2026-11-04 (Lauf 3 und 4):** Mit `customer{contact_person{id},id,project{id}}` im `PUT` bleiben Kontaktperson und Projekt erhalten (Lauf 3: 7 → 7, 16 → 16; Lauf 4: 10 → 10, 22 → 22). `supply_date` war weiter leer, das Antwortformat ist damit ungeprüft.
 
 ### 14. Werte von `due_time_unit`
 
@@ -196,7 +199,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Nimmt die API `ended_at_time` `"00:00"` oder `"24:00"` nach einem Beginn um 23:00 an, und als eine Stunde?
 - **Annahme:** Das CLI lehnt Einträge über Mitternacht ab (Exit 2), auch ein Ende um 00:00.
 - **E2E:** `TestE2E_Carries/12_MidnightEnd` (Messung, über `papierkram api` ohne lokale Prüfung).
-- **Gemessen 2026-11-04 (Lauf 2):** Die API nimmt beide an: 23:00–00:00 und 23:00–24:00 ergeben je `duration` 3600 und `ended_at` 00:00 des Folgetags. Das CLI lehnt ein Ende um Mitternacht weiter mit Exit 2 ab (offen: lockern, siehe Report der E2E-Fixes).
+- **Gemessen 2026-11-04 (Lauf 2):** Die API nimmt beide an: 23:00–00:00 und 23:00–24:00 ergeben je `duration` 3600 und `ended_at` 00:00 des Folgetags. Das CLI lehnt ein Ende um Mitternacht weiter mit Exit 2 ab. **Ruling E2E-Mitternacht:** bleibt Exit 2 (Spec-Regel, kein Datenverlust); das Lockern ist geparkt.
 
 ### 23. Antwort von `GET /info`
 
@@ -239,3 +242,9 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Stand des CLI:** Das Overlay ([api/overlay.yaml](../api/overlay.yaml), Abschnitt 16) macht `document_date` im Anlege-Body des Angebots zur Pflicht (auch `null` gilt als fehlend). `estimate create` ohne `--document-date` (bzw. ohne `document_date` in `--input`) endet mit Exit 5, bevor eine Anfrage gesendet wird. `invoice create --from-estimate` ist nicht betroffen: Das Rechnungsdatum kommt nie aus dem Angebot, sondern aus `--document-date`.
 - **Offen:** Ob auch `POST /income/invoices` ohne `document_date` scheitert, ist nicht gemessen. Das CLI behandelt das Feld bei Rechnungen deshalb weiter als optional; die E2E-Suite sendet es vorsichtshalber immer mit. Bei einer Messung (422 wie beim Angebot) das Overlay entsprechend ergänzen.
 - **Gemessen 2026-11-04 (Lauf 2):** `estimate create` mit `--document-date` gelingt (zwei Angebote angelegt).
+
+### 29. `invoice update --customer X` leert Kontaktperson und Projekt
+
+- **Gemessen 2026-11-04 (Lauf 2):** Ein Rechnungs-`PUT` mit `customer` ohne `contact_person`/`project` leert beide, auch beim selben Kunden (damals im Rundlauf, der `customer` als `{id}` sendete).
+- **Stand des CLI:** `invoice update --customer X` ohne `--contact-person`/`--customer-project` sendet genau das, `customer: {id: X}`, und leert damit Kontaktperson und Projekt. Das Verhalten bestand schon vor den E2E-Fixes und bleibt vorerst unverändert; beim Kundenwechsel ist es meist gewollt (die alten Referenzen gehören zum alten Kunden), beim selben Kunden nicht.
+- **Offen:** Ob `invoice update --customer` (selber Kunde) die Referenzen per Lesen erhalten oder warnen soll, braucht eine Entscheidung. Bis dahin Kontaktperson und Projekt per `--contact-person`/`--customer-project` mitgeben.
