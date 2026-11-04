@@ -16,7 +16,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["command", "usage", "aliases", "short", "class", "credits", "flags", "examples"],
+        "required": ["command", "usage", "aliases", "short", "class", "credits", "blocked_by_read_only", "flags", "examples"],
         "oneOf": [
           {
             "description": "Befehl mit fester Operation: operation_id, method und path zusammen, mindestens 1 Credit.",
@@ -39,6 +39,7 @@
             "not": {"anyOf": [{"required": ["operation_id"]}, {"required": ["method"]}, {"required": ["path"]}]},
             "properties": {
               "class": {"type": "string", "enum": ["per_request"]},
+              "blocked_by_read_only": {"type": "boolean", "enum": [true]},
               "credits": {"type": "integer", "nullable": true, "enum": [null]}
             }
           }
@@ -69,7 +70,7 @@
             "minLength": 1
           },
           "class": {
-            "description": "Aktionsklasse (Spec 8.1): read_only, create, update, archive, destructive, send. Zusätzlich local: der Befehl wirkt nur lokal (Konfiguration, Schlüsselbund, Projektdatei, Timer, Ausgabe des CLI) und kostet nichts, außer er nennt eine Operation (auth login prüft das Token per GET /info); per_request: die Klasse entscheidet sich je Anfrage (papierkram api: Klasse der Operation zu Methode und Pfad, unbekannte Pfade bei GET read_only, sonst destructive).",
+            "description": "Aktionsklasse (Spec 8.1): read_only, create, update, archive, destructive, send. Zusätzlich local: der Befehl wirkt nur lokal (Konfiguration, Schlüsselbund, Projektdatei, Timer, Ausgabe des CLI) und kostet nichts, außer er nennt eine Operation (auth login prüft das Token per GET /info); per_request: die Klasse entscheidet sich je Anfrage (papierkram api: Klasse der Operation zu Methode und Pfad, unbekannte Pfade bei GET read_only, sonst destructive). Ob ein Befehl unter PAPIERKRAM_READ_ONLY gesperrt ist, sagt blocked_by_read_only (auch local-Befehle, die Konfiguration, Projektdatei oder Timer schreiben).",
             "type": "string",
             "enum": ["read_only", "create", "update", "archive", "destructive", "send", "local", "per_request"]
           },
@@ -78,6 +79,10 @@
             "type": "integer",
             "minimum": 0,
             "nullable": true
+          },
+          "blocked_by_read_only": {
+            "description": "true, wenn der Befehl unter PAPIERKRAM_READ_ONLY mit Exit 9 abbricht (Spec 8.3): alle ändernden Befehle, Befehle, die Konfiguration, Schlüsselbund oder Projektdatei schreiben (context create|use|delete|rename, auth login|logout, local init), time start; bei per_request (api) nur ändernde Anfragen, GET bleibt erlaubt.",
+            "type": "boolean"
           },
           "operation_id": {
             "description": "operationId der API-Operation, die der Befehl sendet; fehlt bei Befehlen ohne feste Operation.",

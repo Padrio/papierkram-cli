@@ -67,6 +67,7 @@ type cmdInfo struct {
 	Short       string    `json:"short"`
 	Class       string    `json:"class"`
 	Credits     *int      `json:"credits"`
+	Blocked     *bool     `json:"blocked_by_read_only"`
 	OperationID string    `json:"operation_id"`
 	Method      string    `json:"method"`
 	Path        string    `json:"path"`
@@ -137,30 +138,33 @@ func TestCommandsJSONMatchesContract(t *testing.T) {
 
 	// strictness: each mutation of a valid document must fail
 	mutate := map[string]func(doc map[string]any){
-		"unbekanntes Feld oben":      func(d map[string]any) { d["extra"] = 1 },
-		"unbekanntes Befehlsfeld":    func(d map[string]any) { firstCmd(d)["use"] = "x" },
-		"usage fehlt":                func(d map[string]any) { delete(firstCmd(d), "usage") },
-		"usage ohne papierkram":      func(d map[string]any) { firstCmd(d)["usage"] = "invoice create" },
-		"shorthand leer":             func(d map[string]any) { firstFlag(d)["shorthand"] = "" },
-		"shorthand null":             func(d map[string]any) { firstFlag(d)["shorthand"] = nil },
-		"shorthand zu lang":          func(d map[string]any) { firstFlag(d)["shorthand"] = "ab" },
-		"alternatives leer":          func(d map[string]any) { firstFlag(d)["alternatives"] = []any{} },
-		"alternative ohne --":        func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"input"} },
-		"alternative doppelt":        func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"--input", "--input"} },
-		"alternatives ohne required": func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"--input"} },
-		"alternatives kein Array":    func(d map[string]any) { firstFlag(d)["alternatives"] = "--input" },
-		"globaler shorthand null":    func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["shorthand"] = nil },
-		"unbekannte Klasse":          func(d map[string]any) { firstCmd(d)["class"] = "write" },
-		"Operation ohne Methode":     func(d map[string]any) { delete(apiCmd(d, "invoice create"), "method") },
-		"lokal mit Credits":          func(d map[string]any) { apiCmd(d, "version")["credits"] = 1.0 },
-		"per_request mit Credits":    func(d map[string]any) { apiCmd(d, "api")["credits"] = 1.0 },
-		"unbekanntes Flag-Feld":      func(d map[string]any) { firstFlag(d)["short"] = "x" },
-		"unbekannter Flag-Typ":       func(d map[string]any) { firstFlag(d)["type"] = "int64" },
-		"enum fehlt":                 func(d map[string]any) { delete(firstFlag(d), "enum") },
-		"unbekannte Quelle":          func(d map[string]any) { firstFlag(d)["default_from"] = []any{"config"} },
-		"globales Flag-Feld":         func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["x"] = true },
-		"falsche Vertragsversion":    func(d map[string]any) { d["version"] = 2.0 },
-		"Beispiel ohne papierkram":   func(d map[string]any) { apiCmd(d, "invoice create")["examples"] = []any{"invoice create"} },
+		"unbekanntes Feld oben":       func(d map[string]any) { d["extra"] = 1 },
+		"unbekanntes Befehlsfeld":     func(d map[string]any) { firstCmd(d)["use"] = "x" },
+		"usage fehlt":                 func(d map[string]any) { delete(firstCmd(d), "usage") },
+		"usage ohne papierkram":       func(d map[string]any) { firstCmd(d)["usage"] = "invoice create" },
+		"shorthand leer":              func(d map[string]any) { firstFlag(d)["shorthand"] = "" },
+		"shorthand null":              func(d map[string]any) { firstFlag(d)["shorthand"] = nil },
+		"shorthand zu lang":           func(d map[string]any) { firstFlag(d)["shorthand"] = "ab" },
+		"alternatives leer":           func(d map[string]any) { firstFlag(d)["alternatives"] = []any{} },
+		"alternative ohne --":         func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"input"} },
+		"alternative doppelt":         func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"--input", "--input"} },
+		"alternatives ohne required":  func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"--input"} },
+		"alternatives kein Array":     func(d map[string]any) { firstFlag(d)["alternatives"] = "--input" },
+		"blocked fehlt":               func(d map[string]any) { delete(firstCmd(d), "blocked_by_read_only") },
+		"blocked kein bool":           func(d map[string]any) { firstCmd(d)["blocked_by_read_only"] = "ja" },
+		"per_request nicht blockiert": func(d map[string]any) { apiCmd(d, "api")["blocked_by_read_only"] = false },
+		"globaler shorthand null":     func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["shorthand"] = nil },
+		"unbekannte Klasse":           func(d map[string]any) { firstCmd(d)["class"] = "write" },
+		"Operation ohne Methode":      func(d map[string]any) { delete(apiCmd(d, "invoice create"), "method") },
+		"lokal mit Credits":           func(d map[string]any) { apiCmd(d, "version")["credits"] = 1.0 },
+		"per_request mit Credits":     func(d map[string]any) { apiCmd(d, "api")["credits"] = 1.0 },
+		"unbekanntes Flag-Feld":       func(d map[string]any) { firstFlag(d)["short"] = "x" },
+		"unbekannter Flag-Typ":        func(d map[string]any) { firstFlag(d)["type"] = "int64" },
+		"enum fehlt":                  func(d map[string]any) { delete(firstFlag(d), "enum") },
+		"unbekannte Quelle":           func(d map[string]any) { firstFlag(d)["default_from"] = []any{"config"} },
+		"globales Flag-Feld":          func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["x"] = true },
+		"falsche Vertragsversion":     func(d map[string]any) { d["version"] = 2.0 },
+		"Beispiel ohne papierkram":    func(d map[string]any) { apiCmd(d, "invoice create")["examples"] = []any{"invoice create"} },
 	}
 	for name, fn := range mutate {
 		var doc map[string]any

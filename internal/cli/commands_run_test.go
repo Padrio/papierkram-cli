@@ -136,3 +136,46 @@ func TestCommandsJSONFlagTypesMatchCLI(t *testing.T) {
 		t.Errorf("%d von %d ID-Flags geprüft", idFlags, all)
 	}
 }
+
+// blocked_by_read_only says whether a command can exit 9 under
+// PAPIERKRAM_READ_ONLY: it is derived from the guard annotations
+// (pk:writes-config, a pk:class other than read_only) and checked by
+// running every example of every command under read-only: a blocked
+// command exits 9 with one of them, a free one with none.
+func TestCommandsJSONReadOnlyBlocking(t *testing.T) {
+	d := decodeCommands(t, runCommandsJSON(t, "--json"))
+	app, _ := apiApp(t)
+	root := NewRootCmd(app)
+	root.InitDefaultHelpCmd()
+	for _, c := range d.Commands {
+		if c.Blocked == nil {
+			t.Fatalf("%s: blocked_by_read_only fehlt", c.Command)
+		}
+		cmd, _, err := root.Find(strings.Fields(c.Command))
+		if err != nil {
+			t.Fatal(err)
+		}
+		class := cmd.Annotations[annotClass]
+		guarded := cmd.Annotations[annotWritesConfig] == "true" || (class != "" && class != string(registry.ClassReadOnly))
+		if *c.Blocked != guarded {
+			t.Errorf("%s: blocked_by_read_only %v, Schutz-Annotationen %v", c.Command, *c.Blocked, guarded)
+		}
+		exit9 := false
+		for _, ex := range c.Examples {
+			words, err := shellWords(ex)
+			if err != nil {
+				t.Fatal(err)
+			}
+			words = words[1:]
+			if dryRunnable(c) {
+				words = append(words, "--dry-run")
+			}
+			if code, _ := runLine(t, map[string]string{"PAPIERKRAM_READ_ONLY": "1"}, words); code == 9 {
+				exit9 = true
+			}
+		}
+		if exit9 != *c.Blocked {
+			t.Errorf("%s: blocked_by_read_only %v, unter PAPIERKRAM_READ_ONLY Exit 9: %v", c.Command, *c.Blocked, exit9)
+		}
+	}
+}

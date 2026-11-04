@@ -112,6 +112,7 @@ type commandInfo struct {
 	Short       string     `json:"short"`
 	Class       string     `json:"class"`
 	Credits     *int       `json:"credits"`
+	Blocked     bool       `json:"blocked_by_read_only"`
 	OperationID string     `json:"operation_id,omitempty"`
 	Method      string     `json:"method,omitempty"`
 	Path        string     `json:"path,omitempty"`
@@ -172,6 +173,15 @@ func metaOf(c *cobra.Command) commandMeta {
 		m.class = classLocal
 	}
 	return m
+}
+
+// readOnlyBlocked reports whether c can exit 9 under PAPIERKRAM_READ_ONLY
+// (spec 8.3): it writes the configuration (guardConfigWrite) or carries a
+// class other than read_only, which the root and guardMutation block
+// (mutations, time start, api with a mutating request).
+func readOnlyBlocked(c *cobra.Command) bool {
+	class := c.Annotations[annotClass]
+	return c.Annotations[annotWritesConfig] == "true" || (class != "" && class != string(registry.ClassReadOnly))
 }
 
 // commandWords is the command path of c without the root.
@@ -236,6 +246,7 @@ func commandInfoOf(c *cobra.Command) (commandInfo, error) {
 		Short:    c.Short,
 		Class:    m.class,
 		Credits:  m.credits,
+		Blocked:  readOnlyBlocked(c),
 		Examples: commandExamples(c),
 	}
 	if m.op {
@@ -354,7 +365,7 @@ const commandsLong = `Listet alle Befehle mit Klasse (Spec 8.1), Credits je Anfr
 
 Mit --json (oder -o json|yaml, --jq) kommt die maschinenlesbare Liste für Agents: je Befehl Verwendungszeile mit Positionsargumenten, Aliase, Kurzhilfe, Klasse, Credits, Operation (operation_id, method, path), Flags mit Kurzform, Typ, Pflicht (mit gleichwertigen Flags unter alternatives), Wiederholbarkeit, erlaubten Werten und Hilfetext sowie Beispiele; die globalen Flags stehen einmal unter global_flags. Vertrag: docs/schemas/commands.json (Version 1).
 
-Klassen außer denen der Spec: local wirkt nur lokal (Konfiguration, Schlüsselbund, Projektdatei, Timer) und kostet nichts, außer der Befehl nennt eine Operation (auth login prüft das Token per GET /info); per_request entscheidet sich je Anfrage (papierkram api), credits ist dann null.
+Klassen außer denen der Spec: local wirkt nur lokal (Konfiguration, Schlüsselbund, Projektdatei, Timer) und kostet nichts, außer der Befehl nennt eine Operation (auth login prüft das Token per GET /info); per_request entscheidet sich je Anfrage (papierkram api), credits ist dann null. blocked_by_read_only sagt, ob der Befehl unter PAPIERKRAM_READ_ONLY mit Exit 9 abbricht.
 
 Sendet keine Anfrage.`
 
