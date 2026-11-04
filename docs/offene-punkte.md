@@ -7,7 +7,7 @@ Die Suite unterscheidet zwei Arten von Prüfungen:
 - **hart:** Das CLI verlässt sich auf das Verhalten; weicht die API ab, schlägt der Test fehl.
 - **Messung:** Das Ergebnis steht im Log mit dem Präfix `MESSUNG`; weicht es von der Annahme des CLI ab, zusätzlich mit `ABWEICHUNG:` und in der Zusammenfassung am Ende des Laufs. Eine Messung schlägt nicht fehl.
 
-Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -tags e2e -run 'TestE2E_Carries/01_DeadlineISO' ./e2e/...`). Stand: Die Suite ist gebaut, ein Sandbox-Account existiert noch nicht; alle Punkte sind deshalb noch **nicht live beantwortet**.
+Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -tags e2e -run 'TestE2E_Carries/01_DeadlineISO' ./e2e/...`). Stand: Ein erster Live-Lauf gegen einen Sandbox-Account fand am 2026-11-04 statt; seine Ergebnisse stehen bei den Punkten unter **Gemessen 2026-11-04**. Viele Prüfungen scheiterten in diesem Lauf an einer Vorbedingung (Angebot ohne `document_date`, Account als Kleinunternehmer ohne Umsatzsteuer); diese Punkte sind weiterhin **nicht live beantwortet**.
 
 ## Übersicht
 
