@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	_ "time/tzdata" // Europe/Berlin must load on hosts without zone data (Windows)
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
@@ -240,8 +241,8 @@ func (a *App) sentDay(on string) string {
 // today is the current day (YYYY-MM-DD) in dayZone.
 func (a *App) today() string { return a.Now().In(a.dayZone()).Format(time.DateOnly) }
 
-// berlin is the time zone of Papierkram; nil when the system has no zone
-// data for it.
+// berlin is the time zone of Papierkram. The embedded time/tzdata makes it
+// load everywhere; nil stays as a defensive fallback.
 var berlin = sync.OnceValue(func() *time.Location {
 	loc, err := time.LoadLocation("Europe/Berlin")
 	if err != nil {
