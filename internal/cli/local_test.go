@@ -376,42 +376,95 @@ func TestLocalInitRefusesSymlink(t *testing.T) {
 	}
 }
 
-// Security review: content of the project file (keys, aliases, context)
-// and its path never reach the terminal with control characters.
+// Security review: content of the project file (unknown keys) and its
+// path never reach the terminal with control or invisible characters, on
+// every path that prints them: warnings and preset hints on stderr, the
+// table, YAML, --jq and --fields of local show, the output of local init
+// and its prompts. Every scenario must succeed and show its marker, so
+// the test cannot silently fall into an error path (aliases with such
+// characters are rejected by Load, see TestLoad_AliasWithControlCharacters).
 func TestProjectFileContentIsPrintable(t *testing.T) {
-	app, srv := apiApp(t)
-	dir := filepath.Join(t.TempDir(), "repo\x1b[2J")
+	dir := filepath.Join(t.TempDir(), "repo\x1b[2J\u202eX")
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, projectfile.FileName),
-		[]byte("project = 34\n\"x\\u001b]0;pwned\\u0007\" = 1\n\n[tasks]\n\"t\\u001b[31m\" = 5\n"), 0o600); err != nil {
+		[]byte("project = 34\n\"x\\u001b]0;pwned\\u0007\" = 1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	app.Getwd = func() (string, error) { return dir, nil }
-	for _, args := range [][]string{
-		{"task", "list", "-o", "json"}, // unknown keys warning, preset hint
-		{"time", "log", "--task", "nix", "--user", "1", "--from", "09:00", "--to", "10:00"}, // alias hint
-		{"local", "show"},                    // table with path
-		{"local", "init", "--project", "35"}, // written path
-	} {
-		app.Out.(interface{ Reset() }).Reset()
-		app.Err.(interface{ Reset() }).Reset()
-		Run(app, args)
-		out, errs := bufs(app)
-		if strings.ContainsAny(out+errs, "\x1b\x07") {
-			t.Errorf("%v: control characters in output:\nstdout %q\nstderr %q", args, out, errs)
+	clean := func(t *testing.T, what, s string) {
+		t.Helper()
+		if strings.ContainsAny(s, "\x1b\x07\u202e") {
+			t.Errorf("%s: control characters in %q", what, s)
 		}
 	}
-	_ = srv
+	for _, tc := range []struct {
+		args           []string
+		stdout, stderr string
+	}{
+		{[]string{"task", "list", "-o", "json"}, "", "Hinweis: Projekt 34 aus Projektdatei"},
+		{[]string{"task", "list", "-o", "json"}, "", "unbekannte Schlüssel"},
+		{[]string{"local", "show"}, "Projektdatei: ", ""},
+		{[]string{"local", "show"}, "projectfile", ""},
+		{[]string{"local", "show", "-o", "yaml"}, "project_file: ", ""},
+		{[]string{"local", "show", "-o", "json"}, `"project_file": `, ""},
+		{[]string{"local", "show", "--jq", ".project_file"}, "repo", ""},
+		{[]string{"local", "show", "--fields", "project_file"}, "repo", ""},
+		{[]string{"local", "init", "--project", "35"}, "aktualisiert", ""},
+	} {
+		app, _ := apiApp(t)
+		app.Getwd = func() (string, error) { return dir, nil }
+		wantExit(t, app, Run(app, tc.args), 0)
+		out, errs := bufs(app)
+		if !strings.Contains(out, tc.stdout) || !strings.Contains(errs, tc.stderr) {
+			t.Errorf("%v: marker %q/%q missing:\nstdout %q\nstderr %q", tc.args, tc.stdout, tc.stderr, out, errs)
+		}
+		clean(t, strings.Join(tc.args, " "), out+errs)
+	}
 
-	// the defaults of the prompts too
+	// a file of another context (direct mode: none is active): the
+	// footer saying its values are ignored
+	other := filepath.Join(t.TempDir(), "other\x1b[2J\u202eX")
+	if err := os.Mkdir(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, projectfile.FileName), []byte("context = \"a\"\nproject = 34\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app, _ := apiApp(t)
+	app.Getwd = func() (string, error) { return other, nil }
+	wantExit(t, app, Run(app, []string{"local", "show"}), 0)
+	if out, _ := bufs(app); !strings.Contains(out, "ihre Werte werden ignoriert") {
+		t.Errorf("ignored footer missing: %q", out)
+	}
+	clean(t, "local show ignored", mustOut(app))
+
+	// the prompts of local init: header with the path, defaults
 	app, _ = localApp(t)
-	writeProjectFile(t, app, "context = \"a\"\nproject = 34\n")
 	app.Getwd = func() (string, error) { return dir, nil }
 	app.StdinTTY = true
-	Run(app, []string{"local", "init"})
-	if _, errs := bufs(app); strings.ContainsAny(errs, "\x1b\x07") {
-		t.Errorf("prompts: %q", errs)
+	wantExit(t, app, Run(app, []string{"local", "init"}), 0)
+	_, errs := bufs(app)
+	for _, w := range []string{"Projektdatei ", "repo", "Firma-ID", "Projekt-ID [35]"} {
+		if !strings.Contains(errs, w) {
+			t.Errorf("prompts without %q: %q", w, errs)
+		}
+	}
+	clean(t, "prompts", errs)
+}
+
+// Review M5: local show uses the output format of the effective context
+// like auth status; -o still wins.
+func TestLocalShowContextOutput(t *testing.T) {
+	app, _ := contextApp(t, nil)
+	writeCfg(t, app, "active_context = \"a\"\n[contexts.a]\nsubdomain = \"firma-a\"\noutput = \"json\"\n")
+	wantExit(t, app, Run(app, []string{"local", "show"}), 0)
+	if out := mustOut(app); !strings.HasPrefix(out, "{") {
+		t.Errorf("context output json: %q", out)
+	}
+	app.Out.(interface{ Reset() }).Reset()
+	wantExit(t, app, Run(app, []string{"local", "show", "-o", "table"}), 0)
+	if out := mustOut(app); !strings.HasPrefix(out, "SCHLÜSSEL") {
+		t.Errorf("-o table: %q", out)
 	}
 }

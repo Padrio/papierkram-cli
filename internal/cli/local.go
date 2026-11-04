@@ -377,21 +377,16 @@ func (a *App) runLocalShow(c *cobra.Command) error {
 		}
 		v.Values = append(v.Values, row)
 	}
-	o := a.outputOptions(c.Context(), a.Flags.Output)
+	// the format of the effective context like auth status (review M5)
+	o := a.outputOptions(c.Context(), a.outputFormat(r))
+	// path, context and origins come from an untrusted local file and
+	// directory: printable in every format (YAML, --jq and --fields print
+	// strings raw; review M1)
+	v = printableLocalShow(v)
 	if !ownText(o) {
 		return output.RenderValue(o, v, output.Columns{})
 	}
-	// the table shows the file path and context printable; JSON and YAML
-	// escape control characters themselves
-	rows := make([]localRow, len(v.Values))
-	for i, row := range v.Values {
-		row.Origin = printable(row.Origin)
-		if s, ok := row.Value.(string); ok {
-			row.Value = printable(s)
-		}
-		rows[i] = row
-	}
-	if err := output.RenderValue(o, rows, localColumns); err != nil {
+	if err := output.RenderValue(o, v.Values, localColumns); err != nil {
 		return err
 	}
 	var b strings.Builder
@@ -409,4 +404,24 @@ func (a *App) runLocalShow(c *cobra.Command) error {
 	}
 	_, err = fmt.Fprint(a.Out, b.String())
 	return err
+}
+
+// printableLocalShow is v with every text made printable: the project
+// file path and context and the value and origin of every row.
+func printableLocalShow(v localShowJSON) localShowJSON {
+	if v.ProjectFile != nil {
+		p := printable(*v.ProjectFile)
+		v.ProjectFile = &p
+	}
+	v.ProjectFileContext = printable(v.ProjectFileContext)
+	rows := make([]localRow, len(v.Values))
+	for i, row := range v.Values {
+		row.Origin = printable(row.Origin)
+		if s, ok := row.Value.(string); ok {
+			row.Value = printable(s)
+		}
+		rows[i] = row
+	}
+	v.Values = rows
+	return v
 }
