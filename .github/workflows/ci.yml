@@ -28,6 +28,24 @@ jobs:
       - run: go test -race ./...
         env:
           CGO_ENABLED: '1'
+      # The live suite (spec 11.1) must compile and skip without its
+      # variables; they are set empty here so no sandbox is ever reached
+      # from the normal CI (the live run is .github/workflows/e2e.yml).
+      - name: e2e suite compiles and skips
+        shell: bash
+        env:
+          PAPIERKRAM_E2E_SUBDOMAIN: ''
+          PAPIERKRAM_E2E_TOKEN: ''
+          PAPIERKRAM_E2E_SANDBOX_CONFIRM: ''
+        run: |
+          # names only, never values
+          set_vars="$(env | grep -E '^PAPIERKRAM_E2E_[A-Z_]*=.' | cut -d= -f1 || true)"
+          if [ -n "$set_vars" ]; then
+            echo "gesetzt: $set_vars; die normale CI läuft nie gegen eine Sandbox" >&2
+            exit 1
+          fi
+          go vet -tags e2e ./e2e/...
+          go test -count=1 -tags e2e ./e2e/...
       # no test may leave files in the repository, on any OS
       - name: tests leave the tree clean
         shell: bash
@@ -75,6 +93,8 @@ jobs:
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14.0
+          # the tag only adds the e2e suite; everything else is linted as before
+          args: --build-tags=e2e
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       # git diff misses newly generated untracked files; git status sees both.
