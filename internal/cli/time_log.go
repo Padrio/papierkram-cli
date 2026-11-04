@@ -24,7 +24,7 @@ import (
 
 const timeLogLong = `Erfasst Zeit als Zeiteintrag: Datum, Zeitraum, Aufgabe und Benutzer.
 
-Zeitraum: --from und --to (H:MM oder HH:MM) oder --duration (1h30m, 90m, 1:30), mit --from ab dieser Uhrzeit, ohne --from bis jetzt (nur für heute). Ein Zeiteintrag hat nur ein Datum: Einträge über Mitternacht werden abgelehnt; sie werden als zwei Einträge erfasst. Eine Dauer ist echte Zeit: Am Tag der Zeitumstellung endet --from 01:30 --duration 2h im Herbst um 02:30 und im Frühjahr um 03:30 (Wanduhrzeit in der lokalen Zeitzone); Uhrzeiten, die es wegen der Umstellung nicht gibt, werden abgelehnt; doppelte Uhrzeiten gelten beim ersten Mal (Sommerzeit).
+Zeitraum: --from und --to (H:MM oder HH:MM) oder --duration (1h30m, 90m, 1:30), mit --from ab dieser Uhrzeit, ohne --from bis jetzt (nur für heute). Ein Zeiteintrag hat nur ein Datum: Einträge über Mitternacht werden abgelehnt; sie werden als zwei Einträge erfasst. Eine Dauer wird in Uhrzeit gerechnet, wie Papierkram sie bucht (Uhrzeiten ohne Zeitzone): --from 01:30 --duration 2h ergibt 01:30–03:30, auch an den Tagen der Zeitumstellung; --from und --to gelten wie angegeben.
 
 Aufgabe und Benutzer: Flag, sonst PAPIERKRAM_TASK bzw. PAPIERKRAM_USER, sonst task bzw. user aus der Projektdatei .papierkram.toml (anlegen: papierkram local init), beim Benutzer zuletzt user des Kontexts. --task nimmt auch einen Alias aus [tasks] der Projektdatei.
 
@@ -87,11 +87,18 @@ type timeLogInput struct {
 	dateErr error
 }
 
-// period is a time entry: its date and the start and end as real times
-// in the local time zone (one date, end after start).
+// period is a time entry: its date and the start and end as wall-clock
+// minutes after 00:00 of that date (one date, end after start; outside
+// 0–1439 means another day).
+//
+// Controller ruling (Task 36): all arithmetic is wall-clock arithmetic.
+// Papierkram stores entry_date plus HH:MM without offset, so the booked
+// duration is the wall-clock difference; --duration 2h from 01:30 books
+// 01:30–03:30 on every day, the days of the daylight saving time change
+// included, and --from/--to are taken as given.
 type period struct {
 	date       string
-	start, end time.Time
+	start, end int
 }
 
 // runTimeLog creates the time entry. Order (plan, as in runWriteThen):
@@ -206,63 +213,52 @@ func (a *App) checkTimeLog(c *cobra.Command, e registry.Entry) (timeLogInput, er
 		return timeLogInput{dateErr: err}, nil
 	}
 	date, _ := v.(string)
-	day, err := time.ParseInLocation(time.DateOnly, date, a.loc())
-	if err != nil {
-		return timeLogInput{dateErr: err}, nil
-	}
 
-	var p period
+	// wall-clock arithmetic, see period
+	p := period{date: date}
+	minutes := int(d / time.Minute)
 	switch {
 	case dur && !from:
-		// ends now, on today's date (minute precision)
+		// ends at the wall clock of now (minute precision), on today's date
 		now := a.Now().In(a.loc())
 		if today := now.Format(time.DateOnly); date != today {
 			return timeLogInput{}, clierr.New(clierr.CodeUsage,
 				fmt.Sprintf("--duration ohne --from endet jetzt (heute, %s), nicht am %s", today, date),
 				"für einen anderen Tag zusätzlich --from angeben")
 		}
-		p.end = now.Truncate(time.Minute)
-		p.start = p.end.Add(-d)
+		p.end = now.Hour()*60 + now.Minute()
+		p.start = p.end - minutes
 	default:
-		if p.start, err = wallClock(day, startClock, "--from"); err != nil {
-			return timeLogInput{}, err
-		}
+		p.start = startClock.minutes()
 		if dur {
-			p.end = p.start.Add(d)
-		} else if p.end, err = wallClock(day, endClock, "--to"); err != nil {
-			return timeLogInput{}, err
+			p.end = p.start + minutes
+		} else {
+			p.end = endClock.minutes()
 		}
 	}
-	p.date = date
 	return timeLogInput{period: p}, checkPeriod(p)
 }
 
 // midnightHint explains why a period over midnight is rejected.
 const midnightHint = "Ein Zeiteintrag hat nur ein Datum: über Mitternacht als zwei Einträge erfassen (bis 23:59 und ab 00:00 am Folgetag mit --date)"
 
-// checkPeriod rejects a period that does not lie within its date or does
-// not end after its start, in real time and in wall-clock time (spec 9.6,
-// exit 2).
+// checkPeriod rejects a period whose wall-clock times do not lie within
+// its date or whose end does not follow its start (spec 9.6, exit 2).
 func checkPeriod(p period) error {
+	const day = 24 * 60
 	switch {
-	case !p.end.After(p.start):
+	case p.start < 0:
+		return clierr.New(clierr.CodeUsage,
+			fmt.Sprintf("Zeiteintrag beginnt am Vortag um %s: Einträge über Mitternacht sind nicht möglich", hhmm(p.start+day)),
+			midnightHint)
+	case p.end >= day:
+		return clierr.New(clierr.CodeUsage,
+			fmt.Sprintf("Zeiteintrag endet am Folgetag um %s: Einträge über Mitternacht sind nicht möglich", hhmm(p.end%day)),
+			midnightHint)
+	case p.end <= p.start:
 		return clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("Ende %s liegt nicht nach dem Beginn %s: Einträge über Mitternacht sind nicht möglich", hhmm(p.end), hhmm(p.start)),
 			midnightHint)
-	case p.start.Format(time.DateOnly) != p.date:
-		return clierr.New(clierr.CodeUsage,
-			fmt.Sprintf("Zeiteintrag beginnt am %s um %s: Einträge über Mitternacht sind nicht möglich", p.start.Format(time.DateOnly), hhmm(p.start)),
-			midnightHint)
-	case p.end.Format(time.DateOnly) != p.date:
-		return clierr.New(clierr.CodeUsage,
-			fmt.Sprintf("Zeiteintrag endet am %s um %s: Einträge über Mitternacht sind nicht möglich", p.end.Format(time.DateOnly), hhmm(p.end)),
-			midnightHint)
-	case hhmm(p.end) <= hhmm(p.start):
-		// only in the repeated hour of the change back: the body has
-		// wall-clock times, whose end must follow the start
-		return clierr.New(clierr.CodeUsage,
-			fmt.Sprintf("Ende %s liegt wegen der Zeitumstellung am %s nicht nach dem Beginn %s", hhmm(p.end), p.date, hhmm(p.start)),
-			"Zeiteinträge haben nur Uhrzeiten: Zeitraum mit --from und --to angeben, der in der Uhrzeit nicht zurückläuft")
 	}
 	return nil
 }
@@ -277,6 +273,9 @@ func (a *App) loc() *time.Location {
 
 // clock is a wall-clock time of day.
 type clock struct{ h, m int }
+
+// minutes is c as minutes after 00:00.
+func (c clock) minutes() int { return c.h*60 + c.m }
 
 var clockRe = regexp.MustCompile(`^([0-9]{1,2}):([0-9]{2})$`)
 
@@ -321,28 +320,8 @@ func parseLogDuration(raw string) (time.Duration, error) {
 	return d, nil
 }
 
-// wallClock is the time c on day in day's location. A time that does not
-// exist on that day (skipped by the change to daylight saving time) is a
-// usage error; of a time that exists twice (change back) the first one is
-// taken.
-func wallClock(day time.Time, c clock, flag string) (time.Time, error) {
-	t := time.Date(day.Year(), day.Month(), day.Day(), c.h, c.m, 0, 0, day.Location())
-	if t.Hour() != c.h || t.Minute() != c.m || t.Day() != day.Day() {
-		return time.Time{}, clierr.New(clierr.CodeUsage,
-			fmt.Sprintf("ungültiger Wert für %s: %02d:%02d gibt es am %s wegen der Zeitumstellung nicht", flag, c.h, c.m, day.Format(time.DateOnly)),
-			"eine Uhrzeit vor oder nach der Umstellung angeben")
-	}
-	_, before := t.Add(-12 * time.Hour).Zone()
-	if _, at := t.Zone(); before > at {
-		if first := t.Add(-time.Duration(before-at) * time.Second); first.Hour() == c.h && first.Minute() == c.m && first.Day() == day.Day() {
-			t = first
-		}
-	}
-	return t, nil
-}
-
-// hhmm formats the wall-clock time of t as HH:MM.
-func hhmm(t time.Time) string { return t.Format("15:04") }
+// hhmm formats wall-clock minutes after 00:00 (0–1439) as HH:MM.
+func hhmm(m int) string { return fmt.Sprintf("%02d:%02d", m/60, m%60) }
 
 // timeLogPresets resolves task and user after the read-only gate: flag >
 // PAPIERKRAM_TASK/PAPIERKRAM_USER > project file (of the effective

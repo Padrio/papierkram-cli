@@ -127,17 +127,20 @@ func TestTimeLogMidnightRejected(t *testing.T) {
 	}
 }
 
-// Review Focus 4: a duration is an absolute duration added in the local
-// time zone; the end is its wall-clock time. Berlin leaves daylight saving
-// time on 2026-10-25 (03:00 → 02:00) and enters it on 2026-03-29
-// (02:00 → 03:00).
+// Review Focus 4, controller ruling: --duration is the booked duration in
+// wall-clock arithmetic. Papierkram stores HH:MM without offset, so the
+// booked duration is the wall-clock difference, also on the days Berlin
+// leaves (2026-10-25, 03:00 → 02:00) and enters (2026-03-29,
+// 02:00 → 03:00) daylight saving time. --from/--to stay as given.
 func TestTimeLogDurationAcrossDSTChange(t *testing.T) {
 	for _, tc := range []struct {
 		name, date, from, dur, wantFrom, wantTo string
 	}{
-		{"fall back", "2026-10-25", "01:30", "2h", "01:30", "02:30"},
-		{"spring forward", "2026-03-29", "01:30", "1h", "01:30", "03:30"},
+		{"autumn", "2026-10-25", "01:30", "2h", "01:30", "03:30"},
+		{"spring", "2026-03-29", "01:30", "2h", "01:30", "03:30"},
 		{"normal day", "2026-10-26", "01:30", "2h", "01:30", "03:30"},
+		{"autumn repeated hour", "2026-10-25", "02:30", "30m", "02:30", "03:00"},
+		{"spring skipped hour", "2026-03-29", "02:30", "1h", "02:30", "03:30"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, srv := logApp(t, morning(t))
@@ -147,36 +150,23 @@ func TestTimeLogDurationAcrossDSTChange(t *testing.T) {
 				`","ended_at_time":"`+tc.wantTo+`","task":{"id":545},"user":{"id":1}}`)
 		})
 	}
-	// --duration without --from on the day of the change: the start is
-	// computed back from now (02:10 CET, after the change) → 01:40 CEST
-	app, srv := logApp(t, time.Date(2026, 10, 25, 1, 10, 0, 0, time.UTC))
-	wantExit(t, app, Run(app, []string{"time", "log", "--task", "545", "--user", "1", "--duration", "1h30m", "-o", "json"}), 0)
-	wantBody(t, srv, "POST", timeEntries,
-		`{"entry_date":"2026-10-25","started_at_time":"01:40","ended_at_time":"02:10","task":{"id":545},"user":{"id":1}}`)
-
-	// a time that exists twice is its first occurrence (summer time); a
-	// duration that ends in the repeated hour before the start's wall
-	// clock cannot be sent (the body only has wall-clock times)
-	app, srv = logApp(t, morning(t))
-	wantExit(t, app, Run(app, []string{"time", "log", "--task", "545", "--user", "1", "--date", "2026-10-25",
-		"--from", "02:30", "--duration", "1h30m", "-o", "json"}), 0)
-	wantBody(t, srv, "POST", timeEntries,
-		`{"entry_date":"2026-10-25","started_at_time":"02:30","ended_at_time":"03:00","task":{"id":545},"user":{"id":1}}`)
-	app, srv = logApp(t, morning(t))
-	wantExit(t, app, Run(app, []string{"time", "log", "--task", "545", "--user", "1", "--date", "2026-10-25",
-		"--from", "02:30", "--duration", "30m"}), 2)
-	wantRequests(t, srv, 0)
-	if _, errs := bufs(app); !strings.Contains(errs, "Zeitumstellung") {
-		t.Errorf("stderr = %s", errs)
-	}
-
-	// a start that does not exist on the day of the change
-	app, srv = logApp(t, morning(t))
-	wantExit(t, app, Run(app, []string{"time", "log", "--task", "545", "--user", "1", "--date", "2026-03-29",
-		"--from", "02:30", "--duration", "1h"}), 2)
-	wantRequests(t, srv, 0)
-	if _, errs := bufs(app); !strings.Contains(errs, "Zeitumstellung") {
-		t.Errorf("stderr = %s", errs)
+	// --duration without --from on a change day: the end is the wall clock
+	// of now, the start that minus the duration in wall-clock minutes
+	for _, tc := range []struct {
+		name     string
+		now      time.Time
+		date     string
+		from, to string
+	}{
+		{"autumn", time.Date(2026, 10, 25, 1, 10, 0, 0, time.UTC), "2026-10-25", "00:40", "02:10"}, // 02:10 CET
+		{"spring", time.Date(2026, 3, 29, 1, 10, 0, 0, time.UTC), "2026-03-29", "01:40", "03:10"},  // 03:10 CEST
+	} {
+		t.Run("ends now "+tc.name, func(t *testing.T) {
+			app, srv := logApp(t, tc.now)
+			wantExit(t, app, Run(app, []string{"time", "log", "--task", "545", "--user", "1", "--duration", "1h30m", "-o", "json"}), 0)
+			wantBody(t, srv, "POST", timeEntries, `{"entry_date":"`+tc.date+`","started_at_time":"`+tc.from+
+				`","ended_at_time":"`+tc.to+`","task":{"id":545},"user":{"id":1}}`)
+		})
 	}
 }
 

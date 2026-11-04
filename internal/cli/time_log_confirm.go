@@ -170,10 +170,10 @@ func (a *App) confirmTimeLog(ctx context.Context, client *api.Client, r *config.
 		}
 		lines = append(lines, line{"Abrechenbar", billable})
 	}
-	d := p.end.Sub(p.start)
+	d := p.end - p.start // wall-clock minutes, the booked duration
 	head := []line{
 		{"Datum", p.date},
-		{"Zeit", fmt.Sprintf("%s–%s (%d:%02d h)", hhmm(p.start), hhmm(p.end), int(d.Hours()), int(d.Minutes())%60)},
+		{"Zeit", fmt.Sprintf("%s–%s (%d:%02d h)", hhmm(p.start), hhmm(p.end), d/60, d%60)},
 	}
 	var b strings.Builder
 	b.WriteString("Neuer Zeiteintrag:\n")
