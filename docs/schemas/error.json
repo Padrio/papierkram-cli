@@ -61,7 +61,7 @@
           "properties": {"code": {"type": "string", "enum": ["network"]}, "exit_code": {"type": "integer", "enum": [10]}}
         },
         {
-          "description": "Exit 11: mehrstufiger Befehl teilweise ausgeführt (z. B. voucher create --file); der Hinweis nennt den Befehl zum Nachholen. NICHT den ganzen Befehl wiederholen. http_status ist der des fehlgeschlagenen Schritts, falls es eine Antwort gab.",
+          "description": "Exit 11: mehrstufiger Befehl teilweise ausgeführt (voucher create --file: Beleg angelegt, Hochladen gescheitert; time stop: Zeiteintrag angelegt, Timer-Datei nicht gelöscht); der Hinweis nennt den nächsten Schritt. NICHT den ganzen Befehl wiederholen. http_status ist der des fehlgeschlagenen Schritts, falls es eine Antwort gab.",
           "properties": {"code": {"type": "string", "enum": ["partial"]}, "exit_code": {"type": "integer", "enum": [11]}}
         },
         {

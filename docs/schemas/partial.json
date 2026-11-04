@@ -1,6 +1,6 @@
 {
-  "title": "papierkram teilweise ausgeführt (-o json, Exit 11)",
-  "description": "Ausgabe eines mehrstufigen Befehls, der nur teilweise ausgeführt wurde, mit -o json auf stdout (Vertrag für Agents, Spezifikation 9.3 und 10.4, Exit 11 partial), z. B. voucher create --file: Beleg angelegt, Hochladen fehlgeschlagen. Der strukturierte Fehler steht zusätzlich auf stderr. NICHT den ganzen Befehl wiederholen, nur retry_command ausführen. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "title": "papierkram voucher create --file, teilweise ausgeführt (-o json, Exit 11)",
+  "description": "Ausgabe von voucher create --file mit -o json auf stdout, wenn der Beleg angelegt wurde, das Hochladen der Datei aber scheiterte (Vertrag für Agents, Spezifikation 9.3 und 10.4, Exit 11 partial). Der strukturierte Fehler steht zusätzlich auf stderr (error.json). NICHT den ganzen Befehl wiederholen, nur retry_command ausführen. Nur dieser Befehl gibt diese Form aus: andere Fälle von Exit 11 geben ihr normales Ergebnis auf stdout aus, z. B. time stop den angelegten Zeiteintrag, wenn die Timer-Datei nicht gelöscht werden konnte, und nennen den nächsten Schritt im Fehler auf stderr. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "completed", "failed", "retry_command", "warnings"],
