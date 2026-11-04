@@ -89,6 +89,9 @@ Am Ende steht die Summe im Log.
 
 Ergebnisse stehen im Log mit dem Präfix `MESSUNG`. Hart fehlschlagen nur
 Prüfungen, auf deren Ergebnis sich das CLI verlässt; reine Messungen
-(z. B. erlaubte Upload-Typen, Statuswerte, Struktur von `GET /info`)
-schlagen nicht fehl. Welche Prüfung zu welcher Gruppe gehört, steht im Kopf
+(z. B. erlaubte Upload-Typen, Statuswerte, Kosten und Struktur von
+`GET /info`, Einheiten der Zahlungsbedingungen) schlagen nicht fehl.
+Weicht eine Messung von dem ab, was das CLI annimmt (z. B. andere Kosten
+für `GET /info` als in der Registry), steht sie mit `ABWEICHUNG:` im Log und
+am Ende des Laufs noch einmal in einer Zusammenfassung. Welche Prüfung zu welcher Gruppe gehört, steht im Kopf
 von `e2e_test.go`.

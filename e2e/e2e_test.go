@@ -46,19 +46,21 @@
 //
 //	hard: deliver --via pdf succeeds (2xx, exit 0); quota headers present;
 //	  0.19 books 19 % (line item and article); person default as string
-//	  accepted and stored; PDF upload accepted; GET /info costs what the
-//	  registry says; PUT is a partial update; line_items replace all;
-//	  carries 1 (ISO deadline), 2 (describe | update round trip keeps
-//	  contact person and project), 3 (estimate PUT with sent_on/sent_to
-//	  null), 4 (voucher PUT with entertainment_persons []),
-//	  5 (due_time_unit only "day": the table header says days),
-//	  6 (billable_duration in seconds), 8 (PDF download Accept/Content-
-//	  Type), 9 (price_gross 0.0 with gross=false), 11 (duration = wall
-//	  clock difference on a normal day).
+//	  accepted and stored; PDF upload accepted; PUT is a partial update;
+//	  line_items replace all; carries 1 (ISO deadline), 2 (describe |
+//	  update round trip keeps contact person and project), 3 (estimate
+//	  PUT with sent_on/sent_to null), 4 (voucher PUT with
+//	  entertainment_persons []), 6 (billable_duration in seconds),
+//	  8 (PDF download Accept/Content-Type), 9 (price_gross 0.0 with
+//	  gross=false), 11 (duration = wall clock difference on a normal day).
 //	measured only: empty deliver body, upload of png/jpg/txt, voucher
-//	  state values, carries 7 (sent_on after deliver pdf), 10 (pay
-//	  with value null / amount and transaction), 12 (end 00:00/24:00),
-//	  13 (structure of GET /info).
+//	  state values, GET /info cost, carries 5 (due_time_unit values),
+//	  7 (sent_on after deliver pdf), 10 (pay body with value null),
+//	  12 (end 00:00/24:00), 13 (structure of GET /info).
+//	A measurement that differs from what the CLI assumes (GET /info cost
+//	  vs. registry, due_time_unit other than "day") is logged as
+//	  ABWEICHUNG and listed again in a summary at the end of the run;
+//	  it does not fail the run.
 package e2e
 
 import (
@@ -118,6 +120,7 @@ func TestMain(m *testing.M) {
 		code = 1
 	}
 	_ = os.RemoveAll(s.mainDir)
+	s.deviationSummary()
 	s.stderrf("%s", s.meter.Summary())
 	os.Exit(code)
 }
@@ -223,6 +226,8 @@ func TestE2E_QuotaHeadersPresent(t *testing.T) {
 
 // Spec 17: does GET /info cost credits? Three calls in a row: the growth
 // of X-Consumed-Quota between them is the cost of the second and third.
+// A measurement: a cost other than the registry's is an ABWEICHUNG (the
+// registry is then adjusted), not a failure.
 func TestE2E_InfoCreditCost(t *testing.T) {
 	s := live(t)
 	s.need(t, 3)
@@ -235,18 +240,19 @@ func TestE2E_InfoCreditCost(t *testing.T) {
 		}
 		n, err := strconv.Atoi(strings.TrimSpace(x.RespHeader.Get("X-Consumed-Quota")))
 		if err != nil {
-			s.fatalf(t, "X-Consumed-Quota fehlt; Kosten nicht messbar")
+			s.deviatef(t, "GET /info: X-Consumed-Quota fehlt, Kosten nicht messbar")
+			return
 		}
 		consumed = append(consumed, n)
 	}
 	d1, d2 := consumed[1]-consumed[0], consumed[2]-consumed[1]
 	e, _ := registry.Lookup("info", "")
 	s.measuref(t, "GET /info", "Kosten %d und %d Credits (X-Consumed-Quota %v); Registry: %d", d1, d2, consumed, e.Credits)
-	if d1 != d2 {
-		s.fatalf(t, "uneinheitliche Messung (%d, %d): anderer Verbrauch im Account während des Laufs?", d1, d2)
-	}
-	if d1 != e.Credits {
-		s.errorf(t, "GET /info kostet %d Credits, die Registry sagt %d: Registry anpassen (Spezifikation 17)", d1, e.Credits)
+	switch {
+	case d1 != d2:
+		s.deviatef(t, "GET /info: uneinheitliche Messung (%d, %d), anderer Verbrauch im Account während des Laufs?", d1, d2)
+	case d1 != e.Credits:
+		s.deviatef(t, "GET /info kostet %d Credits, die Registry sagt %d: Registry anpassen (Spezifikation 17)", d1, e.Credits)
 	}
 }
 

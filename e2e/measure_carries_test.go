@@ -108,7 +108,8 @@ func TestE2E_Carries(t *testing.T) {
 	})
 
 	// 5. Payment term due_time_unit: which values occur? The table header
-	// "ZIEL (TAGE)" assumes "day". Hard.
+	// "ZIEL (TAGE)" assumes "day"; another unit is an ABWEICHUNG.
+	// Measured.
 	t.Run("05_PaymentTermUnits", func(t *testing.T) {
 		seen := map[string]int{}
 		for _, e := range s.paymentTerms(t) {
@@ -117,7 +118,7 @@ func TestE2E_Carries(t *testing.T) {
 		s.measuref(t, "due_time_unit", "%v", seen)
 		for u := range seen {
 			if u != "day" && u != "" {
-				s.errorf(t, "due_time_unit %q kommt vor: Tabellenkopf ZIEL (TAGE) anpassen", u)
+				s.deviatef(t, "due_time_unit %q kommt vor: Tabellenkopf ZIEL (TAGE) anpassen", u)
 			}
 		}
 	})

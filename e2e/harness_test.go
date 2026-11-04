@@ -44,6 +44,8 @@ type liveSuite struct {
 	// exhausted is set once the budget stopped a test; all later tests
 	// skip.
 	exhausted bool
+	// deviations are the ABWEICHUNG lines of the run (deviatef).
+	deviations []string
 }
 
 // object is something the run created. name is what Owned checks: name,

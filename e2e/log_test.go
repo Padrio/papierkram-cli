@@ -47,6 +47,17 @@ func (s *liveSuite) measuref(t testing.TB, topic, format string, args ...any) {
 	t.Log(s.safe("MESSUNG " + topic + ": " + fmt.Sprintf(format, args...)))
 }
 
+// deviatef logs a measurement that differs from what the CLI assumes,
+// with the marker ABWEICHUNG, and collects it for the summary at the end
+// of the run. It does not fail the test (controller ruling: such checks
+// are measurements).
+func (s *liveSuite) deviatef(t testing.TB, format string, args ...any) {
+	t.Helper()
+	msg := s.safe(fmt.Sprintf(format, args...))
+	s.deviations = append(s.deviations, t.Name()+": "+msg)
+	t.Log("ABWEICHUNG: " + msg)
+}
+
 func (s *liveSuite) errorf(t testing.TB, format string, args ...any) {
 	t.Helper()
 	t.Error(s.safe(fmt.Sprintf(format, args...)))
@@ -66,6 +77,18 @@ func (s *liveSuite) skipf(t testing.TB, format string, args ...any) {
 // total) to stderr.
 func (s *liveSuite) stderrf(format string, args ...any) {
 	_, _ = fmt.Fprintln(os.Stderr, s.safe("e2e: "+fmt.Sprintf(format, args...)))
+}
+
+// deviationSummary writes the collected deviations to stderr (TestMain).
+func (s *liveSuite) deviationSummary() {
+	if len(s.deviations) == 0 {
+		s.stderrf("keine Abweichungen")
+		return
+	}
+	s.stderrf("%d Abweichung(en):", len(s.deviations))
+	for _, d := range s.deviations {
+		s.stderrf("ABWEICHUNG: %s", d)
+	}
 }
 
 // stderrPlain writes a line of TestMain before the suite exists; it never
