@@ -387,3 +387,47 @@ func TestUsesGivenHTTPClient(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// Download asks for the file type first and JSON (the API's error format)
+// as fallback, and returns the body bytes unchanged; Call keeps JSON only.
+func TestDownloadSendsAcceptAndKeepsBytes(t *testing.T) {
+	pdf := "%PDF-1.4\x00\r\n\x1b[31m\xff%%EOF\n"
+	rec := &recorder{body: pdf, header: map[string]string{"Content-Type": "application/pdf"}}
+	c := newTestClient(t, rec, nil)
+
+	resp, err := c.Download(context.Background(), "GetInvoicePdf", []int64{459}, "application/pdf")
+	if err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	if string(resp.Body) != pdf {
+		t.Errorf("body = %q, want %q", resp.Body, pdf)
+	}
+	got := rec.last(t)
+	if got.Method != http.MethodGet || got.Path != "/api/v1/income/invoices/459/pdf" {
+		t.Errorf("request = %s %s", got.Method, got.Path)
+	}
+	if a := got.Header.Get("Accept"); a != "application/pdf, application/json;q=0.9" {
+		t.Errorf("Accept = %q", a)
+	}
+	if a := got.Header.Get("Authorization"); a != "Bearer "+testToken {
+		t.Errorf("Authorization = %q", a)
+	}
+
+	if _, err := c.Call(context.Background(), "GetInvoice", []int64{459}, nil, nil); err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if a := rec.last(t).Header.Get("Accept"); a != "application/json" {
+		t.Errorf("Call Accept = %q", a)
+	}
+}
+
+// A JSON error answer of a download keeps the normal error mapping.
+func TestDownloadMapsErrors(t *testing.T) {
+	rec := &recorder{status: http.StatusNotFound, header: map[string]string{"Content-Type": "application/json"},
+		body: `{"type":"error","message":"Rechnung nicht gefunden"}`}
+	c := newTestClient(t, rec, nil)
+	_, err := c.Download(context.Background(), "GetInvoicePdf", []int64{1}, "application/pdf")
+	if ce := clierr.From(err); ce.Code != clierr.CodeNotFound || !strings.Contains(ce.Message, "Rechnung nicht gefunden") {
+		t.Errorf("err = %v", err)
+	}
+}

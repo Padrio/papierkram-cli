@@ -102,6 +102,19 @@ func (c *Client) Call(ctx context.Context, opID string, pathParams []int64, quer
 	return c.callOp(ctx, opID, pathParams, query, "application/json", bytes.NewReader(data))
 }
 
+// Download sends the GET operation opID whose success answer is a file of
+// media type accept (application/pdf) and returns its bytes unchanged in
+// Body. The Accept header names accept first and application/json, the
+// error format of the API, as fallback; errors are mapped like for Call.
+func (c *Client) Download(ctx context.Context, opID string, pathParams []int64, accept string) (*Response, error) {
+	req, err := c.buildOp(opID, pathParams, nil, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", accept+", application/json;q=0.9")
+	return c.do(ctx, req)
+}
+
 // CallRaw sends method to path, which is relative to the base URL
 // (e.g. "/income/invoices?page=2"); query is appended to any query in path.
 // Content-Type is only set when body is non-nil.

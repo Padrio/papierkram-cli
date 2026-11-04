@@ -23,7 +23,9 @@ var retryBackoff = []time.Duration{500 * time.Millisecond, time.Second}
 // A non-2xx status returns the Response together with a *clierr.Error.
 func (c *Client) do(ctx context.Context, req *http.Request) (*Response, error) {
 	req.Header.Set("Authorization", "Bearer "+c.opts.Token)
-	req.Header.Set("Accept", "application/json")
+	if req.Header.Get("Accept") == "" { // Download sets its own
+		req.Header.Set("Accept", "application/json")
+	}
 	req.Header.Set("User-Agent", c.opts.UserAgent)
 
 	// A GET body (only possible via CallRaw) must be rebuildable per attempt.
