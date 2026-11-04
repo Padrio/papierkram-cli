@@ -392,7 +392,7 @@ func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, l
 	resp := spec.ResourceResponseSchema(e.OperationID)
 	replace := flagBool(c, "replace-items")
 	body := map[string]any{}
-	var removed []string
+	var removed, moved []string
 	if load == nil && c.Flags().Changed("input") {
 		in, err := a.readInput(flagString(c, "input"))
 		if err != nil {
@@ -416,7 +416,10 @@ func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, l
 			return nil, nil, clierr.New(clierr.CodeValidation, key+": null ist nicht erlaubt – für leere Positionsliste [] angeben", "")
 		}
 		a.pruneHints(pr)
-		body, removed = pr.Body, pr.Removed
+		body, removed, moved = pr.Body, pr.Removed, pr.Moved
+		// the moved references belong to the customer of the input, like
+		// those of an estimate to its customer (--from-estimate)
+		a.dropForeignRefs(c, ws, body, "--input", movedCustomerRefs(moved))
 	}
 
 	sets, err := a.flagSets(c, e.Resource, ws)
@@ -439,6 +442,7 @@ func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, l
 	for _, fs := range sets {
 		setPath(body, fs.path, fs.value)
 	}
+	a.movedHint(c, ws, body, moved)
 	if ws.items != nil {
 		switch {
 		case items != nil:
@@ -559,8 +563,8 @@ func (a *App) readInput(path string) (map[string]any, error) {
 	return m, nil
 }
 
-// pruneHints prints which fields Prune removed, whose null it dropped and
-// which response references it moved into the request.
+// pruneHints prints which fields Prune removed and whose null it dropped;
+// the references it moved are named after the flags (movedHint).
 func (a *App) pruneHints(pr spec.PruneResult) {
 	if len(pr.Removed) > 0 {
 		_, _ = fmt.Fprintf(a.Err, "Hinweis: nur lesbare Felder entfernt: %s\n", strings.Join(pr.Removed, ", "))
@@ -568,8 +572,37 @@ func (a *App) pruneHints(pr spec.PruneResult) {
 	if len(pr.DroppedNulls) > 0 {
 		_, _ = fmt.Fprintf(a.Err, "Hinweis: null ignoriert (Feld bleibt unverändert): %s\n", strings.Join(pr.DroppedNulls, ", "))
 	}
-	if len(pr.Moved) > 0 {
-		_, _ = fmt.Fprintf(a.Err, "Hinweis: Referenzen übernommen: %s\n", strings.Join(pr.Moved, ", "))
+}
+
+// movedCustomerRefs are the keys of the references Prune moved below
+// customer ("contact_person → customer.contact_person" → contact_person).
+func movedCustomerRefs(moved []string) []string {
+	var out []string
+	for _, m := range moved {
+		_, to, _ := strings.Cut(m, " → ")
+		if k, ok := strings.CutPrefix(to, "customer."); ok && !strings.Contains(k, ".") {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// movedHint names the references Prune moved into the request that are
+// sent: not dropped for another customer (dropForeignRefs) and not set by
+// their own flag. It runs after the flags are applied.
+func (a *App) movedHint(c *cobra.Command, ws writeSpec, body map[string]any, moved []string) {
+	var kept []string
+	for _, m := range moved {
+		_, to, _ := strings.Cut(m, " → ")
+		if flag := fieldFlag(ws, strings.Split(to, ".")...); flag != "" && c.Flags().Changed(flag) {
+			continue
+		}
+		if _, ok := lookupPath(body, to); ok {
+			kept = append(kept, m)
+		}
+	}
+	if len(kept) > 0 {
+		_, _ = fmt.Fprintf(a.Err, "Hinweis: Referenzen übernommen: %s\n", strings.Join(kept, ", "))
 	}
 }
 

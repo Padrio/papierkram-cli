@@ -256,6 +256,60 @@ func TestIncomeDescribeUpdateRoundTrip(t *testing.T) {
 	}
 }
 
+// The references Prune moves below customer (contact person and project
+// of the answer) belong to the customer of the --input. --customer with
+// another customer drops them like --from-estimate drops those of the
+// estimate (dropForeignRefs); a reference set by its own flag stays. The
+// hint "Referenzen übernommen" names only the moved references that are
+// sent (review I1, M9).
+func TestIncomeRoundTripOtherCustomerDropsMovedRefs(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		extra     []string
+		want      string
+		dropHint  string // part of the hint of the dropped references; "" for none
+		movedHint string // the moved references named; "" for no hint
+		notInHint string
+	}{
+		{"gleicher Kunde", nil,
+			`{"contact_person":{"id":1205},"id":3214,"project":{"id":4576}}`, "", "contact_person → customer.contact_person, project → customer.project", ""},
+		{"gleicher Kunde per Flag", []string{"--customer", "3214"},
+			`{"contact_person":{"id":1205},"id":3214,"project":{"id":4576}}`, "", "contact_person → customer.contact_person, project → customer.project", ""},
+		{"anderer Kunde", []string{"--customer", "99"},
+			`{"id":99}`, "Kunde 99 statt 3214 aus --input: contact_person und project nicht übernommen (setzen per --contact-person bzw. --customer-project)", "", ""},
+		{"anderer Kunde mit Ansprechpartner", []string{"--customer", "99", "--contact-person", "8"},
+			`{"contact_person":{"id":8},"id":99}`, "Kunde 99 statt 3214 aus --input: project nicht übernommen (setzen per --customer-project)", "", "contact_person"},
+		{"gleicher Kunde, Ansprechpartner per Flag", []string{"--contact-person", "8"},
+			`{"contact_person":{"id":8},"id":3214,"project":{"id":4576}}`, "", "project → customer.project", "contact_person →"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			described := describeJSON(t, "invoice", "459")
+			app, srv := apiApp(t)
+			app.In = strings.NewReader(described)
+			wantExit(t, app, Run(app, append([]string{"invoice", "update", "459", "--input", "-", "-o", "json"}, tc.extra...)), 0)
+			body := decodeBody(t, wantRequests(t, srv, 1)[0].Body)
+			raw, _ := json.Marshal(body["customer"])
+			if got := canonJSON(t, raw); got != tc.want {
+				t.Errorf("customer = %s, erwartet %s", got, tc.want)
+			}
+			_, errs := bufs(app)
+			if tc.dropHint != "" && !strings.Contains(errs, "Hinweis: "+tc.dropHint+"\n") {
+				t.Errorf("Hinweis %q fehlt: %q", tc.dropHint, errs)
+			}
+			if tc.dropHint == "" && strings.Contains(errs, "statt") {
+				t.Errorf("unerwarteter Hinweis: %q", errs)
+			}
+			moved := strings.Contains(errs, "Referenzen übernommen")
+			if tc.movedHint == "" && moved || tc.movedHint != "" && !strings.Contains(errs, "Hinweis: Referenzen übernommen: "+tc.movedHint+"\n") {
+				t.Errorf("Hinweis Referenzen übernommen (erwartet %q): %q", tc.movedHint, errs)
+			}
+			if tc.notInHint != "" && strings.Contains(errs, "übernommen: "+tc.notInHint) {
+				t.Errorf("Hinweis nennt %q: %q", tc.notInHint, errs)
+			}
+		})
+	}
+}
+
 // Spec R31 at the CLI level (TestR31_DescribeRoundTripKeepsItems covers
 // the pruning): with --replace-items the round trip sends the positions
 // with their writable fields kept and vat_rate "19%" normalized to 0.19.

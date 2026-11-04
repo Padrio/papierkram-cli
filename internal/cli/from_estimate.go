@@ -210,7 +210,7 @@ func (a *App) estimateBase(c *cobra.Command, client *api.Client, ws writeSpec, f
 		return nil, f.wrap(err, fmt.Sprintf("aus Angebot %d: ", f.id), "Wert im Angebot korrigieren oder die Positionen per --item/--items ersetzen")
 	}
 	f.loaded = true
-	a.dropForeignRefs(c, ws, base)
+	a.dropForeignRefs(c, ws, base, "dem Angebot", customerRefs)
 	return base, nil
 }
 
@@ -218,12 +218,14 @@ func (a *App) estimateBase(c *cobra.Command, client *api.Client, ws writeSpec, f
 // estimate's customer.
 var customerRefs = []string{"contact_person", "project"}
 
-// dropForeignRefs removes the estimate's contact person and project from
-// base when --customer names another customer than the estimate's: they
-// belong to the estimate's customer. Their own flags still set them; for
-// the others a hint names what was dropped and the flags that set it. The
-// same customer keeps both.
-func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]any) {
+// dropForeignRefs removes the references refs below customer from base
+// (the body before the flags are applied) when --customer names another
+// customer than base: they belong to base's customer. Their own flags
+// still set them; for the others a hint names what was dropped, where it
+// came from (src: "dem Angebot" for --from-estimate, "--input" for the
+// references Prune moved there) and the flags that set it. The same
+// customer keeps them.
+func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]any, src string, refs []string) {
 	flag := fieldFlag(ws, "customer")
 	cust, ok := base["customer"].(map[string]any)
 	if flag == "" || !c.Flags().Changed(flag) || !ok {
@@ -236,7 +238,7 @@ func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]an
 		return
 	}
 	var dropped, flags []string
-	for _, k := range customerRefs {
+	for _, k := range refs {
 		if _, has := cust[k]; !has {
 			continue
 		}
@@ -249,8 +251,8 @@ func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]an
 		flags = append(flags, "--"+f)
 	}
 	if len(dropped) > 0 {
-		_, _ = fmt.Fprintf(a.Err, "Hinweis: Kunde %s statt %v aus dem Angebot: %s nicht übernommen (setzen per %s)\n",
-			given, cust["id"], strings.Join(dropped, " und "), strings.Join(flags, " bzw. "))
+		_, _ = fmt.Fprintf(a.Err, "Hinweis: Kunde %s statt %v aus %s: %s nicht übernommen (setzen per %s)\n",
+			given, cust["id"], src, strings.Join(dropped, " und "), strings.Join(flags, " bzw. "))
 	}
 }
 
