@@ -1,0 +1,10 @@
+FELD         WERT
+ID           386
+ARTIKELNR.   AN-00001
+NAME         My proposition
+PREIS        150.0
+UST.         19%
+TYP          product
+ZEITEINHEIT  hour
+EINHEIT      Produkt
+STATUS       active

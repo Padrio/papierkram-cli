@@ -389,6 +389,64 @@ func TestVoucherEntriesRegistered(t *testing.T) {
 	}
 }
 
+func TestPropositionEntriesRegistered(t *testing.T) {
+	// Spec 15 no. 52–58, all built generically.
+	want := []struct {
+		action, opID string
+		class        Class
+		credits      int
+	}{
+		{"list", "ListPropositions", ClassReadOnly, 1},
+		{"create", "CreateProposition", ClassCreate, 10},
+		{"describe", "GetProposition", ClassReadOnly, 1},
+		{"update", "UpdateProposition", ClassUpdate, 1},
+		{"delete", "DeleteProposition", ClassDestructive, 1},
+		{"archive", "ArchiveProposition", ClassArchive, 1},
+		{"unarchive", "UnarchiveProposition", ClassArchive, 1},
+	}
+	for _, w := range want {
+		e, ok := Lookup("proposition", w.action)
+		if !ok || e.OperationID != w.opID || e.Class != w.class || e.Credits != w.credits || e.Custom || len(e.Filters) != 0 {
+			t.Errorf("Lookup(proposition, %q) = %+v, %v; want %s %s %d credits, generic, no filters", w.action, e, ok, w.opID, w.class, w.credits)
+		}
+	}
+}
+
+// Spec 10.3: the default columns of proposition. List entries
+// (PropositionFlat) have no vat_rate, so only the object responses show
+// it.
+func TestPropositionColumns(t *testing.T) {
+	for _, action := range []string{"list", "describe", "create", "update", "archive", "unarchive"} {
+		want := []string{"id", "article_no", "name", "price", "vat_rate.name", "proposition_type"}
+		if action == "list" {
+			want = slices.DeleteFunc(want, func(p string) bool { return p == "vat_rate.name" })
+		}
+		e, _ := Lookup("proposition", action)
+		var got []string
+		for _, c := range e.Columns.Table {
+			got = append(got, c.Path)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("proposition %s: table columns %v, want %v", action, got, want)
+		}
+	}
+}
+
+// Spec 10.3 [Builder]: payment-term shows the due period in days from
+// due_time (due_time_unit "day").
+func TestPaymentTermColumns(t *testing.T) {
+	for _, action := range []string{"list", "describe"} {
+		e, _ := Lookup("payment-term", action)
+		var got []string
+		for _, c := range e.Columns.Table {
+			got = append(got, c.Header+" "+c.Path)
+		}
+		if want := []string{"ID id", "NAME name", "ZIEL (TAGE) due_time"}; !slices.Equal(got, want) {
+			t.Errorf("payment-term %s: table columns %v, want %v", action, got, want)
+		}
+	}
+}
+
 // Spec 4.2, 7.1: voucher list filters by creditor, project and document
 // date.
 func TestVoucherListFilters(t *testing.T) {

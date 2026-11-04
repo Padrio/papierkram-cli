@@ -1,0 +1,44 @@
+{
+  "entries": [
+    {
+      "article_no": "AN-00001",
+      "created_at": "2026-08-28T13:41:56.000+02:00",
+      "description": "Notes for the proposition",
+      "favorite": null,
+      "flagged": null,
+      "id": 382,
+      "name": "My proposition",
+      "price": "150.0",
+      "proposition_type": "product",
+      "record_state": "active",
+      "time_unit": "hour",
+      "type": "proposition",
+      "unit_name_1": "Produkt",
+      "unit_name_n": "Produkte",
+      "updated_at": "2026-08-28T13:41:56.000+02:00"
+    },
+    {
+      "article_no": "AN-00002",
+      "created_at": "2026-08-28T13:41:56.000+02:00",
+      "description": "",
+      "favorite": null,
+      "flagged": null,
+      "id": 383,
+      "name": "Produkt: Wunderschöne Gummi Hose",
+      "price": "108.0",
+      "proposition_type": "product",
+      "record_state": "active",
+      "time_unit": "hour",
+      "type": "proposition",
+      "unit_name_1": "Produkt",
+      "unit_name_n": "Produkte",
+      "updated_at": "2026-08-28T13:41:56.000+02:00"
+    }
+  ],
+  "has_more": false,
+  "page": 1,
+  "page_size": 100,
+  "total_entries": 2,
+  "total_pages": 1,
+  "type": "list"
+}

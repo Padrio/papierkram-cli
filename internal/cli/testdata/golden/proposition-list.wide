@@ -1,0 +1,3 @@
+ID   ARTIKELNR.  NAME                              PREIS  TYP      ZEITEINHEIT  EINHEIT  STATUS
+382  AN-00001    My proposition                    150.0  product  hour         Produkt  active
+383  AN-00002    Produkt: Wunderschöne Gummi Hose  108.0  product  hour         Produkt  active

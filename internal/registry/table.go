@@ -116,17 +116,48 @@ var (
 			{Header: "BANKVERBINDUNG", Path: "bank_connection.name"},
 		},
 	}
-	// due_time is the due period, in days for due_time_unit "day" (the
-	// only unit in the spec examples).
+	// proposition (spec 10.3). List entries (PropositionFlat) have no
+	// vat_rate, so only the object responses show it; vat_rate is the
+	// embedded VatRateFlat, its name is the rate as text ("19%").
+	propositionColumns = output.Columns{
+		Table: []output.Column{
+			{Header: "ID", Path: "id"},
+			{Header: "ARTIKELNR.", Path: "article_no"},
+			{Header: "NAME", Path: "name"},
+			{Header: "PREIS", Path: "price", Fmt: output.FmtMoney},
+			{Header: "TYP", Path: "proposition_type"},
+		},
+		Wide: []output.Column{
+			{Header: "ZEITEINHEIT", Path: "time_unit"},
+			{Header: "EINHEIT", Path: "unit_name_1"},
+			{Header: "STATUS", Path: "record_state"},
+		},
+	}
+	propositionDetailColumns = output.Columns{
+		Table: []output.Column{
+			{Header: "ID", Path: "id"},
+			{Header: "ARTIKELNR.", Path: "article_no"},
+			{Header: "NAME", Path: "name"},
+			{Header: "PREIS", Path: "price", Fmt: output.FmtMoney},
+			{Header: "UST.", Path: "vat_rate.name"},
+			{Header: "TYP", Path: "proposition_type"},
+		},
+		Wide: propositionColumns.Wide,
+	}
+	// payment-term [Builder] (spec 10.3: due period in days): due_time of
+	// PaymentTerm{Flat,WithDetailedEmbeds} is that period, counted in
+	// due_time_unit, which is "day" in every spec example; wide shows the
+	// unit so a different one is visible.
 	paymentTermColumns = output.Columns{
 		Table: []output.Column{
 			{Header: "ID", Path: "id"},
 			{Header: "NAME", Path: "name"},
-			{Header: "FÄLLIG", Path: "due_time"},
+			{Header: "ZIEL (TAGE)", Path: "due_time"},
 		},
 		Wide: []output.Column{
 			{Header: "EINHEIT", Path: "due_time_unit"},
 			{Header: "SKONTO", Path: "cash_discount"},
+			{Header: "SKONTOFRIST", Path: "cash_discount_time"},
 		},
 	}
 	infoColumns = output.Columns{
@@ -706,6 +737,79 @@ var table = []Entry{
 		Examples: []string{
 			"papierkram payment-term describe 1234",
 			"papierkram payment-term describe 1234 -o json",
+		},
+	},
+	// 52–58
+	{
+		Resource: "proposition", Action: "list", OperationID: "ListPropositions",
+		Method: "GET", Path: "/income/propositions", Class: ClassReadOnly, Credits: 1,
+		Columns: propositionColumns,
+		Short:   "Artikel und Leistungen auflisten",
+		Examples: []string{
+			"papierkram proposition list",
+			"papierkram proposition list --sort name -o wide",
+			"papierkram proposition list --all -o json",
+		},
+	},
+	{
+		Resource: "proposition", Action: "create", OperationID: "CreateProposition",
+		Method: "POST", Path: "/income/propositions", Class: ClassCreate, Credits: 10,
+		Columns: propositionDetailColumns,
+		Short:   "Artikel oder Leistung anlegen",
+		Examples: []string{
+			"papierkram proposition create --name Beratung --article-no AN-00010 --proposition-type service --time-unit hour --price 120 --vat-rate 19",
+			`papierkram proposition create --name "Schulung vor Ort" --article-no AN-00011 --proposition-type service --time-unit day --price 950 --vat-rate 19% --dry-run`,
+			"papierkram proposition create --input artikel.json",
+		},
+	},
+	{
+		Resource: "proposition", Action: "describe", OperationID: "GetProposition",
+		Method: "GET", Path: "/income/propositions/{id}", Class: ClassReadOnly, Credits: 1,
+		Columns: propositionDetailColumns,
+		Short:   "Artikel oder Leistung anzeigen",
+		Examples: []string{
+			"papierkram proposition describe 386",
+			"papierkram proposition describe 386 -o json",
+		},
+	},
+	{
+		Resource: "proposition", Action: "update", OperationID: "UpdateProposition",
+		Method: "PUT", Path: "/income/propositions/{id}", Class: ClassUpdate, Credits: 1,
+		Columns: propositionDetailColumns,
+		Short:   "Artikel oder Leistung ändern",
+		Examples: []string{
+			"papierkram proposition update 386 --price 135.50",
+			"papierkram proposition update 386 --vat-rate 7 --dry-run",
+			"papierkram proposition update 386 --input artikel.json",
+		},
+	},
+	{
+		Resource: "proposition", Action: "delete", OperationID: "DeleteProposition",
+		Method: "DELETE", Path: "/income/propositions/{id}", Class: ClassDestructive, Credits: 1,
+		Short: "Artikel oder Leistung löschen",
+		Examples: []string{
+			"papierkram proposition delete 386",
+			"papierkram proposition delete 386 --yes",
+		},
+	},
+	{
+		Resource: "proposition", Action: "archive", OperationID: "ArchiveProposition",
+		Method: "POST", Path: "/income/propositions/{id}/archive", Class: ClassArchive, Credits: 1,
+		Columns: propositionDetailColumns,
+		Short:   "Artikel oder Leistung archivieren",
+		Examples: []string{
+			"papierkram proposition archive 386",
+			"papierkram proposition archive 386 -o json",
+		},
+	},
+	{
+		Resource: "proposition", Action: "unarchive", OperationID: "UnarchiveProposition",
+		Method: "POST", Path: "/income/propositions/{id}/unarchive", Class: ClassArchive, Credits: 1,
+		Columns: propositionDetailColumns,
+		Short:   "Artikel oder Leistung aus dem Archiv holen",
+		Examples: []string{
+			"papierkram proposition unarchive 386",
+			"papierkram proposition unarchive 386 -o json",
 		},
 	},
 	// 59

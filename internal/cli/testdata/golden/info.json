@@ -1,0 +1,21 @@
+{
+  "api": {
+    "version": "1.0.0"
+  },
+  "settings": {
+    "custom_templates": {
+      "invoices": [
+        {
+          "id": 249,
+          "name": "Invoice type 1",
+          "type": "template"
+        },
+        {
+          "id": 250,
+          "name": "Invoice type 2",
+          "type": "template"
+        }
+      ]
+    }
+  }
+}

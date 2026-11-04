@@ -1,4 +1,0 @@
-FELD    WERT
-ID      1236
-NAME    My payment_term
-FÄLLIG  0

@@ -1,0 +1,29 @@
+{
+  "article_no": "AN-00001",
+  "created_at": "2026-08-28T13:41:58.000+02:00",
+  "description": "Notes for the proposition",
+  "favorite": null,
+  "flagged": null,
+  "id": 386,
+  "name": "My proposition",
+  "price": "150.0",
+  "proposition_type": "product",
+  "record_state": "active",
+  "time_unit": "hour",
+  "type": "proposition",
+  "unit_name_1": "Produkt",
+  "unit_name_n": "Produkte",
+  "updated_at": "2026-08-28T13:41:58.000+02:00",
+  "vat_rate": {
+    "code": "AR19P",
+    "country_code": "de",
+    "created_at": "2026-08-28T11:55:10.000+02:00",
+    "description": "Regulärer Umsatzsteuersatz für Verkäufe in Deutschland",
+    "id": 1,
+    "name": "19%",
+    "rate": "0.19",
+    "type": "vat_rate",
+    "updated_at": "2026-08-28T11:55:10.000+02:00",
+    "vat_rate_type": "ar"
+  }
+}

@@ -1,0 +1,13 @@
+entries:
+- id: 237
+  name: Standard
+  type: bank_connection
+- id: 238
+  name: Testbank
+  type: bank_connection
+has_more: false
+page: 1
+page_size: 100
+total_entries: 2
+total_pages: 1
+type: list
