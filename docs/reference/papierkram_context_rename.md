@@ -5,6 +5,8 @@ Kontext umbenennen
 ```text
 Benennt einen Kontext um und verschiebt das Token im Schlüsselbund. Ein aktiver Kontext bleibt aktiv.
 
+Läuft für den Kontext ein Timer, bricht der Befehl mit Exit 7 ab: erst papierkram time stop oder papierkram time discard.
+
 Verwendung:
   papierkram context rename <alt> <neu> [Optionen]
 

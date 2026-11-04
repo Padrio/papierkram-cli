@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -11,6 +12,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
+	"github.com/Padrio/papierkram-cli/internal/timer"
 )
 
 // wrapConfigErr turns plain config errors into German clierr errors that
@@ -257,13 +259,32 @@ func keyringErr(err error, what string) error {
 	return clierr.New(clierr.CodeError, fmt.Sprintf("%s: %v", what, err), "Schlüsselbund prüfen")
 }
 
+// refuseWithTimer is the conflict (exit 7) of renaming or deleting the
+// context name while a timer file exists for it: the file is found by the
+// context name (timer.Path), so the timer would be lost silently, and a
+// later context of that name would inherit it. Any file counts, also one
+// time status calls invalid: time discard removes that too.
+func (a *App) refuseWithTimer(name string) error {
+	dir := a.cacheDir()
+	if dir == "" {
+		return nil // no cache directory, no timer (timerPath)
+	}
+	path := timer.Path(dir, name)
+	if _, err := os.Lstat(path); err != nil {
+		return nil
+	}
+	return clierr.New(clierr.CodeConflict,
+		fmt.Sprintf("Für den Kontext %q läuft ein Timer (%s)", name, printable(path)),
+		"erst papierkram time stop oder papierkram time discard (mit --context "+shellWord(name)+")")
+}
+
 func newContextDeleteCmd(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:               "delete <name>",
 		ValidArgsFunction: app.contextArgCompletion,
 		Annotations:       writesConfig(),
 		Short:             "Kontext löschen",
-		Long:              "Löscht den Kontext und das zugehörige Token im Schlüsselbund. Eine Bestätigung ist nicht nötig.",
+		Long:              "Löscht den Kontext und das zugehörige Token im Schlüsselbund. Eine Bestätigung ist nicht nötig.\n\nLäuft für den Kontext ein Timer, bricht der Befehl mit Exit 7 ab: erst papierkram time stop oder papierkram time discard.",
 		Example:           "  papierkram context delete agent\n  papierkram context delete firma-alt",
 		Args:              exactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -273,6 +294,9 @@ func newContextDeleteCmd(app *App) *cobra.Command {
 				return err
 			}
 			if err := cfg.Delete(name); err != nil {
+				return err
+			}
+			if err := app.refuseWithTimer(name); err != nil {
 				return err
 			}
 			if err := wrapConfigErr(cfg.Save(path), path); err != nil {
@@ -298,7 +322,7 @@ func newContextRenameCmd(app *App) *cobra.Command {
 		ValidArgsFunction: app.contextArgCompletion,
 		Annotations:       writesConfig(),
 		Short:             "Kontext umbenennen",
-		Long:              "Benennt einen Kontext um und verschiebt das Token im Schlüsselbund. Ein aktiver Kontext bleibt aktiv.",
+		Long:              "Benennt einen Kontext um und verschiebt das Token im Schlüsselbund. Ein aktiver Kontext bleibt aktiv.\n\nLäuft für den Kontext ein Timer, bricht der Befehl mit Exit 7 ab: erst papierkram time stop oder papierkram time discard.",
 		Example:           "  papierkram context rename firma firma-gmbh\n  papierkram context rename agent agent-lesend",
 		Args:              exactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -308,6 +332,9 @@ func newContextRenameCmd(app *App) *cobra.Command {
 				return err
 			}
 			if err := cfg.Rename(oldName, newName); err != nil {
+				return err
+			}
+			if err := app.refuseWithTimer(oldName); err != nil {
 				return err
 			}
 			// Never overwrite or adopt a foreign token stored under the new name.

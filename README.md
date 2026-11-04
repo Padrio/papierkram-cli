@@ -107,7 +107,7 @@ papierkram context delete analyse
 papierkram invoice list --context analyse
 ```
 
-`context delete` löscht auch das Token des Kontexts im Schlüsselbund; `auth logout` entfernt nur das Token, der Kontext bleibt.
+`context delete` löscht auch das Token des Kontexts im Schlüsselbund; `auth logout` entfernt nur das Token, der Kontext bleibt. Läuft für einen Kontext ein Timer, verweigern `context rename` und `context delete` mit Exit 7, bis er mit `time stop` gebucht oder mit `time discard` verworfen ist.
 
 Welcher Kontext gilt, entscheidet diese Reihenfolge: `--context` > `PAPIERKRAM_CONTEXT` > `context` aus der [Projektdatei](#projektdatei) > `active_context` der Konfiguration. `papierkram auth status` zeigt den wirksamen Kontext mit Herkunft, die Token-Quelle (nie das Token selbst), die Schreibschutzstufe und das Restkontingent.
 

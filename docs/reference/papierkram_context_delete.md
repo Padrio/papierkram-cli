@@ -5,6 +5,8 @@ Kontext löschen
 ```text
 Löscht den Kontext und das zugehörige Token im Schlüsselbund. Eine Bestätigung ist nicht nötig.
 
+Läuft für den Kontext ein Timer, bricht der Befehl mit Exit 7 ab: erst papierkram time stop oder papierkram time discard.
+
 Verwendung:
   papierkram context delete <name> [Optionen]
 

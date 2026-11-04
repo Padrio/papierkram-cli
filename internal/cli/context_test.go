@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Padrio/papierkram-cli/internal/auth"
+	"github.com/Padrio/papierkram-cli/internal/timer"
 )
 
 func cfgFile(t *testing.T, app *App) string {
@@ -498,5 +499,61 @@ func TestContextRenameRefusesExistingTargetKeychainEntry(t *testing.T) {
 		if tok, err := app.Keyring.Get(name); err != nil || tok != want {
 			t.Errorf("%s: %q %v", name, tok, err)
 		}
+	}
+}
+
+// A running timer belongs to its context by file name: renaming or
+// deleting the context would orphan it (M3). Both refuse with exit 7
+// before anything changes; without a timer they run as before.
+func TestContextRenameDeleteRefuseWithTimer(t *testing.T) {
+	for _, args := range [][]string{{"context", "rename", "a", "neu"}, {"context", "delete", "a"}} {
+		t.Run(args[1], func(t *testing.T) {
+			app, out, errb := newTestApp(t)
+			writeCfg(t, app, twoCtx)
+			_ = app.Keyring.Set("a", "test-token-a")
+			path := timer.Path(app.CacheDir, "a")
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			// any file counts, also one time status would call invalid
+			if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before, _ := os.ReadFile(cfgFile(t, app))
+			if code := Run(app, append(args, "-o", "json")); code != 7 {
+				t.Fatalf("exit %d, stderr %s", code, errb.String())
+			}
+			if out.Len() != 0 {
+				t.Errorf("stdout = %q", out.String())
+			}
+			if after, _ := os.ReadFile(cfgFile(t, app)); string(after) != string(before) {
+				t.Errorf("config changed:\n%s", after)
+			}
+			if tok, err := app.Keyring.Get("a"); err != nil || tok != "test-token-a" {
+				t.Errorf("keychain a: %v", err)
+			}
+			if _, err := os.Stat(path); err != nil {
+				t.Errorf("timer file: %v", err)
+			}
+			var got struct {
+				Error struct{ Code, Hint string } `json:"error"`
+			}
+			if err := json.Unmarshal([]byte(lastLine(errb.String())), &got); err != nil {
+				t.Fatalf("%v: %s", err, errb.String())
+			}
+			if e := got.Error; e.Code != "conflict" || !strings.HasPrefix(e.Hint, "erst papierkram time stop oder papierkram time discard") ||
+				!strings.Contains(e.Hint, "--context a") {
+				t.Errorf("error = %+v", e)
+			}
+
+			// the timer of another context does not block
+			if err := os.Rename(path, timer.Path(app.CacheDir, "b")); err != nil {
+				t.Fatal(err)
+			}
+			errb.Reset()
+			if code := Run(app, args); code != 0 {
+				t.Fatalf("without timer: exit %d, stderr %s", code, errb.String())
+			}
+		})
 	}
 }
