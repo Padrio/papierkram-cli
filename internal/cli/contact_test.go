@@ -242,6 +242,18 @@ func TestCompanyListTypeWarnsFromTenPages(t *testing.T) {
 		t.Errorf("stdout = %q, stderr = %q", out, errs)
 	}
 
+	// TTY with --yes or --no-input: warning, no prompt, all pages
+	for _, flag := range []string{"--yes", "--no-input"} {
+		app, srv = apiApp(t)
+		app.StdinTTY = true
+		companyPages(srv, pages)
+		wantExit(t, app, Run(app, []string{"company", "list", "--type", "customer", "-o", "json", flag}), 0)
+		wantRequests(t, srv, 10)
+		out, errs := bufs(app)
+		if strings.Contains(errs, "Fortfahren") || !strings.Contains(errs, "Warnung: --type lädt 10 Seiten") || !strings.Contains(out, `"total_entries": 10`) {
+			t.Errorf("%s: stdout = %s, stderr = %q", flag, out, errs)
+		}
+	}
 }
 
 func TestCompanyListTypeHelp(t *testing.T) {
@@ -372,3 +384,54 @@ func TestPersonCommandsRequireCompany(t *testing.T) {
 	}
 }
 
+// The registered mutations run the protection layer (Task 24): --dry-run
+// sends nothing, the read-only lock is exit 9 before any request.
+func TestContactMutationsDryRun(t *testing.T) {
+	for _, tc := range []struct {
+		args          []string
+		method, path  string
+		credits, body string
+	}{
+		{[]string{"person", "create", "--company", "7", "--first-name", "Anna", "--last-name", "Groß"},
+			"POST", "/contact/companies/7/persons", `"credits": 10`, `"first_name": "Anna"`},
+		{[]string{"company", "create", "--name", "Müller & Söhne", "--contact-type", "customer"},
+			"POST", "/contact/companies", `"credits": 10`, `"contact_type": "customer"`},
+		{[]string{"company", "update", "2843", "--email", "neu@example.org"},
+			"PUT", "/contact/companies/2843", `"credits": 1`, `"email": "neu@example.org"`},
+		{[]string{"person", "delete", "5", "--company", "7"},
+			"DELETE", "/contact/companies/7/persons/5", `"credits": 1`, `"body": null`},
+		{[]string{"company", "archive", "2843"},
+			"POST", "/contact/companies/2843/archive", `"credits": 1`, `"body": null`},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, Run(app, append(tc.args, "--dry-run", "-o", "json")), 0)
+		wantRequests(t, srv, 0)
+		out := mustOut(app)
+		for _, want := range []string{`"dry_run": true`, `"method": "` + tc.method + `"`, tc.path + `"`, tc.credits, tc.body} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%v: stdout ohne %q:\n%s", tc.args, want, out)
+			}
+		}
+	}
+}
+
+func TestContactMutationsReadOnly(t *testing.T) {
+	for _, args := range [][]string{
+		{"company", "create", "--name", "X", "--contact-type", "customer"},
+		{"company", "update", "2843", "--email", "neu@example.org"},
+		{"company", "delete", "2843", "--yes"},
+		{"company", "archive", "2843"},
+		{"company", "unarchive", "2843"},
+		{"person", "create", "--company", "7", "--first-name", "Anna", "--last-name", "Groß"},
+		{"person", "update", "5", "--company", "7", "--position", "Einkauf"},
+		{"person", "delete", "5", "--company", "7", "--yes"},
+	} {
+		app, srv := mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-ro", "PAPIERKRAM_READ_ONLY": "1"})
+		wantExit(t, app, Run(app, args), 9)
+		wantRequests(t, srv, 0)
+	}
+	// reading stays allowed
+	app, srv := mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-ro", "PAPIERKRAM_READ_ONLY": "1"})
+	wantExit(t, app, Run(app, []string{"person", "list", "--company", "7", "-o", "json"}), 0)
+	wantRequests(t, srv, 1)
+}
