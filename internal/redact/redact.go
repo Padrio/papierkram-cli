@@ -28,14 +28,41 @@ func URL(raw string) string {
 	return URLOf(u)
 }
 
-// URLOf is u without userinfo (u is not changed); nil is Invalid.
+// URLOf is u without userinfo (u is not changed); nil is Invalid. A URL
+// without host ("http:user:pw@host/x", "http:/user:pw@host/x") keeps
+// "user:pw@host" in Opaque or in the path, not in User: there the first
+// part after the scheme is masked up to its last "@" (maskOpaque).
 func URLOf(u *url.URL) string {
 	if u == nil {
 		return Invalid
 	}
 	c := *u
 	c.User = nil
-	return c.String()
+	s := c.String()
+	if c.Opaque == "" && c.Host != "" {
+		return s
+	}
+	return maskOpaque(s, c.Scheme)
+}
+
+// maskOpaque replaces everything up to and including the last "@" in the
+// first part of s after "scheme:" and leading slashes (up to the next
+// "/", "?" or "#", where a host would end) with "***@".
+func maskOpaque(s, scheme string) string {
+	prefix, rest := "", s
+	if scheme != "" && len(s) > len(scheme) && s[len(scheme)] == ':' {
+		prefix, rest = s[:len(scheme)+1], s[len(scheme)+1:]
+	}
+	lead := len(rest) - len(strings.TrimLeft(rest, "/"))
+	prefix, rest = prefix+rest[:lead], rest[lead:]
+	end := strings.IndexAny(rest, "/?#")
+	if end < 0 {
+		end = len(rest)
+	}
+	if at := strings.LastIndex(rest[:end], "@"); at >= 0 {
+		rest = "***@" + rest[at+1:]
+	}
+	return prefix + rest
 }
 
 // Host is the host (with port) of raw, never its userinfo; Invalid when

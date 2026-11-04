@@ -44,6 +44,26 @@ func TestURL(t *testing.T) {
 	}
 }
 
+// A URL without "//" has no host: url.Parse keeps "user:password@host"
+// in Opaque (or the path), not in User. Everything up to the last "@"
+// before the host part is masked (N4).
+func TestURLWithoutAuthority(t *testing.T) {
+	for raw, want := range map[string]string{
+		"http:alice:s3cret@firma.example/api/v1":  "http:***@firma.example/api/v1",
+		"http:alice@firma.example/api/v1?x=1":     "http:***@firma.example/api/v1?x=1",
+		"http:/alice:s3cret@firma.example/api/v1": "http:/***@firma.example/api/v1",
+		"http:alice:s3c@x@firma.example/a@b":      "http:***@firma.example/a@b",
+		"http:firma.example/api/v1":               "http:firma.example/api/v1",
+		"https://firma.example/a@b":               "https://firma.example/a@b",
+	} {
+		got := URL(raw)
+		clean(t, "URL("+raw+")", got)
+		if got != want {
+			t.Errorf("URL(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
 func TestHost(t *testing.T) {
 	for raw, want := range map[string]string{
 		withCreds:                            "127.0.0.1:1",

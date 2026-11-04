@@ -324,6 +324,26 @@ func TestInsecureBaseURLWarning(t *testing.T) {
 	}
 }
 
+// A base URL without "//" (http:nutzer:geheim@host) is insecure as well;
+// its credentials sit in the opaque part and are masked in the warning
+// (N4), whatever the request then does.
+func TestInsecureBaseURLWarningMasksOpaqueCredentials(t *testing.T) {
+	app, _, errb := newTestApp(t)
+	app.Env = envMap(map[string]string{"PAPIERKRAM_BASE_URL": "http:nutzer:geheim@firma.example/api/v1", "PAPIERKRAM_TOKEN": "test-token-insecure"})
+	app.HTTPClient = &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"id":1}`)), Request: r}, nil
+	})}
+	_ = Run(app, []string{"project", "describe", "1", "-o", "json"})
+	errs := errb.String()
+	if !strings.Contains(errs, "Basis-URL http:***@firma.example/api/v1 nutzt kein https") {
+		t.Errorf("stderr = %q", errs)
+	}
+	if strings.Contains(errs, "geheim") || strings.Contains(errs, "nutzer") {
+		t.Errorf("credentials in stderr: %q", errs)
+	}
+	assertNoToken(t, app)
+}
+
 type roundTrip func(*http.Request) (*http.Response, error)
 
 func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
