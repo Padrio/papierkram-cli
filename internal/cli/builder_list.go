@@ -255,7 +255,11 @@ func (a *App) filterValue(c *cobra.Command, e registry.Entry, flt registry.Filte
 		}
 		return v.(string), nil
 	case "datetime_from", "datetime_to":
-		return a.datetimeValue(cc, field, flt.Kind == "datetime_to", raw)
+		// second exception to dateContext (see wallClockContext): the
+		// keyword names the host's day, like the host-zone bounds of
+		// datetimeValue and like time log and time stop book, so that
+		// time list --since heute finds the entry just booked
+		return a.datetimeValue(a.wallClockContext(), field, flt.Kind == "datetime_to", raw)
 	case "enum", localKind:
 		s, values := filterEnum(e, flt)
 		if len(values) == 0 {
@@ -274,9 +278,8 @@ func (a *App) filterValue(c *cobra.Command, e registry.Entry, flt registry.Filte
 // datetimeValue accepts RFC 3339 as given; a date (any form of "date")
 // becomes 00:00:00 or, for the end of a range, 23:59:59 of that day in
 // a.Location, with the offset valid at that time (Review Focus 4). A
-// keyword names the day of Papierkram (cc, dateContext); its bounds are
-// those of the same explicit date, so "--since heute" and "--since
-// 2026-11-05" ask for the same range.
+// keyword names the host's day (cc is wallClockContext), so the range is
+// that of the same explicit date in the host zone.
 func (a *App) datetimeValue(cc spec.CoerceContext, field spec.Field, end bool, raw string) (string, error) {
 	if _, err := time.Parse(time.RFC3339, raw); err == nil {
 		return raw, nil

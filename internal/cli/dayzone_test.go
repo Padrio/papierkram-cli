@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -45,16 +46,30 @@ func TestRelativeDatesUseBerlinDay(t *testing.T) {
 			t.Errorf("query = %v", q)
 		}
 	})
-	// the keyword names the Berlin day; its bounds stay 00:00:00 and
-	// 23:59:59 of the host zone, like those of an explicit date
-	t.Run("datetime filter", func(t *testing.T) {
-		app, srv := lateUTCApp(t)
-		wantExit(t, app, runEntries(t, app, nil, []string{"time", "list", "--since", "heute", "--until", "heute"}, timeListEntry(t)), 0)
-		q := wantRequests(t, srv, 1)[0].Query
-		if q.Get("start_time_range_start") != "2026-11-05T00:00:00Z" || q.Get("start_time_range_end") != "2026-11-05T23:59:59Z" {
-			t.Errorf("query = %v", q)
-		}
-	})
+}
+
+// The datetime filters of time list (--since/--until) are the second
+// exception (N3): their keywords name the host's day, like their host-zone
+// bounds and like time log and time stop book. The check AGENTS.md
+// prescribes after time stop (time list --since heute) must find the entry
+// just booked, also on a UTC host after 23:00 UTC.
+func TestTimeListSinceTodayFindsTimeLogDay(t *testing.T) {
+	app, srv := lateUTCApp(t)
+	wantExit(t, app, Run(app, []string{"time", "log", "--task", "545", "--user", "1", "--duration", "30m", "-o", "json"}), 0)
+	var booked struct {
+		EntryDate string `json:"entry_date"`
+	}
+	if err := json.Unmarshal(wantRequests(t, srv, 1)[0].Body, &booked); err != nil {
+		t.Fatal(err)
+	}
+
+	app, srv = lateUTCApp(t)
+	wantExit(t, app, runEntries(t, app, nil, []string{"time", "list", "--since", "heute", "--until", "heute"}, timeListEntry(t)), 0)
+	q := wantRequests(t, srv, 1)[0].Query
+	since, until := q.Get("start_time_range_start"), q.Get("start_time_range_end")
+	if booked.EntryDate != "2026-11-04" || since != booked.EntryDate+"T00:00:00Z" || until != booked.EntryDate+"T23:59:59Z" {
+		t.Errorf("time log entry_date %s, time list --since %s --until %s", booked.EntryDate, since, until)
+	}
 }
 
 // time log is the exception: its date goes with wall-clock times of the

@@ -281,9 +281,10 @@ func (a *App) dayZone() *time.Location {
 }
 
 // dateContext is the clock of the relative dates (today/heute,
-// yesterday/gestern) in document and payment dates and list filters: the
-// day of Papierkram (dayZone). Every caller of spec.CoerceFlag uses it,
-// except time log (wallClockContext).
+// yesterday/gestern) in document and payment dates and date-only list
+// filters: the day of Papierkram (dayZone). Every caller of
+// spec.CoerceFlag uses it, except time log and the datetime filters of
+// time list (wallClockContext).
 func (a *App) dateContext() spec.CoerceContext {
 	return spec.CoerceContext{Now: a.Now, Loc: a.dayZone()}
 }
@@ -292,7 +293,9 @@ func (a *App) dateContext() spec.CoerceContext {
 // times of the host clock (--duration without --from ends now on today's
 // date; time stop books the timer's start in the host zone), so a
 // keyword there is the host's day. A Berlin date with host times would
-// book 23:30 on the following day.
+// book 23:30 on the following day. The datetime filters of time list
+// (--since/--until) use it too: their bounds are host-zone times, and the
+// check after time stop (time list --since heute) must find that entry.
 func (a *App) wallClockContext() spec.CoerceContext {
 	return spec.CoerceContext{Now: a.Now, Loc: a.loc()}
 }
