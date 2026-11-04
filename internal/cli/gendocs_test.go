@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -298,5 +300,25 @@ func TestGenDocsRemovesStalePages(t *testing.T) {
 		if !slices.Contains(got, n) {
 			t.Errorf("gemeinsames Verzeichnis ohne %s", n)
 		}
+	}
+}
+
+// gen-docs only writes local files: it carries annotLocal, so the shared
+// --dry-run check (checkDryRun) rejects it like time start and time
+// discard, before anything is written (M5).
+func TestGenDocsDryRunRejectedAsLocal(t *testing.T) {
+	app, _ := apiApp(t)
+	c, _, err := NewRootCmd(app).Find([]string{"gen-docs"})
+	if err != nil || c.Annotations[annotLocal] != "true" {
+		t.Fatalf("gen-docs annotations = %v (%v)", c.Annotations, err)
+	}
+	dir := filepath.Join(t.TempDir(), "md")
+	code, app := genDocs(t, "--dir", dir, "--dry-run")
+	wantExit(t, app, code, 2)
+	if _, err := os.Stat(dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("--dry-run wrote %s: %v", dir, err)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: Der Befehl sendet nichts und ändert nur lokale Dateien; ohne --dry-run ausführen") {
+		t.Errorf("stderr = %q", errs)
 	}
 }

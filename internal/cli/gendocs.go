@@ -34,18 +34,16 @@ Für die Entwicklung (docs/reference, Man-Pages der Release-Archive). Schreibt n
 func newGenDocsCmd(app *App) *cobra.Command {
 	var mdDir, manDir string
 	cmd := &cobra.Command{
-		Use:     "gen-docs",
-		Hidden:  true,
-		Short:   "Befehlsreferenz (Markdown) und Man-Pages erzeugen",
-		Long:    genDocsLong,
-		Example: "  papierkram gen-docs --dir docs/reference --man man\n  papierkram gen-docs --man man",
+		Use:    "gen-docs",
+		Hidden: true,
+		// writes only local files: --dry-run is rejected by checkDryRun
+		Annotations: map[string]string{annotLocal: "true"},
+		Short:       "Befehlsreferenz (Markdown) und Man-Pages erzeugen",
+		Long:        genDocsLong,
+		Example:     "  papierkram gen-docs --dir docs/reference --man man\n  papierkram gen-docs --man man",
 		Args: func(c *cobra.Command, args []string) error {
 			if err := noArgs(c, args); err != nil {
 				return err
-			}
-			if app.Flags.DryRun {
-				return clierr.New(clierr.CodeUsage, "--dry-run wird von diesem Befehl nicht unterstützt",
-					"Der Befehl schreibt nur Doku-Dateien; ohne --dry-run ausführen")
 			}
 			if mdDir == "" && manDir == "" {
 				return clierr.New(clierr.CodeUsage, "--dir oder --man fehlt", "Verwendung: "+useLine(c))

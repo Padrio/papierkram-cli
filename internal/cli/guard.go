@@ -63,8 +63,8 @@ func readsOnly() map[string]string {
 }
 
 // annotLocal marks commands that change only local state and send no
-// request (time start, time discard): checkDryRun rejects --dry-run
-// there, so it never runs them for real.
+// request (time start, time discard, gen-docs): checkDryRun rejects
+// --dry-run there, so it never runs them for real.
 const annotLocal = "pk:local"
 
 // checkDryRun runs in the root PersistentPreRunE, before configuration and
@@ -84,7 +84,7 @@ func (a *App) checkDryRun(c *cobra.Command) error {
 			"Der Befehl ändert die lokale Konfiguration; ohne --dry-run ausführen")
 	case c.Annotations[annotLocal] == "true":
 		return clierr.New(clierr.CodeUsage, "--dry-run wird von diesem Befehl nicht unterstützt",
-			"Der Befehl sendet nichts und ändert nur den lokalen Timer; ohne --dry-run ausführen")
+			"Der Befehl sendet nichts und ändert nur lokale Dateien; ohne --dry-run ausführen")
 	case c.Annotations[annotClass] == string(registry.ClassReadOnly):
 		return clierr.New(clierr.CodeUsage, "--dry-run gilt nur für ändernde Befehle",
 			"Dieser Befehl liest nur; ohne --dry-run ausführen. Verwendung: "+useLine(c))
