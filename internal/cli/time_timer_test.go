@@ -578,3 +578,50 @@ func TestTimerStartRejectsUnusableState(t *testing.T) {
 	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1", "-m", strings.Repeat("<", timer.MaxComment)), 0)
 	wantExit(t, app, at(app, morning(t), "time", "status"), 0)
 }
+
+// Review M2: on the days of the time change, time status shows the
+// wall-clock difference time stop books (controller ruling: wall-clock
+// arithmetic), and a period of zero wall-clock minutes after an hour is
+// named as a clock change, not as "zu kurz".
+func TestTimerStatusAgreesWithStopOnDSTDays(t *testing.T) {
+	utc := func(y int, m time.Month, d, h, mi int) time.Time { return time.Date(y, m, d, h, mi, 0, 0, time.UTC) }
+	for _, tc := range []struct {
+		name        string
+		start, stop time.Time
+		duration    string
+		body        string // "" when stop is refused
+		refused     string
+	}{
+		// 01:30 CEST → 03:00 CET: 2:30 elapsed, 1:30 by the clock
+		{"autumn", utc(2026, 10, 24, 23, 30), utc(2026, 10, 25, 2, 0), "1:30",
+			`{"entry_date":"2026-10-25","started_at_time":"01:30","ended_at_time":"03:00","task":{"id":545},"user":{"id":1}}`, ""},
+		// 01:30 CET → 03:30 CEST: 1:00 elapsed, 2:00 by the clock
+		{"spring", utc(2026, 3, 29, 0, 30), utc(2026, 3, 29, 1, 30), "2:00",
+			`{"entry_date":"2026-03-29","started_at_time":"01:30","ended_at_time":"03:30","task":{"id":545},"user":{"id":1}}`, ""},
+		// 02:30 CEST → 02:30 CET: one hour elapsed, 0 by the clock
+		{"autumn repeated hour", utc(2026, 10, 25, 0, 30), utc(2026, 10, 25, 1, 30), "0:00", "", "umgestellt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, srv := logApp(t, tc.start)
+			wantExit(t, app, at(app, tc.start, "time", "start", "--task", "545", "--user", "1"), 0)
+			wantExit(t, app, at(app, tc.stop, "time", "status", "-o", "json"), 0)
+			var v struct {
+				Duration string `json:"duration"`
+			}
+			if out, _ := bufs(app); json.Unmarshal([]byte(out), &v) != nil || v.Duration != tc.duration {
+				t.Errorf("status duration = %q, want %q", v.Duration, tc.duration)
+			}
+			if tc.body != "" {
+				wantExit(t, app, at(app, tc.stop, "time", "stop", "-o", "json"), 0)
+				wantBody(t, srv, "POST", timeEntries, tc.body)
+				return
+			}
+			wantExit(t, app, at(app, tc.stop, "time", "stop"), 2)
+			wantStderr(t, app, tc.refused, "papierkram time log", "papierkram time discard")
+			if _, errs := bufs(app); strings.Contains(errs, "zu kurz") {
+				t.Errorf("clock change named as too short: %s", errs)
+			}
+			wantRequests(t, srv, 0)
+		})
+	}
+}

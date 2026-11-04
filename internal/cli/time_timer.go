@@ -62,7 +62,7 @@ func (a *App) newTimeStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Laufenden Timer anzeigen",
-		Long: "Zeigt den Timer des wirksamen Kontexts: Start, bisherige Dauer (h:mm, in ganzen Minuten wie time stop sie bucht), " +
+		Long: "Zeigt den Timer des wirksamen Kontexts: Start, bisherige Dauer (h:mm nach Uhrzeit, wie time stop sie bucht, auch an Tagen der Zeitumstellung), " +
 			"Aufgabe, Benutzer und Kommentar. Ohne Timer: „Kein Timer läuft“, mit -o json {\"running\":false} (Exit 0). " +
 			"Sendet keine Anfrage. " + timerNote,
 		Example:     "  papierkram time status\n  papierkram time status -o json",
@@ -221,7 +221,7 @@ var timerColumns = output.Columns{
 // timerStatus is st as output, its duration at the app clock.
 func (a *App) timerStatus(st timer.State) timerStatusJSON {
 	start := st.StartedAt.In(a.loc())
-	m := timerMinutes(start, a.Now())
+	m := timerMinutes(start, a.Now().In(a.loc()))
 	return timerStatusJSON{
 		Running:         true,
 		Context:         printable(st.Context),
@@ -234,15 +234,20 @@ func (a *App) timerStatus(st timer.State) timerStatusJSON {
 	}
 }
 
-// timerMinutes are the whole minutes from the minute of start to the
-// minute of now: what time stop books (wall-clock minutes, see period) on
-// a day without a time change; 0 for a start in the future.
+// timerMinutes is the wall-clock difference from start to now (both in
+// the app's time zone) in whole minutes: calendar days times 24 hours
+// plus the difference of the clock times. On the date of the start it is
+// what time stop books (wall-clock arithmetic, see period), also on the
+// days of the time change (review M2); 0 when the clock is before the
+// start.
 func timerMinutes(start, now time.Time) int {
-	d := now.Truncate(time.Minute).Sub(start.Truncate(time.Minute))
-	if d < 0 {
+	day := func(t time.Time) time.Time { return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC) }
+	days := int(day(now).Sub(day(start)) / (24 * time.Hour))
+	m := days*24*60 + now.Hour()*60 + now.Minute() - start.Hour()*60 - start.Minute()
+	if m < 0 {
 		return 0
 	}
-	return int(d / time.Minute)
+	return m
 }
 
 // runTimeStatus shows the timer of the effective context. It resolves the
@@ -380,6 +385,11 @@ func (a *App) timerPeriod(st timer.State) (period, error) {
 		return p, clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("Timer läuft seit %s über Mitternacht (jetzt %s %s): Einträge über Mitternacht sind nicht möglich", since, today, hhmm(p.end)),
 			a.midnightTimerHint(st, start, now))
+	case p.end == p.start && now.Sub(start) >= time.Minute:
+		// the same clock time an hour later: the clock went back
+		return p, clierr.New(clierr.CodeUsage,
+			fmt.Sprintf("Timer läuft seit %s, die Uhr wurde seither umgestellt: nach Uhrzeit Dauer 0, kein Zeiteintrag möglich", since),
+			"Der Timer läuft weiter: Zeit von Hand mit "+a.timeLogCommand(st, p.date, "HH:MM", "HH:MM")+" buchen, danach papierkram time discard")
 	case p.end == p.start:
 		return p, clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("Timer läuft erst seit %s, weniger als eine Minute: zu kurz für einen Zeiteintrag", hhmm(p.start)),
