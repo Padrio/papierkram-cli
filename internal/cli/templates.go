@@ -62,20 +62,47 @@ func defaultIsZero(f *pflag.Flag) bool {
 	return false
 }
 
+// flagRow is one flag of a German flag list: the flag with its shorthand
+// and placeholder ("-o, --output Text"), and its usage text.
+type flagRow struct{ flag, usage string }
+
 // germanFlagUsages renders a flag list like pflag's FlagUsages, but with
-// German type placeholders and "(Standard: …)" instead of "(default …)".
-// A back-quoted name in the usage text is kept as placeholder (pflag rule).
+// German type placeholders and "(Standard: …)" instead of "(default …)"
+// (rows from germanFlagRows, shared with the man pages of gen-docs).
 func germanFlagUsages(fs *pflag.FlagSet) string {
 	type row struct{ left, usage string }
 	var rows []row
 	maxlen := 0
+	for _, r := range germanFlagRows(fs) {
+		left := "      " + r.flag
+		if strings.HasPrefix(r.flag, "-") && !strings.HasPrefix(r.flag, "--") {
+			left = "  " + r.flag
+		}
+		maxlen = max(maxlen, len(left)+1)
+		rows = append(rows, row{left, r.usage})
+	}
+	var b strings.Builder
+	for _, r := range rows {
+		// Same layout as pflag: left, one space, padding, one space, usage;
+		// continuation lines of a multi-line usage are indented to match.
+		usage := strings.ReplaceAll(r.usage, "\n", "\n"+strings.Repeat(" ", maxlen+2))
+		b.WriteString(r.left + " " + strings.Repeat(" ", maxlen-len(r.left)) + " " + usage + "\n")
+	}
+	return b.String()
+}
+
+// germanFlagRows are the visible flags of fs with German type
+// placeholders and "(Standard: …)". A back-quoted name in the usage text
+// is kept as placeholder (pflag rule).
+func germanFlagRows(fs *pflag.FlagSet) []flagRow {
+	var rows []flagRow
 	fs.VisitAll(func(f *pflag.Flag) {
 		if f.Hidden {
 			return
 		}
-		left := "      --" + f.Name
+		left := "--" + f.Name
 		if f.Shorthand != "" && f.ShorthandDeprecated == "" {
-			left = "  -" + f.Shorthand + ", --" + f.Name
+			left = "-" + f.Shorthand + ", --" + f.Name
 		}
 		name, usage := pflag.UnquoteUsage(f)
 		if usage == f.Usage { // no back-quoted name: derive from the type
@@ -113,17 +140,9 @@ func germanFlagUsages(fs *pflag.FlagSet) string {
 		if f.Deprecated != "" {
 			usage += fmt.Sprintf(" (veraltet: %s)", f.Deprecated)
 		}
-		maxlen = max(maxlen, len(left)+1)
-		rows = append(rows, row{left, usage})
+		rows = append(rows, flagRow{left, usage})
 	})
-	var b strings.Builder
-	for _, r := range rows {
-		// Same layout as pflag: left, one space, padding, one space, usage;
-		// continuation lines of a multi-line usage are indented to match.
-		usage := strings.ReplaceAll(r.usage, "\n", "\n"+strings.Repeat(" ", maxlen+2))
-		b.WriteString(r.left + " " + strings.Repeat(" ", maxlen-len(r.left)) + " " + usage + "\n")
-	}
-	return b.String()
+	return rows
 }
 
 const usageTemplate = `Verwendung:{{if .Runnable}}
