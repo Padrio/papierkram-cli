@@ -291,7 +291,7 @@ Zusammengesetzte Befehle kosten die Summe: `deliver` 2 (Versand und Nachlesen), 
 | `PAPIERKRAM_CONTEXT` | Kontext für diesen Aufruf (nach `--context`, vor Projektdatei und `active_context`) |
 | `PAPIERKRAM_TOKEN` | Token; Vorrang vor Schlüsselbund und `config.toml`. Mit `PAPIERKRAM_SUBDOMAIN` oder `PAPIERKRAM_BASE_URL` Direktbetrieb ohne Kontext |
 | `PAPIERKRAM_SUBDOMAIN` | Subdomain; Vorrang vor der Subdomain des Kontexts |
-| `PAPIERKRAM_BASE_URL` | ersetzt die komplette Basis-URL (Tests, Mock-Server); Zugangsdaten darin (`nutzer:passwort@`) werden nie angezeigt |
+| `PAPIERKRAM_BASE_URL` | ersetzt die komplette Basis-URL (Tests, Mock-Server); Zugangsdaten darin (`nutzer:passwort@`) werden nie angezeigt. Ohne `https` warnt das CLI auf stderr (das Token ginge unverschlüsselt), außer für `localhost`, `127.0.0.0/8` und `::1` |
 | `PAPIERKRAM_READ_ONLY` | harter Schreibschutz (Exit 9); aus nur bei leer, `0`, `false`, `no`, `off` |
 | `PAPIERKRAM_CONFIG_DIR` | Basisverzeichnis der Konfiguration statt des Betriebssystem-Standards; die Datei liegt dann in `<verzeichnis>/papierkram/config.toml` |
 | `PAPIERKRAM_CACHE_DIR` | Basisverzeichnis des Caches (Namen, Vervollständigung, Timer) statt des Betriebssystem-Standards; die Dateien liegen in `<verzeichnis>/papierkram/` |

@@ -351,3 +351,31 @@ func TestResolvedNeverPrintsBaseURLCredentials(t *testing.T) {
 		}
 	}
 }
+
+// A base URL without https sends the token in clear text, unless it stays
+// on this machine (loopback: tests, local mocks).
+func TestInsecureBaseURL(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"https://firma.papierkram.de/api/v1":    false,
+		"HTTPS://firma.papierkram.de/api/v1":    false,
+		"http://firma.papierkram.de/api/v1":     true,
+		"HTTP://firma.papierkram.de/api/v1":     true,
+		"http://user:pw@firma.example/api/v1":   true,
+		"ftp://firma.example/api/v1":            true,
+		"http://10.0.0.1:8080/api/v1":           true,
+		"http://127.0.0.1:8080/api/v1":          false,
+		"http://127.9.8.7/api/v1":               false,
+		"http://localhost:3000/api/v1":          false,
+		"http://LOCALHOST/api/v1":               false,
+		"http://localhost./api/v1":              false,
+		"http://[::1]:8080/api/v1":              false,
+		"http://localhost.firma.example/api/v1": true,
+		"http://127.0.0.1.firma.example/api/v1": true,
+		"":                                      false,
+		"://kaputt":                             false, // reported where it is used
+	} {
+		if got := InsecureBaseURL(raw); got != want {
+			t.Errorf("InsecureBaseURL(%q) = %t, want %t", raw, got, want)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -286,3 +287,43 @@ func TestTimeoutHelpSaysPerAttempt(t *testing.T) {
 		t.Errorf("--timeout-Hilfe:\n%s", out.String())
 	}
 }
+
+// A base URL without https outside loopback gets a warning on stderr that
+// names the URL without userinfo and never the token (M4). No request
+// leaves the test: the transport answers itself.
+func TestInsecureBaseURLWarning(t *testing.T) {
+	for base, warn := range map[string]bool{
+		"http://nutzer:geheim@firma.example/api/v1": true,
+		"https://firma.example/api/v1":              false,
+		"http://127.0.0.1:9/api/v1":                 false,
+		"http://localhost:9/api/v1":                 false,
+		"http://[::1]:9/api/v1":                     false,
+	} {
+		app, _, errb := newTestApp(t)
+		app.Env = envMap(map[string]string{"PAPIERKRAM_BASE_URL": base, "PAPIERKRAM_TOKEN": "test-token-insecure"})
+		var sent int
+		app.HTTPClient = &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+			sent++
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"id":1}`)), Request: r}, nil
+		})}
+		if code := Run(app, []string{"project", "describe", "1", "-o", "json"}); code != 0 {
+			t.Fatalf("%s: exit %d: %s", base, code, errb.String())
+		}
+		errs := errb.String()
+		got := strings.Contains(errs, "kein https")
+		if got != warn || sent != 1 {
+			t.Errorf("%s: warning %t (want %t), %d requests: %q", base, got, warn, sent, errs)
+		}
+		if warn && (!strings.Contains(errs, "http://firma.example/api/v1") || strings.Count(errs, "kein https") != 1) {
+			t.Errorf("%s: stderr = %q", base, errs)
+		}
+		if strings.Contains(errs, "geheim") || strings.Contains(errs, "nutzer") {
+			t.Errorf("%s: userinfo in stderr: %q", base, errs)
+		}
+		assertNoToken(t, app)
+	}
+}
+
+type roundTrip func(*http.Request) (*http.Response, error)
+
+func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

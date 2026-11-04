@@ -66,6 +66,9 @@ type App struct {
 	// quotaWarned records that the low-quota warning was printed.
 	quota       api.Quota
 	quotaWarned bool
+	// insecureWarned records that the warning about a base URL without
+	// https was printed (warnInsecure).
+	insecureWarned bool
 
 	// restoreTerminal restores the terminal state of the start; readCtx
 	// calls it when an interrupt ends a hidden token read (nil: no

@@ -161,7 +161,9 @@ func (s deadlineStore) Get(name string) (string, error) {
 
 // lookupIDs sends the list request of e within ctx: the client of the API
 // commands (clientOptions) with the completion's own timeout and without
-// --debug output. Objects without a positive ID are left out.
+// --debug output. Unlike clientFor it prints no warning about a base URL
+// without https (warnInsecure): stderr of a completion would garble the
+// shell prompt. Objects without a positive ID are left out.
 func (a *App) lookupIDs(ctx context.Context, r *config.Resolved, e registry.Entry) ([]completionID, bool) {
 	o := a.clientOptions(r)
 	o.Timeout, o.Debug, o.DebugInfo = completionTimeout, nil, ""

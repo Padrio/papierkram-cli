@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Padrio/papierkram-cli/internal/auth"
@@ -191,4 +194,24 @@ func Resolve(c *Config, in ResolveInput) (*Resolved, error) {
 		r.ReadOnly, r.ReadOnlySource = true, SourceContext
 	}
 	return r, nil
+}
+
+// InsecureBaseURL reports a base URL that would send the token without
+// TLS: a scheme other than https and a host that is not loopback
+// (localhost, 127.0.0.0/8, ::1; tests and local mocks stay quiet). An
+// empty or unparsable URL is not reported here; it fails where it is used.
+func InsecureBaseURL(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "https" {
+		return false // url.Parse lowercases the scheme
+	}
+	host := strings.TrimSuffix(u.Hostname(), ".")
+	if strings.EqualFold(host, "localhost") {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !ip.IsLoopback()
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
+	"github.com/Padrio/papierkram-cli/internal/redact"
 )
 
 // lowQuota is the remaining-credit threshold for the stderr warning (spec 8.5).
@@ -130,12 +131,28 @@ func (a *App) warnEnvOverrides(r *config.Resolved) {
 		r.Context, how, strings.Join(vars, ", "), verb))
 }
 
-// clientFor checks that r has a base URL and a token and builds the client.
+// clientFor checks that r has a base URL and a token and builds the client;
+// a base URL without https outside loopback gets a warning (warnInsecure).
 func (a *App) clientFor(r *config.Resolved) (*api.Client, error) {
 	if err := requireCredentials(r); err != nil {
 		return nil, err
 	}
+	a.warnInsecure(r)
 	return api.New(a.clientOptions(r)), nil
+}
+
+// warnInsecure warns once per invocation on stderr when the base URL of r
+// would send the token without TLS (config.InsecureBaseURL), naming the
+// URL without userinfo. Every command client comes from clientFor; the ID
+// completion (lookupIDs) builds its own and stays silent, because stderr
+// of a completion would garble the shell prompt.
+func (a *App) warnInsecure(r *config.Resolved) {
+	if a.insecureWarned || !config.InsecureBaseURL(r.BaseURL) {
+		return
+	}
+	a.insecureWarned = true
+	output.Warn(a.Err, fmt.Sprintf("Basis-URL %s nutzt kein https: das Token wird unverschlüsselt gesendet. PAPIERKRAM_BASE_URL prüfen.",
+		printable(redact.URL(r.BaseURL))))
 }
 
 // requireCredentials checks that r has a base URL (usage error) and a
