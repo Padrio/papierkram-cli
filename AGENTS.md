@@ -138,7 +138,7 @@ Immer zuerst `error.hint` (bzw. `Hinweis:`) und `error.message` lesen; die Texte
 
 **`deliver`, Exit 12:** Das CLI hat schon einmal nachgelesen; der Hinweis lautet „Ergebnis unbekannt – vor Wiederholung per describe prüfen: papierkram invoice describe N“. `sent_on`, `state` und die Nummer prüfen und den Menschen entscheiden lassen. `deliver` nie selbst wiederholen.
 
-**`time stop`, Exit 12 (oder Exit 1 mit `server_error`):** Der Hinweis lautet „Der Timer läuft weiter: erst mit papierkram time list prüfen, ob der Eintrag angelegt wurde; wenn ja, den Timer mit papierkram time discard verwerfen, sonst erneut papierkram time stop“. Genau so vorgehen; `time discard` braucht ohne Terminal `--yes`.
+**`time stop`, Exit 12 (oder Exit 1 mit `server_error`):** Der Hinweis enthält „Der Timer läuft weiter: erst mit papierkram time list prüfen, ob der Eintrag angelegt wurde; wenn ja, den Timer mit papierkram time discard verwerfen, sonst erneut papierkram time stop“ (bei Exit 12 steht davor „Ergebnis unbekannt – vor Wiederholung per describe/list prüfen.“; bei `server_error` folgt zusätzlich der Befehl zum Buchen von Hand). Genau so vorgehen; `time discard` braucht ohne Terminal `--yes`.
 
 ## Verbotene Muster
 
