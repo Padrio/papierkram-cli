@@ -33,11 +33,14 @@ const (
 // mailFields map the mail flags to the fields of the email object
 // (spec 9.1: --to, --subject, --body → email:{recipient,subject,body});
 // --body-file is the other source of body.
-var mailFields = []struct{ flag, field string }{
+var mailFields = []mailField{
 	{"to", "recipient"},
 	{"subject", "subject"},
 	{"body", "body"},
 }
+
+// mailField is a mail flag of deliver and its field in the email object.
+type mailField struct{ flag, field string }
 
 // utf8BOM starts text files written by Windows editors.
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
@@ -401,20 +404,13 @@ func checkDeliverBody(c *cobra.Command, body map[string]any) error {
 				"für eine E-Mail --via email verwenden; ein email-Objekt aus --input entfernen")
 		}
 	case viaEmail:
-		m, isMap := mail.(map[string]any)
-		if mail != nil && !isMap {
-			return nil // wrong type: the validation reports it (exit 5)
-		}
 		var missing []string
-		for _, f := range mailFields {
-			v := m[f.field]
-			if s, isStr := v.(string); v == nil || isStr && strings.TrimSpace(s) == "" {
-				name := "--" + f.flag
-				if f.flag == "body" {
-					name += " (oder --body-file)"
-				}
-				missing = append(missing, name)
+		for _, f := range missingMail(mail) {
+			name := "--" + f.flag
+			if f.flag == "body" {
+				name += " (oder --body-file)"
 			}
+			missing = append(missing, name)
 		}
 		if len(missing) > 0 {
 			return clierr.New(clierr.CodeUsage, "--via email verlangt "+strings.Join(missing, ", "),
@@ -422,6 +418,26 @@ func checkDeliverBody(c *cobra.Command, body map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// missingMail is the completeness rule of a mail (spec 9.1): the fields
+// of mailFields (recipient, subject, body) that the email object mail
+// lacks or holds only blanks in. A mail of another type than an object is
+// left to the schema validation (nothing missing). deliver (as flags) and
+// papierkram api (as JSON fields) share it.
+func missingMail(mail any) []mailField {
+	m, isMap := mail.(map[string]any)
+	if mail != nil && !isMap {
+		return nil
+	}
+	var missing []mailField
+	for _, f := range mailFields {
+		v := m[f.field]
+		if s, isStr := v.(string); v == nil || isStr && strings.TrimSpace(s) == "" {
+			missing = append(missing, f)
+		}
+	}
+	return missing
 }
 
 // deliverBody builds the request body like buildBody does for create:
