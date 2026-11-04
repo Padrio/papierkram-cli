@@ -270,6 +270,7 @@ func (a *App) runList(c *cobra.Command, e registry.Entry) error {
 	if err != nil {
 		return err
 	}
+	a.flushPresetHints()
 	client, _, err := a.Client(c)
 	if err != nil {
 		return err

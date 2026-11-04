@@ -82,6 +82,10 @@ type App struct {
 
 	// pfile is the project file of this invocation (see projectFile).
 	pfile projectFileCache
+
+	// presetHints are the preset hints of this invocation, printed once
+	// the command is valid (see flushPresetHints).
+	presetHints []string
 }
 
 // NewApp creates an App wired to the operating system.

@@ -117,8 +117,8 @@ func fileValue(f *projectfile.File, key string) int64 {
 }
 
 // preset resolves key for this invocation without a flag: environment,
-// project file and, for user, the context default once the configuration
-// is resolved.
+// project file and, for user, the context default once
+// the configuration is resolved.
 func (a *App) preset(key string) (preset, error) {
 	src := presetSources{Env: a.Env, File: a.projectFile}
 	if key == presetUser && a.resolved != nil {
@@ -132,7 +132,9 @@ func presetNote(key string) string {
 	return fmt.Sprintf("%s oder %s aus der Projektdatei %s", presetEnv(key), key, projectfile.FileName)
 }
 
-// presetHint names a preset a command uses on stderr.
+// presetHint queues the hint naming a preset a command uses; the runner
+// prints it with flushPresetHints once flags and body are valid, so a
+// failing command never claims a preset was used.
 func (a *App) presetHint(key string, p preset) {
 	from := p.Origin
 	switch p.Source {
@@ -141,7 +143,28 @@ func (a *App) presetHint(key string, p preset) {
 	case config.SourceContext:
 		from = fmt.Sprintf("Kontext %q", p.Origin)
 	}
-	_, _ = fmt.Fprintf(a.Err, "Hinweis: %s %d aus %s\n", resourceNoun(key), p.ID, from)
+	a.presetHints = append(a.presetHints, fmt.Sprintf("Hinweis: %s %d aus %s\n", resourceNoun(key), p.ID, from))
+}
+
+// flushPresetHints prints the queued preset hints on stderr.
+func (a *App) flushPresetHints() {
+	for _, h := range a.presetHints {
+		_, _ = fmt.Fprint(a.Err, h)
+	}
+	a.presetHints = nil
+}
+
+// withPresetHint adds to the validation error of a create body without
+// the preset field where the value can come from (exit code unchanged).
+func withPresetHint(err error, key string) error {
+	ce := *clierr.From(err)
+	hint := fmt.Sprintf("--%[1]s angeben oder %[2]s bzw. %[1]s in %[3]s setzen (papierkram local init --%[1]s <id>)",
+		key, presetEnv(key), projectfile.FileName)
+	if ce.Hint != "" {
+		hint = ce.Hint + "; " + hint
+	}
+	ce.Hint = hint
+	return &ce
 }
 
 // presetArgs returns args with the positional ID of a describe entry with
@@ -185,27 +208,31 @@ func (a *App) presetQuery(e registry.Entry, flt registry.Filter, lr *listRequest
 
 // presetBody sets the field of e's preset in a create body when neither
 // its flag nor --input gives it and a preset value exists (spec 9.8: task
-// create).
-func (a *App) presetBody(c *cobra.Command, e registry.Entry, ws writeSpec, body map[string]any) error {
+// create). missing reports a required preset field that stays unset, so
+// the validation error can name the preset sources.
+func (a *App) presetBody(c *cobra.Command, e registry.Entry, ws writeSpec, body map[string]any) (missing bool, err error) {
 	if e.Preset == "" || e.Action != "create" || c.Flags().Changed(e.Preset) {
-		return nil
+		return false, nil
 	}
 	for _, f := range ws.fields {
 		if f.Flag != e.Preset || hasPath(body, f.Path) {
 			continue
 		}
 		p, err := a.preset(e.Preset)
-		if err != nil || p.Source == "" {
-			return err
+		if err != nil {
+			return false, err
+		}
+		if p.Source == "" {
+			return f.Required, nil
 		}
 		v, err := spec.CoerceFlag(spec.CoerceContext{Now: a.Now, Loc: a.Location}, f, strconv.FormatInt(p.ID, 10))
 		if err != nil {
-			return err
+			return false, err
 		}
 		setPath(body, f.Path, v)
 		a.presetHint(e.Preset, p)
 	}
-	return nil
+	return false, nil
 }
 
 // hasPath reports whether body has a value at path.

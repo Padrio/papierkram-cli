@@ -117,6 +117,7 @@ func (a *App) checkGlobalFlags(c *cobra.Command) error {
 func NewRootCmd(app *App) *cobra.Command {
 	// a new invocation finds and reads the project file anew
 	app.pfile = projectFileCache{}
+	app.presetHints = nil
 	root := &cobra.Command{
 		Use:           "papierkram",
 		Short:         "Kommandozeile für die Papierkram-API",

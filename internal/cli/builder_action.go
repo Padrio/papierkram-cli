@@ -33,6 +33,7 @@ func (a *App) runDescribe(c *cobra.Command, e registry.Entry, args []string) err
 	if err != nil {
 		return err
 	}
+	a.flushPresetHints()
 	client, _, err := a.Client(c)
 	if err != nil {
 		return err

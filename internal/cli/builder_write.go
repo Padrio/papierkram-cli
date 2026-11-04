@@ -184,6 +184,7 @@ func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error 
 	if err != nil {
 		return err
 	}
+	a.flushPresetHints()
 	if proceed, err := a.beforeMutation(c, e, client, params, body); !proceed || err != nil {
 		return err
 	}
@@ -350,7 +351,8 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 
 	// spec 9.8: the preset field (task create --project), after --input
 	// and the flags, which win
-	if err := a.presetBody(c, e, ws, body); err != nil {
+	presetMissing, err := a.presetBody(c, e, ws, body)
+	if err != nil {
 		return nil, nil, err
 	}
 
@@ -378,6 +380,9 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 	}
 	body, _ = v.(map[string]any)
 	if err := spec.Validate(body, ws.req); err != nil {
+		if presetMissing {
+			err = withPresetHint(err, e.Preset)
+		}
 		return nil, nil, err
 	}
 	return body, removed, nil
