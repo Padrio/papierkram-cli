@@ -182,8 +182,10 @@ func (c *Client) rawURL(path string, query url.Values) (*url.URL, error) {
 // segment, also percent-encoded and after repeated decoding (%2e%2e,
 // %2E., %252e%252e), a backslash (some servers treat it as a separator)
 // and control characters, in the path or its decoded form.
+//
+// The error is a *PathError.
 func CheckPath(path string) error {
-	bad := func(why string) error { return fmt.Errorf("api: ungültiger Pfad %q: %s", path, why) }
+	bad := func(why string) error { return &PathError{Path: path, Reason: why} }
 	if strings.ContainsFunc(path, isControl) {
 		return bad("Steuerzeichen nicht erlaubt")
 	}
@@ -207,6 +209,16 @@ func CheckPath(path string) error {
 		p = d
 	}
 	return bad("mehrfach %-kodiert")
+}
+
+// PathError is a request path rejected by CheckPath; Reason is the German
+// cause ("Backslash nicht erlaubt").
+type PathError struct {
+	Path, Reason string
+}
+
+func (e *PathError) Error() string {
+	return fmt.Sprintf("api: ungültiger Pfad %q: %s", e.Path, e.Reason)
 }
 
 // maxDecode is how often CheckPath decodes a path; a path that still

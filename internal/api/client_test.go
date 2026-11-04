@@ -646,3 +646,17 @@ func TestPreviewRawMatchesCallRaw(t *testing.T) {
 		t.Errorf("CallRaw = %s?%s", got.Path, got.RawQuery)
 	}
 }
+
+func TestCheckPathError(t *testing.T) {
+	err := CheckPath(`/a: b/..`)
+	var pe *PathError
+	if !errors.As(err, &pe) || pe.Reason != `".." nicht erlaubt` || pe.Path != `/a: b/..` {
+		t.Fatalf("CheckPath = %#v", err)
+	}
+	if err.Error() != `api: ungültiger Pfad "/a: b/..": ".." nicht erlaubt` {
+		t.Errorf("Error() = %s", err)
+	}
+	if err := CheckPath("/income/invoices?x=a/../b"); err != nil {
+		t.Errorf("query is not part of the path: %v", err)
+	}
+}
