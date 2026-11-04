@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/goccy/go-yaml"
 
 	"github.com/Padrio/papierkram-cli/internal/testutil/modroot"
 )
@@ -419,6 +422,53 @@ func TestDocCommandProblemDetectsInvalidLines(t *testing.T) {
 		}
 		if err := docCommandProblem(t, words); err != nil {
 			t.Errorf("%q: %v", good, err)
+		}
+	}
+}
+
+// The error recipe of AGENTS.md works on the real output: with -o json and
+// --jq the last stderr line is the JSON error, with -o yaml the YAML
+// document from the last line "error:" to the end.
+func TestAgentsErrorRecipe(t *testing.T) {
+	doc, err := os.ReadFile(filepath.Join(modroot.Find(t), "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, recipe := range []string{
+		"die **letzte Zeile** von stderr als JSON lesen",
+		"stderr ab der **letzten** Zeile, die genau `error:` lautet, bis zum Ende als YAML lesen",
+	} {
+		if !strings.Contains(string(doc), recipe) {
+			t.Errorf("AGENTS.md: Rezept %q fehlt", recipe)
+		}
+	}
+	type errDoc struct {
+		Error struct {
+			Code     string `json:"code" yaml:"code"`
+			ExitCode int    `json:"exit_code" yaml:"exit_code"`
+		} `json:"error" yaml:"error"`
+	}
+	base := []string{"company", "delete", "5", "--no-input"}
+	for _, format := range [][]string{{"-o", "json"}, {"--jq", ".id"}, {"-o", "yaml"}} {
+		code, errs := runLine(t, nil, append(append([]string{}, base...), format...))
+		lines := strings.Split(strings.TrimRight(errs, "\n"), "\n")
+		var d errDoc
+		if format[1] == "yaml" {
+			start := -1
+			for i, l := range lines {
+				if l == "error:" {
+					start = i
+				}
+			}
+			if start < 0 {
+				t.Fatalf("%v: keine Zeile error: in %q", format, errs)
+			}
+			err = yaml.Unmarshal([]byte(strings.Join(lines[start:], "\n")), &d)
+		} else {
+			err = json.Unmarshal([]byte(lines[len(lines)-1]), &d)
+		}
+		if err != nil || code != 8 || d.Error.Code != "confirmation_required" || d.Error.ExitCode != 8 {
+			t.Errorf("%v: exit %d, %+v, %v; stderr %q", format, code, d, err, errs)
 		}
 	}
 }

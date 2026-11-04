@@ -9,7 +9,7 @@ Diese Datei richtet sich an KI-Agents (Claude Code, Codex und andere), die das C
 3. **Nie hängen bleiben.** `--no-input` an jeden Befehl: Dann fragt das CLI nie nach, auch nicht in einem Terminal.
 4. **Erst `--dry-run`, dann ausführen.** Vor jeder Änderung den Befehl mit `--dry-run` prüfen, danach unverändert ohne `--dry-run` (und bei Bedarf mit `--yes`) ausführen.
 5. **`deliver` nie wiederholen.** Ein zweiter Aufruf kann eine zweite E-Mail an den Kunden schicken.
-6. **Exit 11 und 12 nie blind wiederholen.** Erst mit `describe` oder `list` nachsehen, was passiert ist.
+6. **Exit 11 und 12 nie blind wiederholen.** Erst `hint` lesen und mit `describe` oder `list` nachsehen, was passiert ist; dann höchstens den einen Schritt nachholen, den der Hinweis nennt (siehe [Exit 11 und 12](#exit-11-und-12-schritt-für-schritt)).
 7. **429 (Exit 6) nie automatisch wiederholen.** Das Monatskontingent ist erschöpft; ein Mensch muss entscheiden.
 8. **Nie Tokens in Befehle.** Kein Token als Argument, in `-f`/`-F`, in Dateien, Logs oder Ausgaben. Das Token kommt aus dem Schlüsselbund des Kontexts oder aus `PAPIERKRAM_TOKEN`, das ein Mensch setzt.
 
@@ -49,14 +49,34 @@ Alle Formen sind als strikte JSON-Schemas in [docs/schemas/](docs/schemas/) eing
 | `--dry-run` | `{"dry_run":true,"method":…,"url":…,"body":…,"credits":…}`, ggf. mit `upload` und `read` | [dry-run.json](docs/schemas/dry-run.json) |
 | `invoice|estimate deliver` | `id`, `invoice_no` bzw. `estimate_no`, `state`, `sent_on`, `sent_via`, `sent_to`; scheitert nur das Nachlesen: `{"id":…,"delivered":true,"warnings":[…]}` | [deliver.json](docs/schemas/deliver.json) |
 | `voucher create --file`, Upload gescheitert (Exit 11) | `{"id":…,"completed":["create"],"failed":["upload"],"retry_command":…,"warnings":[…]}` | [partial.json](docs/schemas/partial.json) |
-| Fehler | auf **stderr**, letzte Zeile, eine kompakte JSON-Zeile | [error.json](docs/schemas/error.json) |
+| Fehler | auf **stderr**: bei `-o json` und `--jq` als letzte Zeile eine kompakte JSON-Zeile, bei `-o yaml` als YAML-Block am Ende (siehe [Fehler](#fehler)) | [error.json](docs/schemas/error.json) |
 
 ### Fehler
 
-Bei `-o json`, `-o yaml` oder `--jq` steht der Fehler auf stderr zuerst als Text (`Fehler: …`, `Hinweis: …`, `Correlation-ID: …`) und als letzte Zeile als JSON:
+Ein Fehler steht immer auf **stderr**, zuerst als Text (`Fehler: …`, `Hinweis: …`, ggf. `Correlation-ID: …`; Meldungen können mehrzeilig sein). Danach folgt je nach wirksamem Ausgabeformat (`-o` oder `output` des Kontexts) eine strukturierte Form:
+
+| Format | Strukturierter Fehler | So parsen |
+|---|---|---|
+| `-o json` oder `--jq` | eine kompakte JSON-Zeile `{"error":{…}}` | die **letzte Zeile** von stderr als JSON lesen |
+| `-o yaml` | ein YAML-Dokument, das mit der Zeile `error:` beginnt | stderr ab der **letzten** Zeile, die genau `error:` lautet, bis zum Ende als YAML lesen |
+| `table`, `wide` | keiner, nur Text | nur den Exit-Code auswerten; für Details mit `-o json` arbeiten |
+
+Empfehlung: immer `-o json` (oder `--jq`), dann gilt die erste Zeile der Tabelle. Beispiel der letzten stderr-Zeile:
 
 ```json
 {"error":{"code":"not_found","message":"…","hint":"…","http_status":404,"correlation_id":"…","exit_code":4}}
+```
+
+Mit `-o yaml` sieht dasselbe Ende von stderr so aus:
+
+```yaml
+error:
+  code: not_found
+  message: "…"
+  hint: "…"
+  http_status: 404
+  correlation_id: "…"
+  exit_code: 4
 ```
 
 `code` und `exit_code` gehören fest zusammen. `hint`, `http_status` und `correlation_id` fehlen, wenn sie nicht bekannt sind (nie leer oder `null`). Bei Exit 2, 8, 9 und 10 gibt es nie ein `http_status`: Dann wurde nichts gesendet bzw. keine Antwort empfangen. Beginnt `message` mit „Befehl ausgeführt, Ausgabe fehlgeschlagen“ (Exit 1), war die Anfrage erfolgreich und nur die Ausgabe scheiterte (z. B. ein `--jq`-Ausdruck): dann **nicht** wiederholen.
@@ -80,6 +100,7 @@ papierkram voucher create --name "Büromaterial" --provenance domestic --credito
 - `destructive` und `send` brauchen eine Bestätigung. Ohne Terminal oder mit `--no-input` bricht der Befehl ohne `--yes` mit Exit 8 ab, bevor etwas gesendet wird.
 - `--yes` nur verwenden, wenn der Mensch genau diese Aktion freigegeben hat. Exit 8 heißt: nichts passiert, nachfragen.
 - `create`, `update` und `archive` laufen ohne Rückfrage. `time log` und `time stop` fragen nur im Terminal (Enter = ja).
+- `time discard` fragt immer (Enter = nein): ohne Terminal oder mit `--no-input` braucht es `--yes`, sonst Exit 8. Die erfasste Zeit geht verloren; `--yes` nur nach Prüfung und mit Freigabe.
 - `--all` und `company list --type` warnen ab 10 Seiten auf stderr; ohne Terminal laden sie trotzdem alle Seiten. Mit `--max-pages` begrenzen.
 
 ## Exit-Codes und was zu tun ist
@@ -87,7 +108,7 @@ papierkram voucher create --name "Büromaterial" --provenance domestic --credito
 | Exit | `code` | Bedeutung | Was der Agent tut |
 |---|---|---|---|
 | 0 | – | Erfolg, auch `--dry-run` | Ergebnis auswerten; `warnings[]` und stderr lesen |
-| 1 | `error`, `server_error` | unerwarteter Fehler, 5xx | Lesen: später einmal erneut (GET hat das CLI schon zweimal wiederholt). Änderung: erst per `describe`/`list` prüfen, ob sie angekommen ist. „Befehl ausgeführt, Ausgabe fehlgeschlagen“: angekommen, nicht wiederholen |
+| 1 | `error`, `server_error` | unerwarteter Fehler, 5xx | Lesen: später einmal erneut (bei `server_error` hat das CLI ein GET schon zweimal wiederholt). Änderung: erst per `describe`/`list` prüfen, ob sie angekommen ist. „Befehl ausgeführt, Ausgabe fehlgeschlagen“: angekommen, nicht wiederholen |
 | 2 | `usage` | falsche Flags oder Argumente; nichts gesendet | Befehl nach `Hinweis` korrigieren (`--help`, `commands --json`) |
 | 3 | `auth` | kein Token, 401, 403 | abbrechen, Menschen bitten (`papierkram auth login`); nie selbst nach Tokens suchen |
 | 4 | `not_found` | 404 | ID und Kontext prüfen (`list`); nicht raten |
@@ -97,13 +118,32 @@ papierkram voucher create --name "Büromaterial" --provenance domestic --credito
 | 8 | `confirmation_required` | Bestätigung fehlt; nichts gesendet | Menschen fragen; `--yes` nur mit Freigabe |
 | 9 | `read_only` | Schreibschutz; nichts gesendet | abbrechen und melden; den Schutz nie umgehen (kein anderer Kontext, keine Variable ändern) |
 | 10 | `network` | Netzwerkfehler beim Lesen oder **bevor** eine Änderung gesendet wurde | später erneut versuchen; die Änderung ist nicht angekommen |
-| 11 | `partial` | mehrstufiger Befehl teilweise ausgeführt | **nur** `retry_command` bzw. den genannten nächsten Schritt ausführen, nie den ganzen Befehl |
-| 12 | `outcome_unknown` | Verbindung brach ab, **nachdem** eine Änderung gesendet wurde | **nicht wiederholen**: mit `describe`/`list` prüfen, ob die Änderung angekommen ist |
+| 11 | `partial` | mehrstufiger Befehl teilweise ausgeführt | `hint` lesen, prüfen, dann höchstens den genannten Nachholschritt; nie den ganzen Befehl (siehe unten) |
+| 12 | `outcome_unknown` | Verbindung brach ab, **nachdem** eine Änderung gesendet wurde | **nicht wiederholen**: `hint` lesen, mit `describe`/`list` prüfen, ob die Änderung angekommen ist (siehe unten) |
+
+### Exit 11 und 12 Schritt für Schritt
+
+Immer zuerst `error.hint` (bzw. `Hinweis:`) und `error.message` lesen; die Texte unten stehen so im CLI.
+
+**`voucher create --file`, Exit 11** (Beleg angelegt, Datei nicht oder unsicher hochgeladen; stdout: [partial.json](docs/schemas/partial.json)):
+
+1. Sagt `message` „Beleg N angelegt, **Ergebnis des Hochladens unbekannt**“ (Timeout, Netzwerkfehler oder 5xx beim Hochladen), lautet der Hinweis „vor dem Nachholen per papierkram voucher describe N prüfen, ob die Datei schon angehängt ist; sonst nur das Hochladen nachholen: …“. Also erst `papierkram voucher describe N -o json` und nachsehen, ob das Dokument schon am Beleg hängt. Nur wenn nicht: `retry_command` ausführen.
+2. Sagt `message` „Beleg N angelegt, Hochladen fehlgeschlagen“ (die API hat das Hochladen abgelehnt, oder die Datei war nicht lesbar), lautet der Hinweis „nur das Hochladen nachholen: …“. Ursache beheben (z. B. Dateityp), dann `retry_command` ausführen.
+3. Ist `retry_command` `null` („Beleg angelegt, Beleg-ID unbekannt“), heißt der Hinweis „Beleg per papierkram voucher list suchen und die Datei mit voucher upload an ihn hochladen“. Den Beleg per `voucher list` suchen (Name, Datum), dann `voucher upload <id> <datei>`.
+4. In keinem Fall den ganzen Befehl wiederholen: Der Hinweis endet mit „NICHT den ganzen Befehl wiederholen (sonst ein zweiter Beleg)“.
+
+**`time stop`, Exit 11** („Zeiteintrag angelegt, aber Timer-Datei nicht gelöscht“): Der Eintrag **ist** angelegt (stdout zeigt ihn). Der Hinweis sagt „NICHT erneut papierkram time stop ausführen (würde doppelt buchen); den Timer mit papierkram time discard verwerfen oder die Datei … von Hand löschen“. Also nach Prüfung per `time list --since heute -o json` den Timer mit `papierkram time discard --yes` verwerfen (mit Freigabe), nie erneut `time stop`.
+
+**Exit 12 allgemein:** Der Hinweis lautet „Ergebnis unbekannt – vor Wiederholung per describe/list prüfen“. Bei `update`, `delete` und Aktionen per `describe <id>` den Zustand lesen; bei `create` per `list` nach dem Objekt suchen (Name, Datum). Erst wenn sicher ist, dass die Änderung nicht angekommen ist, darf sie (außer `deliver` und `pay`) einmal wiederholt werden.
+
+**`deliver`, Exit 12:** Das CLI hat schon einmal nachgelesen; der Hinweis lautet „Ergebnis unbekannt – vor Wiederholung per describe prüfen: papierkram invoice describe N“. `sent_on`, `state` und die Nummer prüfen und den Menschen entscheiden lassen. `deliver` nie selbst wiederholen.
+
+**`time stop`, Exit 12 (oder Exit 1 mit `server_error`):** Der Hinweis lautet „Der Timer läuft weiter: erst mit papierkram time list prüfen, ob der Eintrag angelegt wurde; wenn ja, den Timer mit papierkram time discard verwerfen, sonst erneut papierkram time stop“. Genau so vorgehen; `time discard` braucht ohne Terminal `--yes`.
 
 ## Verbotene Muster
 
 - **`deliver` wiederholen.** Auch nach Exit 0 mit Warnung („Versand erfolgreich, Nachlesen fehlgeschlagen … NICHT erneut ausführen“) und nach Exit 12. Stattdessen `invoice describe <id>` bzw. `estimate describe <id>` und `sent_on`, `state` und die Belegnummer prüfen.
-- **Exit 11 oder 12 blind wiederholen.** `voucher create --file` legt bei einer Wiederholung einen zweiten Beleg an (50 Credits); nach Exit 11 nur `retry_command` ausführen. Nach Exit 12 erst `describe`/`list`.
+- **Exit 11 oder 12 blind wiederholen.** `voucher create --file` legt bei einer Wiederholung einen zweiten Beleg an (50 Credits); nach Exit 11 nur den Nachholschritt aus dem Hinweis, bei „Ergebnis des Hochladens unbekannt“ erst `voucher describe`. `time stop` nach Exit 11 nie erneut. Nach Exit 12 erst `describe`/`list`.
 - **429 automatisch wiederholen.** Exit 6 heißt: Kontingent für den Monat aufgebraucht. Jede weitere Anfrage scheitert ebenso.
 - **Tokens in Befehlen.** Nie `PAPIERKRAM_TOKEN=… papierkram …` mit echtem Wert in Befehlszeilen, Skripten oder Logs, nie Tokens per `api -f`/`-F` oder in `--input`-Dateien.
 - **Den Schreibschutz umgehen.** Kein Wechsel auf einen anderen Kontext, kein Ändern von `PAPIERKRAM_READ_ONLY`, keine Konfiguration bearbeiten, um Exit 9 loszuwerden.
@@ -119,9 +159,9 @@ papierkram voucher create --name "Büromaterial" --provenance domestic --credito
 | `archive`, `unarchive` | Zielzustand; eine Wiederholung ändert nichts mehr oder wird abgelehnt | `describe` |
 | `delete` | nach Erfolg liefert die Wiederholung Exit 4 | nach Exit 12: `describe` mit Exit 4 heißt gelöscht |
 | `create`, `time log`, `upload` | **nicht** idempotent: jeder Aufruf legt ein neues Objekt an | nach Exit 12 per `list` suchen (Name, Datum) |
-| `voucher create --file` | nicht wiederholen | nach Exit 11 nur `retry_command` |
+| `voucher create --file` | nicht wiederholen | nach Exit 11: Hinweis lesen; bei unsicherem Upload erst `voucher describe`, dann höchstens `retry_command`; ohne ID per `voucher list` suchen |
 | `invoice create --from-estimate` | wie `create`; scheitert das Lesen des Angebots, wurde nichts angelegt | `invoice list` |
-| `time stop` | der Timer wird erst nach dem Anlegen gelöscht | nach Exit 12 `time list --since heute`; war der Eintrag angelegt, `time discard` statt erneut `time stop` |
+| `time stop` | der Timer wird erst nach dem Anlegen gelöscht | nach Exit 12 `time list --since heute`; war der Eintrag angelegt, `time discard --yes` statt erneut `time stop`; nach Exit 11 ist er angelegt: nie erneut `time stop` |
 | `deliver` | **nie** | `describe`: `sent_on`, `state`, Nummer |
 | `pay` | **nie**; eine Zahlung lässt sich per API nicht zurücknehmen | `voucher describe` |
 | `cancel`, `reverse` | Statuswechsel; eine Wiederholung lehnt die API in der Regel ab (422, Exit 5) | `describe` |
@@ -146,7 +186,7 @@ papierkram invoice deliver 459 --via pdf --dry-run -o json --no-input
 papierkram invoice deliver 459 --via pdf --yes -o json --no-input
 ```
 
-Fehler auswerten: Exit-Code lesen, bei Bedarf die letzte stderr-Zeile als JSON parsen (`error.code`, `error.hint`).
+Fehler auswerten: Exit-Code lesen; mit `-o json` (wie in allen Beispielen hier) die letzte stderr-Zeile als JSON parsen (`error.code`, `error.hint`). Bei `-o yaml` steht stattdessen ein YAML-Block am Ende, siehe [Fehler](#fehler).
 
 ## Credits
 
