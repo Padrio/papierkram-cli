@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -26,16 +27,23 @@ const (
 	billable         = 1800
 )
 
-// create runs a create command, registers the new object and returns the
-// API object.
+// create runs a create command, registers the new object, keeps the sent
+// body (sentBody) and returns the API object.
 func (s *liveSuite) create(t *testing.T, o object, args ...string) map[string]any {
 	t.Helper()
-	m := s.ok(t, "", args...)
+	r := s.run(t, "", append(args, "-o", "json")...)
+	if r.code != 0 {
+		s.fatalf(t, "papierkram %s: Exit %d\n%s", strings.Join(args, " "), r.code, r.stderr)
+	}
+	m := s.decode(t, r.stdout)
 	o.id = idOf(m)
 	if o.id == 0 {
 		s.fatalf(t, "%s: Antwort ohne id", o.resource)
 	}
 	s.track(o)
+	if x := lastExchange(r, "POST", ""); x != nil {
+		s.sent[o.resource+"/"+ids(o.id)] = x.ReqBody
+	}
 	s.logf(t, "angelegt: %s %d (%s)", o.resource, o.id, o.name)
 	return m
 }

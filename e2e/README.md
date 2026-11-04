@@ -88,7 +88,7 @@ go test -tags e2e -v ./e2e/...
 ## Credit-Budget
 
 Ein voller Lauf kostet nach den dokumentierten Preisen (Abschnitt 4.3) etwa
-**425 Credits**; das Budget je Lauf ist **490** (Zielwert unter 500, die
+**426 Credits**; das Budget je Lauf ist **490** (Zielwert unter 500, die
 Aufschlüsselung steht im Kopf von `e2e_test.go`). Gezählt wird mit den
 Antwort-Headern `X-Consumed-Quota`/`X-Remaining-Quota`.
 

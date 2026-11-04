@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -78,9 +79,17 @@ func TestE2E_Carries(t *testing.T) {
 			s.fatalf(t, "estimate describe: Exit %d\n%s", desc.code, desc.stderr)
 		}
 		r := s.run(t, desc.stdout, "estimate", "update", ids(est), "--input", "-", "-o", "json")
-		if x := lastExchange(r, "PUT", "/income/estimates/"+ids(est)); x != nil {
-			s.measuref(t, "Angebot sent_on/sent_to null", "gesendet sent_on null: %v, sent_to null: %v, HTTP %d",
-				bytes.Contains(x.ReqBody, []byte(`"sent_on":null`)), bytes.Contains(x.ReqBody, []byte(`"sent_to":null`)), x.Status)
+		x := lastExchange(r, "PUT", "/income/estimates/"+ids(est))
+		if x == nil {
+			s.fatalf(t, "nicht geprüft: kein PUT gesendet (Exit %d)\n%s", r.code, r.stderr)
+		}
+		body := s.decode(t, string(x.ReqBody))
+		onSent, onNull := body["sent_on"]
+		toSent, toNull := body["sent_to"]
+		s.measuref(t, "Angebot sent_on/sent_to null", "gesendet sent_on %v (vorhanden %v), sent_to %v (vorhanden %v), HTTP %d",
+			onSent, onNull, toSent, toNull, x.Status)
+		if !onNull || onSent != nil || !toNull || toSent != nil {
+			s.errorf(t, "nicht geprüft: der PUT enthielt nicht sent_on: null und sent_to: null")
 		}
 		if r.code != 0 {
 			s.errorf(t, "PUT mit sent_on/sent_to null abgelehnt: Exit %d\n%s", r.code, r.stderr)
@@ -189,6 +198,16 @@ func TestE2E_Carries(t *testing.T) {
 			pg = append(pg, fmt.Sprint(v))
 		}
 		s.measuref(t, "price_gross bei gross=false", "gesendet gross %v, price_gross %v → HTTP %d (akzeptiert)", body.Gross, pg, x.Status)
+		// the question is only answered when exactly that was sent
+		zero := len(pg) > 0
+		for _, v := range pg {
+			if f, err := strconv.ParseFloat(v, 64); err != nil || f != 0 {
+				zero = false
+			}
+		}
+		if body.Gross != false || !zero {
+			s.errorf(t, "nicht geprüft: gesendet gross %v, price_gross %v statt gross false und price_gross 0 in jeder Position", body.Gross, pg)
+		}
 	})
 
 	// 10. voucher pay: is value null next to banking_transaction accepted?

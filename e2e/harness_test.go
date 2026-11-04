@@ -46,6 +46,9 @@ type liveSuite struct {
 	exhausted bool
 	// deviations are the ABWEICHUNG lines of the run (deviatef).
 	deviations []string
+	// sent holds the request body of every create by "resource/id", so
+	// a check can assert what was actually sent.
+	sent map[string][]byte
 }
 
 // object is something the run created. name is what Owned checks: name,
@@ -89,6 +92,7 @@ func newLiveSuite(getenv func(string) string, red e2eguard.Redactor) (*liveSuite
 		mainDir:  dir,
 		fixtures: map[string]map[string]any{},
 		failed:   map[string]bool{},
+		sent:     map[string][]byte{},
 	}, nil
 }
 
@@ -179,21 +183,39 @@ func (s *liveSuite) need(t *testing.T, n int) {
 	}
 }
 
+// sentBody is the decoded request body of the create of resource id;
+// nil when it was not recorded.
+func (s *liveSuite) sentBody(t *testing.T, resource string, id int64) map[string]any {
+	t.Helper()
+	raw, ok := s.sent[resource+"/"+ids(id)]
+	if !ok {
+		return nil
+	}
+	return s.decode(t, string(raw))
+}
+
 // track registers an object of this run for the cleanup.
 func (s *liveSuite) track(o object) { s.created = append(s.created, o) }
 
 // fixture returns the shared object key, creating it with mk on first use.
+// Once the budget is exhausted it skips; a creation that failed makes
+// later uses fail fast.
 func (s *liveSuite) fixture(t *testing.T, key string, mk func() map[string]any) map[string]any {
 	t.Helper()
 	if v, ok := s.fixtures[key]; ok {
 		return v
+	}
+	if s.exhausted {
+		s.skipf(t, "Credit-Budget für Tests erschöpft: Vorbedingung %s nicht angelegt", key)
 	}
 	if s.failed[key] {
 		s.fatalf(t, "Vorbedingung %s ist bereits gescheitert", key)
 	}
 	done := false
 	defer func() {
-		if !done {
+		// only a failure marks the fixture; a skip (budget) does not, so
+		// later tests skip as well instead of failing
+		if !done && t.Failed() {
 			s.failed[key] = true
 		}
 	}()
@@ -239,6 +261,12 @@ func num(v any) (float64, bool) {
 }
 
 func ids(id int64) string { return strconv.FormatInt(id, 10) }
+
+// asSlice is v as a JSON array (nil otherwise).
+func asSlice(v any) []any {
+	a, _ := v.([]any)
+	return a
+}
 
 // entries are the list entries of a list output.
 func entries(m map[string]any) []map[string]any {

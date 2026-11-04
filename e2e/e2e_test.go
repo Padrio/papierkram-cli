@@ -13,7 +13,8 @@
 // a full run without leftovers, by test in file order; a fixture counts
 // where it is used first:
 //
-//	CleanupLeftovers: 9 list pages (more with leftovers)            9
+//	CleanupLeftovers: 1 list page per 100 entries of 9 resources
+//	  (all pages; more with leftovers), at least                    9
 //	QuotaHeadersPresent 1, InfoCreditCost 3                         4
 //	DeliverPdfEmptyBody: customer, person, project (30), own
 //	  estimate 50, deliver 1, readback 1                           82
@@ -26,9 +27,10 @@
 //	  10 × (describe, update, describe)                           113
 //	ReplaceLineItems: describe, update, describe                    3
 //	Carries (13 subtests, 2 time entries of 10 in no. 12)          35
-//	final cleanup: 1 delete per object (13); a final document
-//	  costs up to 3 more (cancel, delete, archive)                 13
-//	                                                     total    425
+//	final cleanup: 1 delete per object (12 fixtures and up to 2
+//	  midnight time entries = 14); a final document costs up to 3
+//	  more (cancel, delete, archive)                               14
+//	                                                     total    426
 //
 // Of the budget, cleanupReserve = 46 is kept for the final cleanup: the
 // documented worst case (e2eguard.CleanupReserve) for the 4 documents
@@ -140,21 +142,38 @@ var leftoverKinds = []struct{ resource, nameField string }{
 	{"company", "name"},
 }
 
-// listAll lists up to 3 pages of 100, newest first if the API sorts by
-// id, otherwise in its order.
+// listAll lists every page of resource (100 entries each, 1 credit per
+// page, need() before each), newest first if the API sorts by id,
+// otherwise in its order. It follows has_more/total_pages to the end, so
+// no leftover is missed in a full sandbox.
 func (s *liveSuite) listAll(t *testing.T, resource string, extra ...string) []map[string]any {
 	t.Helper()
-	s.need(t, 3)
-	base := append([]string{resource, "list", "--all", "--max-pages", "3", "--limit", "100", "-o", "json"}, extra...)
-	r := s.run(t, "", append(base, "--sort", "id", "--desc")...)
-	if r.code != 0 {
-		s.logf(t, "%s list --sort id: Exit %d, ohne Sortierung erneut", resource, r.code)
-		r = s.run(t, "", base...)
+	sorted := true
+	var out []map[string]any
+	for page := 1; ; page++ {
+		s.need(t, 1)
+		args := append([]string{resource, "list", "--page", strconv.Itoa(page), "--limit", "100", "-o", "json"}, extra...)
+		if sorted {
+			args = append(args, "--sort", "id", "--desc")
+		}
+		r := s.run(t, "", args...)
+		if r.code != 0 && sorted && page == 1 {
+			s.logf(t, "%s list --sort id: Exit %d, ohne Sortierung erneut", resource, r.code)
+			sorted, page = false, 0
+			continue
+		}
+		if r.code != 0 {
+			s.fatalf(t, "%s list Seite %d: Exit %d\n%s", resource, page, r.code, r.stderr)
+		}
+		m := s.decode(t, r.stdout)
+		es := entries(m)
+		out = append(out, es...)
+		total, _ := strconv.Atoi(str(m["total_pages"]))
+		if len(es) == 0 || (str(m["has_more"]) != "true" && page >= total) {
+			s.logf(t, "%s: %d Seite(n), %d Einträge durchsucht", resource, page, len(out))
+			return out
+		}
 	}
-	if r.code != 0 {
-		s.fatalf(t, "%s list: Exit %d\n%s", resource, r.code, r.stderr)
-	}
-	return entries(s.decode(t, r.stdout))
 }
 
 // TestE2E_CleanupLeftovers removes objects of earlier runs: only those
@@ -275,10 +294,18 @@ func (s *liveSuite) deliverPDF(t *testing.T) *deliverRun {
 	if delivered != nil {
 		return delivered
 	}
+	if s.exhausted {
+		s.skipf(t, "Credit-Budget für Tests erschöpft: kein deliver --via pdf")
+	}
 	if s.failed["deliver"] {
 		s.fatalf(t, "deliver --via pdf ist bereits gescheitert")
 	}
-	s.failed["deliver"] = true
+	done := false
+	defer func() {
+		if !done && t.Failed() {
+			s.failed["deliver"] = true
+		}
+	}()
 	name := s.prefix + "angebot-versand"
 	args := s.estimateArgs(t, name)
 	s.need(t, 53)
@@ -288,7 +315,7 @@ func (s *liveSuite) deliverPDF(t *testing.T) *deliverRun {
 		s.fatalf(t, "estimate deliver --via pdf: Exit %d\n%s", r.code, r.stderr)
 	}
 	delivered = &deliverRun{res: r, out: s.decode(t, r.stdout), estimate: idOf(est)}
-	s.failed["deliver"] = false
+	done = true
 	return delivered
 }
 
@@ -320,6 +347,20 @@ func TestE2E_VatRate019Is19Percent(t *testing.T) {
 	s := live(t)
 	t.Run("Position", func(t *testing.T) {
 		est := idOf(s.estimate(t))
+		// the question is only asked when 0.19 (a number) was sent
+		var sent any = "nicht aufgezeichnet"
+		if body := s.sentBody(t, "estimate", est); body != nil {
+			sent = "fehlt"
+			for _, it := range asSlice(body["line_items"]) {
+				if str(get(it, "name")) == pos19 {
+					sent = get(it, "vat_rate")
+				}
+			}
+		}
+		s.measuref(t, "vat_rate 0.19 (Position)", "gesendet vat_rate %v (%s)", sent, jsonType(sent))
+		if str(sent) != "0.19" || jsonType(sent) != "number" {
+			s.fatalf(t, "nicht geprüft: Position %s wurde nicht mit vat_rate 0.19 (Zahl) angelegt, sondern %v", pos19, sent)
+		}
 		s.need(t, 1)
 		m := s.ok(t, "", "estimate", "describe", ids(est))
 		items, _ := m["line_items"].([]any)
@@ -343,6 +384,14 @@ func TestE2E_VatRate019Is19Percent(t *testing.T) {
 	})
 	t.Run("Artikel", func(t *testing.T) {
 		p := idOf(s.proposition(t))
+		var sent any = "nicht aufgezeichnet"
+		if body := s.sentBody(t, "proposition", p); body != nil {
+			sent = body["vat_rate"]
+		}
+		s.measuref(t, "vat_rate \"0.19\" (Artikel)", "gesendet vat_rate %v (%s)", sent, jsonType(sent))
+		if str(sent) != "0.19" || jsonType(sent) != "string" {
+			s.fatalf(t, "nicht geprüft: Artikel wurde nicht mit vat_rate \"0.19\" (String) angelegt, sondern %v", sent)
+		}
 		s.need(t, 1)
 		m := s.ok(t, "", "proposition", "describe", ids(p))
 		rate, label := str(get(m, "vat_rate", "rate")), str(get(m, "vat_rate", "name"))
