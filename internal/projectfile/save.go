@@ -104,7 +104,7 @@ func Save(path string, ch Changes) (SaveResult, error) {
 	if exists {
 		mode = st.Mode().Perm()
 	}
-	if err := safefile.WriteAtomic(path, out, mode, exists); err != nil {
+	if err := safefile.WriteAtomic(path, out, mode, safefile.WriteOptions{ExactMode: exists}); err != nil {
 		return SaveResult{}, fileErr(path, "schreiben", err)
 	}
 	res.Created = !exists

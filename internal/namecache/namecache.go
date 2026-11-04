@@ -85,7 +85,8 @@ func (c *Cache) Get(scope, resource, id string, v any) bool {
 }
 
 // Put stores v for scope, resource and id, replacing an older entry
-// atomically (temporary file and rename). Failures are ignored.
+// atomically (temporary file and rename, without fsync). Failures are
+// ignored.
 func (c *Cache) Put(scope, resource, id string, v any) {
 	if c == nil || c.dir == "" {
 		return
@@ -101,5 +102,6 @@ func (c *Cache) Put(scope, resource, id string, v any) {
 	if os.MkdirAll(c.dir, 0o700) != nil {
 		return
 	}
-	_ = safefile.WriteAtomic(c.path(scope, resource, id), data, 0o600, false)
+	// a cache needs no durability: no fsync (review M5)
+	_ = safefile.WriteAtomic(c.path(scope, resource, id), data, 0o600, safefile.WriteOptions{NoSync: true})
 }

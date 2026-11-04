@@ -26,14 +26,14 @@ var (
 )
 
 // ReadRegular reads the file at path when it is a regular file of at most
-// max bytes. A device (a checked-in link to /dev/zero), a FIFO (would
+// limit bytes. A device (a checked-in link to /dev/zero), a FIFO (would
 // block) or a directory is ErrNotRegular before it is opened; the opened
 // handle is checked again, so a file swapped in between is never read
-// beyond max+1 bytes (ErrTooLarge). With follow a symbolic link to a
+// beyond limit+1 bytes (ErrTooLarge). With follow a symbolic link to a
 // regular file is read; without, a link is ErrSymlink and, where the
 // platform allows, the open does not follow one either. Other errors are
 // those of the file system (*fs.PathError, fs.ErrNotExist).
-func ReadRegular(path string, follow bool, max int64) ([]byte, error) {
+func ReadRegular(path string, follow bool, limit int64) ([]byte, error) {
 	stat := os.Stat
 	if !follow {
 		stat = os.Lstat
@@ -60,23 +60,34 @@ func ReadRegular(path string, follow bool, max int64) ([]byte, error) {
 	if !fst.Mode().IsRegular() || !os.SameFile(st, fst) {
 		return nil, ErrNotRegular
 	}
-	data, err := io.ReadAll(io.LimitReader(f, max+1))
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > max {
+	if int64(len(data)) > limit {
 		return nil, ErrTooLarge
 	}
 	return data, nil
 }
 
+// WriteOptions adjust WriteAtomic. ExactMode sets mode on the open file
+// (for the mode of a replaced file; otherwise the umask applies at
+// creation). NoSync skips the fsync before the rename: for a cache, whose
+// loss is harmless and whose writes should be cheap (on darwin a sync is
+// F_FULLFSYNC).
+type WriteOptions struct {
+	ExactMode, NoSync bool
+}
+
+// syncFile flushes f to disk; tests count its calls.
+var syncFile = (*os.File).Sync
+
 // WriteAtomic writes data to a new temporary file next to path with mode
-// (the umask applies at creation; exact sets it on the open file, for the
-// mode of a replaced file) and renames it to path. The rename replaces
-// the directory entry at path itself, so a symbolic link there is
-// replaced and never followed; the temporary file is created exclusively.
-func WriteAtomic(path string, data []byte, mode fs.FileMode, exact bool) error {
-	tmp, err := writeTemp(path, data, mode, exact)
+// and renames it to path (see WriteOptions). The rename replaces the
+// directory entry at path itself, so a symbolic link there is replaced
+// and never followed; the temporary file is created exclusively.
+func WriteAtomic(path string, data []byte, mode fs.FileMode, o WriteOptions) error {
+	tmp, err := writeTemp(path, data, mode, o)
 	if err != nil {
 		return err
 	}
@@ -91,7 +102,7 @@ func WriteAtomic(path string, data []byte, mode fs.FileMode, exact bool) error {
 // never sees a partial file. Where the file system has no hard links the
 // file is renamed into place after a check of path (not race free).
 func CreateAtomic(path string, data []byte, mode fs.FileMode) error {
-	tmp, err := writeTemp(path, data, mode, false)
+	tmp, err := writeTemp(path, data, mode, WriteOptions{})
 	if err != nil {
 		return err
 	}
@@ -110,7 +121,7 @@ func CreateAtomic(path string, data []byte, mode fs.FileMode) error {
 
 // writeTemp writes data to a new, exclusively created temporary file in
 // the directory of path and returns its name; it is removed on error.
-func writeTemp(path string, data []byte, mode fs.FileMode, exact bool) (string, error) {
+func writeTemp(path string, data []byte, mode fs.FileMode, o WriteOptions) (string, error) {
 	dir, base := filepath.Dir(path), filepath.Base(path)
 	var f *os.File
 	var err error
@@ -126,11 +137,11 @@ func writeTemp(path string, data []byte, mode fs.FileMode, exact bool) (string, 
 	}
 	tmp := f.Name()
 	_, err = f.Write(data)
-	if err == nil && exact {
+	if err == nil && o.ExactMode {
 		_ = f.Chmod(mode) // best effort (file systems without Unix modes)
 	}
-	if err == nil {
-		err = f.Sync()
+	if err == nil && !o.NoSync {
+		err = syncFile(f)
 	}
 	if cerr := f.Close(); err == nil {
 		err = cerr

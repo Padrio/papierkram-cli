@@ -55,7 +55,7 @@ func TestWriteAtomicReplacesLinkWithoutFollowing(t *testing.T) {
 	target := write(t, filepath.Join(dir, "target"), "keep")
 	path := filepath.Join(dir, "state")
 	symlink(t, target, path)
-	if err := WriteAtomic(path, []byte("new"), 0o600, false); err != nil {
+	if err := WriteAtomic(path, []byte("new"), 0o600, WriteOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(target); string(got) != "keep" {
@@ -113,5 +113,24 @@ func assertNoTemp(t *testing.T, dir string) {
 		if strings.HasSuffix(e.Name(), ".tmp") {
 			t.Errorf("temporary file left: %s", e.Name())
 		}
+	}
+}
+
+// Review M5: WriteAtomic syncs the file before the rename unless NoSync
+// is set (a cache needs no durability); CreateAtomic always syncs.
+func TestWriteAtomicSyncOption(t *testing.T) {
+	calls := 0
+	orig := syncFile
+	syncFile = func(f *os.File) error { calls++; return orig(f) }
+	t.Cleanup(func() { syncFile = orig })
+	dir := t.TempDir()
+	if err := WriteAtomic(filepath.Join(dir, "a"), []byte("x"), 0o600, WriteOptions{}); err != nil || calls != 1 {
+		t.Errorf("default: %v, %d syncs", err, calls)
+	}
+	if err := WriteAtomic(filepath.Join(dir, "b"), []byte("x"), 0o600, WriteOptions{NoSync: true}); err != nil || calls != 1 {
+		t.Errorf("NoSync: %v, %d syncs", err, calls)
+	}
+	if err := CreateAtomic(filepath.Join(dir, "c"), []byte("x"), 0o600); err != nil || calls != 2 {
+		t.Errorf("CreateAtomic: %v, %d syncs", err, calls)
 	}
 }
