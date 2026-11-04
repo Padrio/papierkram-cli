@@ -261,7 +261,25 @@ func ResponseSchema(opID string) *openapi3.Schema {
 // JSON operations, operations without content and unknown operations.
 func FileMediaType(opID string) string { return fileMediaType(successResponses(opID)) }
 
+// FileSchema returns the schema of the file answer FileMediaType names
+// (the binary string of a PDF download); nil when there is none.
+func FileSchema(opID string) *openapi3.Schema {
+	_, mt := fileContent(successResponses(opID))
+	if mt == nil || mt.Schema == nil {
+		return nil
+	}
+	return mt.Schema.Value
+}
+
 func fileMediaType(resps []*openapi3.Response) string {
+	t, _ := fileContent(resps)
+	return t
+}
+
+// fileContent finds the file answer of resps: the first non-JSON content
+// type of the first response that has content, with its media type
+// object. FileMediaType and FileSchema share it.
+func fileContent(resps []*openapi3.Response) (string, *openapi3.MediaType) {
 	for _, r := range resps {
 		if len(r.Content) == 0 {
 			continue
@@ -269,12 +287,12 @@ func fileMediaType(resps []*openapi3.Response) string {
 		for _, ct := range slices.Sorted(maps.Keys(r.Content)) {
 			mt, _, err := mime.ParseMediaType(ct)
 			if err == nil && mt != "application/json" && !strings.HasSuffix(mt, "+json") {
-				return mt
+				return mt, r.Content[ct]
 			}
 		}
-		return ""
+		return "", nil
 	}
-	return ""
+	return "", nil
 }
 
 // successResponses returns the 2xx responses of opID, lowest status code

@@ -148,6 +148,22 @@ func TestFileMediaType(t *testing.T) {
 	}
 }
 
+// FileSchema is the schema of the file answer FileMediaType names: the
+// binary string of the PDF downloads; nil for JSON operations.
+func TestFileSchema(t *testing.T) {
+	for _, op := range []string{"GetInvoicePdf", "GetEstimatePdf", "GetVoucherPdf"} {
+		s := FileSchema(op)
+		if s == nil || !s.Type.Is("string") || s.Format != "binary" {
+			t.Errorf("%s: %+v, want binary string", op, s)
+		}
+	}
+	for _, op := range []string{"GetInvoice", "DeliverInvoice", "Nope"} {
+		if s := FileSchema(op); s != nil {
+			t.Errorf("%s: %+v, want nil", op, s)
+		}
+	}
+}
+
 // JSON content keys in any spelling (parameters, +json) are no file type.
 func TestFileMediaTypeSkipsJSONVariants(t *testing.T) {
 	resp := func(cts ...string) *openapi3.Response {
