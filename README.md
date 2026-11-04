@@ -157,9 +157,9 @@ papierkram local show
 
 - **Suche:** im aktuellen Verzeichnis; liegt es in einem Git-Repository, aufwärts bis einschließlich zur Git-Wurzel, nie darüber hinaus. Außerhalb von Git nur im aktuellen Verzeichnis.
 - **Vorrang:** Flag > Umgebungsvariable (`PAPIERKRAM_PROJECT`, `PAPIERKRAM_TASK`, `PAPIERKRAM_USER`) > Projektdatei > Kontext (nur `user`).
-- **Genutzt von:** `time log` und `time start` (Aufgabe, Benutzer; `--task` nimmt auch einen Alias aus `[tasks]`), `time list`, `task list`, `task create` und `project describe` ohne ID (Projekt). `company` zeigt `local show` an; derzeit nutzt kein Befehl sie als Voreinstellung.
+- **Genutzt von:** `time log` und `time start` (Aufgabe, Benutzer; `--task` nimmt auch einen Alias aus `[tasks]`), `time list`, `task list`, `task create` und `project describe` ohne ID (Projekt). `company` ist **keine** Voreinstellung: kein Befehl nutzt sie, `local show` zeigt sie nur an (ob sie künftig `person … --company` vorbelegt, ist offen, siehe [offene Punkte](docs/offene-punkte.md)).
 - **Kontextbindung:** Nennt die Datei einen `context`, gelten ihre IDs nur, wenn genau dieser Kontext wirksam ist. Wählt `--context` oder `PAPIERKRAM_CONTEXT` einen anderen, ignoriert das CLI die Werte der Datei mit einer Warnung, damit keine ID im falschen Account landet.
-- `papierkram local show` zeigt die wirksamen Werte mit Herkunft (`flag`, `env`, `projectfile`, `config`, `context`, `default`). `local init` fragt im Terminal ohne Flags jeden Wert ab.
+- `papierkram local show` zeigt die wirksamen Werte mit Herkunft (`flag`, `env`, `projectfile`, `config`, `context`, `default`). Die Zeile `company` (aus `PAPIERKRAM_COMPANY` oder der Projektdatei) ist nur Anzeige und wird von keinem Befehl als Standardwert verwendet. `local init` fragt im Terminal ohne Flags jeden Wert ab.
 
 **Sicherheitshinweise:** Eine Projektdatei kann aus einem fremden, geklonten Repository stammen. Das CLI behandelt sie deshalb als nicht vertrauenswürdig:
 
@@ -230,7 +230,7 @@ papierkram auth login --context firma-gmbh --subdomain firma-gmbh --insecure-sto
 
 ### Bestätigung und `--dry-run`
 
-- Folgenreiche Aktionen fragen im Terminal nach: `delete`, `cancel`, `reverse`, `pay`, `document delete` und `deliver` (mit Zusammenfassung: Beleg, Name, Betrag, bei `deliver` Versandart, Empfänger und Betreff). Bei `delete` wird die ID eingetippt, sonst `ja`.
+- Folgenreiche Aktionen fragen im Terminal nach: `delete`, `cancel`, `reverse`, `pay`, `document delete` und `deliver` (mit Zusammenfassung: Beleg, Name, Betrag, bei `deliver` Versandart, Empfänger und Betreff). Bei `delete` wird die ID eingetippt, sonst `ja`. `time discard` fragt ebenfalls (Enter = nein), weil die erfasste Zeit verloren geht.
 - Ohne Terminal oder mit `--no-input` bricht so eine Aktion ohne `--yes` ab (Exit 8). `--yes` bestätigt vorab.
 - `archive` und `unarchive` sind umkehrbar und fragen nie nach.
 - `--dry-run` gilt für jede Änderung: Das CLI prüft den Body lokal gegen das Schema, zeigt Methode, URL, Body (bei Uploads Dateiname, Größe und MIME-Typ) und die Credits und sendet nichts (Exit 0). Unter Schreibschutz gilt auch für `--dry-run` Exit 9.
@@ -296,7 +296,7 @@ Zusammengesetzte Befehle kosten die Summe: `deliver` 2 (Versand und Nachlesen), 
 | `PAPIERKRAM_PROJECT` | Projekt-ID für `time list`, `task list`, `task create` und `project describe` ohne ID (vor der Projektdatei) |
 | `PAPIERKRAM_TASK` | Aufgabe (ID oder Alias aus `[tasks]`) für `time log` und `time start` |
 | `PAPIERKRAM_USER` | Benutzer-ID für `time log` und `time start` |
-| `PAPIERKRAM_COMPANY` | Firmen-ID; erscheint in `local show`, wird derzeit von keinem Befehl als Voreinstellung genutzt |
+| `PAPIERKRAM_COMPANY` | Firmen-ID, **keine** Voreinstellung: wird nur von `local show` angezeigt, kein Befehl verwendet sie als Standardwert |
 | `NO_COLOR` | nicht leer: keine Farben |
 
 Die Variablen `PAPIERKRAM_E2E_*` nutzt nur die Live-E2E-Suite, siehe [e2e/README.md](e2e/README.md).
@@ -338,7 +338,7 @@ completion_lookup = false
 | 11 | `partial` | mehrstufiger Befehl teilweise ausgeführt; Ausgabe nennt, was fehlt, und den Befehl zum Nachholen |
 | 12 | `outcome_unknown` | Verbindung brach ab, **nachdem** eine Änderung gesendet wurde: vor einer Wiederholung mit `describe`/`list` prüfen |
 
-Fehler stehen auf stderr als `Fehler: …` mit `Hinweis: …` und ggf. `Correlation-ID: …`; mit `-o json|yaml` oder `--jq` folgt eine JSON-Zeile (Schema: [docs/schemas/error.json](docs/schemas/error.json)). Lesende Anfragen (GET) wiederholt das CLI bei Netzwerk- und Serverfehlern bis zu zweimal, Änderungen und 429 nie.
+Fehler stehen auf stderr als `Fehler: …` mit `Hinweis: …` und ggf. `Correlation-ID: …`; mit `-o json` oder `--jq` folgt als letzte Zeile eine kompakte JSON-Zeile, mit `-o yaml` ein YAML-Block (`error:` …) am Ende (Schema: [docs/schemas/error.json](docs/schemas/error.json); Auswertung siehe [AGENTS.md](AGENTS.md#fehler)). Lesende Anfragen (GET) wiederholt das CLI bei Netzwerk- und Serverfehlern bis zu zweimal, Änderungen und 429 nie.
 
 ## Weitere Dokumentation
 
