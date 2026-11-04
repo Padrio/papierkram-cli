@@ -278,6 +278,7 @@ func newContextDeleteCmd(app *App) *cobra.Command {
 			if err := wrapConfigErr(cfg.Save(path), path); err != nil {
 				return err
 			}
+			app.removeCompletionCaches(name)
 			switch err := app.Keyring.Delete(name); {
 			case err == nil, errors.Is(err, auth.ErrNotFound):
 			case errors.Is(err, auth.ErrUnavailable):
@@ -338,6 +339,7 @@ func newContextRenameCmd(app *App) *cobra.Command {
 				}
 				return err
 			}
+			app.removeCompletionCaches(oldName)
 			if moved {
 				if err := app.Keyring.Delete(oldName); err != nil {
 					app.warnKeyring("altes Token von %q konnte nicht entfernt werden.", oldName)

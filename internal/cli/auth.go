@@ -352,6 +352,7 @@ func (a *App) logout() error {
 		}
 		removed = append(removed, "config.toml")
 	}
+	a.removeCompletionCaches(name)
 	if len(removed) == 0 {
 		_, _ = fmt.Fprintf(a.Err, "Hinweis: Kontext %q war bereits abgemeldet (kein Token gespeichert).\n", name)
 	} else {

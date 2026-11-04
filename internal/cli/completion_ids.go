@@ -90,8 +90,14 @@ func (a *App) completeIDs(c *cobra.Command, resource, toComplete string) []strin
 	if err != nil || !r.CompletionLookup || r.BaseURL == "" {
 		return nil
 	}
-	path, scope := completionCachePath(a.cacheDir(), r.Context, resource), cacheScope(r)
-	ids, ok := readCompletionCache(path, scope, resource, a.Now())
+	// without a cache directory there is no cache (never a path relative
+	// to the working directory)
+	dir, scope := a.cacheDir(), cacheScope(r)
+	path := completionCachePath(dir, r.Context, resource)
+	ids, ok := []completionID(nil), false
+	if dir != "" {
+		ids, ok = readCompletionCache(path, scope, resource, a.Now())
+	}
 	if !ok {
 		parent := c.Context()
 		if parent == nil {
@@ -109,7 +115,9 @@ func (a *App) completeIDs(c *cobra.Command, resource, toComplete string) []strin
 		if ids, ok = a.lookupIDs(ctx, r, e); !ok {
 			return nil
 		}
-		writeCompletionCache(path, completionCache{Scope: scope, Resource: resource, Stored: a.Now(), Entries: ids})
+		if dir != "" {
+			writeCompletionCache(path, completionCache{Scope: scope, Resource: resource, Stored: a.Now(), Entries: ids})
+		}
 	}
 	var out []string
 	for _, id := range ids {
@@ -222,4 +230,19 @@ func writeCompletionCache(path string, f completionCache) {
 		return
 	}
 	_ = safefile.WriteAtomic(path, data, 0o600, safefile.WriteOptions{NoSync: true})
+}
+
+// removeCompletionCaches deletes the completion caches of the context ctx
+// (auth logout, context delete, context rename for the old name): the
+// fetched names of the account go with its token. Exact file names per
+// resource of the registry, never a prefix pattern (the caches of a-b
+// share the prefix of a); silent and best effort.
+func (a *App) removeCompletionCaches(ctx string) {
+	dir := a.cacheDir()
+	if dir == "" {
+		return
+	}
+	for _, r := range registry.Resources() {
+		_ = os.Remove(completionCachePath(dir, ctx, r.Name))
+	}
 }

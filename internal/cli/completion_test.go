@@ -681,3 +681,66 @@ func TestCompletionMetaArgsAndNumbers(t *testing.T) {
 	complete(t, app, "api", "GET", "").want(t, nil, noFile)
 	wantRequests(t, srv, 0)
 }
+
+// auth logout, context delete and context rename (old name) remove the
+// completion caches of that context, by exact file name: a cache of
+// context a-b survives the logout of a.
+func TestCompletionCachesRemovedWithContext(t *testing.T) {
+	cfg := "active_context = \"a\"\n\n[contexts.a]\nsubdomain = \"firma-a\"\n\n[contexts.a-b]\nsubdomain = \"firma-ab\"\n"
+	seed := func(t *testing.T, app *App) {
+		t.Helper()
+		writeCfg(t, app, cfg)
+		for _, ctx := range []string{"a", "a-b"} {
+			for _, res := range []string{"invoice", "company", "payment-term"} {
+				path := completionCachePath(app.CacheDir, ctx, res)
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		// a foreign file with the prefix of a stays
+		if err := os.WriteFile(filepath.Join(app.CacheDir, "papierkram", "completion-a-notiz.txt"), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	left := func(t *testing.T, app *App) []string {
+		t.Helper()
+		return dirNames(t, filepath.Join(app.CacheDir, "papierkram"))
+	}
+	ab := []string{"completion-a-b-company.json", "completion-a-b-invoice.json", "completion-a-b-payment-term.json", "completion-a-notiz.txt"}
+	for _, args := range [][]string{
+		{"auth", "logout", "--context", "a"},
+		{"context", "delete", "a"},
+		{"context", "rename", "a", "neu"},
+	} {
+		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
+			app, _, _ := newTestApp(t)
+			seed(t, app)
+			wantExit(t, app, Run(app, args), 0)
+			if got := left(t, app); !slices.Equal(got, ab) {
+				t.Errorf("übrig %v, erwartet %v", got, ab)
+			}
+		})
+	}
+	// without a cache directory nothing fails
+	app, _, _ := newTestApp(t)
+	writeCfg(t, app, cfg)
+	wantExit(t, app, Run(app, []string{"auth", "logout", "--context", "a-b"}), 0)
+}
+
+// Without a cache directory there is no cache: nothing is read or written
+// relative to the working directory, logout removes nothing there.
+func TestCompletionWithoutCacheDir(t *testing.T) {
+	app, srv := apiApp(t)
+	app.CacheDir = ""
+	srv.On("GET", "/income/invoices", http.StatusOK, invoiceEntries(t))
+	complete(t, app, "invoice", "describe", "")
+	complete(t, app, "invoice", "describe", "")
+	wantRequests(t, srv, 2)
+	if _, err := os.Stat("papierkram"); err == nil {
+		t.Error("Cache im Arbeitsverzeichnis angelegt")
+	}
+}
