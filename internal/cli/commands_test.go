@@ -62,6 +62,7 @@ type cmdDoc struct {
 
 type cmdInfo struct {
 	Command     string    `json:"command"`
+	Usage       string    `json:"usage"`
 	Aliases     []string  `json:"aliases"`
 	Short       string    `json:"short"`
 	Class       string    `json:"class"`
@@ -75,6 +76,7 @@ type cmdInfo struct {
 
 type flgInfo struct {
 	Name        string   `json:"name"`
+	Shorthand   *string  `json:"shorthand"`
 	Type        string   `json:"type"`
 	Required    bool     `json:"required"`
 	Repeatable  bool     `json:"repeatable"`
@@ -135,12 +137,18 @@ func TestCommandsJSONMatchesContract(t *testing.T) {
 	// strictness: each mutation of a valid document must fail
 	mutate := map[string]func(doc map[string]any){
 		"unbekanntes Feld oben":    func(d map[string]any) { d["extra"] = 1 },
-		"unbekanntes Befehlsfeld":  func(d map[string]any) { firstCmd(d)["usage"] = "x" },
+		"unbekanntes Befehlsfeld":  func(d map[string]any) { firstCmd(d)["use"] = "x" },
+		"usage fehlt":              func(d map[string]any) { delete(firstCmd(d), "usage") },
+		"usage ohne papierkram":    func(d map[string]any) { firstCmd(d)["usage"] = "invoice create" },
+		"shorthand leer":           func(d map[string]any) { firstFlag(d)["shorthand"] = "" },
+		"shorthand null":           func(d map[string]any) { firstFlag(d)["shorthand"] = nil },
+		"shorthand zu lang":        func(d map[string]any) { firstFlag(d)["shorthand"] = "ab" },
+		"globaler shorthand null":  func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["shorthand"] = nil },
 		"unbekannte Klasse":        func(d map[string]any) { firstCmd(d)["class"] = "write" },
 		"Operation ohne Methode":   func(d map[string]any) { delete(apiCmd(d, "invoice create"), "method") },
 		"lokal mit Credits":        func(d map[string]any) { apiCmd(d, "version")["credits"] = 1.0 },
 		"per_request mit Credits":  func(d map[string]any) { apiCmd(d, "api")["credits"] = 1.0 },
-		"unbekanntes Flag-Feld":    func(d map[string]any) { firstFlag(d)["shorthand"] = "x" },
+		"unbekanntes Flag-Feld":    func(d map[string]any) { firstFlag(d)["short"] = "x" },
 		"unbekannter Flag-Typ":     func(d map[string]any) { firstFlag(d)["type"] = "int64" },
 		"enum fehlt":               func(d map[string]any) { delete(firstFlag(d), "enum") },
 		"unbekannte Quelle":        func(d map[string]any) { firstFlag(d)["default_from"] = []any{"config"} },
@@ -596,5 +604,54 @@ func TestCommandsJSONRegistryAnnotations(t *testing.T) {
 		if !reflect.DeepEqual(commandExamples(c), e.Examples) {
 			t.Errorf("%s %s: Beispiele weichen ab", e.Resource, e.Action)
 		}
+	}
+}
+
+// usage is the German use line with the positional arguments; shorthand
+// is the one-letter flag, missing when the flag has none.
+func TestCommandsJSONUsageAndShorthand(t *testing.T) {
+	raw := runCommandsJSON(t, "--json")
+	d := decodeCommands(t, raw)
+	for name, want := range map[string]string{
+		"invoice describe":        "papierkram invoice describe <id> [Optionen]",
+		"project describe":        "papierkram project describe [<id>] [Optionen]",
+		"voucher upload":          "papierkram voucher upload <beleg-id> <datei> [Optionen]",
+		"voucher document delete": "papierkram voucher document delete <beleg-id> <datei-id> [Optionen]",
+		"api":                     "papierkram api <METHOD> <pfad> [Optionen]",
+		"info":                    "papierkram info [Optionen]",
+		"schema":                  "papierkram schema <ressource> [<aktion>] [Optionen]",
+	} {
+		if got := d.find(t, name).Usage; got != want {
+			t.Errorf("%s: usage %q, erwartet %q", name, got, want)
+		}
+	}
+	short := func(f flgInfo) string {
+		if f.Shorthand == nil {
+			return ""
+		}
+		return *f.Shorthand
+	}
+	for _, tc := range []struct{ cmd, flag, want string }{
+		{"time log", "comments", "m"},
+		{"invoice pdf", "output-file", "O"},
+		{"api", "raw-field", "f"},
+		{"api", "field", "F"},
+		{"api", "input", ""},
+		{"invoice create", "name", ""},
+	} {
+		if got := short(d.find(t, tc.cmd).flag(t, tc.flag)); got != tc.want {
+			t.Errorf("%s --%s: shorthand %q, erwartet %q", tc.cmd, tc.flag, got, tc.want)
+		}
+	}
+	globals := map[string]string{}
+	for _, f := range d.GlobalFlags {
+		globals[f.Name] = short(f)
+	}
+	if globals["output"] != "o" || globals["yes"] != "y" || globals["jq"] != "" {
+		t.Errorf("global shorthands = %v", globals)
+	}
+	// a flag without shorthand has no key at all (never null or "")
+	if bytes.Contains(raw, []byte(`"shorthand": null`)) || bytes.Contains(raw, []byte(`"shorthand": ""`)) {
+		t.Error("shorthand null oder leer statt weggelassen")
 	}
 }

@@ -16,7 +16,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["command", "aliases", "short", "class", "credits", "flags", "examples"],
+        "required": ["command", "usage", "aliases", "short", "class", "credits", "flags", "examples"],
         "oneOf": [
           {
             "description": "Befehl mit fester Operation: operation_id, method und path zusammen, mindestens 1 Credit.",
@@ -48,6 +48,11 @@
             "description": "Befehlspfad ohne „papierkram“, z. B. „invoice create“.",
             "type": "string",
             "pattern": "^[a-z][a-z-]*( [a-z][a-z-]*)*$"
+          },
+          "usage": {
+            "description": "Verwendungszeile wie in der Hilfe, mit Positionsargumenten (<id>, [<id>] optional) und [Optionen], z. B. „papierkram invoice describe <id> [Optionen]“.",
+            "type": "string",
+            "pattern": "^papierkram [a-z]"
           },
           "aliases": {
             "description": "Alle anderen Schreibweisen des Befehlspfads (deutsche Ressourcen-Aliase, Aktions-Aliase wie send), sortiert.",
@@ -101,6 +106,11 @@
                   "description": "Flag-Name ohne Bindestriche.",
                   "type": "string",
                   "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "shorthand": {
+                  "description": "Kurzform aus einem Buchstaben (-m); fehlt, wenn das Flag keine hat.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z]$"
                 },
                 "type": {
                   "description": "Werttyp: string, boolean (Schalter), integer, number (Dezimalpunkt), id (ganze Zahl ≥ 0), date (YYYY-MM-DD, heute, gestern), duration (z. B. 30s).",
@@ -171,6 +181,11 @@
             "description": "Flag-Name ohne Bindestriche.",
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "shorthand": {
+            "description": "Kurzform aus einem Buchstaben (-m); fehlt, wenn das Flag keine hat.",
+            "type": "string",
+            "pattern": "^[A-Za-z]$"
           },
           "type": {
             "description": "Werttyp: string, boolean (Schalter), integer, number (Dezimalpunkt), id (ganze Zahl ≥ 0), date (YYYY-MM-DD, heute, gestern), duration (z. B. 30s).",

@@ -92,10 +92,12 @@ type commandsDoc struct {
 	GlobalFlags []flagInfo    `json:"global_flags"`
 }
 
-// commandInfo is one command. Credits is nil for class per_request;
+// commandInfo is one command. Usage is the German use line with the
+// positional arguments (useLine). Credits is nil for class per_request;
 // OperationID, Method and Path are empty without a fixed operation.
 type commandInfo struct {
 	Command     string     `json:"command"`
+	Usage       string     `json:"usage"`
 	Aliases     []string   `json:"aliases"`
 	Short       string     `json:"short"`
 	Class       string     `json:"class"`
@@ -107,8 +109,10 @@ type commandInfo struct {
 	Examples    []string   `json:"examples"`
 }
 
+// flagInfo is one flag; Shorthand is omitted when the flag has none.
 type flagInfo struct {
 	Name        string   `json:"name"`
+	Shorthand   string   `json:"shorthand,omitempty"`
 	Type        string   `json:"type"`
 	Required    bool     `json:"required"`
 	Repeatable  bool     `json:"repeatable"`
@@ -216,6 +220,7 @@ func commandInfoOf(c *cobra.Command) (commandInfo, error) {
 	m := metaOf(c)
 	info := commandInfo{
 		Command:  strings.Join(commandWords(c), " "),
+		Usage:    useLine(c),
 		Aliases:  commandAliases(c),
 		Short:    c.Short,
 		Class:    m.class,
@@ -311,6 +316,7 @@ func flagInfos(fs *pflag.FlagSet) ([]flagInfo, error) {
 		}
 		out = append(out, flagInfo{
 			Name:        f.Name,
+			Shorthand:   f.Shorthand,
 			Type:        typ,
 			Required:    f.Annotations[flagRequired] != nil,
 			Repeatable:  f.Value.Type() == "stringArray",
@@ -334,7 +340,7 @@ var commandsColumns = output.Columns{Table: []output.Column{
 
 const commandsLong = `Listet alle Befehle mit Klasse (Spec 8.1), Credits je Anfrage und Kurzhilfe.
 
-Mit --json (oder -o json|yaml, --jq) kommt die maschinenlesbare Liste für Agents: je Befehl Aliase, Kurzhilfe, Klasse, Credits, Operation (operation_id, method, path), Flags mit Typ, Pflicht, Wiederholbarkeit, erlaubten Werten und Hilfetext sowie Beispiele; die globalen Flags stehen einmal unter global_flags. Vertrag: docs/schemas/commands.json (Version 1).
+Mit --json (oder -o json|yaml, --jq) kommt die maschinenlesbare Liste für Agents: je Befehl Verwendungszeile mit Positionsargumenten, Aliase, Kurzhilfe, Klasse, Credits, Operation (operation_id, method, path), Flags mit Kurzform, Typ, Pflicht, Wiederholbarkeit, erlaubten Werten und Hilfetext sowie Beispiele; die globalen Flags stehen einmal unter global_flags. Vertrag: docs/schemas/commands.json (Version 1).
 
 Klassen außer denen der Spec: local wirkt nur lokal (Konfiguration, Schlüsselbund, Projektdatei, Timer) und kostet nichts, außer der Befehl nennt eine Operation (auth login prüft das Token per GET /info); per_request entscheidet sich je Anfrage (papierkram api), credits ist dann null.
 
