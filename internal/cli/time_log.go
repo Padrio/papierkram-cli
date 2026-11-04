@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/projectfile"
@@ -128,24 +129,53 @@ func (a *App) runTimeLog(c *cobra.Command, e registry.Entry) error {
 	if in.dateErr != nil {
 		return in.dateErr
 	}
-	body, err := a.timeLogBody(c, e, fields, in.period, task.ID, user.ID)
-	if err != nil {
-		return err
+	te := timeEntry{period: in.period, task: task.ID, user: user.ID}
+	if c.Flags().Changed("comments") {
+		v := flagString(c, "comments")
+		te.comments = &v
 	}
-	a.flushPresetHints()
-	if proceed, err := a.beforeSend(c, e, client, nil, body, sendExtras{}); !proceed || err != nil {
-		return err
+	if c.Flags().Changed("unbillable") {
+		v := rawText(c, "unbillable")
+		te.unbillable = &v
 	}
-	if a.StdinTTY && !a.Flags.NoInput && !a.Flags.Yes {
-		if err := a.confirmTimeLog(c.Context(), client, r, in.period, task.ID, user.ID, body); err != nil {
-			return err
-		}
-	}
-	resp, err := client.Call(c.Context(), e.OperationID, nil, nil, body)
-	if err != nil {
+	resp, err := a.sendTimeEntry(c, e, client, r, fields, te)
+	if err != nil || resp == nil {
 		return err
 	}
 	return a.writeResult(c, e, r, nil, resp.Body)
+}
+
+// timeEntry is what a time entry is built from: the period, task and
+// user, and comment and unbillable as text, nil when not given (they are
+// then not sent, like unset field flags). time log takes them from its
+// flags, time stop from the timer.
+type timeEntry struct {
+	period               period
+	task, user           int64
+	comments, unbillable *string
+}
+
+// sendTimeEntry is the part of time log after the read-only gate and the
+// presets that time stop shares: body (exit 5), the queued preset hints,
+// --dry-run and the repeated gate (beforeSend), the summary with names
+// and the question in a terminal (exit 8 when declined), then the
+// request. A nil response without error is a dry run: nothing was sent.
+func (a *App) sendTimeEntry(c *cobra.Command, e registry.Entry, client *api.Client, r *config.Resolved,
+	fields map[string]spec.Field, te timeEntry) (*api.Response, error) {
+	body, err := a.timeLogBody(e, fields, te)
+	if err != nil {
+		return nil, err
+	}
+	a.flushPresetHints()
+	if proceed, err := a.beforeSend(c, e, client, nil, body, sendExtras{}); !proceed || err != nil {
+		return nil, err
+	}
+	if a.StdinTTY && !a.Flags.NoInput && !a.Flags.Yes {
+		if err := a.confirmTimeLog(c.Context(), client, r, te.period, te.task, te.user, body); err != nil {
+			return nil, err
+		}
+	}
+	return client.Call(c.Context(), e.OperationID, nil, nil, body)
 }
 
 // checkTimeLog checks the flags before anything is resolved or sent
@@ -153,19 +183,8 @@ func (a *App) runTimeLog(c *cobra.Command, e registry.Entry) error {
 // (exit 5 after the gate); the period is then not checked.
 func (a *App) checkTimeLog(c *cobra.Command, e registry.Entry) (timeLogInput, error) {
 	fs := c.Flags()
-	for _, key := range []string{presetTask, presetUser} {
-		if !fs.Changed(key) {
-			continue
-		}
-		v := rawText(c, key)
-		if _, ok := parseID(v); ok || (key == presetTask && v != "" && !strings.HasPrefix(v, "-")) {
-			continue
-		}
-		want := "ID (ganze Zahl ≥ 0) erwartet"
-		if key == presetTask {
-			want = "ID (ganze Zahl ≥ 0) oder Alias aus [tasks] erwartet"
-		}
-		return timeLogInput{}, usageErr(fmt.Sprintf("ungültiger Wert %q für --%s: %s", v, key, want))
+	if err := checkTaskUserFlags(c); err != nil {
+		return timeLogInput{}, err
 	}
 	from, to, dur := fs.Changed("from"), fs.Changed("to"), fs.Changed("duration")
 	usage := "Verwendung: " + useLine(c) + " --from HH:MM --to HH:MM | --duration 1h30m [--from HH:MM]"
@@ -237,6 +256,27 @@ func (a *App) checkTimeLog(c *cobra.Command, e registry.Entry) (timeLogInput, er
 		}
 	}
 	return timeLogInput{period: p}, checkPeriod(p)
+}
+
+// checkTaskUserFlags checks the form of --task (ID or alias) and --user
+// (ID) before anything is resolved (exit 2); time log and time start
+// share it.
+func checkTaskUserFlags(c *cobra.Command) error {
+	for _, key := range []string{presetTask, presetUser} {
+		if !c.Flags().Changed(key) {
+			continue
+		}
+		v := rawText(c, key)
+		if _, ok := parseID(v); ok || (key == presetTask && v != "" && !strings.HasPrefix(v, "-")) {
+			continue
+		}
+		want := "ID (ganze Zahl ≥ 0) erwartet"
+		if key == presetTask {
+			want = "ID (ganze Zahl ≥ 0) oder Alias aus [tasks] erwartet"
+		}
+		return usageErr(fmt.Sprintf("ungültiger Wert %q für --%s: %s", v, key, want))
+	}
+	return nil
 }
 
 // midnightHint explains why a period over midnight is rejected.
@@ -418,19 +458,20 @@ func timeLogFieldsOf(e registry.Entry) (map[string]spec.Field, error) {
 // set at the field path, then spec.CoerceValue and spec.Validate against
 // the request schema (exit 5). Comments and unbillable are only sent when
 // given, like unset field flags.
-func (a *App) timeLogBody(c *cobra.Command, e registry.Entry, fields map[string]spec.Field, p period, task, user int64) (map[string]any, error) {
+func (a *App) timeLogBody(e registry.Entry, fields map[string]spec.Field, te timeEntry) (map[string]any, error) {
+	p := te.period
 	raw := map[string]string{
 		"date": p.date,
 		"from": hhmm(p.start),
 		"to":   hhmm(p.end),
-		"task": strconv.FormatInt(task, 10),
-		"user": strconv.FormatInt(user, 10),
+		"task": strconv.FormatInt(te.task, 10),
+		"user": strconv.FormatInt(te.user, 10),
 	}
-	if c.Flags().Changed("comments") {
-		raw["comments"] = flagString(c, "comments")
+	if te.comments != nil {
+		raw["comments"] = *te.comments
 	}
-	if c.Flags().Changed("unbillable") {
-		raw["unbillable"] = rawText(c, "unbillable")
+	if te.unbillable != nil {
+		raw["unbillable"] = *te.unbillable
 	}
 	cc := spec.CoerceContext{Now: a.Now, Loc: a.Location}
 	body := map[string]any{}
