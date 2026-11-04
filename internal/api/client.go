@@ -17,6 +17,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -119,22 +120,12 @@ func (c *Client) Download(ctx context.Context, opID string, pathParams []int64, 
 
 // CallRaw sends method to path, which is relative to the base URL
 // (e.g. "/income/invoices?page=2"); query is appended to any query in path.
-// Content-Type is only set when body is non-nil.
+// Content-Type is only set when body is non-nil. A path that could leave
+// the base path (see CheckPath) is an error before anything is sent.
 func (c *Client) CallRaw(ctx context.Context, method, path string, query url.Values, contentType string, body io.Reader) (*Response, error) {
-	if c.base == nil {
-		return nil, errBaseURL(c.opts.BaseURL)
-	}
-	// The "./" prefix keeps the request on the base host even for paths
-	// like "//other/x", so the token never leaves the API.
-	u, err := c.base.Parse("./" + strings.TrimPrefix(path, "/"))
+	u, err := c.rawURL(path, query)
 	if err != nil {
-		return nil, fmt.Errorf("api: ungültiger Pfad %q: %w", path, err)
-	}
-	if len(query) > 0 {
-		if u.RawQuery != "" {
-			u.RawQuery += "&"
-		}
-		u.RawQuery += query.Encode()
+		return nil, err
 	}
 	req, err := http.NewRequest(method, u.String(), body)
 	if err != nil {
@@ -146,6 +137,84 @@ func (c *Client) CallRaw(ctx context.Context, method, path string, query url.Val
 	}
 	return c.do(ctx, req)
 }
+
+// PreviewRaw returns the method and the full URL (query included, without
+// userinfo) that CallRaw would send, without sending anything (--dry-run
+// of papierkram api).
+func (c *Client) PreviewRaw(method, path string, query url.Values) (string, string, error) {
+	u, err := c.rawURL(path, query)
+	if err != nil {
+		return "", "", err
+	}
+	return method, redact.URLOf(u), nil
+}
+
+// rawURL resolves path (and query) against the base URL for CallRaw and
+// PreviewRaw. The "./" prefix keeps the request on the base host even for
+// paths like "//other/x" or "https://other/x", so the token never leaves
+// the API; CheckPath rejects what could climb above the base path, and
+// the result is checked to lie below it.
+func (c *Client) rawURL(path string, query url.Values) (*url.URL, error) {
+	if c.base == nil {
+		return nil, errBaseURL(c.opts.BaseURL)
+	}
+	if err := CheckPath(path); err != nil {
+		return nil, err
+	}
+	u, err := c.base.Parse("./" + strings.TrimPrefix(path, "/"))
+	if err != nil {
+		return nil, fmt.Errorf("api: ungültiger Pfad %q: %w", path, err)
+	}
+	if u.Scheme != c.base.Scheme || u.Host != c.base.Host || !strings.HasPrefix(u.EscapedPath(), c.base.EscapedPath()) {
+		return nil, fmt.Errorf("api: Pfad %q verlässt die API-Basis", path)
+	}
+	if len(query) > 0 {
+		if u.RawQuery != "" {
+			u.RawQuery += "&"
+		}
+		u.RawQuery += query.Encode()
+	}
+	return u, nil
+}
+
+// CheckPath rejects a request path (relative to the base URL, query
+// allowed) that could leave the base path or hide what is sent: a ".."
+// segment, also percent-encoded and after repeated decoding (%2e%2e,
+// %2E., %252e%252e), a backslash (some servers treat it as a separator)
+// and control characters, in the path or its decoded form.
+func CheckPath(path string) error {
+	bad := func(why string) error { return fmt.Errorf("api: ungültiger Pfad %q: %s", path, why) }
+	if strings.ContainsFunc(path, isControl) {
+		return bad("Steuerzeichen nicht erlaubt")
+	}
+	p, _, _ := strings.Cut(path, "?")
+	for range maxDecode {
+		switch {
+		case strings.ContainsRune(p, '\\'):
+			return bad("Backslash nicht erlaubt")
+		case strings.ContainsFunc(p, isControl):
+			return bad("Steuerzeichen nicht erlaubt")
+		case slices.Contains(strings.Split(p, "/"), ".."):
+			return bad(`".." nicht erlaubt`)
+		}
+		d, err := url.PathUnescape(p)
+		if err != nil {
+			return bad("ungültige %-Kodierung")
+		}
+		if d == p {
+			return nil
+		}
+		p = d
+	}
+	return bad("mehrfach %-kodiert")
+}
+
+// maxDecode is how often CheckPath decodes a path; a path that still
+// changes after that is rejected.
+const maxDecode = 4
+
+// isControl reports C0 and C1 control characters and DEL.
+func isControl(r rune) bool { return r < 0x20 || r >= 0x7f && r < 0xa0 }
 
 // Upload sends size bytes of the file r as multipart/form-data with one
 // part named field, carrying filename (quoted like mime/multipart does) and

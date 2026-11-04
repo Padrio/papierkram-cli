@@ -591,3 +591,58 @@ func TestTemplateURL(t *testing.T) {
 		}
 	}
 }
+
+// CallRaw never leaves the API base path (Task 11): a dot-dot segment,
+// also percent-encoded, a backslash or a control character is an error
+// before any request; an absolute URL stays below /api/v1 on the API host.
+func TestCallRawPathSafety(t *testing.T) {
+	for _, path := range []string{
+		"../x", "/../x", "/income/../../x", "/income/%2e%2e/x", "/income/%2E./x",
+		"/income/%252e%252e/x", "/x/%25252525252e%25252525252e/y", "/x/%zz", `\\evil/x`, `/income\..\x`, "/income/%5c/x",
+		"/income/invoices\x00", "/x\ny",
+	} {
+		rec := &recorder{}
+		c := newTestClient(t, rec, nil)
+		if _, err := c.CallRaw(context.Background(), http.MethodGet, path, nil, "", nil); err == nil {
+			t.Errorf("CallRaw(%q): kein Fehler", path)
+		}
+		if len(rec.reqs) != 0 {
+			t.Errorf("CallRaw(%q): Anfrage gesendet: %+v", path, rec.reqs)
+		}
+		if _, _, err := c.PreviewRaw(http.MethodPost, path, nil); err == nil {
+			t.Errorf("PreviewRaw(%q): kein Fehler", path)
+		}
+	}
+	for _, path := range []string{"https://evil/x", "//evil/x", "http:/evil/x"} {
+		rec := &recorder{}
+		c := newTestClient(t, rec, nil)
+		if _, err := c.CallRaw(context.Background(), http.MethodGet, path, nil, "", nil); err != nil {
+			t.Fatalf("CallRaw(%q): %v", path, err)
+		}
+		if p := rec.last(t).Path; !strings.HasPrefix(p, "/api/v1/") {
+			t.Errorf("CallRaw(%q): path = %s", path, p)
+		}
+	}
+}
+
+// PreviewRaw shows the URL CallRaw would send, without userinfo.
+func TestPreviewRawMatchesCallRaw(t *testing.T) {
+	rec := &recorder{}
+	srv := httptest.NewServer(rec)
+	t.Cleanup(srv.Close)
+	withUser := strings.Replace(srv.URL, "http://", "http://user:geheim@", 1) + "/api/v1"
+	c := New(Options{BaseURL: withUser, Token: testToken})
+	method, u, err := c.PreviewRaw("DELETE", "/income/invoices/12?a=1", url.Values{"b": {"2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != "DELETE" || u != srv.URL+"/api/v1/income/invoices/12?a=1&b=2" {
+		t.Errorf("PreviewRaw = %s %s", method, u)
+	}
+	if _, err := c.CallRaw(context.Background(), "DELETE", "/income/invoices/12?a=1", url.Values{"b": {"2"}}, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.last(t); got.Path != "/api/v1/income/invoices/12" || got.RawQuery != "a=1&b=2" {
+		t.Errorf("CallRaw = %s?%s", got.Path, got.RawQuery)
+	}
+}
