@@ -756,3 +756,14 @@ func TestAPIHelpDocumentsDeleteQuery(t *testing.T) {
 		t.Errorf("dry-run = %s\nerwartet %s", got, w)
 	}
 }
+
+// Review N1: the base prefix in another case is refused like a repeated
+// one (the server could route it differently than it is classified).
+func TestAPIBasePrefixOtherCase(t *testing.T) {
+	for _, path := range []string{"/API/v1/income/invoices/12/deliver", "/api/v1/API/V1/info", "/Api/v1/x/y"} {
+		app, srv := apiApp(t)
+		wantExit(t, app, runAPI(app, "POST", path, "-F", "send_via=email", "--yes"), 2)
+		wantRequests(t, srv, 0)
+		wantStderrHas(t, app, "/api/v1 nur einmal")
+	}
+}

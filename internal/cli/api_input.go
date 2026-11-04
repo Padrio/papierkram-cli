@@ -81,10 +81,11 @@ func parseAPIPath(c *cobra.Command, raw string) (apiPath, error) {
 	}
 	if isBasePrefix(segs) {
 		segs = segs[2:]
-		if isBasePrefix(segs) {
-			// MatchPath would strip it again: classified ≠ sent
-			return bad("die Basis /api/v1 nur einmal angeben")
-		}
+	}
+	if len(segs) >= 2 && strings.EqualFold(segs[0], "api") && strings.EqualFold(segs[1], "v1") {
+		// a second base, in any case: MatchPath would strip it again or the
+		// server could route it otherwise (classified ≠ sent)
+		return bad("die Basis /api/v1 nur einmal und kleingeschrieben angeben")
 	}
 	esc := make([]string, len(segs))
 	for i, s := range segs {
@@ -103,7 +104,8 @@ func parseAPIPath(c *cobra.Command, raw string) (apiPath, error) {
 // operation the class lookup did not see.
 var segmentRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
-// isBasePrefix reports segments that start with the API base api/v1.
+// isBasePrefix reports segments that start with the API base api/v1
+// (exact); parseAPIPath drops it once.
 func isBasePrefix(segs []string) bool {
 	return len(segs) >= 2 && segs[0] == "api" && segs[1] == "v1"
 }
