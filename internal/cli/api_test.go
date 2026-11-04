@@ -585,3 +585,34 @@ func TestAPIDeliverServerErrorHint(t *testing.T) {
 	wantRequests(t, srv, 1)
 	wantStderrHas(t, app, "der Versand kann trotzdem erfolgt sein", "papierkram invoice describe 12")
 }
+
+// Review I1: the deliver rule cannot be bypassed through the query, wrong
+// types or a missing send_via. A send-class operation takes no query
+// (exit 2), its body is always validated against the request schema like
+// the deliver command (exit 5), and send_via must be set.
+func TestAPIDeliverRuleBypasses(t *testing.T) {
+	for name, tc := range map[string]struct {
+		path string
+		args []string
+		exit int
+		want string
+	}{
+		"Query send_via":           {"/income/invoices/12/deliver?send_via=email", nil, 2, "keine Query"},
+		"Query und Body":           {"/income/invoices/12/deliver?send_via=email", []string{"-f", "email.recipient=a@example.org"}, 2, "keine Query"},
+		"Query mit pdf":            {"/income/invoices/12/deliver?x=1", []string{"-F", "send_via=pdf"}, 2, "keine Query"},
+		"email ist Text":           {"/income/invoices/12/deliver", []string{"-F", "send_via=email", "-f", "email=foo"}, 5, "email"},
+		"Felder keine Texte":       {"/income/invoices/12/deliver", []string{"-F", "send_via=email", "-F", "email.recipient=1", "-F", "email.subject=true", "-F", "email.body=2"}, 5, "email."},
+		"ohne Body":                {"/income/invoices/12/deliver", nil, 5, "send_via"},
+		"send_via null":            {"/income/invoices/12/deliver", []string{"-F", "send_via=null"}, 5, "send_via"},
+		"send_via fehlt":           {"/income/estimates/12/deliver", []string{"-f", "email.recipient=a@example.org", "-f", "email.subject=S", "-f", "email.body=B"}, 5, "send_via"},
+		"unbekanntes Feld":         {"/income/invoices/12/deliver", []string{"-F", "send_via=pdf", "-f", "bogus=1"}, 5, "bogus"},
+		"ungültiger Wert send_via": {"/income/invoices/12/deliver", []string{"-f", "send_via=fax"}, 5, "send_via"},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, runAPI(app, append([]string{"POST", tc.path, "--yes"}, tc.args...)...), tc.exit)
+		wantRequests(t, srv, 0)
+		if _, errs := bufs(app); !strings.Contains(errs, tc.want) {
+			t.Errorf("%s: stderr ohne %q: %q", name, tc.want, errs)
+		}
+	}
+}

@@ -38,7 +38,7 @@ Felder: -f key=value setzt immer Text. -F key=value erkennt true, false, null un
 
 Der Body wird ohne Bereinigung gesendet, wie angegeben. --validate prüft ihn vorher gegen das Request-Schema der Spec (Exit 5); für Pfade außerhalb der Spec geht das nicht.
 
-Schutzregeln: Methode und Pfad werden in der Registry nachgeschlagen; deren Klasse entscheidet über Schreibschutz (Exit 9), Bestätigung bzw. --yes (Exit 8 ohne Terminal) und --dry-run. Pfade außerhalb der Spec gelten bei GET als lesend, sonst als destruktiv. Für …/deliver mit send_via "email" sind email.recipient, email.subject und email.body Pflicht (Exit 5). --dry-run zeigt Methode, URL, Body und Credits und gilt nur für ändernde Anfragen.
+Schutzregeln: Methode und Pfad werden in der Registry nachgeschlagen; deren Klasse entscheidet über Schreibschutz (Exit 9), Bestätigung bzw. --yes (Exit 8 ohne Terminal) und --dry-run. Pfade außerhalb der Spec gelten bei GET als lesend, sonst als destruktiv. Für …/deliver gelten die Regeln von deliver: keine Query (Exit 2), send_via (email oder pdf) ist Pflicht, bei email auch email.recipient, email.subject und email.body, und der Body wird immer gegen das Request-Schema geprüft (Exit 5). --dry-run zeigt Methode, URL, Body und Credits und gilt nur für ändernde Anfragen.
 
 Kosten: wie der passende Befehl (z. B. 50 Credits für das Anlegen einer Rechnung); außerhalb der Spec nach derselben Regel (Anlegen 10 bzw. 50, sonst 1 Credit).
 
@@ -218,6 +218,9 @@ func (a *App) checkAPIFlags(c *cobra.Command, args []string) (*apiCall, error) {
 	case call.paginate && !call.target.isList():
 		return usage("--paginate braucht eine Liste der API-Spec (Seiten mit page/page_size und entries)",
 			"ohne --paginate eine Seite laden oder einen Listenpfad wie /income/invoices angeben")
+	case call.target.entry.Class == registry.ClassSend && (len(p.query) > 0 || !call.hasBody && len(fields) > 0):
+		return usage(fmt.Sprintf("%s %s nimmt keine Query-Parameter: send_via und email gehören in den Body", method, p.send),
+			"Query entfernen und die Felder mit -f/-F oder --input als Body senden")
 	case call.validate && !call.target.known:
 		return usage(fmt.Sprintf("--validate: %s %s ist nicht in der API-Spec, es gibt kein Request-Schema", method, p.send),
 			"ohne --validate senden oder den Pfad prüfen")
@@ -342,20 +345,12 @@ func (a *App) runAPI(c *cobra.Command, args []string) error {
 	return a.renderAPI(o, call, resp)
 }
 
-// checkAPIBody applies the rules of the body after it is built: the email
-// rule of deliver for the send class (spec 9.1, R33: send_via "email"
-// without recipient, subject and body is exit 5, shared with deliver via
-// missingMail), then --validate against the request schema (exit 5).
+// checkAPIBody applies the rules of the body after it is built: for the
+// send class the rules of deliver (checkSendBody), else --validate against
+// the request schema (exit 5).
 func checkAPIBody(call *apiCall, body map[string]any) error {
-	if call.target.entry.Class == registry.ClassSend && body != nil && body["send_via"] == viaEmail {
-		if missing := missingMail(body["email"]); len(missing) > 0 {
-			names := make([]string, len(missing))
-			for i, f := range missing {
-				names[i] = "email." + f.field
-			}
-			return clierr.New(clierr.CodeValidation, `send_via "email" verlangt `+strings.Join(names, ", "),
-				"Empfänger, Betreff und Text angeben; ohne sie würde die API still ihre Standardmail an die Standardadresse senden")
-		}
+	if call.target.entry.Class == registry.ClassSend {
+		return checkSendBody(call, body)
 	}
 	if !call.validate {
 		return nil
@@ -371,6 +366,36 @@ func checkAPIBody(call *apiCall, body map[string]any) error {
 		return spec.Validate(map[string]any{}, req)
 	}
 	return spec.Validate(body, req)
+}
+
+// checkSendBody applies the rules of deliver (spec 9.1, R33) to the body
+// of a send-class request, fail-closed and always, with or without
+// --validate (exit 5): send_via must be set (not missing, not null: the
+// API would pick a mode itself), send_via "email" needs recipient,
+// subject and body (missingMail, shared with deliver), and the body is
+// validated against the request schema exactly like deliverBody does
+// (spec.Validate(body, spec.RequestSchema(opID))), which catches an email
+// that is no object, fields that are no text and unknown fields. No body
+// counts as {}. The query is rejected before (checkAPIFlags).
+func checkSendBody(call *apiCall, body map[string]any) error {
+	if body == nil {
+		body = map[string]any{}
+	}
+	if body["send_via"] == nil {
+		return clierr.New(clierr.CodeValidation, "send_via fehlt oder ist null: email oder pdf angeben",
+			`-F send_via=pdf finalisiert ohne E-Mail; -F send_via=email verlangt email.recipient, email.subject und email.body`)
+	}
+	if body["send_via"] == viaEmail {
+		if missing := missingMail(body["email"]); len(missing) > 0 {
+			names := make([]string, len(missing))
+			for i, f := range missing {
+				names[i] = "email." + f.field
+			}
+			return clierr.New(clierr.CodeValidation, `send_via "email" verlangt `+strings.Join(names, ", "),
+				"Empfänger, Betreff und Text angeben; ohne sie würde die API still ihre Standardmail an die Standardadresse senden")
+		}
+	}
+	return spec.Validate(body, spec.RequestSchema(call.target.entry.OperationID))
 }
 
 // renderAPI writes the answer: an empty body as {"ok":true}, JSON through
