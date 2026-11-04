@@ -83,6 +83,10 @@ type WriteOptions struct {
 // CreateAtomic for file systems without hard links.
 var linkFile = os.Link
 
+// renameFile is os.Rename for the fallback of CreateAtomic; tests make it
+// fail.
+var renameFile = os.Rename
+
 // syncFile flushes f to disk; tests count its calls.
 var syncFile = (*os.File).Sync
 
@@ -124,9 +128,14 @@ func CreateAtomic(path string, data []byte, mode fs.FileMode) error {
 	if err != nil {
 		return err
 	}
+	claimed, serr := claim.Stat()
 	_ = claim.Close()
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(path) // our empty claim
+	if err := renameFile(tmp, path); err != nil {
+		// remove the claim only while path is still it: another writer
+		// may have taken path since (review N2)
+		if now, err := os.Lstat(path); serr == nil && err == nil && os.SameFile(claimed, now) {
+			_ = os.Remove(path)
+		}
 		return err
 	}
 	return nil

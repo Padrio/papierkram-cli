@@ -177,3 +177,36 @@ func TestCreateAtomicConcurrent(t *testing.T) {
 		assertNoTemp(t, filepath.Dir(path))
 	}
 }
+
+// Review N2: when the rename of the fallback fails, CreateAtomic removes
+// its claim only if path is still that claim, never a file another
+// writer put there in between.
+func TestCreateAtomicFallbackRemovesOnlyItsClaim(t *testing.T) {
+	origLink, origRename := linkFile, renameFile
+	t.Cleanup(func() { linkFile, renameFile = origLink, origRename })
+	linkFile = func(string, string) error { return errors.New("hard links not supported") }
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state")
+	renameFile = func(string, string) error { return errors.New("rename failed") }
+	if err := CreateAtomic(path, []byte("x"), 0o600); err == nil {
+		t.Fatal("no error")
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("own claim left: %v", err)
+	}
+
+	// the claim was discarded and another writer created path meanwhile
+	renameFile = func(string, string) error {
+		_ = os.Remove(path)
+		_ = os.WriteFile(path, []byte("foreign"), 0o600)
+		return errors.New("rename failed")
+	}
+	if err := CreateAtomic(path, []byte("x"), 0o600); err == nil {
+		t.Fatal("no error")
+	}
+	if got, _ := os.ReadFile(path); string(got) != "foreign" {
+		t.Errorf("foreign file removed: %q", got)
+	}
+	assertNoTemp(t, dir)
+}
