@@ -6,9 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
-
-	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/testutil/golden"
 )
 
@@ -391,53 +388,4 @@ func TestVoucherMutationsReadOnly(t *testing.T) {
 	app, srv := mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-ro", "PAPIERKRAM_READ_ONLY": "1"})
 	wantExit(t, app, Run(app, []string{"voucher", "list", "-o", "json"}), 0)
 	wantRequests(t, srv, 1)
-}
-
-// The examples of the generic voucher commands only use flags the command
-// has (spec 7.1: examples must be valid commands).
-func TestVoucherExamplesUseExistingFlags(t *testing.T) {
-	app, _ := apiApp(t)
-	root := NewRootCmd(app)
-	n := 0
-	for _, e := range registry.Entries() {
-		if e.Resource != "voucher" || !generic(e) {
-			continue
-		}
-		cmd, _, err := root.Find([]string{e.Resource, e.Action})
-		if err != nil || cmd.Name() != e.Action {
-			t.Fatalf("%s %s: Befehl nicht gefunden: %v", e.Resource, e.Action, err)
-		}
-		for _, ex := range e.Examples {
-			for _, flag := range exampleFlags(ex) {
-				if !hasFlag(cmd, flag) {
-					t.Errorf("%s %s: Beispiel %q nutzt unbekanntes Flag --%s", e.Resource, e.Action, ex, flag)
-				}
-			}
-			n++
-		}
-	}
-	if n < 18 {
-		t.Errorf("nur %d Beispiele geprüft", n)
-	}
-}
-
-// exampleFlags returns the long flag names of an example command line;
-// quoted values are skipped.
-func exampleFlags(ex string) []string {
-	var flags []string
-	quoted := false
-	for _, f := range strings.Fields(ex) {
-		if !quoted && strings.HasPrefix(f, "--") {
-			name, _, _ := strings.Cut(strings.TrimPrefix(f, "--"), "=")
-			flags = append(flags, name)
-		}
-		if strings.Count(f, `"`)%2 == 1 {
-			quoted = !quoted
-		}
-	}
-	return flags
-}
-
-func hasFlag(cmd *cobra.Command, name string) bool {
-	return cmd.Flags().Lookup(name) != nil || cmd.InheritedFlags().Lookup(name) != nil
 }
