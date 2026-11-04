@@ -14,6 +14,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/testutil/modroot"
 )
 
@@ -305,11 +306,99 @@ func TestDocCommandsAreValid(t *testing.T) {
 
 // docCommandProblem checks one command of the documentation. The reader
 // sits at a terminal (auth login and local init without flags ask there).
+// Beyond command, flags and arguments the output options must fit: the
+// --jq program compiles like the CLI compiles it, and every --fields path
+// exists in the response schema of the command's operation (review M1).
 func docCommandProblem(t *testing.T, words []string) error {
 	t.Helper()
 	app, _ := apiApp(t)
 	app.StdinTTY, app.StdoutTTY = true, true
-	return commandProblem(app, words, "")
+	if err := commandProblem(app, words, ""); err != nil {
+		return err
+	}
+	if expr, ok := flagValue(words, "--jq"); ok {
+		if err := output.CheckJQ(expr); err != nil {
+			return fmt.Errorf("--jq: %w", err)
+		}
+	}
+	if fields, ok := flagValue(words, "--fields"); ok {
+		return fieldsProblem(app, words, output.ParseFields(fields))
+	}
+	return nil
+}
+
+// flagValue returns the value of a long flag given as "--name value" or
+// "--name=value" (the last one wins, like pflag).
+func flagValue(words []string, name string) (string, bool) {
+	value, found := "", false
+	for i, w := range words {
+		if v, ok := strings.CutPrefix(w, name+"="); ok {
+			value, found = v, true
+		} else if w == name && i+1 < len(words) {
+			value, found = words[i+1], true
+		}
+	}
+	return value, found
+}
+
+// fieldsProblem checks --fields paths against the resolved response
+// schema of the command's operation; commands without an operation or
+// without a JSON response schema are not checked. Lists are checked per
+// entry, like --fields applies them.
+func fieldsProblem(app *App, words, fields []string) error {
+	cmd, _, err := NewRootCmd(app).Find(words[1:])
+	if err != nil || !metaOf(cmd).op {
+		return nil
+	}
+	pair, err := operationSchemas(metaOf(cmd).entry.OperationID)
+	if err != nil {
+		return err
+	}
+	schema, ok := pair.Response.(map[string]any)
+	if !ok {
+		return nil
+	}
+	if props, _ := schema["properties"].(map[string]any); props != nil {
+		if entries, ok := props["entries"].(map[string]any); ok && entries["items"] != nil {
+			schema = entries
+		}
+	}
+	for _, f := range fields {
+		if !schemaHasPath(schema, strings.Split(f, ".")) {
+			return fmt.Errorf("--fields: %q gibt es in der Antwort von %s nicht (papierkram schema %s)",
+				f, metaOf(cmd).entry.OperationID, strings.Join(commandWords(cmd), " "))
+		}
+	}
+	return nil
+}
+
+// schemaHasPath reports whether path can exist in a value of schema:
+// arrays are looked into (their items), objects must declare each name
+// unless they allow other properties, scalars have no children.
+func schemaHasPath(schema map[string]any, path []string) bool {
+	s := schema
+	for _, name := range path {
+		for s["items"] != nil {
+			items, ok := s["items"].(map[string]any)
+			if !ok {
+				return true
+			}
+			s = items
+		}
+		props, _ := s["properties"].(map[string]any)
+		if child, ok := props[name].(map[string]any); ok {
+			s = child
+			continue
+		}
+		if extra, set := s["additionalProperties"]; set && extra != false {
+			return true // free-form object: any name
+		}
+		if props == nil && s["type"] == nil {
+			return true // nothing declared: not checkable
+		}
+		return false
+	}
+	return true
 }
 
 // docDryRun returns the arguments to run a documented mutation with
@@ -403,6 +492,13 @@ func TestDocCommandProblemDetectsInvalidLines(t *testing.T) {
 		"papierkram invoice describe",
 		"papierkram time log --duration",
 		"papierkram --kontext x info",
+		// review M1: the jq program compiles, --fields names exist
+		`papierkram invoice list -o json --jq '.entries[] | select('`,
+		`papierkram invoice list --jq='.entries[] | bogus'`,
+		"papierkram invoice list --fields id,bogusfield",
+		"papierkram invoice list --fields=billing.bogus",
+		"papierkram invoice describe 459 --fields id,entries",
+		"papierkram time list --fields id,started_at.x",
 	} {
 		words, err := shellWords(bad)
 		if err != nil {
@@ -417,6 +513,11 @@ func TestDocCommandProblemDetectsInvalidLines(t *testing.T) {
 		"papierkram help time log",
 		"papierkram rechnung list --limit 5 -o json",
 		"papierkram auth login --context firma-gmbh --subdomain firma-gmbh",
+		`papierkram invoice list --jq '(now | strftime("%Y-%m-%d")) as $heute | .entries[] | select(.due_date < $heute)'`,
+		"papierkram invoice list --fields id,billing.company,due_date",
+		"papierkram invoice describe 459 --fields=id,line_items.name",
+		"papierkram time status --fields running",
+		"papierkram commands --json --jq .commands[].command",
 	} {
 		words, err := shellWords(good)
 		if err != nil {
