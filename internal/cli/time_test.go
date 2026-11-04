@@ -135,6 +135,31 @@ func TestTimeCreateSendsDateAndHHMM(t *testing.T) {
 
 // --started-at-time 9:00 and other forms than HH:MM are validation errors
 // (exit 5) before any request; the hint names HH:MM.
+// The help of time create --billable-duration names the measured
+// behaviour of the API (2026-11-04): it stores duration instead of the
+// billable_duration sent with the create. time update keeps the plain
+// help: not measured there.
+func TestTimeCreateBillableDurationHelpNamesMeasurement(t *testing.T) {
+	line := func(action string) string {
+		app, srv := apiApp(t)
+		wantExit(t, app, Run(app, []string{"time", action, "--help"}), 0)
+		wantRequests(t, srv, 0)
+		out, _ := bufs(app)
+		i := strings.Index(out, "--billable-duration ")
+		if i < 0 {
+			t.Fatalf("time %s --help ohne --billable-duration:\n%s", action, out)
+		}
+		l, _, _ := strings.Cut(out[i:], "\n")
+		return l
+	}
+	if l := line("create"); !strings.Contains(l, "in Sekunden") || !strings.Contains(l, "Beim Anlegen übernimmt die API die Dauer statt dieses Werts") {
+		t.Errorf("time create: %q", l)
+	}
+	if l := line("update"); !strings.HasSuffix(strings.TrimSpace(l), "Abrechenbare Dauer in Sekunden") {
+		t.Errorf("time update: %q", l)
+	}
+}
+
 func TestTimeCreateRejectsTimesOtherThanHHMM(t *testing.T) {
 	base := []string{"time", "create", "--entry-date", "2026-11-04", "--task", "545", "--user", "1"}
 	for _, tc := range []struct {

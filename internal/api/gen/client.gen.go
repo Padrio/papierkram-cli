@@ -5488,7 +5488,7 @@ type ListTimeEntriesParamsBillingState string
 
 // CreateTimeEntryJSONBody defines parameters for CreateTimeEntry.
 type CreateTimeEntryJSONBody struct {
-	// BillableDuration Abrechenbare Dauer in Sekunden
+	// BillableDuration Abrechenbare Dauer in Sekunden; Achtung: Beim Anlegen übernimmt die API die Dauer statt dieses Werts (gemessen 2026-11-04)
 	BillableDuration *int               `json:"billable_duration,omitempty"`
 	Comments         *string            `json:"comments,omitempty"`
 	EndedAtTime      string             `json:"ended_at_time"`

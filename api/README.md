@@ -47,7 +47,7 @@ Das Overlay
 - passt die Response-Schemas an die aufgezeichneten Beispiele an,
 - macht den Dateiteil `file` beim Beleg-Upload (`UploadVoucherDocument`) zur Pflicht,
 - verlangt für `started_at_time`/`ended_at_time` der Zeiteinträge das Format `HH:MM` (`pattern`, `x-cli-pattern-format` nennt die Form),
-- nennt Sekunden als Einheit von `billable_duration` im Zeiteintrag-Body (aus den Responses abgeleitet, per E2E zu bestätigen).
+- nennt Sekunden als Einheit von `billable_duration` im Zeiteintrag-Body (aus den Responses abgeleitet) und warnt in der Hilfe von `time create`, dass die API den Wert beim Anlegen durch die Dauer ersetzt (gemessen 2026-11-04),
 - macht `document_date` beim Anlegen eines Angebots (`CreateEstimate`) zur Pflicht und verbietet dort `null` (live gemessen: sonst 422 „Datum muss ausgefüllt werden“).
 
 Das Werkzeug `tools/applyoverlay` wendet das Overlay strikt an: Trifft ein Ziel keinen Knoten oder ändert eine Aktion nichts, bricht die Erzeugung ab. Behebt ein neuer Snapshot einen Mangel, fällt die zugehörige Aktion dadurch auf und wird aus dem Overlay entfernt.

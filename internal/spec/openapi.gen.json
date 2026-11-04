@@ -25283,7 +25283,7 @@
                 "nullable": false,
                 "properties": {
                   "billable_duration": {
-                    "description": "Abrechenbare Dauer in Sekunden",
+                    "description": "Abrechenbare Dauer in Sekunden; Achtung: Beim Anlegen übernimmt die API die Dauer statt dieses Werts (gemessen 2026-11-04)",
                     "nullable": true,
                     "type": "integer"
                   },

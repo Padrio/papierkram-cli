@@ -695,11 +695,14 @@ actions:
   # the responses are seconds (examples: 10:00–12:00 = 7200), and the tables
   # show them as h:mm, so without a unit "90" (meant as minutes) would book
   # 1.5 minutes. The description is the flag help. Assumed from the
-  # responses; the E2E suite still has to confirm seconds for requests.
+  # responses. Measured E2E 2026-11-04: a create with billable_duration
+  # 1800 for a 90-minute entry stored 5400, i.e. the API overwrites it with
+  # duration on create; the create help says so (docs/offene-punkte.md,
+  # point 15). The update is not measured yet.
   # ---------------------------------------------------------------------------
   - target: $.paths['/tracker/time_entries'].post.requestBody.content['application/json'].schema.properties.billable_duration
     update:
-      description: Abrechenbare Dauer in Sekunden
+      description: 'Abrechenbare Dauer in Sekunden; Achtung: Beim Anlegen übernimmt die API die Dauer statt dieses Werts (gemessen 2026-11-04)'
   - target: $.paths['/tracker/time_entries/{id}'].put.requestBody.content['application/json'].schema.properties.billable_duration
     update:
       description: Abrechenbare Dauer in Sekunden
