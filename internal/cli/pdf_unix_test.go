@@ -66,3 +66,39 @@ func TestPdfWritesToDevice(t *testing.T) {
 		t.Errorf("stderr = %q", errs)
 	}
 }
+
+// Replacing a private file never exposes the PDF: the temporary file has
+// no group or other bits from its creation on, before any byte is written
+// (umask 022 would otherwise allow 0644 until the chmod).
+func TestPdfTempFileOfPrivateTargetStaysPrivate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rechnung.pdf")
+	if err := os.WriteFile(path, []byte("alt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var created []os.FileMode
+	orig := pdfTempCreated
+	pdfTempCreated = func(name string) {
+		fi, err := os.Stat(name)
+		if err != nil {
+			t.Errorf("Temp-Datei: %v", err)
+			return
+		}
+		if fi.Size() != 0 {
+			t.Errorf("Temp-Datei hat schon %d Bytes", fi.Size())
+		}
+		created = append(created, fi.Mode().Perm())
+	}
+	t.Cleanup(func() { pdfTempCreated = orig })
+	old := syscall.Umask(0o022)
+	app, srv := apiApp(t)
+	onPDF(srv, binaryPDF)
+	code := Run(app, []string{"invoice", "pdf", "459", "-O", path})
+	syscall.Umask(old)
+	wantExit(t, app, code, 0)
+	if len(created) != 1 || created[0]&0o077 != 0 {
+		t.Errorf("Modus der Temp-Datei beim Anlegen: %v, erwartet ohne Gruppen-/Fremdrechte", created)
+	}
+	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
+		t.Errorf("Modus = %v", fi.Mode().Perm())
+	}
+}

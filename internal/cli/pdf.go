@@ -79,7 +79,7 @@ func (a *App) runPDF(c *cobra.Command, e registry.Entry, args []string) error {
 	}
 	var file *pdfFile
 	if !dest.stdout() && !dest.device() {
-		if file, err = createPDFFile(dest.path); err != nil {
+		if file, err = createPDFFile(dest.path, dest.info); err != nil {
 			return err
 		}
 		defer file.discard()
@@ -253,17 +253,26 @@ type pdfFile struct {
 	done bool
 }
 
-// createPDFFile creates the temporary file next to path with mode 0666, so
-// the umask applies like for any new file (curl, wget, os.WriteFile):
-// os.CreateTemp would create 0600 and need a chmod that bypasses it.
-func createPDFFile(path string) (*pdfFile, error) {
+// createPDFFile creates the temporary file next to path. For a new file
+// the mode is 0666, so the umask applies like for any new file (curl, wget,
+// os.WriteFile; os.CreateTemp would create 0600 and need a chmod that
+// bypasses it). When it replaces existing, it is created with that file's
+// mode right away (the umask can only make it stricter), so the PDF is
+// never more readable than the file it replaces, not even before commit
+// sets the exact mode.
+func createPDFFile(path string, existing fs.FileInfo) (*pdfFile, error) {
 	dir, base := filepath.Dir(path), filepath.Base(path)
+	mode := fs.FileMode(0o666)
+	if existing != nil {
+		mode = existing.Mode().Perm()
+	}
 	var err error
 	for range 10 {
 		name := filepath.Join(dir, "."+base+"."+rand.Text()[:12]+".tmp")
 		var f *os.File
-		f, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o666)
+		f, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, mode)
 		if err == nil {
+			pdfTempCreated(name)
 			return &pdfFile{path: path, tmp: f}, nil
 		}
 		if !errors.Is(err, fs.ErrExist) {
@@ -275,7 +284,8 @@ func createPDFFile(path string) (*pdfFile, error) {
 }
 
 // commit writes data to the temporary file and renames it to the target.
-// When it replaces existing, it takes over its mode best effort: a failed
+// When it replaces existing, it sets its exact mode (the umask may have
+// cut bits at creation) best effort: a failed
 // chmod (file systems without Unix modes) never discards the paid
 // download, it only returns a warning.
 func (f *pdfFile) commit(data []byte, existing fs.FileInfo) (warning string, err error) {
@@ -296,6 +306,10 @@ func (f *pdfFile) commit(data []byte, existing fs.FileInfo) (warning string, err
 
 // chmodFile sets the mode of a file by name; tests replace it.
 var chmodFile = os.Chmod
+
+// pdfTempCreated runs right after the temporary file was created, before
+// anything is written to it; tests inspect its mode there.
+var pdfTempCreated = func(string) {}
 
 // writeAll writes data to f, syncs and closes it.
 func writeAll(f *os.File, data []byte) error {
