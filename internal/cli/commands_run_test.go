@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,10 +14,26 @@ import (
 // examples (against the mock, mutations with --dry-run) and the reported
 // flag types and read-only blocking are checked by what the CLI does.
 
-// runEnv is the environment of the runs: token, mock and a user preset
-// (time log, time start need one).
+// runFixtures are the input files the examples name (voucher upload,
+// voucher create --file); every run gets them in a fresh directory.
+var runFixtures = map[string]string{
+	"beleg.pdf":    pdfContent,
+	"quittung.jpg": "\xff\xd8\xff\xe0\x00\x10JFIF\x00",
+}
+
+// runLine runs one command line in a fresh working directory with the
+// fixtures, so output files (-O beleg.pdf) never land in the package
+// directory and no run sees files of another. The environment has token,
+// mock and a user preset (time log, time start need one).
 func runLine(t *testing.T, env map[string]string, words []string) (int, string) {
 	t.Helper()
+	dir := t.TempDir()
+	for name, content := range runFixtures {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(dir)
 	all := map[string]string{"PAPIERKRAM_TOKEN": "test-token-run", "PAPIERKRAM_USER": "1"}
 	for k, v := range env {
 		all[k] = v
