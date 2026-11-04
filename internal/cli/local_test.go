@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -384,6 +385,9 @@ func TestLocalInitRefusesSymlink(t *testing.T) {
 // the test cannot silently fall into an error path (aliases with such
 // characters are rejected by Load, see TestLoad_AliasWithControlCharacters).
 func TestProjectFileContentIsPrintable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows erlaubt keine Steuerzeichen in Dateinamen; die Bereinigung selbst ist plattformunabhängig und läuft auf Unix")
+	}
 	dir := filepath.Join(t.TempDir(), "repo\x1b[2J\u202eX")
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)

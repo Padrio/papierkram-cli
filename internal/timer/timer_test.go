@@ -123,7 +123,10 @@ func TestLoadRejectsInvalidState(t *testing.T) {
 			strings.Repeat("x", MaxComment+1) + `"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			dir := filepath.Join(t.TempDir(), "x\x1b[2J")
+			dir := filepath.Join(t.TempDir(), "x")
+			if runtime.GOOS != "windows" { // no control characters in Windows file names
+				dir += "\x1b[2J"
+			}
 			path := Path(dir, "firma")
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 				t.Fatal(err)

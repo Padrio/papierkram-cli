@@ -404,7 +404,7 @@ func TestLoad_InvalidContext(t *testing.T) {
 // Messages never echo control characters of the file: alias names in the
 // hint of ResolveTask and the path are made printable.
 func TestMessagesArePrintable(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "evil\x1b[2J")
+	dir := filepath.Join(t.TempDir(), hostileName("evil"))
 	// Load rejects such aliases (TestLoad_AliasWithControlCharacters);
 	// ResolveTask filters them anyway
 	f := &File{Tasks: map[string]int64{"x\x1b[31m": 5}}
@@ -482,6 +482,9 @@ func TestLoad_AliasWithControlCharacters(t *testing.T) {
 // Security review: a read error shows the cleaned path and only the
 // underlying error, never the raw path of the wrapped *fs.PathError.
 func TestLoad_ReadErrorPathPrintable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows erlaubt keine Steuerzeichen in Dateinamen")
+	}
 	dir := filepath.Join(t.TempDir(), "evil\x1b[2J")
 	p := filepath.Join(mkdir(t, dir), FileName) // missing: reading fails
 	_, err := Load(p)
@@ -509,7 +512,7 @@ func TestLoad_OnlyRegularFilesOfLimitedSize(t *testing.T) {
 			t.Errorf("Load(%s) = %v, want usage error with %q", p, err, want)
 		}
 	}
-	dir := mkdir(t, filepath.Join(t.TempDir(), "evil\x1b[2J"))
+	dir := mkdir(t, filepath.Join(t.TempDir(), hostileName("evil")))
 	wantUsage(t, mkdir(t, filepath.Join(dir, FileName)), "keine reguläre Datei")
 
 	big := filepath.Join(t.TempDir(), FileName)
@@ -544,4 +547,14 @@ func TestLoad_InvalidContextHintsMigration(t *testing.T) {
 	if !errors.As(err, &ce) || !strings.Contains(ce.Hint, "papierkram context rename") || !strings.Contains(ce.Hint, "Projektdatei") {
 		t.Errorf("err = %v / hint %q", err, ce.Hint)
 	}
+}
+
+// hostileName appends terminal control characters to base where the file
+// system allows them; Windows forbids control characters in file names,
+// so there the path itself cannot carry the attack.
+func hostileName(base string) string {
+	if runtime.GOOS == "windows" {
+		return base
+	}
+	return base + "\x1b[2J"
 }

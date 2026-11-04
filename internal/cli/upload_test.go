@@ -602,7 +602,12 @@ func TestVoucherCreateFileRetryAbsolutePath(t *testing.T) {
 	wantExit(t, app, Run(app, append(append([]string{}, voucherCreateArgs...), "--file=-x.pdf", "-o", "json")), 11)
 	out := mustOut(app)
 	want := "papierkram voucher upload 290 " + shellQuote(filepath.Join(wd, "-x.pdf"))
-	if !strings.Contains(out, `"retry_command": "`+want+`"`) || strings.Contains(out, " -x.pdf") {
+	var res struct {
+		RetryCommand string `json:"retry_command"`
+	}
+	// decode instead of matching the raw text: JSON escapes the
+	// backslashes of a Windows path
+	if err := json.Unmarshal([]byte(out), &res); err != nil || res.RetryCommand != want || strings.Contains(out, " -x.pdf") {
 		t.Errorf("stdout = %s\nerwartet %s", out, want)
 	}
 }
