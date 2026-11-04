@@ -534,3 +534,14 @@ func TestLoad_OnlyRegularFilesOfLimitedSize(t *testing.T) {
 		t.Errorf("link to a regular file: %+v, %v", f, err)
 	}
 }
+
+// Review M8: a context the stricter name rules reject names the way out
+// (rename the context, then adapt the file).
+func TestLoad_InvalidContextHintsMigration(t *testing.T) {
+	p := write(t, t.TempDir(), FileName, "context = \"firma gmbh\"\n")
+	_, err := Load(p)
+	var ce *clierr.Error
+	if !errors.As(err, &ce) || !strings.Contains(ce.Hint, "papierkram context rename") || !strings.Contains(ce.Hint, "Projektdatei") {
+		t.Errorf("err = %v / hint %q", err, ce.Hint)
+	}
+}

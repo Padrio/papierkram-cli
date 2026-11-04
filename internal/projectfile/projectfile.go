@@ -106,7 +106,8 @@ func Load(path string) (*File, error) {
 		if err := config.ValidateName(ctx); err != nil {
 			ce := clierr.From(err)
 			return nil, clierr.New(clierr.CodeUsage,
-				fmt.Sprintf("Projektdatei %s: ungültiger Wert für \"context\": %s", shown, ce.Message), ce.Hint)
+				fmt.Sprintf("Projektdatei %s: ungültiger Wert für \"context\": %s", shown, ce.Message),
+				ce.Hint+" Bestehenden Kontext umbenennen: papierkram context rename <alt> <neu>, dann context in der Projektdatei anpassen.")
 		}
 		f.Context = ctx
 	}
