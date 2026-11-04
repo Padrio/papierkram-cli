@@ -125,7 +125,8 @@ func jsonInt(v any) int64 {
 }
 
 // confirmTimeLog shows the summary of the time entry on stderr and asks
-// (Enter = yes). Declining is exit 8, an interrupt exit 10.
+// (Enter = yes). Declining or the end of the input is exit 8, an
+// interrupt exit 10.
 func (a *App) confirmTimeLog(ctx context.Context, client *api.Client, r *config.Resolved, p period, task, user int64, body map[string]any) error {
 	l := &nameLookup{a: a, client: client, cache: a.names(), scope: cacheScope(r), seen: map[string]cachedName{}}
 	type line struct{ label, value string }
@@ -181,9 +182,14 @@ func (a *App) confirmTimeLog(ctx context.Context, client *api.Client, r *config.
 		fmt.Fprintf(&b, "  %-12s %s\n", l.label+":", l.value)
 	}
 	_, _ = fmt.Fprint(a.Err, b.String())
-	answer, err := a.prompt(ctx, "Zeiteintrag anlegen? [J/n]: ")
+	answer, eof, err := a.ask(ctx, "Zeiteintrag anlegen? [J/n]: ")
 	if err != nil {
 		return err
+	}
+	if eof {
+		// Enter is yes, but the end of the input (Ctrl-D) is no (review M2)
+		_, _ = fmt.Fprintln(a.Err)
+		return clierr.New(clierr.CodeConfirmation, "Abgebrochen: Eingabe beendet", "Nichts gesendet. Ohne Rückfrage mit --yes")
 	}
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "", "j", "ja", "y", "yes":

@@ -60,16 +60,28 @@ func (a *App) stdin() *bufio.Reader {
 
 // prompt writes question to stderr and reads one line of input (without
 // the line ending). An interrupt ends it with errInterrupted (exit 10);
-// end of input or a read error count as an empty answer.
+// end of input or a read error count as an empty answer. A confirmation
+// whose empty answer means yes uses ask, so that end of input is no.
 func (a *App) prompt(ctx context.Context, question string) (string, error) {
+	line, _, err := a.ask(ctx, question)
+	return line, err
+}
+
+// ask is prompt that also reports the end of the input (Ctrl-D, closed
+// stdin, a read error) before anything was typed: eof is true and line
+// empty. A last line without line ending is an answer (eof false).
+func (a *App) ask(ctx context.Context, question string) (line string, eof bool, err error) {
 	_, _ = fmt.Fprint(a.Err, question)
 	r := a.stdin()
-	line, err := a.readCtx(ctx, func() ([]byte, error) {
-		s, _ := r.ReadString('\n')
+	var readErr error
+	b, err := a.readCtx(ctx, func() ([]byte, error) {
+		s, rerr := r.ReadString('\n')
+		readErr = rerr
 		return []byte(s), nil
 	})
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return strings.TrimRight(string(line), "\r\n"), nil
+	line = strings.TrimRight(string(b), "\r\n")
+	return line, readErr != nil && len(b) == 0, nil
 }

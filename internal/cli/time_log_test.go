@@ -518,3 +518,48 @@ func TestTimeLogUnbillableLikeCreate(t *testing.T) {
 	wantExit(t, app, Run(app, append(base, "--unbillable=vielleicht")), 5)
 	wantRequests(t, srv, 0)
 }
+
+// Review M2: end of input (Ctrl-D) at a confirmation is "no" (exit 8) on
+// every command that asks, also where Enter means yes (time log); nothing
+// is changed.
+func TestConfirmationEOFIsNo(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		args  []string
+		setup func(*mockapi.Server)
+		// mutating is the method that must not be sent
+		mutating string
+	}{
+		{"time log", []string{"time", "log", "--task", "492", "--user", "1", "--from", "09:00", "--to", "10:00"}, nil, "POST"},
+		{"delete", []string{"invoice", "delete", "459"}, nil, "DELETE"},
+		{"pay", []string{"voucher", "pay", "1022", "--amount", "10"}, nil, "POST"},
+		{"deliver", []string{"invoice", "deliver", "459", "--via", "pdf"}, nil, "POST"},
+		{"list --all", []string{"user", "list", "--all", "-o", "json"}, func(s *mockapi.Server) { pagedUsers(s, 10) }, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, srv := logApp(t, morning(t))
+			if tc.setup != nil {
+				tc.setup(srv)
+			}
+			app.StdinTTY = true
+			app.In = strings.NewReader("") // Ctrl-D at once
+			wantExit(t, app, Run(app, tc.args), 8)
+			for _, r := range srv.Requests() {
+				if tc.mutating != "" && r.Method == tc.mutating {
+					t.Errorf("sent %s %s", r.Method, r.Path)
+				}
+			}
+			if tc.mutating == "" && len(srv.Requests()) != 1 {
+				t.Errorf("%d pages loaded, want 1", len(srv.Requests()))
+			}
+		})
+	}
+	// a typed answer without line end still counts
+	app, srv := logApp(t, morning(t))
+	app.StdinTTY = true
+	app.In = strings.NewReader("ja")
+	wantExit(t, app, Run(app, []string{"time", "log", "--task", "492", "--user", "1", "--from", "09:00", "--to", "10:00"}), 0)
+	if reqs := srv.Requests(); reqs[len(reqs)-1].Method != "POST" {
+		t.Errorf("not sent: %+v", reqs)
+	}
+}
