@@ -489,3 +489,36 @@ func TestDeliverTimeoutSentOnIsABerlinDay(t *testing.T) {
 		})
 	}
 }
+
+// An empty mail text is missing, whether given by --body or --body-file
+// (spec 9.1: exit 2).
+func TestDeliverEmptyBodyFile(t *testing.T) {
+	for _, content := range []string{"", "\uFEFF", " \r\n\t"} {
+		app, srv := apiApp(t)
+		path := writeFile(t, "mail.txt", content)
+		wantExit(t, app, Run(app, []string{"invoice", "deliver", "459", "--via", "email", "--to", "k@example.org",
+			"--subject", "S", "--body-file", path, "--yes"}), 2)
+		wantRequests(t, srv, 0)
+		if _, errs := bufs(app); !strings.Contains(errs, "--body (oder --body-file)") {
+			t.Errorf("%q: stderr = %q", content, errs)
+		}
+	}
+}
+
+// "email": null (e.g. from a copied GET answer) is no mail: --via pdf
+// accepts it and sends no email key.
+func TestDeliverPDFWithNullEmail(t *testing.T) {
+	for _, args := range [][]string{
+		{"--input", "-", "--via", "pdf"},
+		{"--input", "-"},
+	} {
+		app, srv := apiApp(t)
+		srv.On("POST", "/income/invoices/459/deliver", http.StatusOK, nil)
+		srv.On("GET", "/income/invoices/459", http.StatusOK, sentDoc("invoice", 459, `"2026-11-04"`))
+		app.In = strings.NewReader(`{"send_via":"pdf","email":null}`)
+		wantExit(t, app, Run(app, append([]string{"invoice", "deliver", "459", "--yes", "-o", "json"}, args...)), 0)
+		if got := canonJSON(t, wantRequests(t, srv, 2)[0].Body); got != `{"send_via":"pdf"}` {
+			t.Errorf("%v: body = %s", args, got)
+		}
+	}
+}

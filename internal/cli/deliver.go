@@ -443,6 +443,11 @@ func (a *App) deliverBody(c *cobra.Command, e registry.Entry) (map[string]any, e
 		}
 		a.pruneHints(pr)
 		body = pr.Body
+		// "email": null (a copied GET answer) is no mail; the request
+		// does not allow null, and --via pdf must not see a mail
+		if v, ok := body["email"]; ok && v == nil {
+			delete(body, "email")
+		}
 	}
 	var text string
 	if c.Flags().Changed("body-file") {
@@ -469,8 +474,9 @@ func (a *App) deliverBody(c *cobra.Command, e registry.Entry) (map[string]any, e
 
 // readText reads the text of flag (--body-file) from a file or, for "-",
 // the shared stdin reader. A UTF-8 BOM is removed; line breaks (CRLF or
-// LF) stay as they are. Text that is not UTF-8 (Windows-1252, UTF-16) or
-// empty is a validation error (exit 5); a missing file a usage error.
+// LF) stay as they are. Text that is not UTF-8 (Windows-1252, UTF-16) is a
+// validation error (exit 5), a missing file a usage error; an empty text is
+// a missing body like an empty --body (checkDeliverBody, exit 2).
 func (a *App) readText(flag, path string) (string, error) {
 	var r io.Reader = a.stdin()
 	if path != "-" {
@@ -486,11 +492,8 @@ func (a *App) readText(flag, path string) (string, error) {
 		return "", clierr.New(clierr.CodeError, flag+": Eingabe nicht lesbar: "+err.Error(), "")
 	}
 	data = bytes.TrimPrefix(data, utf8BOM)
-	switch {
-	case !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0:
+	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 		return "", clierr.New(clierr.CodeValidation, flag+": Text ist nicht UTF-8-kodiert", "Datei als UTF-8 speichern")
-	case len(bytes.TrimSpace(data)) == 0:
-		return "", clierr.New(clierr.CodeValidation, flag+": Text ist leer", "")
 	}
 	return string(data), nil
 }
