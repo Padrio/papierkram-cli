@@ -115,12 +115,28 @@ func exampleProblem(t *testing.T, name, ex string) error {
 		return fmt.Errorf("beginnt nicht mit %q", "papierkram "+name)
 	}
 	app, _ := apiApp(t)
-	cmd, rest, err := NewRootCmd(app).Find(words[1:])
-	if err != nil || cmd.CommandPath() != "papierkram "+name {
+	return commandProblem(app, words, "papierkram "+name)
+}
+
+// commandProblem checks the words of one command line (words[0] is the
+// binary) against a fresh command tree of app: the command exists (and is
+// want, when given), every flag exists and parses, and the positional
+// arguments pass the command's argument check; nil means valid.
+func commandProblem(app *App, words []string, want string) error {
+	root := NewRootCmd(app)
+	root.InitDefaultHelpCmd()
+	cmd, rest, err := root.Find(words[1:])
+	switch {
+	case err != nil:
 		return fmt.Errorf("unbekannter Befehl (%v)", err)
+	case want != "" && cmd.CommandPath() != want:
+		return fmt.Errorf("unbekannter Befehl (%s statt %s)", cmd.CommandPath(), want)
 	}
 	if err := cmd.ParseFlags(rest); err != nil {
 		return err
+	}
+	if cmd == root && len(cmd.Flags().Args()) > 0 {
+		return fmt.Errorf("unbekannter Befehl %q", cmd.Flags().Arg(0))
 	}
 	if cmd.Args != nil {
 		if err := cmd.Args(cmd, cmd.Flags().Args()); err != nil {
@@ -162,8 +178,28 @@ func TestExampleProblemDetectsInvalidExamples(t *testing.T) {
 // whitespace separates words, single and double quotes group and are
 // removed. A redirection (> file, >> file, < file) is dropped with its
 // target, since it is no argument of the command (pdf -O - > beleg.pdf);
-// pipes, ; and & are not supported.
+// a line with more than one command (|, ;, &&, ||) or & is an error.
 func shellWords(s string) ([]string, error) {
+	cmds, err := shellCommands(s)
+	if err != nil {
+		return nil, err
+	}
+	switch len(cmds) {
+	case 0:
+		return nil, nil
+	case 1:
+		return cmds[0], nil
+	}
+	return nil, errShellSyntax
+}
+
+// shellCommands splits a command line into its commands, separated by
+// |, ||, && or ; outside quotes, and each command into words like
+// shellWords. An unquoted # at the start of a word starts a comment up to
+// the end of the line. An empty command (a | at the end, "a ;; b") and a
+// single & (background) are errors.
+func shellCommands(s string) ([][]string, error) {
+	var cmds [][]string
 	var words []string
 	var cur strings.Builder
 	inWord := false
@@ -181,7 +217,18 @@ func shellWords(s string) ([]string, error) {
 		cur.Reset()
 		inWord = false
 	}
-	for _, r := range s {
+	next := func() error {
+		end()
+		if redirect || len(words) == 0 {
+			return errShellSyntax
+		}
+		cmds = append(cmds, words)
+		words = nil
+		return nil
+	}
+	rs := []rune(s)
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
 		switch {
 		case quote != 0:
 			if r == quote {
@@ -194,11 +241,21 @@ func shellWords(s string) ([]string, error) {
 			inWord = true
 		case r == ' ' || r == '\t':
 			end()
+		case r == '#' && !inWord:
+			i = len(rs)
 		case r == '>' || r == '<':
 			end()
 			redirect = true
 		case r == '|' || r == ';' || r == '&':
-			return nil, errShellSyntax
+			// && and || are one separator; a single & is not supported
+			if (r == '&' || r == '|') && i+1 < len(rs) && rs[i+1] == r {
+				i++
+			} else if r == '&' {
+				return nil, errShellSyntax
+			}
+			if err := next(); err != nil {
+				return nil, err
+			}
 		default:
 			cur.WriteRune(r)
 			inWord = true
@@ -211,7 +268,12 @@ func shellWords(s string) ([]string, error) {
 	if redirect {
 		return nil, errShellSyntax
 	}
-	return words, nil
+	if len(words) > 0 {
+		cmds = append(cmds, words)
+	} else if len(cmds) > 0 {
+		return nil, errShellSyntax // ends with a separator
+	}
+	return cmds, nil
 }
 
 var (
@@ -225,15 +287,43 @@ func TestShellWords(t *testing.T) {
 		// redirections and their targets are not arguments of the command
 		"papierkram x pdf 1 -O - > beleg.pdf":             {"papierkram", "x", "pdf", "1", "-O", "-"},
 		"papierkram x update 1 --input - <a.json -o json": {"papierkram", "x", "update", "1", "--input", "-", "-o", "json"},
+		// a comment ends the line; # inside a word or quotes is text
+		"papierkram x list --sort a#b # Kommentar | y": {"papierkram", "x", "list", "--sort", "a#b"},
+		`papierkram x create --name '# eins'`:          {"papierkram", "x", "create", "--name", "# eins"},
 	} {
 		got, err := shellWords(in)
 		if err != nil || strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 			t.Errorf("shellWords(%q) = %q, %v", in, got, err)
 		}
 	}
-	for _, bad := range []string{`a "b`, `a | b`, `a ; b`, `a &`, `a >`} {
+	for _, bad := range []string{`a "b`, `a | b`, `a ; b`, `a &`, `a >`, `a && b`, `a || b`} {
 		if _, err := shellWords(bad); err == nil {
 			t.Errorf("shellWords(%q): kein Fehler", bad)
+		}
+	}
+}
+
+func TestShellCommands(t *testing.T) {
+	for in, want := range map[string]string{
+		"a 1 | b 2":                     "a 1/b 2",
+		"a && b; c || d":                "a/b/c/d",
+		`echo "x | y" | b --jq '.a|.b'`: "echo x | y/b --jq .a|.b",
+		"a > f.txt | b":                 "a/b",
+		"":                              "",
+		"# nur Kommentar":               "",
+	} {
+		cmds, err := shellCommands(in)
+		var got []string
+		for _, c := range cmds {
+			got = append(got, strings.Join(c, " "))
+		}
+		if err != nil || strings.Join(got, "/") != want {
+			t.Errorf("shellCommands(%q) = %q, %v, want %q", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{"a |", "a | | b", "| a", "a & b", "a ;; b", "a > | b"} {
+		if cmds, err := shellCommands(bad); err == nil {
+			t.Errorf("shellCommands(%q) = %q: kein Fehler", bad, cmds)
 		}
 	}
 }
