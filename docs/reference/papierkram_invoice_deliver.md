@@ -9,7 +9,7 @@ Kosten: 1 Credit je Anfrage.
 
 --via email versendet eine E-Mail mit Empfänger (--to), Betreff (--subject) und Text (--body oder --body-file, - für die Standardeingabe); Betreff und Text dürfen Platzhalter wie {{rechnung.rechnungsnummer}} oder {{angebot.angebotsnummer}} enthalten. --via pdf finalisiert den Beleg und vergibt die Nummer, ohne E-Mail. Ohne Terminal ist --yes nötig.
 
-Danach liest das CLI den Beleg nach (1 weiterer Credit; --dry-run zeigt die Summe) und zeigt id, Nummer, state, sent_on, sent_via und sent_to. Scheitert nur das Nachlesen, endet der Befehl mit Exit 0 und einer Warnung – dann NICHT erneut ausführen. Bricht die Verbindung nach dem Senden ab, entscheidet das Nachlesen: sent_on von heute → Exit 0 mit Warnung, sonst Exit 12 (vor Wiederholung per describe prüfen).
+Danach liest das CLI den Beleg nach (1 weiterer Credit; --dry-run zeigt die Summe) und zeigt id, Nummer, state, sent_on, sent_via und sent_to. Scheitert nur das Nachlesen, endet der Befehl mit Exit 0 und einer Warnung – dann NICHT erneut ausführen. Bricht die Verbindung nach dem Senden ab, entscheidet das Nachlesen: sent_on von heute → Exit 0 mit Warnung, sonst Exit 12 (vor Wiederholung per describe prüfen). Bei --via pdf setzt die API weder sent_on noch sent_via (beide bleiben null, state wird z. B. sent); ein abgebrochener PDF-Versand endet deshalb immer mit Exit 12.
 
 Verwendung:
   papierkram invoice deliver <id> [Optionen]

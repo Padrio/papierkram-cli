@@ -54,7 +54,7 @@ const deliverLong = `
 
 --via email versendet eine E-Mail mit Empfänger (--to), Betreff (--subject) und Text (--body oder --body-file, - für die Standardeingabe); Betreff und Text dürfen Platzhalter wie {{rechnung.rechnungsnummer}} oder {{angebot.angebotsnummer}} enthalten. --via pdf finalisiert den Beleg und vergibt die Nummer, ohne E-Mail. Ohne Terminal ist --yes nötig.
 
-Danach liest das CLI den Beleg nach (%s; --dry-run zeigt die Summe) und zeigt id, Nummer, state, sent_on, sent_via und sent_to. Scheitert nur das Nachlesen, endet der Befehl mit Exit 0 und einer Warnung – dann NICHT erneut ausführen. Bricht die Verbindung nach dem Senden ab, entscheidet das Nachlesen: sent_on von heute → Exit 0 mit Warnung, sonst Exit 12 (vor Wiederholung per describe prüfen).`
+Danach liest das CLI den Beleg nach (%s; --dry-run zeigt die Summe) und zeigt id, Nummer, state, sent_on, sent_via und sent_to. Scheitert nur das Nachlesen, endet der Befehl mit Exit 0 und einer Warnung – dann NICHT erneut ausführen. Bricht die Verbindung nach dem Senden ab, entscheidet das Nachlesen: sent_on von heute → Exit 0 mit Warnung, sonst Exit 12 (vor Wiederholung per describe prüfen). Bei --via pdf setzt die API weder sent_on noch sent_via (beide bleiben null, state wird z. B. sent); ein abgebrochener PDF-Versand endet deshalb immer mit Exit 12.`
 
 // newDeliverCmd builds the deliver command of an invoice or estimate entry.
 func (a *App) newDeliverCmd(e registry.Entry) *cobra.Command {
@@ -144,7 +144,8 @@ func (a *App) runDeliver(c *cobra.Command, e registry.Entry, args []string) erro
 	id := lastID(params)
 	cols := deliverColumns(e)
 	if sendErr != nil {
-		return a.deliverUnknown(o, e, id, doc, sendErr, readErr)
+		via, _ := body["send_via"].(string)
+		return a.deliverUnknown(o, e, id, via, doc, sendErr, readErr)
 	}
 	if readErr != nil {
 		warning := "Versand erfolgreich, Nachlesen fehlgeschlagen: " + clierr.From(readErr).Message + " – NICHT erneut ausführen"
@@ -197,12 +198,14 @@ type deliveredJSON struct {
 
 // deliverUnknown decides a deliver whose answer was lost after sending
 // (spec 10.4). Only a sent_on of today (a Papierkram day, see dayZone)
-// counts as this
-// delivery: exit 0 with a warning. sent_on is set by every delivery, so an
-// earlier date only shows a previous one (a re-delivery of an already sent
-// document); that, no sent_on or no readback is exit 12 with the describe
-// command to check, and the hint names the earlier date.
-func (a *App) deliverUnknown(o output.Options, e registry.Entry, id int64, doc readback, sendErr, readErr error) error {
+// counts as this delivery: exit 0 with a warning. An earlier date only
+// shows a previous delivery (a re-delivery of an already sent document);
+// that, no sent_on or no readback is exit 12 with the describe command to
+// check, and the hint names the earlier date. via pdf leaves sent_on null
+// (measured 2026-11-04), so it always ends with exit 12; the message says
+// so and names the state, which alone proves nothing (the document may
+// have been sent before).
+func (a *App) deliverUnknown(o output.Options, e registry.Entry, id int64, via string, doc readback, sendErr, readErr error) error {
 	ce := clierr.From(sendErr)
 	on := doc.sentOn()
 	day := a.sentDay(on)
@@ -214,6 +217,9 @@ func (a *App) deliverUnknown(o output.Options, e registry.Entry, id int64, doc r
 	}
 	hint := fmt.Sprintf("Ergebnis unbekannt – vor Wiederholung per describe prüfen: papierkram %s describe %d", e.Resource, id)
 	why := "Nachlesen: nicht als versendet markiert (sent_on leer)"
+	if via == "pdf" {
+		why = fmt.Sprintf("Nachlesen: sent_on leer – bei --via pdf setzt die API sent_on nicht, der Versand lässt sich so nicht bestätigen (state %q)", doc.text("state"))
+	}
 	switch {
 	case readErr != nil:
 		why = "Nachlesen fehlgeschlagen: " + clierr.From(readErr).Message
@@ -339,9 +345,13 @@ func (a *App) readBack(c *cobra.Command, e registry.Entry, client *api.Client, p
 }
 
 // sentOn is the sent_on date of the readback, "" when null or missing.
-func (d readback) sentOn() string {
+func (d readback) sentOn() string { return d.text("sent_on") }
+
+// text is the string field key of the readback, "" when null, missing or
+// no string.
+func (d readback) text(key string) string {
 	var s *string
-	if json.Unmarshal(d["sent_on"], &s) != nil || s == nil {
+	if json.Unmarshal(d[key], &s) != nil || s == nil {
 		return ""
 	}
 	return strings.TrimSpace(*s)

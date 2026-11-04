@@ -194,6 +194,31 @@ func TestR37_DeliverTimeoutReadbackShowsSent(t *testing.T) {
 	}
 }
 
+// deliver --via pdf leaves sent_on and sent_via null (measured live
+// 2026-11-04: estimate state "sent", sent_on null). After a lost answer
+// the readback can therefore never confirm a PDF delivery: exit 12 stays
+// (state alone is no proof, a document may have been sent before), but
+// the message says why and names the state, so the human can decide.
+func TestDeliverPDFTimeoutNamesStateWithoutSentOn(t *testing.T) {
+	app, srv := berlinApp(t)
+	srv.OnFunc("POST", "/income/estimates/349/deliver", func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	})
+	srv.On("GET", "/income/estimates/349", http.StatusOK,
+		[]byte(`{"id":349,"type":"estimate","estimate_no":"A-00001","name":"Angebot","state":"sent","sent_on":null,"sent_via":null,"sent_to":null}`))
+	code := waitExit(t, func() int {
+		return Run(app, []string{"estimate", "deliver", "349", "--via", "pdf", "--yes", "--timeout", "300ms", "-o", "json"})
+	})
+	wantExit(t, app, code, 12)
+	out, errs := bufs(app)
+	for _, want := range []string{"sent_on leer", "bei --via pdf setzt die API sent_on nicht", `state "sent"`,
+		"vor Wiederholung per describe prüfen: papierkram estimate describe 349"} {
+		if out != "" || !strings.Contains(errs, want) {
+			t.Errorf("stderr ohne %q (stdout %q):\n%s", want, out, errs)
+		}
+	}
+}
+
 func TestDeliverEmail(t *testing.T) {
 	for _, args := range [][]string{
 		{"invoice", "deliver", "459"},

@@ -45,12 +45,12 @@
       "nullable": true
     },
     "sent_on": {
-      "description": "Versanddatum laut API.",
+      "description": "Versanddatum laut API; bei --via pdf null (gemessen 2026-11-04).",
       "type": "string",
       "nullable": true
     },
     "sent_via": {
-      "description": "Versandart laut API.",
+      "description": "Versandart laut API; bei --via pdf null (gemessen 2026-11-04).",
       "type": "string",
       "nullable": true
     },
