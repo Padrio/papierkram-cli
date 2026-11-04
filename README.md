@@ -22,6 +22,7 @@ Das Binary heißt `papierkram`. Alle Texte (Hilfe, Fehler, Hinweise) sind deutsc
 - [Umgebungsvariablen](#umgebungsvariablen)
 - [Shell-Vervollständigung](#shell-vervollständigung)
 - [Exit-Codes](#exit-codes)
+- [Eigenheiten der API](#eigenheiten-der-api)
 - [Weitere Dokumentation](#weitere-dokumentation)
 - [Dank](#dank)
 
@@ -342,6 +343,17 @@ completion_lookup = false
 | 12 | `outcome_unknown` | Verbindung brach ab, **nachdem** eine Änderung gesendet wurde, oder die API beantwortete die Änderung mit einer Weiterleitung (3xx), der das CLI nicht folgt: vor einer Wiederholung mit `describe`/`list` prüfen |
 
 Fehler stehen auf stderr als `Fehler: …` mit `Hinweis: …` und ggf. `Correlation-ID: …`; mit `-o json` oder `--jq` folgt als letzte Zeile eine kompakte JSON-Zeile, mit `-o yaml` ein YAML-Block (`error:` …) am Ende (Schema: [docs/schemas/error.json](docs/schemas/error.json); Auswertung siehe [AGENTS.md](AGENTS.md#fehler)). Lesende Anfragen (GET) wiederholt das CLI bei Netzwerk- und Serverfehlern bis zu zweimal, Änderungen und 429 nie.
+
+## Eigenheiten der API
+
+Live gemessen gegen einen Sandbox-Account (Stand 2026-11-04, Einzelheiten in [docs/offene-punkte.md](docs/offene-punkte.md)):
+
+- **Angebote brauchen ein Datum:** `estimate create` ohne `--document-date` lehnt die API ab und berechnet trotzdem 50 Credits; das CLI prüft das deshalb vorher (Exit 5).
+- **Abgelehnte Anfragen kosten:** Auch ein mit 422 abgelehntes Anlegen kostet die vollen Credits.
+- **Rechnung ändern:** Nach `invoice update` (auch wenn nur z. B. `--description` gesendet wird) kann `payment_term` eine andere ID haben; die Ursache ist noch offen. Soll die Zahlungsbedingung sicher bleiben, `--payment-term` mitgeben und danach per `invoice describe` prüfen.
+- **`--billable-duration` ist wirkungslos:** Die API setzt beim Anlegen und Ändern eines Zeiteintrags die Dauer aus Beginn und Ende ein.
+- **PDF-Versand:** `deliver --via pdf` vergibt die Nummer und setzt den Status (z. B. `sent`), aber weder `sent_on` noch `sent_via`.
+- **Upload:** PDF, PNG und JPG werden angenommen; andere Typen (z. B. TXT) lehnt die API mit HTTP 500 ab (Exit 1). Das ist kein vorübergehender Fehler, also nicht wiederholen.
 
 ## Weitere Dokumentation
 

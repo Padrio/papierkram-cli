@@ -14,11 +14,11 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | Nr. | Punkt | Annahme des CLI | E2E-Test | Art |
 |---|---|---|---|---|
 | 1 | Statuswerte (`state`) der Belege | `state` wird roh angezeigt, nicht geprüft | `TestE2E_VoucherStateValues` | Messung |
-| 2 | Erlaubte Upload-MIME-Typen | keine lokale Einschränkung | `TestE2E_UploadMimeTypes` | PDF hart, sonst Messung |
+| 2 | Erlaubte Upload-MIME-Typen | keine lokale Einschränkung; gemessen: PDF, PNG, JPG ja, TXT HTTP 500 | `TestE2E_UploadMimeTypes` | PDF hart, sonst Messung |
 | 3 | Maximale Upload-Dateigröße | keine lokale Grenze | – | **bewusst nicht gemessen** |
 | 4 | `0.19` ergibt 19 % (Position und Artikel) | `0.19` als Zahl bzw. beim Artikel als String `"0.19"` | `TestE2E_VatRate019Is19Percent/Position`, `TestE2E_VatRate019Is19Percent/Artikel` | hart |
 | 5 | Kosten von `GET /info` | 1 Credit | `TestE2E_InfoCreditCost` | Messung |
-| 6 | `PUT` ist ein Teil-Update | nur angegebene Felder werden gesendet | `TestE2E_PartialUpdateSemantics` (ein Subtest je Ressource, siehe unten) | hart |
+| 6 | `PUT` ist ein Teil-Update | nur angegebene Felder werden gesendet; bestätigt außer Rechnung (`payment_term.id` ändert sich, offen) | `TestE2E_PartialUpdateSemantics` (ein Subtest je Ressource, siehe unten) | hart |
 | 7 | `line_items` im `PUT` ersetzen alle Positionen | ja; deshalb `--replace-items` | `TestE2E_ReplaceLineItems` | hart |
 | 8 | `{id}`-Pfadparameter in der Spec nicht deklariert | im Overlay ergänzt | – | erledigt (kein Live-Punkt) |
 | 9 | `deadline` als ISO-Datum | `YYYY-MM-DD` | `TestE2E_Carries/01_DeadlineISO` | hart |
@@ -27,8 +27,8 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 12 | `entertainment_persons: []` im Beleg-`PUT` | wird akzeptiert | `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` | hart (Bedeutung: Messung) |
 | 13 | `supply_date` im Antwortformat und Kontaktperson/Projekt im Rundlauf | wird akzeptiert; Kontaktperson und Projekt werden unter `customer` mitgesendet (seit Lauf 2) | `TestE2E_Carries/02_InvoiceRoundTrip` | hart |
 | 14 | Werte von `due_time_unit` | meist `day`; die Tabelle zeigt `ZIEL` und `EINHEIT` getrennt | `TestE2E_Carries/05_PaymentTermUnits` | Messung |
-| 15 | Einheit von `billable_duration` | Sekunden; beim Anlegen überschreibt die API den Wert (gemessen) | `TestE2E_Carries/06_BillableDurationSeconds` | Messung |
-| 16 | Setzt `deliver --via pdf` `sent_on`? | ja (für das Nachlesen nach Abbruch) | `TestE2E_Carries/07_DeliverPdfSentOn` | Messung |
+| 15 | Einheit von `billable_duration` | Sekunden; die API ignoriert den Wert beim Anlegen und Ändern (gemessen) | `TestE2E_Carries/06_BillableDurationSeconds` | Messung |
+| 16 | Setzt `deliver --via pdf` `sent_on`? | nein (gemessen); abgebrochener PDF-Versand endet mit Exit 12 | `TestE2E_Carries/07_DeliverPdfSentOn` | Messung |
 | 17 | `Accept` beim PDF-Download | `application/pdf, application/json;q=0.9` ergibt 200 `application/pdf` | `TestE2E_Carries/08_PDFDownloadAccept` | hart |
 | 18 | `price_gross: 0.0` bei `gross: false` (`--from-estimate`) | wird akzeptiert | `TestE2E_Carries/09_FromEstimatePriceGrossZero` | hart |
 | 19 | `voucher pay`: `value: null` mit Bankumsatz | wird akzeptiert | `TestE2E_Carries/10_VoucherPayValueNull` | Messung |
@@ -49,12 +49,14 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Die Spec dokumentiert die Werte von `state` für Rechnungen, Angebote und Belege nicht (Beispiele zeigen u. a. `draft`, `canceled`, `unpaid`, `partially_paid`, `deleted`, `imported`).
 - **Annahme:** Tabellen zeigen `state` roh; das CLI prüft oder übersetzt keine Statuswerte. Filter nach Status bietet die API nur für Zeiteinträge (`--state`, dort ist das Enum dokumentiert).
 - **E2E:** `TestE2E_VoucherStateValues` (Messung) sammelt die Werte der ersten Listenseite von Belegen, Rechnungen und Angeboten und den Status eines neuen Belegs. Danach sollen die Werte in der Doku ergänzt werden.
+- **Gemessen 2026-11-04 (Lauf 2):** Ein neuer Beleg hat `state` `unpaid`; die erste Belegliste zeigte nur `unpaid`, die Angebotsliste `draft` und `sent` (nach `deliver --via pdf`), die Rechnungsliste war leer. Weitere Werte (z. B. von Rechnungen) bleiben offen.
 
 ### 2. Erlaubte Upload-MIME-Typen
 
 - **Offen:** Welche Dateitypen nimmt `POST /expense/vouchers/{id}/documents` an?
 - **Annahme:** Keine lokale Einschränkung. Der MIME-Typ folgt aus der Dateiendung, unbekannte Endungen werden als `application/octet-stream` gesendet; eine Ablehnung der API kommt als Exit 5.
 - **E2E:** `TestE2E_UploadMimeTypes` lädt PDF, PNG, JPG und TXT hoch. Hart nur für PDF (`voucher create --file beleg.pdf` muss funktionieren), die übrigen sind Messung.
+- **Gemessen 2026-11-04 (Lauf 2):** PDF, PNG und JPG nimmt die API an (HTTP 201). TXT lehnt sie mit **HTTP 500** („Internal server error.“) ab statt mit 4xx; das CLI meldet das als Exit 1 (`server_error`), bei `voucher create --file` als Exit 11 mit „Ergebnis des Hochladens unbekannt“. Ein Upload eines nicht unterstützten Typs ist also nicht vorübergehend: nicht blind wiederholen, sondern den Dateityp ändern.
 
 ### 3. Maximale Upload-Dateigröße — bewusst nicht gemessen
 
@@ -67,6 +69,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Verbucht die API den Dezimalbruch `0.19` in Positionen (Zahl) und beim Artikel (String) als 19 %?
 - **Annahme:** Ja. Das CLI normalisiert jede Schreibweise (`19`, `19%`, `0,19`, Zahl 19) auf 0.19 und sendet sie beim Artikel als String `"0.19"`.
 - **E2E:** `TestE2E_VatRate019Is19Percent/Position` und `TestE2E_VatRate019Is19Percent/Artikel` (hart).
+- **Gemessen 2026-11-04 (Lauf 2):** bestätigt (nach Umstellung des Sandbox-Accounts von Kleinunternehmer auf Regelbesteuerung): Position mit `0.19` (Zahl) ergibt `vat_rate` `"19%"`, total_vat 38 bei total_net 200; Artikel mit `"0.19"` ergibt den Steuersatz „19%“ (rate 0.19). In Lauf 1 buchte der Kleinunternehmer-Account 0 %.
 
 ### 5. Kosten von `GET /info`
 
@@ -74,18 +77,21 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Annahme:** 1 Credit (Regel aus Spec 4.3: alles außer Anlegen kostet 1). Betrifft `info`, `auth login` und `auth status`.
 - **E2E:** `TestE2E_InfoCreditCost` (Messung) ruft `info` dreimal auf; die Kosten jedes Aufrufs sind sein eigenes `X-Consumed-Quota` (siehe Punkt 25). Weichen sie von der Registry ab oder voneinander, steht das als `ABWEICHUNG` im Log; dann die Registry anpassen. Die Differenz von `X-Remaining-Quota` wird nur zur Information geloggt.
 - **Gemessen 2026-11-04 (erster Live-Lauf):** `X-Consumed-Quota` war bei allen drei Aufrufen 1, also 1 Credit wie in der Registry. Die damalige `ABWEICHUNG` („kostet 0 Credits“) war ein Messfehler der Suite: Sie las den Header als laufenden Zähler und nahm die Differenz.
+- **Gemessen 2026-11-04 (Lauf 2):** erneut `X-Consumed-Quota` 1 je Aufruf, keine Abweichung.
 
 ### 6. `PUT` als Teil-Update
 
 - **Offen:** Ändert `PUT` nur die gesendeten Felder, oder setzt es fehlende Felder zurück?
 - **Annahme:** Teil-Update (so arbeitet auch papierkram-mcp-server live). `update` sendet nur die angegebenen Felder.
 - **E2E:** `TestE2E_PartialUpdateSemantics` (hart) mit je einem Subtest pro Ressource: `TestE2E_PartialUpdateSemantics/company`, `TestE2E_PartialUpdateSemantics/person`, `TestE2E_PartialUpdateSemantics/project`, `TestE2E_PartialUpdateSemantics/task`, `TestE2E_PartialUpdateSemantics/proposition`, `TestE2E_PartialUpdateSemantics/estimate`, `TestE2E_PartialUpdateSemantics/invoice`, `TestE2E_PartialUpdateSemantics/voucher`, `TestE2E_PartialUpdateSemantics/time`, `TestE2E_PartialUpdateSemantics/custom-attribute`. Jeder ändert ein Feld und prüft, dass die anderen (und die Positionen) bleiben.
+- **Gemessen 2026-11-04 (Lauf 2):** Teil-Update bestätigt für company, person, project, task, proposition, estimate, voucher, time und custom-attribute. **Rechnung:** nach `invoice update --description …` (gesendet nur `description`, per Test belegt) hatte `payment_term.id` einen anderen Wert (22 → 25). `payment_term` einer Rechnung ist eine Kopie der gewählten Vorlage (in allen Spec-Beispielen `id` = `template_id` + 1); ob nur die Kopie neu angelegt wurde (gleiche `template_id`) oder die Zahlungsbedingung auf einen Standard zurückfiel, ist offen. Lauf 3 misst `id`, `template_id` und `name` vorher und nachher und loggt die Schlüssel aller anderen geänderten Felder; der Subtest prüft jetzt hart nur noch `payment_term.template_id`. Bis dahin: wer sichergehen will, gibt bei `invoice update` `--payment-term` mit.
 
 ### 7. Positionen im `PUT` ersetzen
 
 - **Offen:** Ersetzen `line_items` im `PUT` alle Positionen? Sie haben im Request keine `id`.
 - **Annahme:** Ja. `update` mit `--item`/`--items` verlangt deshalb `--replace-items` (sonst Exit 2); `line_items` aus `--input` werden ohne `--replace-items` nicht gesendet (mit Hinweis).
 - **E2E:** `TestE2E_ReplaceLineItems` (hart).
+- **Gemessen 2026-11-04 (Lauf 2):** bestätigt: vorher 2 Positionen, nachher nur die gesendete.
 
 ### 8. Nicht deklarierte `{id}`-Pfadparameter — erledigt
 
@@ -97,6 +103,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Das Beispiel der Spec zeigt `deadline` einer Aufgabe als `"15.05.2020"`.
 - **Annahme:** Die API nimmt ISO `YYYY-MM-DD` (das Overlay setzt `format: date`); das CLI sendet ISO.
 - **E2E:** `TestE2E_Carries/01_DeadlineISO` (hart).
+- **Gemessen 2026-11-04 (Lauf 2):** bestätigt: gesendet und gespeichert `2026-12-31`.
 
 ### 10. `due_date` per `UpdateInvoice` nicht änderbar — nicht gemessen
 
@@ -109,12 +116,14 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Ein Rundlauf `estimate describe -o json | estimate update --input -` sendet für einen Entwurf `sent_on: null` und `sent_to: null`. Nimmt die API das an?
 - **Annahme:** Ja.
 - **E2E:** `TestE2E_Carries/03_EstimateNullSentFields` (hart).
+- **Gemessen 2026-11-04 (Lauf 2):** bestätigt: `PUT` mit `sent_on: null` und `sent_to: null` HTTP 200, beide danach `null`.
 
 ### 12. `entertainment_persons: []` im Beleg-`PUT`
 
 - **Offen:** Nimmt die API ein leeres Array an, und leert es die Liste oder bleibt sie unverändert?
 - **Annahme:** Wird angenommen; das CLI sendet es, wenn es angegeben ist.
 - **E2E:** `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` (Annahme hart, Bedeutung gemessen).
+- **Gemessen 2026-11-04 (Lauf 2):** angenommen; danach `[]` (die Liste war vorher schon leer, die Bedeutung „leeren oder unverändert“ bleibt damit offen).
 
 ### 13. Rundlauf einer Rechnung: `supply_date` und `customer`
 
@@ -129,13 +138,14 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Welche Einheiten haben Zahlungsbedingungen? `due_time_unit` ist in der Spec ein freier String ohne Enum; alle Beispiele zeigen `day`.
 - **Annahme:** Meist `day`, aber das CLI nimmt keine Einheit an: Die Tabelle von `payment-term list` zeigt die Spalten `ZIEL` (`due_time`) und `EINHEIT` (`due_time_unit`) getrennt, `-o wide` ebenso für das Skonto. Eine andere Einheit braucht keine Codeänderung.
 - **E2E:** `TestE2E_Carries/05_PaymentTermUnits` (Messung); eine andere Einheit als `day` steht als `ABWEICHUNG` von den Spec-Beispielen im Log.
+- **Gemessen 2026-11-04 (Lauf 2):** alle 7 Zahlungsbedingungen der Sandbox haben `day`.
 
 ### 15. Einheit von `billable_duration`
 
 - **Offen:** In welcher Einheit erwartet die API `billable_duration` im Request?
 - **Annahme:** Sekunden (Overlay).
 - **Gemessen 2026-11-04: API überschreibt billable_duration mit duration bei create.** Ein Zeiteintrag 09:00–10:30 mit `billable_duration` 1800 wurde mit `billable_duration` 5400 gespeichert, also mit `duration`. Die Einheit lässt sich so nicht bestätigen. Das CLI kann dagegen nichts tun; die Hilfe von `time create --billable-duration` weist darauf hin.
-- **Offen:** Ob `time update --billable-duration` den Wert danach setzt (und ob dann in Sekunden), ist noch nicht gemessen.
+- **Gemessen 2026-11-04 (Lauf 2):** Auch `time update --billable-duration 1800` ändert nichts: gespeichert bleibt 5400 (= `duration`). Die API ignoriert den Wert beim Anlegen und beim Ändern und rechnet aus Beginn und Ende. Die Hilfe von `time create` und `time update` nennt `--billable-duration` deshalb wirkungslos; das Flag bleibt, weil es zur Spec gehört.
 - **E2E:** `TestE2E_Carries/06_BillableDurationSeconds` (Messung, seit 2026-11-04 nicht mehr hart): misst den Wert nach dem Anlegen und nach `time update --billable-duration`; weicht der gespeicherte Wert vom gesendeten ab, steht das als `ABWEICHUNG` im Log.
 
 ### 16. Setzt `deliver --via pdf` `sent_on`?
@@ -143,24 +153,28 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Setzt die API beim PDF-Versand `sent_on`?
 - **Annahme:** Bricht die Verbindung nach dem Senden ab, liest `deliver` den Beleg nach: `sent_on` von heute ergibt Exit 0 mit Warnung, sonst Exit 12. Setzt die API `sent_on` bei `--via pdf` nicht, endet dieser Fall immer mit Exit 12 (sicher, aber unnötig vorsichtig).
 - **E2E:** `TestE2E_Carries/07_DeliverPdfSentOn` (Messung).
+- **Gemessen 2026-11-04 (Lauf 2):** **nein.** `deliver --via pdf` antwortet 204 ohne Body; danach sind `sent_on`, `sent_via` und `sent_to` `null`, `state` ist `sent`, die Nummer (`A-00001`) ist vergeben. Folge: Bricht die Verbindung bei einem PDF-Versand ab, endet `deliver` immer mit Exit 12; die Meldung sagt jetzt, dass die API bei `--via pdf` kein `sent_on` setzt, und nennt `state`. `state` allein ist kein Beweis (der Beleg kann schon früher versendet worden sein), deshalb bleibt es bei Exit 12.
 
 ### 17. `Accept` beim PDF-Download
 
 - **Offen:** Die Spec nennt den Content-Type des PDFs wörtlich `["application/pdf"]`. Welcher `Accept`-Header liefert das PDF?
 - **Annahme:** `Accept: application/pdf, application/json;q=0.9` ergibt 200 mit `application/pdf`; Fehler kommen weiter als JSON.
 - **E2E:** `TestE2E_Carries/08_PDFDownloadAccept` (hart).
+- **Gemessen 2026-11-04 (Lauf 2):** bestätigt: HTTP 200, `application/pdf`, 29 844 Bytes.
 
 ### 18. `price_gross: 0.0` bei `gross: false`
 
 - **Offen:** `invoice create --from-estimate` übernimmt `price_gross` aus dem Angebot; bei Netto-Angeboten ist das 0.0. Nimmt die API das an?
 - **Annahme:** Ja.
 - **E2E:** `TestE2E_Carries/09_FromEstimatePriceGrossZero` (hart).
+- **Gemessen 2026-11-04 (Lauf 2):** bestätigt: `gross` false mit `price_gross` 0 je Position, HTTP 201.
 
 ### 19. `voucher pay` mit `value: null` und Bankumsatz
 
 - **Offen:** Nimmt `pay` `value: null` neben `banking_transaction` an?
 - **Annahme:** Ja; mit nur `--transaction` sendet das CLI `value` gar nicht.
 - **E2E:** `TestE2E_Carries/10_VoucherPayValueNull` (Messung) mit der Bankumsatz-ID 999999999, die es nicht gibt, und ohne Betrag: Die Suite bezahlt nie etwas, ihr Transport lässt für `pay` nur genau diesen Body durch.
+- **Gemessen 2026-11-04 (Lauf 2):** Mit `value: null` und der Bankumsatz-ID 999999999 antwortet die API 404 „Couldn't find Banking::Transaction with 'id'=999999999 [WHERE `banking_transactions`.`value` < 0.0]“. Der Body wird also bis zur Suche des Umsatzes verarbeitet (kein 422 wegen `value: null`); gesucht werden nur Ausgaben (`value` < 0). Ob die Zahlung mit einem echten Umsatz gelingt, bleibt offen.
 
 ### 20. `voucher pay` mit Betrag und Bankumsatz zusammen — bewusst nicht gemessen
 
@@ -173,24 +187,28 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Rechnet die API die Dauer eines Zeiteintrags als Wanduhr-Differenz, auch am Tag der Zeitumstellung (z. B. 01:30–02:30 am 25.10.)?
 - **Annahme:** Wanduhr-Differenz; `time log --from 01:30 --duration 2h` ergibt 01:30–03:30, auch an Umstellungstagen.
 - **E2E:** `TestE2E_Carries/11_DurationWallClock` (hart) misst nur einen normalen Tag. Der Umstellungstag ist **bewusst nicht gemessen**, sondern nur dokumentiert (Entscheidung zu Task 44).
+- **Gemessen 2026-11-04 (Lauf 2):** bestätigt für einen normalen Tag: 09:00–10:30 ergibt `duration` 5400.
 
 ### 22. Ende um Mitternacht
 
 - **Offen:** Nimmt die API `ended_at_time` `"00:00"` oder `"24:00"` nach einem Beginn um 23:00 an, und als eine Stunde?
 - **Annahme:** Das CLI lehnt Einträge über Mitternacht ab (Exit 2), auch ein Ende um 00:00.
 - **E2E:** `TestE2E_Carries/12_MidnightEnd` (Messung, über `papierkram api` ohne lokale Prüfung).
+- **Gemessen 2026-11-04 (Lauf 2):** Die API nimmt beide an: 23:00–00:00 und 23:00–24:00 ergeben je `duration` 3600 und `ended_at` 00:00 des Folgetags. Das CLI lehnt ein Ende um Mitternacht weiter mit Exit 2 ab (offen: lockern, siehe Report der E2E-Fixes).
 
 ### 23. Antwort von `GET /info`
 
 - **Offen:** Die Spec hat für `GET /info` kein Response-Schema; `papierkram schema info` zeigt deshalb `"response": null`.
 - **Annahme:** Das CLI gibt die Antwort unverändert aus und wertet sie nicht aus; das Restkontingent (`auth status`) kommt aus den Headern. Die Rechnungsvorlagen stehen laut Spec-Beispiel unter `settings.custom_templates.invoices`.
 - **E2E:** `TestE2E_Carries/13_InfoStructure` (Messung) loggt die Struktur der Antwort.
+- **Gemessen 2026-11-04 (Lauf 2):** `api.version` (String) und `settings.custom_templates.invoices` (Array).
 
 ### 24. Leerer Body bei `deliver`
 
 - **Offen:** Die Spec behauptet 201 mit Objekt, live antwortet `deliver` laut papierkram-mcp-server mit 2xx und leerem Body.
 - **Annahme:** Ein leerer 2xx-Body ist Erfolg; danach liest das CLI den Beleg nach.
 - **E2E:** `TestE2E_DeliverPdfEmptyBody` (2xx und Exit 0 hart, der Body ist Messung).
+- **Gemessen 2026-11-04 (Lauf 2):** bestätigt: HTTP 204, kein Content-Type, leerer Body; das CLI endet mit Exit 0 und liest nach.
 
 ### 25. Quota-Header
 
@@ -198,6 +216,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Annahme:** Beide kommen mit jeder Antwort als ganze Zahl; `X-RateLimit-Remaining` wird bewusst ignoriert.
 - **E2E:** `TestE2E_QuotaHeadersPresent` (hart).
 - **Gemessen 2026-11-04 (erster Live-Lauf):** Beide Header kommen. `X-Consumed-Quota` nennt die Kosten **der einen beantworteten Anfrage** (z. B. 1 für eine Liste oder `GET /info`), keinen laufenden Monatszähler; `X-Remaining-Quota` ist das Restkontingent. Auch eine abgelehnte Anfrage kostet: drei mit 422 abgelehnte Anlagen (2 Angebote, 1 Beleg) kosteten je 50 Credits. `auth status` nennt ihn deshalb „Kosten dieser Abfrage“ (JSON `quota.request_cost`, früher `consumed`/„verbraucht“), `--debug` ergänzt „(Kosten dieser Anfrage)“; einen Monatsverbrauch meldet die API nicht.
+- **Gemessen 2026-11-04 (Lauf 2):** erneut beide Header; Restkontingent sinkt je `GET /info` um 1.
 
 ### 26. Person `default` als String
 
@@ -217,3 +236,4 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Gemessen 2026-11-04 (erster Live-Lauf):** `POST /income/estimates` ohne `document_date` lehnt die API mit 422 „Datum muss ausgefüllt werden“ ab und berechnet trotzdem die 50 Credits des Anlegens. Die Spec nennt nur `name` und `line_items` als Pflicht.
 - **Stand des CLI:** Das Overlay ([api/overlay.yaml](../api/overlay.yaml), Abschnitt 16) macht `document_date` im Anlege-Body des Angebots zur Pflicht (auch `null` gilt als fehlend). `estimate create` ohne `--document-date` (bzw. ohne `document_date` in `--input`) endet mit Exit 5, bevor eine Anfrage gesendet wird. `invoice create --from-estimate` ist nicht betroffen: Das Rechnungsdatum kommt nie aus dem Angebot, sondern aus `--document-date`.
 - **Offen:** Ob auch `POST /income/invoices` ohne `document_date` scheitert, ist nicht gemessen. Das CLI behandelt das Feld bei Rechnungen deshalb weiter als optional; die E2E-Suite sendet es vorsichtshalber immer mit. Bei einer Messung (422 wie beim Angebot) das Overlay entsprechend ergänzen.
+- **Gemessen 2026-11-04 (Lauf 2):** `estimate create` mit `--document-date` gelingt (zwei Angebote angelegt).
