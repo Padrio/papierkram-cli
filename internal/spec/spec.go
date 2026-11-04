@@ -3,6 +3,8 @@ package spec
 import (
 	_ "embed"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -188,6 +190,36 @@ func RequestSchema(opID string) *openapi3.Schema {
 // ResponseSchema returns the application/json schema of the first 2xx
 // response that has one (lowest status code first). allOf is left unresolved.
 func ResponseSchema(opID string) *openapi3.Schema {
+	for _, r := range successResponses(opID) {
+		if mt := r.Content["application/json"]; mt != nil && mt.Schema != nil {
+			return mt.Schema.Value
+		}
+	}
+	return nil
+}
+
+// FileMediaType returns the media type of a file answer (application/pdf):
+// the first non-JSON content type of the first 2xx response that has
+// content. It is "" for JSON operations, operations without content and
+// unknown operations.
+func FileMediaType(opID string) string {
+	for _, r := range successResponses(opID) {
+		if len(r.Content) == 0 {
+			continue
+		}
+		for _, ct := range slices.Sorted(maps.Keys(r.Content)) {
+			if ct != "application/json" {
+				return ct
+			}
+		}
+		return ""
+	}
+	return ""
+}
+
+// successResponses returns the 2xx responses of opID, lowest status code
+// first.
+func successResponses(opID string) []*openapi3.Response {
 	o, ok := OperationByID(opID)
 	if !ok || o.Op.Responses == nil {
 		return nil
@@ -199,16 +231,13 @@ func ResponseSchema(opID string) *openapi3.Schema {
 		}
 	}
 	sort.Strings(codes)
+	var out []*openapi3.Response
 	for _, code := range codes {
-		r := o.Op.Responses.Map()[code]
-		if r.Value == nil {
-			continue
-		}
-		if mt := r.Value.Content["application/json"]; mt != nil && mt.Schema != nil {
-			return mt.Schema.Value
+		if r := o.Op.Responses.Map()[code]; r.Value != nil {
+			out = append(out, r.Value)
 		}
 	}
-	return nil
+	return out
 }
 
 // ListEntryProperty returns the schema of the property name of the entries

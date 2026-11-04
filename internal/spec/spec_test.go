@@ -131,6 +131,21 @@ func TestResponseSchema(t *testing.T) {
 	}
 }
 
+// The PDF downloads answer with application/pdf (overlay), JSON operations
+// with no file type.
+func TestFileMediaType(t *testing.T) {
+	for _, op := range []string{"GetInvoicePdf", "GetEstimatePdf", "GetVoucherPdf"} {
+		if got := FileMediaType(op); got != "application/pdf" {
+			t.Errorf("%s: %q, want application/pdf", op, got)
+		}
+	}
+	for _, op := range []string{"GetInvoice", "DeliverInvoice", "Nope"} {
+		if got := FileMediaType(op); got != "" {
+			t.Errorf("%s: %q, want empty", op, got)
+		}
+	}
+}
+
 // The entries of GET /contact/companies have contact_type through allOf
 // (CompanyFlat → CompanyOnlyReference); the API ignores it as a filter, so
 // company list --type filters by this property locally (spec 9.7).
