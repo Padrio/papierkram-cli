@@ -25,16 +25,16 @@
 //	  51, user 1, time entry 10, custom attribute 10,
 //	  10 × (describe, update, describe)                           113
 //	ReplaceLineItems: describe, update, describe                    3
-//	Carries (13 subtests, 2 time entries of 10 in no. 12)          36
+//	Carries (13 subtests, 2 time entries of 10 in no. 12)          35
 //	final cleanup: 1 delete per object (13); a final document
 //	  costs up to 3 more (cancel, delete, archive)                 13
-//	                                                     total    426
+//	                                                     total    425
 //
 // Of the budget, cleanupReserve = 46 is kept for the final cleanup: the
 // documented worst case (e2eguard.CleanupReserve) for the 4 documents
 // (2 estimates, invoice, voucher; 4 each) and up to 10 other objects
 // (2 each), plus a margin of 10. Tests may use 490 - 46 = 444 (planned:
-// 413). The meter (e2eguard.Meter) counts the real cost from
+// 412). The meter (e2eguard.Meter) counts the real cost from
 // X-Consumed-Quota; before the cleanup the transport refuses every
 // request that would cut into the reserve, and need() skips a test (and
 // all later ones) when its cost no longer fits. TestMain releases the
@@ -55,7 +55,8 @@
 //	  gross=false), 11 (duration = wall clock difference on a normal day).
 //	measured only: empty deliver body, upload of png/jpg/txt, voucher
 //	  state values, GET /info cost, carries 5 (due_time_unit values),
-//	  7 (sent_on after deliver pdf), 10 (pay body with value null),
+//	  7 (sent_on after deliver pdf), 10 (pay body with value null and a
+//	  transaction that does not exist: the suite never pays),
 //	  12 (end 00:00/24:00), 13 (structure of GET /info).
 //	A measurement that differs from what the CLI assumes (GET /info cost
 //	  vs. registry, due_time_unit other than "day") is logged as

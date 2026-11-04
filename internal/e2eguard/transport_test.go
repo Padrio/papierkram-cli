@@ -151,3 +151,39 @@ func TestTransportStopsAtBudget(t *testing.T) {
 		t.Errorf("server got %d requests, want 1", n)
 	}
 }
+
+// Ruling: the suite never pays. A pay request goes out only with value
+// null (or without value); any amount is refused before sending.
+func TestTransportRefusesPayWithAmount(t *testing.T) {
+	srv := mockapi.New(t, mockapi.WithoutAutoFail())
+	tr, u := newTestTransport(t, srv, 100)
+	for _, body := range []string{
+		`{"value":1,"banking_transaction":{"id":999999999}}`,
+		`{"value":"1"}`,
+		`{"value":0}`,
+		`{"value":null,"value":5}`,
+		``,
+		`not json`,
+	} {
+		if _, err := send(t, tr, "POST", u.String()+"/expense/vouchers/7/pay", body); !errors.Is(err, ErrRefused) {
+			t.Errorf("pay %q: err %v, want ErrRefused", body, err)
+		}
+	}
+	if n := len(srv.Requests()); n != 0 {
+		t.Fatalf("server got %d requests", n)
+	}
+	for _, body := range []string{
+		`{"value":null,"banking_transaction":{"id":999999999}}`,
+		`{"banking_transaction":{"id":999999999}}`,
+	} {
+		resp, err := send(t, tr, "POST", u.String()+"/expense/vouchers/7/pay", body)
+		if err != nil {
+			t.Errorf("pay %q: %v", body, err)
+			continue
+		}
+		_ = resp.Body.Close()
+	}
+	if n := len(srv.Requests()); n != 2 {
+		t.Errorf("server got %d requests, want 2", n)
+	}
+}

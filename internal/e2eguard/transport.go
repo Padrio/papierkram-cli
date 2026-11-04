@@ -31,6 +31,8 @@ type Exchange struct {
 //     nothing else is ever contacted;
 //   - a deliver request carries a JSON body with send_via "pdf" (the
 //     suite never sends mail);
+//   - a pay request carries a JSON body with value null or without value
+//     (the suite never pays);
 //   - the documented cost still fits the budget of Meter.
 //
 // A refused request is not sent; RoundTrip returns ErrRefused or
@@ -60,8 +62,11 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return nil, err
 		}
 	}
-	if isDeliver(req.URL.Path) && !deliversPDF(body) {
+	if isAction(req.URL.Path, "deliver") && !deliversPDF(body) {
 		return nil, fmt.Errorf("%w: deliver nur mit send_via \"pdf\"", ErrRefused)
+	}
+	if isAction(req.URL.Path, "pay") && !paysNothing(body) {
+		return nil, fmt.Errorf("%w: pay nur mit value null (die Suite bezahlt nie)", ErrRefused)
 	}
 	if err := t.Meter.Reserve(req.Method, req.URL.Path); err != nil {
 		return nil, err
@@ -121,8 +126,20 @@ func closeBody(req *http.Request) {
 	}
 }
 
-func isDeliver(path string) bool {
-	return strings.HasSuffix(strings.TrimRight(path, "/"), "/deliver")
+// isAction reports whether path ends with the action segment /action.
+func isAction(path, action string) bool {
+	return strings.HasSuffix(strings.TrimRight(path, "/"), "/"+action)
+}
+
+// paysNothing reports whether body is a JSON object whose value is null
+// or absent: the API gets no amount to book.
+func paysNothing(body []byte) bool {
+	var b map[string]json.RawMessage
+	if err := json.Unmarshal(body, &b); err != nil {
+		return false
+	}
+	v, ok := b["value"]
+	return !ok || string(v) == "null"
 }
 
 // deliversPDF reports whether body is a JSON object with send_via "pdf".

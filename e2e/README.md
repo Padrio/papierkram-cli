@@ -64,8 +64,10 @@ go test -tags e2e -v ./e2e/...
   storniert bzw. archiviert. Rechnungen, Angebote und Belege werden als
   Entwurf angelegt; versendet wird nur ein eigenes Angebot, keine Rechnung
   (keine Lücke im Rechnungsnummernkreis).
-- `voucher pay` wird nur mit einer Bankumsatz-ID gemessen, die es nicht
-  gibt; echte Bankumsätze bleiben unberührt.
+- Die Suite bezahlt nie etwas: `voucher pay` wird nur mit `value: null` und
+  einer Bankumsatz-ID gemessen, die es nicht gibt (ohne Betrag); einen
+  pay-Request mit Betrag lehnt der Transport ab. Echte Bankumsätze bleiben
+  unberührt.
 - Das Token erscheint nie in der Testausgabe: Jede Logzeile wird vorher
   geschwärzt und danach auf Reste geprüft; die CLI-Ausgaben werden auf das
   Token geprüft.
@@ -73,13 +75,13 @@ go test -tags e2e -v ./e2e/...
 ## Credit-Budget
 
 Ein voller Lauf kostet nach den dokumentierten Preisen (Abschnitt 4.3) etwa
-**426 Credits**; das Budget je Lauf ist **490** (Zielwert unter 500, die
+**425 Credits**; das Budget je Lauf ist **490** (Zielwert unter 500, die
 Aufschlüsselung steht im Kopf von `e2e_test.go`). Gezählt wird mit den
 Antwort-Headern `X-Consumed-Quota`/`X-Remaining-Quota`.
 
 Vom Budget sind **46 Credits fürs Aufräumen reserviert** (dokumentierter
 Höchstaufwand: je Rechnung/Angebot/Beleg 4, je anderem Objekt 2, plus 10
-Puffer). Die Tests dürfen also höchstens 444 Credits verbrauchen: Eine
+Puffer). Die Tests dürfen also höchstens 444 Credits verbrauchen (geplant: 412): Eine
 Anfrage, die in die Reserve greifen würde, wird nicht gesendet, und reicht das
 Budget für einen Test nicht mehr, werden dieser und alle folgenden Tests mit
 Begründung übersprungen. Erst das Aufräumen am Ende darf die Reserve nutzen.

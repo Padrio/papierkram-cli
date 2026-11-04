@@ -14,8 +14,9 @@ import (
 )
 
 // noTransaction is a banking transaction ID that does not exist. Carry 10
-// measures the shape of a pay body with it: the suite never links a real
-// bank transaction (that would change an object it does not own).
+// measures the shape of a pay body with it: the suite never pays and never
+// links a real bank transaction (that would change an object it does not
+// own).
 const noTransaction = "999999999"
 
 // TestE2E_Carries holds the additional live measurements carried over from
@@ -194,27 +195,22 @@ func TestE2E_Carries(t *testing.T) {
 		s.measuref(t, "price_gross bei gross=false", "gesendet gross %v, price_gross %v → HTTP %d (akzeptiert)", body.Gross, pg, x.Status)
 	})
 
-	// 10. voucher pay: value null next to banking_transaction, and amount
-	// together with a transaction. Measured with a transaction ID that
-	// does not exist; the answer shows how the API reads the body.
-	t.Run("10_VoucherPayShapes", func(t *testing.T) {
+	// 10. voucher pay: is value null next to banking_transaction accepted?
+	// Measured with a transaction ID that does not exist and no amount
+	// (controller ruling: the suite never pays; the transport refuses a
+	// pay body with a value). amount together with a transaction is not
+	// measured live (open point, docs/offene-punkte.md).
+	t.Run("10_VoucherPayValueNull", func(t *testing.T) {
 		v := idOf(s.voucher(t))
-		for _, c := range []struct {
-			name, stdin string
-			args        []string
-		}{
-			{"value null + banking_transaction", `{"value":null,"banking_transaction":{"id":` + noTransaction + `}}`, []string{"--input", "-"}},
-			{"--amount + --transaction", "", []string{"--amount", "1", "--transaction", noTransaction}},
-		} {
-			s.need(t, 1)
-			r := s.run(t, c.stdin, append([]string{"voucher", "pay", ids(v), "--yes", "-o", "json"}, c.args...)...)
-			x := lastExchange(r, "POST", "/pay")
-			if x == nil {
-				s.measuref(t, "voucher pay", "%s: nicht gesendet, Exit %d: %s", c.name, r.code, strings.TrimSpace(r.stderr))
-				continue
-			}
-			s.measuref(t, "voucher pay", "%s: Body %s → HTTP %d: %s", c.name, x.ReqBody, x.Status, apiMessage(x.RespBody))
+		s.need(t, 1)
+		body := `{"value":null,"banking_transaction":{"id":` + noTransaction + `}}`
+		r := s.run(t, body, "voucher", "pay", ids(v), "--input", "-", "--yes", "-o", "json")
+		x := lastExchange(r, "POST", "/pay")
+		if x == nil {
+			s.measuref(t, "voucher pay", "value null + banking_transaction: nicht gesendet, Exit %d: %s", r.code, strings.TrimSpace(r.stderr))
+			return
 		}
+		s.measuref(t, "voucher pay", "value null + banking_transaction: Body %s → HTTP %d: %s", x.ReqBody, x.Status, apiMessage(x.RespBody))
 	})
 
 	// 11. The API computes the duration as the wall clock difference
