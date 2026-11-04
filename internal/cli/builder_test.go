@@ -461,7 +461,8 @@ func TestListAllMaxPagesCaps(t *testing.T) {
 		t.Errorf("stdout = %s", out)
 	}
 	// capped at 2 pages: no 10-page warning, but a cap warning
-	if strings.Contains(errs, "15 Seiten (") || !strings.Contains(errs, "Warnung: --max-pages 2: 2 von 15 Seiten geladen") {
+	if strings.Contains(errs, "15 Seiten (") || !strings.Contains(errs, "Warnung: --max-pages 2: 2 von 15 Seiten geladen; weitere Einträge vorhanden") ||
+		strings.Contains(errs, "Ergebnis unvollständig") {
 		t.Errorf("stderr = %q", errs)
 	}
 

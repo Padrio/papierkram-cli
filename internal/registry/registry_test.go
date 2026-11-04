@@ -319,8 +319,6 @@ func TestCompanyPersonEntriesRegistered(t *testing.T) {
 	}
 }
 
-// company list --type: the API ignores contact_type (spec 4.6), so the
-// filter is local (spec 9.7).
 // Spec 10.3: one column customer_no/supplier_no, the supplier number when
 // there is no customer number.
 func TestCompanyNumberColumn(t *testing.T) {
@@ -338,6 +336,8 @@ func TestCompanyNumberColumn(t *testing.T) {
 	}
 }
 
+// company list --type: the API ignores contact_type (spec 4.6), so the
+// filter is local (spec 9.7).
 func TestCompanyListTypeFilter(t *testing.T) {
 	e, _ := Lookup("company", "list")
 	if len(e.Filters) != 1 {
