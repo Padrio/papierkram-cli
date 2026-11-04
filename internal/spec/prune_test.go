@@ -328,3 +328,27 @@ func TestResourceResponseSchema(t *testing.T) {
 		}
 	}
 }
+
+// A field under a different name (address for recipient, R06 at the CLI
+// level) is not close in spelling. When it is the only unknown field of
+// its object and exactly one required field of that object is missing, the
+// missing field is the suggestion.
+func TestPruneSuggestsTheOnlyMissingRequiredField(t *testing.T) {
+	body := map[string]any{"send_via": "email", "email": map[string]any{"address": "a@example.org", "subject": "S", "body": "B"}}
+	_, err := Prune(body, RequestSchema("DeliverInvoice"), nil)
+	wantValidation(t, err, `unbekanntes Feld "email.address" – meintest du "recipient"?`)
+
+	// two missing required fields: no guess
+	body = map[string]any{"send_via": "email", "email": map[string]any{"address": "a@example.org", "body": "B"}}
+	_, err = Prune(body, RequestSchema("DeliverInvoice"), nil)
+	if msg := validationError(t, err).Message; msg != `unbekanntes Feld "email.address"` {
+		t.Errorf("message = %q", msg)
+	}
+
+	// two unknown fields: no guess
+	body = map[string]any{"send_via": "email", "email": map[string]any{"address": "a@example.org", "foo": "x", "subject": "S", "body": "B"}}
+	_, err = Prune(body, RequestSchema("DeliverInvoice"), nil)
+	if msg := validationError(t, err).Message; strings.Contains(msg, "meintest") {
+		t.Errorf("message = %q", msg)
+	}
+}

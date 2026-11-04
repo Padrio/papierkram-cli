@@ -39,7 +39,9 @@ type PruneResult struct {
 //     translated into request references);
 //   - in neither: an unknown field. All unknown fields are collected into one
 //     validation error (exit 5), with a suggestion from the request keys at
-//     that level: unbekanntes Feld "note" – meintest du "notes"?
+//     that level: unbekanntes Feld "note" – meintest du "notes"? Without a
+//     close key, the only unknown field of an object suggests the only
+//     required key it lacks (see onlyMissingRequired).
 //
 // resp is the response schema of the resource; allOf/oneOf/anyOf are merged.
 // The caller chooses it; ResourceResponseSchema maps a create or update
@@ -80,6 +82,7 @@ func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi
 		return cloneValue(in).(map[string]any)
 	}
 	out := make(map[string]any, len(in))
+	first := len(p.unknown)
 	for _, k := range slices.Sorted(maps.Keys(in)) {
 		v := in[k]
 		cp := dotPath(path, k)
@@ -101,7 +104,27 @@ func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi
 			}
 		}
 	}
+	if added := p.unknown[first:]; len(added) == 1 && added[0].suggestion == "" {
+		added[0].suggestion = onlyMissingRequired(in, req)
+	}
 	return out
+}
+
+// onlyMissingRequired returns the required key of req that in lacks when it
+// is the only one, else "". An unknown field that is the only one of its
+// object then most likely stands for it under another name (address for
+// email.recipient, R06), even if the spelling is not close.
+func onlyMissingRequired(in map[string]any, req *openapi3.Schema) string {
+	var missing []string
+	for _, k := range req.Required {
+		if _, ok := in[k]; !ok {
+			missing = append(missing, k)
+		}
+	}
+	if len(missing) != 1 {
+		return ""
+	}
+	return missing[0]
 }
 
 func (p *pruner) value(v any, req *openapi3.Schema, resp []*openapi3.Schema, path string) any {
