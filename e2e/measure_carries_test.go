@@ -113,9 +113,10 @@ func TestE2E_Carries(t *testing.T) {
 		s.measuref(t, "Beleg entertainment_persons []", "akzeptiert, danach %v", m["entertainment_persons"])
 	})
 
-	// 5. Payment term due_time_unit: which values occur? The table header
-	// "ZIEL (TAGE)" assumes "day"; another unit is an ABWEICHUNG.
-	// Measured.
+	// 5. Payment term due_time_unit: which values occur? Every spec example
+	// says "day"; the table shows ZIEL and EINHEIT side by side, so another
+	// unit needs no code change. It is logged as ABWEICHUNG from the spec
+	// examples. Measured.
 	t.Run("05_PaymentTermUnits", func(t *testing.T) {
 		seen := map[string]int{}
 		for _, e := range s.paymentTerms(t) {
@@ -124,7 +125,7 @@ func TestE2E_Carries(t *testing.T) {
 		s.measuref(t, "due_time_unit", "%v", seen)
 		for u := range seen {
 			if u != "day" && u != "" {
-				s.deviatef(t, "due_time_unit %q kommt vor: Tabellenkopf ZIEL (TAGE) anpassen", u)
+				s.deviatef(t, "due_time_unit %q kommt vor (Spec-Beispiele nur day); die Tabelle zeigt ZIEL und EINHEIT getrennt, keine Codeänderung nötig", u)
 			}
 		}
 	})

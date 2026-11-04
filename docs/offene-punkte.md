@@ -18,7 +18,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 3 | Maximale Upload-Dateigröße | keine lokale Grenze | – | **bewusst nicht gemessen** |
 | 4 | `0.19` ergibt 19 % (Position und Artikel) | `0.19` als Zahl bzw. beim Artikel als String `"0.19"` | `TestE2E_VatRate019Is19Percent/Position`, `TestE2E_VatRate019Is19Percent/Artikel` | hart |
 | 5 | Kosten von `GET /info` | 1 Credit | `TestE2E_InfoCreditCost` | Messung |
-| 6 | `PUT` ist ein Teil-Update | nur angegebene Felder werden gesendet | `TestE2E_PartialUpdateSemantics` (Subtests je Ressource) | hart |
+| 6 | `PUT` ist ein Teil-Update | nur angegebene Felder werden gesendet | `TestE2E_PartialUpdateSemantics` (ein Subtest je Ressource, siehe unten) | hart |
 | 7 | `line_items` im `PUT` ersetzen alle Positionen | ja; deshalb `--replace-items` | `TestE2E_ReplaceLineItems` | hart |
 | 8 | `{id}`-Pfadparameter in der Spec nicht deklariert | im Overlay ergänzt | – | erledigt (kein Live-Punkt) |
 | 9 | `deadline` als ISO-Datum | `YYYY-MM-DD` | `TestE2E_Carries/01_DeadlineISO` | hart |
@@ -26,7 +26,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 11 | `sent_on`/`sent_to` als `null` im Angebots-`PUT` | wird akzeptiert | `TestE2E_Carries/03_EstimateNullSentFields` | hart |
 | 12 | `entertainment_persons: []` im Beleg-`PUT` | wird akzeptiert | `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` | hart (Bedeutung: Messung) |
 | 13 | `supply_date` im Antwortformat und `customer` als `{id}` im Rundlauf | wird akzeptiert, Kontaktperson und Projekt bleiben | `TestE2E_Carries/02_InvoiceRoundTrip` | hart |
-| 14 | Werte von `due_time_unit` | nur `day` | `TestE2E_Carries/05_PaymentTermUnits` | Messung |
+| 14 | Werte von `due_time_unit` | meist `day`; die Tabelle zeigt `ZIEL` und `EINHEIT` getrennt | `TestE2E_Carries/05_PaymentTermUnits` | Messung |
 | 15 | Einheit von `billable_duration` | Sekunden | `TestE2E_Carries/06_BillableDurationSeconds` | hart |
 | 16 | Setzt `deliver --via pdf` `sent_on`? | ja (für das Nachlesen nach Abbruch) | `TestE2E_Carries/07_DeliverPdfSentOn` | Messung |
 | 17 | `Accept` beim PDF-Download | `application/pdf, application/json;q=0.9` ergibt 200 `application/pdf` | `TestE2E_Carries/08_PDFDownloadAccept` | hart |
@@ -39,6 +39,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 24 | `deliver` antwortet mit leerem Body | leerer 2xx-Body ist Erfolg | `TestE2E_DeliverPdfEmptyBody` | hart (2xx, Exit 0); Body: Messung |
 | 25 | Quota-Header `X-Remaining-Quota`, `X-Consumed-Quota` | vorhanden und ganzzahlig | `TestE2E_QuotaHeadersPresent` | hart |
 | 26 | Person `default` als String | `"true"`/`"false"` | `TestE2E_PersonDefaultIsString` | hart |
+| 27 | **Entscheidung offen (Pascal):** `PAPIERKRAM_COMPANY`/`company` aus der Projektdatei als Default für `person … --company`? | keine Voreinstellung; nur Anzeige in `local show` | – | keine API-Frage, nicht gemessen |
 
 ## Punkte im Einzelnen
 
@@ -76,7 +77,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 - **Offen:** Ändert `PUT` nur die gesendeten Felder, oder setzt es fehlende Felder zurück?
 - **Annahme:** Teil-Update (so arbeitet auch papierkram-mcp-server live). `update` sendet nur die angegebenen Felder.
-- **E2E:** `TestE2E_PartialUpdateSemantics` (hart) mit je einem Subtest pro Ressource: `TestE2E_PartialUpdateSemantics/company`, `/person`, `/project`, `/task`, `/proposition`, `/estimate`, `/invoice`, `/voucher`, `/time`, `/custom-attribute`. Jeder ändert ein Feld und prüft, dass die anderen (und die Positionen) bleiben.
+- **E2E:** `TestE2E_PartialUpdateSemantics` (hart) mit je einem Subtest pro Ressource: `TestE2E_PartialUpdateSemantics/company`, `TestE2E_PartialUpdateSemantics/person`, `TestE2E_PartialUpdateSemantics/project`, `TestE2E_PartialUpdateSemantics/task`, `TestE2E_PartialUpdateSemantics/proposition`, `TestE2E_PartialUpdateSemantics/estimate`, `TestE2E_PartialUpdateSemantics/invoice`, `TestE2E_PartialUpdateSemantics/voucher`, `TestE2E_PartialUpdateSemantics/time`, `TestE2E_PartialUpdateSemantics/custom-attribute`. Jeder ändert ein Feld und prüft, dass die anderen (und die Positionen) bleiben.
 
 ### 7. Positionen im `PUT` ersetzen
 
@@ -121,9 +122,9 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 ### 14. Werte von `due_time_unit`
 
-- **Offen:** Welche Einheiten haben Zahlungsbedingungen?
-- **Annahme:** Nur `day`; die Tabelle von `payment-term list` hat die Spalte „ZIEL (TAGE)“.
-- **E2E:** `TestE2E_Carries/05_PaymentTermUnits` (Messung); jede andere Einheit ist eine `ABWEICHUNG` (dann den Tabellenkopf anpassen).
+- **Offen:** Welche Einheiten haben Zahlungsbedingungen? `due_time_unit` ist in der Spec ein freier String ohne Enum; alle Beispiele zeigen `day`.
+- **Annahme:** Meist `day`, aber das CLI nimmt keine Einheit an: Die Tabelle von `payment-term list` zeigt die Spalten `ZIEL` (`due_time`) und `EINHEIT` (`due_time_unit`) getrennt, `-o wide` ebenso für das Skonto. Eine andere Einheit braucht keine Codeänderung.
+- **E2E:** `TestE2E_Carries/05_PaymentTermUnits` (Messung); eine andere Einheit als `day` steht als `ABWEICHUNG` von den Spec-Beispielen im Log.
 
 ### 15. Einheit von `billable_duration`
 
@@ -196,3 +197,9 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Die Spec typisiert `default` (und `flagged`) der Kontaktperson als String.
 - **Annahme:** Das CLI sendet `"true"`/`"false"` als String.
 - **E2E:** `TestE2E_PersonDefaultIsString` (hart).
+
+### 27. Entscheidung offen (Pascal): `company` als Voreinstellung?
+
+- **Offen:** Soll `PAPIERKRAM_COMPANY` bzw. `company` aus der Projektdatei künftig `--company` der `person`-Befehle (`person list|describe|create|update|delete`, dort Pflicht) vorbelegen? Spec 9.8 nennt den Schlüssel im Beispiel, aber keinen Befehl, der ihn nutzt.
+- **Stand des CLI:** Keine Voreinstellung. `local init --company` schreibt den Wert, `local show` zeigt ihn mit Herkunft an; kein Befehl verwendet ihn als Standardwert. Das README sagt das ausdrücklich.
+- **E2E:** Keine API-Frage, daher kein Test. Entscheidet Pascal für die Voreinstellung, braucht es eine eigene Task (Spec 9.8, `default_from` in `commands --json`, Tests).
