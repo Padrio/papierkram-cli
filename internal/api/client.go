@@ -247,11 +247,23 @@ func (c *Client) Preview(opID string, pathParams []int64, query url.Values) (met
 	return req.Method, req.URL.String(), nil
 }
 
-// TemplateURL is the URL of path, a path template of the spec, against the
-// base URL, with its parameters left as they are ({voucher_id}). It is for
-// display only: a dry run shows a request whose ID is not known yet.
+// TemplateURL is the URL of path, a path template of the spec, resolved
+// against the base URL like the generated builders behind callOp and
+// Preview do (url.Parse, then "./"+path relative to it), with its
+// parameters left as they are ({voucher_id}). It is for display only: a dry
+// run shows a request whose ID is not known yet.
 func (c *Client) TemplateURL(path string) string {
-	return strings.TrimSuffix(c.opts.BaseURL, "/") + "/" + strings.TrimPrefix(path, "/")
+	rel := "./" + strings.TrimPrefix(path, "/")
+	base, err := url.Parse(c.opts.BaseURL)
+	if err != nil {
+		return c.opts.BaseURL + rel // Preview reports the broken base URL
+	}
+	u, err := base.Parse(rel)
+	if err != nil {
+		return c.opts.BaseURL + rel
+	}
+	// the braces of the parameters are escaped in the path; shown as such
+	return strings.NewReplacer("%7B", "{", "%7D", "}").Replace(u.String())
 }
 
 // buildOp builds the request of opID with the generated builder against the

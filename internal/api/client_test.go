@@ -567,11 +567,27 @@ func TestMediaType(t *testing.T) {
 	}
 }
 
+// TemplateURL resolves the path like the real request does (the generated
+// builder behind Preview): for the same operation it is the URL of Preview
+// with the ID as the template parameter, also for unusual base URLs.
 func TestTemplateURL(t *testing.T) {
-	for _, base := range []string{"https://firma.papierkram.de/api/v1", "https://firma.papierkram.de/api/v1/"} {
+	for _, base := range []string{
+		"https://firma.papierkram.de/api/v1",
+		"https://firma.papierkram.de/api/v1/",
+		"http://127.0.0.1:8080/proxy/papierkram/api/v1",
+		"https://firma.papierkram.de/x/../api/v1",
+		"https://firma.papierkram.de/api v1",
+		"https://firma.papierkram.de/api/v1?debug=1",
+		"https://firma.papierkram.de/api/v1#frag",
+	} {
 		c := New(Options{BaseURL: base})
-		if got := c.TemplateURL("/expense/vouchers/{voucher_id}/documents"); got != "https://firma.papierkram.de/api/v1/expense/vouchers/{voucher_id}/documents" {
-			t.Errorf("%s: TemplateURL = %q", base, got)
+		_, want, err := c.Preview("UploadVoucherDocument", []int64{290}, nil)
+		if err != nil {
+			t.Fatalf("%s: Preview: %v", base, err)
+		}
+		got := c.TemplateURL("/expense/vouchers/{voucher_id}/documents")
+		if !strings.Contains(got, "/{voucher_id}/") || strings.Replace(got, "{voucher_id}", "290", 1) != want {
+			t.Errorf("%s: TemplateURL = %q, Preview = %q", base, got, want)
 		}
 	}
 }
