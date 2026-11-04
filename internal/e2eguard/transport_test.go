@@ -253,3 +253,43 @@ func TestDirectTransportIgnoresProxy(t *testing.T) {
 		t.Error("DirectTransport changed http.DefaultTransport")
 	}
 }
+
+// A rejected request is charged like any other (measured 2026-11-04: a
+// create answered with 422 costs its 50 credits): the meter counts it.
+func TestTransportMetersErrorResponses(t *testing.T) {
+	srv := mockapi.New(t, mockapi.WithoutAutoFail())
+	srv.On("POST", "/income/estimates", 422, []byte(`{"type":"error","message":"Datum muss ausgefüllt werden"}`), "X-Consumed-Quota", "50")
+	tr, u := newTestTransport(t, srv, 1000)
+	body := `{"name":"A","document_date":"2026-11-04","line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`
+	resp, err := send(t, tr, "POST", u.String()+"/income/estimates", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != 422 || tr.Meter.Spent() != 50 || tr.Meter.Requests() != 1 {
+		t.Errorf("status %d spent %d requests %d, want 422, 50, 1", resp.StatusCode, tr.Meter.Spent(), tr.Meter.Requests())
+	}
+}
+
+// failingBase fails every request after it was handed over, like a
+// connection that breaks before the answer.
+type failingBase struct{ calls int }
+
+func (f *failingBase) RoundTrip(req *http.Request) (*http.Response, error) {
+	f.calls++
+	return nil, errors.New("connection reset")
+}
+
+// A request that got no answer may still have been charged: it counts
+// with its documented cost.
+func TestTransportMetersUnansweredRequests(t *testing.T) {
+	base := &failingBase{}
+	tr := &Transport{Base: base, Scheme: "https", Host: "sandbox.example", Meter: NewMeter(1000, 0)}
+	if _, err := send(t, tr, "POST", "https://sandbox.example/api/v1/income/estimates", `{"name":"A"}`); err == nil {
+		t.Fatal("no error")
+	}
+	if base.calls != 1 || tr.Meter.Spent() != 50 || tr.Meter.Requests() != 1 || tr.Meter.Unmeasured() != 1 {
+		t.Errorf("calls %d spent %d requests %d unmeasured %d, want 1, 50, 1, 1",
+			base.calls, tr.Meter.Spent(), tr.Meter.Requests(), tr.Meter.Unmeasured())
+	}
+}

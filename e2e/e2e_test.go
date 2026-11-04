@@ -36,8 +36,9 @@
 // documented worst case (e2eguard.CleanupReserve) for the 4 documents
 // (2 estimates, invoice, voucher; 4 each) and up to 10 other objects
 // (2 each), plus a margin of 10. Tests may use 490 - 46 = 444 (planned:
-// 412). The meter (e2eguard.Meter) counts the real cost from
-// X-Consumed-Quota; before the cleanup the transport refuses every
+// 412). The meter (e2eguard.Meter) counts every sent request, rejected
+// ones too, with max(documented cost, X-Consumed-Quota), the header being
+// the cost of that one request; before the cleanup the transport refuses every
 // request that would cut into the reserve, and need() skips a test (and
 // all later ones) when its cost no longer fits. TestMain releases the
 // reserve for the cleanup and prints the total at the end.

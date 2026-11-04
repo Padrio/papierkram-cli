@@ -126,8 +126,13 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
 
 Ein voller Lauf kostet nach den dokumentierten Preisen (Abschnitt 4.3) etwa
 **426 Credits**; das Budget je Lauf ist **490** (Zielwert unter 500, die
-Aufschlüsselung steht im Kopf von `e2e_test.go`). Gezählt wird mit den
-Antwort-Headern `X-Consumed-Quota`/`X-Remaining-Quota`.
+Aufschlüsselung steht im Kopf von `e2e_test.go`). Jede gesendete Anfrage
+zählt, auch eine abgelehnte (4xx/5xx): Die API berechnet z. B. ein mit 422
+abgelehntes Anlegen voll (gemessen 2026-11-04). Gezählt wird der größere
+Wert aus den dokumentierten Kosten und `X-Consumed-Quota`, das die Kosten
+genau dieser einen Anfrage nennt (kein laufender Zähler); fehlt der Header
+oder kommt keine Antwort (Netzwerkfehler), zählen die dokumentierten
+Kosten.
 
 Vom Budget sind **46 Credits fürs Aufräumen reserviert** (dokumentierter
 Höchstaufwand: je Rechnung/Angebot/Beleg 4, je anderem Objekt 2, plus 10

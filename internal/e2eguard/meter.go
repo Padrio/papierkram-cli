@@ -15,7 +15,9 @@ import (
 // credit budget of the run.
 var ErrBudget = errors.New("e2e: Credit-Budget des Laufs erschöpft")
 
-// Quota is the last quota state the API reported.
+// Quota is the last quota state the API reported: Remaining from
+// X-Remaining-Quota, Consumed from X-Consumed-Quota, which is the cost of
+// that one request, not a running total (measured 2026-11-04).
 type Quota struct {
 	Remaining, Consumed int
 	// Known is true once a response carried X-Consumed-Quota.
@@ -38,12 +40,13 @@ func CleanupReserve(docs, others, margin int) int {
 	return docs*CleanupCostDocument + others*CleanupCostOther + margin
 }
 
-// Meter counts the credits of a run from the quota headers (spec 4.3:
-// X-Consumed-Quota, X-Remaining-Quota). The cost of a request is the growth
-// of X-Consumed-Quota since the previous response. Where that cannot be
-// measured (first request, header missing or invalid, counter went down
-// at the start of a month) the documented cost of registry.ExpectedCredits
-// counts instead.
+// Meter counts the credits of a run. Every request that was sent counts,
+// whatever its status (a rejected create is charged in full, measured
+// 2026-11-04): with the larger of its documented cost
+// (registry.ExpectedCredits) and its X-Consumed-Quota, which is the cost
+// of that one request (spec 4.3; measured: not a running total). Without
+// a valid header, or without an answer (RecordUnanswered), the documented
+// cost counts.
 //
 // A fixed part of the budget is reserved for the final cleanup: until
 // BeginCleanup, tests (Fits) and requests (Reserve) may only use budget
@@ -57,6 +60,7 @@ type Meter struct {
 	spent      int
 	requests   int
 	unmeasured int
+	costlier   int
 	quota      Quota
 }
 
@@ -105,18 +109,22 @@ func (m *Meter) Reserve(method, path string) error {
 	return nil
 }
 
-// Record counts one answered request from its response headers.
+// Record counts one answered request, of any status, from its response
+// headers: max(documented cost, X-Consumed-Quota); the documented cost
+// when the header is missing, invalid or negative.
 func (m *Meter) Record(method, path string, h http.Header) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.requests++
 	cost := registry.ExpectedCredits(method, path)
 	consumed, ok := headerInt(h, "X-Consumed-Quota")
+	ok = ok && consumed >= 0
 	switch {
-	case ok && m.quota.Known && consumed >= m.quota.Consumed:
-		cost = consumed - m.quota.Consumed
-	default:
+	case !ok:
 		m.unmeasured++
+	case consumed > cost:
+		m.costlier++
+		cost = consumed
 	}
 	m.spent += cost
 	if ok {
@@ -125,6 +133,17 @@ func (m *Meter) Record(method, path string, h http.Header) {
 	if r, ok := headerInt(h, "X-Remaining-Quota"); ok {
 		m.quota.Remaining = r
 	}
+}
+
+// RecordUnanswered counts a request that was sent (or may have been) but
+// got no usable answer, e.g. a network error: the API may have charged
+// it, so its documented cost counts.
+func (m *Meter) RecordUnanswered(method, path string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.requests++
+	m.unmeasured++
+	m.spent += registry.ExpectedCredits(method, path)
 }
 
 // Fits reports whether n more credits fit the limit of the phase (before
@@ -142,18 +161,27 @@ func (m *Meter) Spent() int {
 	return m.spent
 }
 
-// Requests is the number of answered requests.
+// Requests is the number of counted requests (answered or not).
 func (m *Meter) Requests() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.requests
 }
 
-// Unmeasured is the number of requests counted with their documented cost.
+// Unmeasured is the number of requests counted with their documented
+// cost because X-Consumed-Quota was missing or invalid, or no answer came.
 func (m *Meter) Unmeasured() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.unmeasured
+}
+
+// Costlier is the number of requests whose X-Consumed-Quota was above
+// their documented cost (the registry may be too low for them).
+func (m *Meter) Costlier() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.costlier
 }
 
 // Quota is the last reported quota state.
@@ -171,8 +199,8 @@ func (m *Meter) Summary() string {
 	if m.quota.Known {
 		rest = strconv.Itoa(m.quota.Remaining)
 	}
-	return fmt.Sprintf("Credits: %d von %d verbraucht (Reserve fürs Aufräumen %d; %d Anfragen, davon %d nach dokumentierten Kosten gezählt); Restkontingent laut API: %s",
-		m.spent, m.budget, m.reserve, m.requests, m.unmeasured, rest)
+	return fmt.Sprintf("Credits: %d von %d verbraucht (Reserve fürs Aufräumen %d; %d Anfragen, davon %d ohne X-Consumed-Quota nach dokumentierten Kosten gezählt, %d teurer als dokumentiert); Restkontingent laut API: %s",
+		m.spent, m.budget, m.reserve, m.requests, m.unmeasured, m.costlier, rest)
 }
 
 func headerInt(h http.Header, key string) (int, bool) {

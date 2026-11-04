@@ -48,8 +48,10 @@ type Exchange struct {
 //   - the documented cost still fits the budget of Meter.
 //
 // A refused request is not sent; RoundTrip returns ErrRefused or
-// ErrBudget. Every answered request is counted by Meter and recorded with
-// both bodies, so tests can measure what the API answered.
+// ErrBudget. Every request handed to Base is counted by Meter (answered:
+// Record, whatever the status; failed: RecordUnanswered); every answered
+// one is recorded with both bodies, so tests can measure what the API
+// answered.
 type Transport struct {
 	Base         http.RoundTripper
 	Scheme, Host string
@@ -104,15 +106,19 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	resp, err := t.Base.RoundTrip(out)
 	if err != nil {
+		// the request may have reached the API and been charged
+		t.Meter.RecordUnanswered(req.Method, req.URL.Path)
 		return nil, err
 	}
+	// every answer counts, whatever its status (a rejected create is
+	// charged in full)
+	t.Meter.Record(req.Method, req.URL.Path, resp.Header)
 	respBody, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
 		return nil, err
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(respBody))
-	t.Meter.Record(req.Method, req.URL.Path, resp.Header)
 
 	hdr := req.Header.Clone()
 	hdr.Del("Authorization")
