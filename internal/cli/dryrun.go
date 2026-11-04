@@ -26,6 +26,15 @@ type UploadInfo struct {
 	Then    string `json:"-"`
 }
 
+// ReadInfo is a read already sent to build the body of the dry run
+// (invoice create --from-estimate): method, URL and its credits, which
+// are spent; the credits of the dry run are those of the mutation.
+type ReadInfo struct {
+	Method  string `json:"method"`
+	URL     string `json:"url"`
+	Credits int    `json:"credits"`
+}
+
 // step reports an upload shown as a request of its own.
 func (u *UploadInfo) step() bool { return u != nil && u.URL != "" }
 
@@ -36,23 +45,31 @@ type dryRunJSON struct {
 	URL     string      `json:"url"`
 	Body    any         `json:"body"`
 	Upload  *UploadInfo `json:"upload,omitempty"`
+	Read    *ReadInfo   `json:"read,omitempty"`
 	Credits int         `json:"credits"`
 }
 
 // dryRun prints the request a mutation would send, without sending it
 // (spec 8.4): method, full URL including the query, body (null without
-// one), the upload file if any, and the credit cost of the entry. -o
-// json/yaml, --fields and --jq render the dryRunJSON object; table and
-// wide print German lines. Nothing has been sent, so output errors keep
-// their code (a usage error stays exit 2).
-func (a *App) dryRun(ctx context.Context, e registry.Entry, method, url string, body any, upload *UploadInfo) error {
-	v := dryRunJSON{DryRun: true, Method: method, URL: url, Body: body, Upload: upload, Credits: e.Credits}
+// one), the upload file if any, the read the body was built from if any
+// (x.read), and the credit cost of the entry. -o json/yaml, --fields and
+// --jq render the dryRunJSON object; table and wide print German lines.
+// Nothing has been changed, so output errors keep their code (a usage
+// error stays exit 2).
+func (a *App) dryRun(ctx context.Context, e registry.Entry, method, url string, body any, x sendExtras) error {
+	upload := x.upload
+	v := dryRunJSON{DryRun: true, Method: method, URL: url, Body: body, Upload: upload, Read: x.read, Credits: e.Credits}
 	o := a.outputOptions(ctx, a.outputFormat(a.resolved))
 	if !ownText(o) {
 		return output.RenderValue(o, v, output.Columns{})
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Probelauf – nichts gesendet\nMethode: %s\nURL:     %s\nCredits: %d", method, url, e.Credits)
+	if x.read != nil {
+		fmt.Fprintf(&b, "Probelauf – nichts angelegt\nGelesen: %s %s (%s, bereits verbraucht)\n", x.read.Method, x.read.URL, creditsText(x.read.Credits))
+	} else {
+		b.WriteString("Probelauf – nichts gesendet\n")
+	}
+	fmt.Fprintf(&b, "Methode: %s\nURL:     %s\nCredits: %d", method, url, e.Credits)
 	if upload.step() {
 		b.WriteString(" (beide Anfragen)")
 	}

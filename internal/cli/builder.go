@@ -77,10 +77,12 @@ var customCmds = map[string]func(*App, registry.Entry) *cobra.Command{
 }
 
 // entryExtras add a step of their own to a generic command, by operation
-// (voucher create --file, spec 9.3). Without their flags the command runs
-// exactly as the builder made it.
+// (voucher create --file, spec 9.3; invoice create --from-estimate, spec
+// 9.4). Without their flags the command runs exactly as the builder made
+// it.
 var entryExtras = map[string]func(*App, registry.Entry, *cobra.Command){
 	"CreateVoucher": (*App).addCreateFile,
+	"CreateInvoice": (*App).addFromEstimate,
 }
 
 // entryCmd builds the command of e: the generic one (with its extras), the
@@ -351,11 +353,13 @@ func (a *App) beforeMutation(c *cobra.Command, e registry.Entry, client *api.Cli
 }
 
 // sendExtras are what a handler adds to beforeMutation: the file of an
-// upload, shown by --dry-run (spec 8.4), and a summary of its own for the
+// upload and a read already sent to build the body (--from-estimate),
+// both shown by --dry-run (spec 8.4), and a summary of its own for the
 // confirmation, used instead of the one loaded by fetchSummary (an object
 // without a GET of its own, such as a document of a voucher).
 type sendExtras struct {
 	upload  *UploadInfo
+	read    *ReadInfo
 	summary *Summary
 }
 
@@ -373,7 +377,7 @@ func (a *App) beforeSend(c *cobra.Command, e registry.Entry, client *api.Client,
 		if body != nil {
 			b = body
 		}
-		return false, a.dryRun(c.Context(), e, method, url, b, x.upload)
+		return false, a.dryRun(c.Context(), e, method, url, b, x)
 	}
 	if !confirmed(e) {
 		return true, nil

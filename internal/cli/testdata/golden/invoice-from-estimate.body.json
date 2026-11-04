@@ -1,0 +1,56 @@
+{
+  "billing": {
+    "city": "Wiesbaden",
+    "company": "Mustermann Automobile GmbH",
+    "contact_person": "John Doe",
+    "country": "Deutschland",
+    "department": "Purchasing",
+    "email": null,
+    "street": "Dotzheimer Str. 36",
+    "ust_idnr": "11/234/34567",
+    "zip": "65185"
+  },
+  "customer": {
+    "contact_person": {
+      "id": 1116
+    },
+    "id": 3052,
+    "project": {
+      "id": 4316
+    }
+  },
+  "description": "Notes for the estimate",
+  "gross": false,
+  "line_items": [
+    {
+      "description": "Beschreibung einer Rechnungsposition",
+      "discount_calculated": 0.0,
+      "discount_calculated_gross": 0.0,
+      "discount_percentage": 0.0,
+      "name": "Büroartikel",
+      "price": 100.0,
+      "price_gross": 0.0,
+      "quantity": 1.0,
+      "type_of": "position",
+      "unit": "Stunde",
+      "vat_rate": 0.19
+    },
+    {
+      "description": "Beschreibung einer Rechnungsposition",
+      "discount_calculated": 0.0,
+      "discount_calculated_gross": 0.0,
+      "discount_percentage": 0.0,
+      "name": "Heizung",
+      "price": 100.0,
+      "price_gross": 0.0,
+      "quantity": 1.0,
+      "type_of": "position",
+      "unit": "Stunde",
+      "vat_rate": 0.07
+    }
+  ],
+  "name": "My estimate",
+  "payment_term": {
+    "id": 1130
+  }
+}

@@ -164,17 +164,31 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 // response prints {"id":N,"ok":true} on update and {"ok":true} with a
 // warning on create.
 func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error {
-	return a.runWriteThen(c, e, args, nil)
+	return a.runWriteThen(c, e, args, writeSteps{})
 }
 
-// runWriteThen is runWrite with an optional upload after create (up, see
-// createUpload; nil runs runWrite unchanged). The file is checked with the
-// flags (exit 2, before anything is resolved or sent); --dry-run shows the
-// create, the upload as a second request and the credits of both; upload
-// and create share their class (checkCreateFile), so the confirmation of
-// create is that of the run. After the create the file goes to the new
-// object (uploadCreated).
-func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, up *createUpload) error {
+// writeSteps are the optional steps a generic create adds around its
+// request; without any (the zero value) runWriteThen is runWrite.
+//   - up uploads a file after the create (voucher create --file, see
+//     createUpload). The file is checked with the flags (exit 2, before
+//     anything is resolved or sent); --dry-run shows the create, the upload
+//     as a second request and the credits of both; upload and create share
+//     their class (checkCreateFile), so the confirmation of create is that
+//     of the run. After the create the file goes to the new object
+//     (uploadCreated).
+//   - from reads the estimate the body is built from (invoice create
+//     --from-estimate, see fromEstimate). Its flags are checked with the
+//     others (exit 2); the read comes after the read-only gate and after
+//     the field flags and line items are checked, and replaces --input as
+//     the base the flags override (buildBodyFrom). --dry-run reads too and
+//     names the read; its credits are those of the create.
+type writeSteps struct {
+	up   *createUpload
+	from *fromEstimate
+}
+
+// runWriteThen is runWrite with the steps s.
+func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s writeSteps) error {
 	params, err := pathValues(c, e, args)
 	if err != nil {
 		return err
@@ -187,6 +201,12 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, up
 	if err := checkWriteFlags(c, ws, isUpdate); err != nil {
 		return err
 	}
+	if s.from != nil {
+		if err := s.from.check(c); err != nil {
+			return err
+		}
+	}
+	up := s.up
 	run, extras := e, sendExtras{}
 	if up != nil {
 		if err := up.open(); err != nil {
@@ -204,7 +224,14 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, up
 	if up != nil {
 		extras.upload = up.dryRunStep(client)
 	}
-	body, _, err := a.buildBody(c, e, isUpdate)
+	var load func() (map[string]any, error)
+	if s.from != nil {
+		load = func() (map[string]any, error) { return s.from.load(c, client, ws.req) }
+		if extras.read, err = s.from.readInfo(client); err != nil {
+			return err
+		}
+	}
+	body, _, err := a.buildBodyFrom(c, e, isUpdate, load)
 	if err != nil {
 		return err
 	}
@@ -307,6 +334,16 @@ func errUnavailable(err error) error {
 // as given, and --replace-items without positions sends line_items: []
 // (R18). On create line_items from --input are always sent.
 func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[string]any, []string, error) {
+	return a.buildBodyFrom(c, e, isUpdate, nil)
+}
+
+// buildBodyFrom is buildBody on a base body that load returns instead of
+// --input (invoice create --from-estimate, spec 9.4); nil load is
+// buildBody. load runs after the field flags and line items are checked
+// (their errors cost no read), then the flags and positions override the
+// base like they override --input, and the base goes through the same
+// coercion and validation.
+func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, load func() (map[string]any, error)) (map[string]any, []string, error) {
 	ws := newWriteSpec(e)
 	if ws.err != nil {
 		return nil, nil, errUnavailable(ws.err)
@@ -315,7 +352,7 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 	replace := flagBool(c, "replace-items")
 	body := map[string]any{}
 	var removed []string
-	if c.Flags().Changed("input") {
+	if load == nil && c.Flags().Changed("input") {
 		in, err := a.readInput(flagString(c, "input"))
 		if err != nil {
 			return nil, nil, err
@@ -341,47 +378,27 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 		body, removed = pr.Body, pr.Removed
 	}
 
-	cc := spec.CoerceContext{Now: a.Now, Loc: a.Location}
-	for _, f := range ws.fields {
-		if f.Flag == "" || f.Kind == spec.KindItems || !c.Flags().Changed(f.Flag) {
-			continue
-		}
-		switch f.Kind {
-		case spec.KindAttrs:
-			raws, _ := c.Flags().GetStringArray(f.Flag)
-			for _, raw := range raws {
-				v, err := spec.CoerceFlag(cc, f, raw)
-				if err != nil {
-					return nil, nil, err
-				}
-				setPath(body, f.Path, v) // merges into custom_attributes
-			}
-		case spec.KindRefList, spec.KindScalarList:
-			raws, _ := c.Flags().GetStringArray(f.Flag)
-			list := make([]any, 0, len(raws))
-			for _, raw := range raws {
-				v, err := spec.CoerceFlag(cc, f, raw)
-				if err != nil {
-					return nil, nil, err
-				}
-				list = append(list, v)
-			}
-			setPath(body, f.Path, list)
-		default:
-			v, err := spec.CoerceFlag(cc, f, rawText(c, f.Flag))
-			if err != nil {
-				return nil, nil, err
-			}
-			setPath(body, f.Path, v)
-		}
+	sets, err := a.flagSets(c, ws)
+	if err != nil {
+		return nil, nil, err
 	}
-
+	var items []any
 	if ws.items != nil {
-		items, gone, err := a.lineItems(c, ws, resp)
-		if err != nil {
+		var gone []string
+		if items, gone, err = a.lineItems(c, ws, resp); err != nil {
 			return nil, nil, err
 		}
 		removed = append(removed, gone...)
+	}
+	if load != nil {
+		if body, err = load(); err != nil {
+			return nil, nil, err
+		}
+	}
+	for _, fs := range sets {
+		setPath(body, fs.path, fs.value)
+	}
+	if ws.items != nil {
 		switch {
 		case items != nil:
 			setPath(body, ws.items.Path, items)
@@ -413,6 +430,56 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 		return nil, nil, err
 	}
 	return body, removed, nil
+}
+
+// fieldSet is the value of a field flag at its body path.
+type fieldSet struct {
+	path  []string
+	value any
+}
+
+// flagSets converts the changed field flags of ws, in field order, to the
+// values buildBodyFrom sets: references as {id}, repeatable flags as
+// lists, each --attr as its own set (setPath merges them into
+// custom_attributes). Invalid values are German validation errors naming
+// the flag (exit 5).
+func (a *App) flagSets(c *cobra.Command, ws writeSpec) ([]fieldSet, error) {
+	cc := spec.CoerceContext{Now: a.Now, Loc: a.Location}
+	var sets []fieldSet
+	for _, f := range ws.fields {
+		if f.Flag == "" || f.Kind == spec.KindItems || !c.Flags().Changed(f.Flag) {
+			continue
+		}
+		switch f.Kind {
+		case spec.KindAttrs:
+			raws, _ := c.Flags().GetStringArray(f.Flag)
+			for _, raw := range raws {
+				v, err := spec.CoerceFlag(cc, f, raw)
+				if err != nil {
+					return nil, err
+				}
+				sets = append(sets, fieldSet{f.Path, v})
+			}
+		case spec.KindRefList, spec.KindScalarList:
+			raws, _ := c.Flags().GetStringArray(f.Flag)
+			list := make([]any, 0, len(raws))
+			for _, raw := range raws {
+				v, err := spec.CoerceFlag(cc, f, raw)
+				if err != nil {
+					return nil, err
+				}
+				list = append(list, v)
+			}
+			sets = append(sets, fieldSet{f.Path, list})
+		default:
+			v, err := spec.CoerceFlag(cc, f, rawText(c, f.Flag))
+			if err != nil {
+				return nil, err
+			}
+			sets = append(sets, fieldSet{f.Path, v})
+		}
+	}
+	return sets, nil
 }
 
 func hasKey(m map[string]any, k string) bool {

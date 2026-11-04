@@ -724,6 +724,8 @@ var table = []Entry{
 			`papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --item "name=Beratung,qty=2,unit=Stunde,price=100,vat=19"`,
 			"papierkram invoice create --name Wartung --customer 3214 --payment-term 1130 --items positionen.json --dry-run",
 			"papierkram invoice create --input rechnung.json",
+			"papierkram invoice create --from-estimate 349 --payment-term 1130 --dry-run",
+			`papierkram invoice create --from-estimate 349 --payment-term 1130 --name "Website Relaunch" --document-date heute`,
 		},
 	},
 	{

@@ -346,7 +346,7 @@ func (a *App) addCreateFileWith(e, up registry.Entry, cmd *cobra.Command) {
 		if !c.Flags().Changed("file") {
 			return write(c, args)
 		}
-		return a.runWriteThen(c, e, args, &createUpload{entry: up, path: flagString(c, "file")})
+		return a.runWriteThen(c, e, args, writeSteps{up: &createUpload{entry: up, path: flagString(c, "file")}})
 	}
 }
 
