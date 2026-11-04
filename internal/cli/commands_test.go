@@ -169,6 +169,8 @@ func TestCommandsJSONMatchesContract(t *testing.T) {
 		"blocked kein bool":       {func(d map[string]any) { cmdOf(d, "version")["blocked_by_read_only"] = "ja" }, "value must be a boolean", nil, nil},
 		"per_request nicht blockiert": {func(d map[string]any) { cmdOf(d, "api")["blocked_by_read_only"] = false }, `"/blocked_by_read_only"`,
 			branch(2), func(d map[string]any) any { return cmdOf(d, "api") }},
+		"Mutation nicht blockiert": {func(d map[string]any) { cmdOf(d, "invoice create")["blocked_by_read_only"] = false }, `any schema from "anyOf"`,
+			branch(0), func(d map[string]any) any { return cmdOf(d, "invoice create") }},
 		"Flag-Credits 0":          {func(d map[string]any) { flagOf(d, "voucher create", "file")["credits"] = 0.0 }, "number must be at least 1", nil, nil},
 		"Flag-Credits Text":       {func(d map[string]any) { flagOf(d, "voucher create", "file")["credits"] = "10" }, "value must be an integer", nil, nil},
 		"globaler shorthand null": {func(d map[string]any) { globalFlag(d, "output")["shorthand"] = nil }, "Value is not nullable", nil, nil},

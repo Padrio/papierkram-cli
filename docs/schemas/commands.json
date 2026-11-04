@@ -21,6 +21,10 @@
           {
             "description": "Befehl mit fester Operation: operation_id, method und path zusammen, mindestens 1 Credit.",
             "required": ["operation_id", "method", "path"],
+            "anyOf": [
+              {"description": "liest oder wirkt lokal", "properties": {"class": {"type": "string", "enum": ["read_only", "local"]}}},
+              {"description": "ändernde Klassen sind unter PAPIERKRAM_READ_ONLY gesperrt", "properties": {"blocked_by_read_only": {"type": "boolean", "enum": [true]}}}
+            ],
             "properties": {
               "class": {"type": "string", "enum": ["read_only", "create", "update", "archive", "destructive", "send", "local"]},
               "credits": {"type": "integer", "minimum": 1}
