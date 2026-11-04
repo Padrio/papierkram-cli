@@ -97,25 +97,33 @@ func TestTimeLogDurationEndsNow(t *testing.T) {
 }
 
 // The body knows one date: an entry over midnight, or one that ends at or
-// before its start, is a usage error before anything is sent.
+// before its start, is a usage error before anything is sent. The
+// message fits the case (review M6): an end before the start names
+// midnight only as one possibility, an end equal to the start is a
+// duration of 0.
 func TestTimeLogMidnightRejected(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		now  time.Time
-		args []string
+		name      string
+		now       time.Time
+		args      []string
+		want, not string
 	}{
-		{"from+duration", morning(t), []string{"--from", "23:30", "--duration", "1h"}},
-		{"to before from", morning(t), []string{"--from", "22:00", "--to", "01:00"}},
-		{"to equals from", morning(t), []string{"--from", "10:00", "--to", "10:00"}},
-		{"duration before midnight", berlinAt(t, 2026, 11, 4, 0, 30, 0), []string{"--duration", "2h"}},
-		{"exactly midnight", morning(t), []string{"--from", "23:00", "--duration", "1h"}},
+		{"from+duration", morning(t), []string{"--from", "23:30", "--duration", "1h"}, "endet am Folgetag", ""},
+		{"to before from", morning(t), []string{"--from", "22:00", "--to", "01:00"}, "Ende 01:00 liegt vor dem Beginn 22:00", ""},
+		{"to equals from", morning(t), []string{"--from", "10:00", "--to", "10:00"}, "Dauer 0", "Mitternacht"},
+		{"duration before midnight", berlinAt(t, 2026, 11, 4, 0, 30, 0), []string{"--duration", "2h"}, "beginnt am Vortag", ""},
+		{"exactly midnight", morning(t), []string{"--from", "23:00", "--duration", "1h"}, "endet am Folgetag", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, srv := logApp(t, tc.now)
 			wantExit(t, app, Run(app, append([]string{"time", "log", "--task", "545", "--user", "1"}, tc.args...)), 2)
 			wantRequests(t, srv, 0)
-			if _, errs := bufs(app); !strings.Contains(errs, "Mitternacht") {
-				t.Errorf("stderr = %s", errs)
+			_, errs := bufs(app)
+			if !strings.Contains(errs, tc.want) || (tc.not == "" && !strings.Contains(errs, "Mitternacht")) {
+				t.Errorf("stderr ohne %q: %s", tc.want, errs)
+			}
+			if tc.not != "" && strings.Contains(errs, tc.not) {
+				t.Errorf("stderr mit %q: %s", tc.not, errs)
 			}
 		})
 	}

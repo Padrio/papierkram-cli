@@ -255,10 +255,14 @@ func checkPeriod(p period) error {
 		return clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("Zeiteintrag endet am Folgetag um %s: Einträge über Mitternacht sind nicht möglich", hhmm(p.end%day)),
 			midnightHint)
-	case p.end <= p.start:
+	case p.end == p.start:
 		return clierr.New(clierr.CodeUsage,
-			fmt.Sprintf("Ende %s liegt nicht nach dem Beginn %s: Einträge über Mitternacht sind nicht möglich", hhmm(p.end), hhmm(p.start)),
-			midnightHint)
+			fmt.Sprintf("Dauer 0: Ende %s ist gleich dem Beginn", hhmm(p.end)),
+			"--to nach --from angeben oder --duration verwenden")
+	case p.end < p.start:
+		return clierr.New(clierr.CodeUsage,
+			fmt.Sprintf("Ende %s liegt vor dem Beginn %s", hhmm(p.end), hhmm(p.start)),
+			"Uhrzeiten vertauscht? Einträge über Mitternacht sind nicht möglich. "+midnightHint)
 	}
 	return nil
 }
