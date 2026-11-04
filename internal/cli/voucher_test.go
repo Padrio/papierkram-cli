@@ -308,12 +308,11 @@ func TestVoucherCancelAndReverseNeedConfirmation(t *testing.T) {
 	}
 }
 
-// pay, pdf, upload and document delete are Custom entries: registered, but
-// no generic command until their handlers exist (Tasks 32, 33, 35).
+// pay, upload and document delete are Custom entries: registered, but no
+// command until their handlers exist (Tasks 33, 35); pdf has its handler.
 func TestVoucherCustomActionsNotBuilt(t *testing.T) {
 	for _, args := range [][]string{
 		{"voucher", "pay", "7", "--yes"},
-		{"voucher", "pdf", "7"},
 		{"voucher", "upload", "7", "beleg.pdf"},
 		{"voucher", "document", "delete", "7", "3", "--yes"},
 	} {
@@ -325,15 +324,15 @@ func TestVoucherCustomActionsNotBuilt(t *testing.T) {
 	wantExit(t, app, Run(app, []string{"voucher"}), 0)
 	help := mustOut(app)
 	var actions []string
-	for _, a := range []string{"list", "describe", "create", "update", "delete", "archive", "unarchive", "cancel", "reverse"} {
+	for _, a := range []string{"list", "describe", "create", "update", "delete", "archive", "unarchive", "cancel", "reverse", "pdf"} {
 		if strings.Contains(help, "  "+a+" ") {
 			actions = append(actions, a)
 		}
 	}
-	if len(actions) != 9 {
+	if len(actions) != 10 {
 		t.Errorf("Gruppenhilfe %v:\n%s", actions, help)
 	}
-	for _, a := range []string{"pay", "pdf", "upload", "document"} {
+	for _, a := range []string{"pay", "upload", "document"} {
 		if strings.Contains(help, "  "+a+" ") {
 			t.Errorf("Gruppenhilfe nennt %s:\n%s", a, help)
 		}

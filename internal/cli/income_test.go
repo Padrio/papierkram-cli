@@ -322,22 +322,20 @@ func TestIncomeCancelNeedsConfirmation(t *testing.T) {
 
 // deliver and pdf are Custom entries: deliver is built by its own handler
 // (Task 31), pdf is registered but has no command until Task 32.
-func TestIncomeCustomActionsNotBuilt(t *testing.T) {
+// All invoice and estimate actions are built, the Custom ones (deliver,
+// pdf) by their handlers.
+func TestIncomeCustomActionsBuilt(t *testing.T) {
 	for _, resource := range []string{"invoice", "estimate"} {
-		app, srv := apiApp(t)
-		wantExit(t, app, Run(app, []string{resource, "pdf", "7", "--yes"}), 2)
-		wantRequests(t, srv, 0)
-
-		app, _ = apiApp(t)
+		app, _ := apiApp(t)
 		wantExit(t, app, Run(app, []string{resource}), 0)
 		help := mustOut(app)
 		var actions []string
-		for _, a := range []string{"list", "describe", "create", "update", "delete", "archive", "unarchive", "cancel", "deliver"} {
+		for _, a := range []string{"list", "describe", "create", "update", "delete", "archive", "unarchive", "cancel", "deliver", "pdf"} {
 			if strings.Contains(help, "  "+a+" ") {
 				actions = append(actions, a)
 			}
 		}
-		if len(actions) != 9 || strings.Contains(help, "  pdf ") {
+		if len(actions) != 10 {
 			t.Errorf("%s: Gruppenhilfe %v:\n%s", resource, actions, help)
 		}
 	}

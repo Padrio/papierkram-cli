@@ -71,6 +71,7 @@ func buildResourceCommands(app *App, root *cobra.Command, resources []registry.R
 // carries the pk:class annotation.
 var customCmds = map[string]func(*App, registry.Entry) *cobra.Command{
 	"deliver": (*App).newDeliverCmd,
+	"pdf":     (*App).newPDFCmd,
 }
 
 // entryCmd builds the command of e: the generic one, the one of its Custom

@@ -78,20 +78,25 @@ func TestExampleEntriesIncludeBuiltCustomCommands(t *testing.T) {
 	if !pdf.Custom {
 		t.Fatalf("voucher pdf ist kein Custom-Eintrag: %+v", pdf)
 	}
+	// a Custom entry whose handler does not exist (stable, unlike the
+	// registered ones, whose handlers come task by task)
+	later := pdf
+	later.Action = "spaeter"
 	gone := list
 	gone.Resource, gone.Action = "voucher", "gibtsnicht"
 
-	// not built yet: skipped; a generic entry without command is missing
-	check, missing := exampleEntries(root, []registry.Entry{pdf, list, gone})
-	if len(check) != 1 || check[0].Action != "list" || len(missing) != 1 || missing[0] != "voucher gibtsnicht" {
-		t.Errorf("vor dem Handler: check %v, missing %v", entryNames(check), missing)
+	// not built yet: skipped; a generic entry without command is missing;
+	// a built Custom entry (pdf) is checked
+	check, missing := exampleEntries(root, []registry.Entry{later, pdf, list, gone})
+	if names := entryNames(check); strings.Join(names, ",") != "voucher pdf,voucher list" || len(missing) != 1 || missing[0] != "voucher gibtsnicht" {
+		t.Errorf("vor dem Handler: check %v, missing %v", names, missing)
 	}
 
 	// once its handler is in the tree, the Custom entry is checked
 	group, _, _ := root.Find([]string{"voucher"})
-	group.AddCommand(&cobra.Command{Use: "pdf <id>", RunE: func(*cobra.Command, []string) error { return nil }})
-	check, _ = exampleEntries(root, []registry.Entry{pdf, list})
-	if len(check) != 2 || check[0].Action != "pdf" {
+	group.AddCommand(&cobra.Command{Use: "spaeter <id>", RunE: func(*cobra.Command, []string) error { return nil }})
+	check, _ = exampleEntries(root, []registry.Entry{later, list})
+	if len(check) != 2 || check[0].Action != "spaeter" {
 		t.Errorf("nach dem Handler: check %v", entryNames(check))
 	}
 }
