@@ -24,6 +24,9 @@ const (
 	hintQuota          = "Monatskontingent erschöpft, Paket prüfen"
 	hintNetwork        = "Subdomain und Verbindung prüfen"
 	hintOutcomeUnknown = "Ergebnis unbekannt – vor Wiederholung per describe/list prüfen"
+	// hintServerMutation replaces hintServer for POST, PUT and DELETE: the
+	// server may have booked or sent before failing.
+	hintServerMutation = "Papierkram-Serverfehler – die Änderung kann trotzdem ausgeführt worden sein: vor Wiederholung per describe/list prüfen"
 )
 
 // apiErrorBody is the API error body (spec 4.1):
@@ -33,11 +36,15 @@ type apiErrorBody struct {
 	CorrelationID string `json:"correlation_id"`
 }
 
-// statusError maps a non-2xx response to a typed error. The message comes
+// statusError maps a non-2xx response to a typed error; for a 5xx on a
+// mutation the hint asks to check before repeating. The message comes
 // from the API error body; bodies that are not JSON (proxy HTML, empty 401)
 // get a short German default per status and are never echoed.
-func statusError(status int, body []byte) *clierr.Error {
+func statusError(method string, status int, body []byte) *clierr.Error {
 	code, hint, msg := classifyStatus(status)
+	if code == clierr.CodeServer && !safeMethod(method) {
+		hint = hintServerMutation
+	}
 	e := &clierr.Error{Code: code, Message: msg, Hint: hint, HTTPStatus: status}
 	var b apiErrorBody
 	if json.Unmarshal(body, &b) == nil {

@@ -88,7 +88,7 @@ func (c *Client) send(ctx context.Context, req *http.Request, attempt int) (*Res
 	if hr.StatusCode < 200 || hr.StatusCode > 299 {
 		// The status decides, even if the body was cut off: a truncated
 		// 429 must not turn into a retryable network error.
-		return resp, statusError(hr.StatusCode, data)
+		return resp, statusError(req.Method, hr.StatusCode, data)
 	}
 	if err != nil {
 		// A 2xx body is the payload; the server has seen the request.

@@ -70,6 +70,31 @@ func TestStatusMapping(t *testing.T) {
 	}
 }
 
+// A 5xx answer to a mutation does not prove that nothing happened (the
+// server may fail after booking or sending): the hint never invites a plain
+// retry, unlike for GET.
+func TestServerErrorOnMutationHintChecksFirst(t *testing.T) {
+	for _, status := range []int{500, 502, 504} {
+		for _, call := range []struct {
+			op   string
+			body any
+		}{
+			{"DeliverInvoice", map[string]any{"send_via": "pdf"}},
+			{"UpdateInvoice", map[string]any{"name": "x"}},
+			{"DeleteInvoice", nil},
+		} {
+			rec := &recorder{status: status, body: `{"message":"kaputt"}`}
+			c := newTestClient(t, rec, func(o *Options) { o.Sleep = func(time.Duration) {} })
+			_, err := c.Call(context.Background(), call.op, []int64{9}, nil, call.body)
+			ce := asCLIErr(t, err)
+			if ce.Code != clierr.CodeServer || ce.Exit() != 1 || strings.Contains(ce.Hint, "später erneut versuchen") ||
+				!strings.Contains(ce.Hint, "vor Wiederholung per describe/list prüfen") {
+				t.Errorf("%s %d: code %s exit %d hint %q", call.op, status, ce.Code, ce.Exit(), ce.Hint)
+			}
+		}
+	}
+}
+
 // Review Focus 5: non-JSON error bodies give a short German message by status,
 // never a parse error or an HTML dump.
 func TestNonJSONErrorBodies(t *testing.T) {
