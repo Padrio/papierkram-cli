@@ -7,8 +7,11 @@
 // body, a missing "Authorization: Bearer <token>") is a violation: it is
 // answered with 500 and an API-style error body. A path or method the spec
 // does not know is a violation too, answered with 404 in the API error
-// format. Unless WithoutAutoFail is given, the test fails at cleanup with all
-// violations listed. Tests that need a 404 for a known operation use On.
+// format, unless a test answers exactly that method and concrete path with On
+// or OnFunc (an override for a path outside the spec is not validated; a
+// template override never covers such a path). Unless WithoutAutoFail is
+// given, the test fails at cleanup with all violations listed. Tests that
+// need a 404 for a known operation use On.
 package mockapi
 
 import (
@@ -118,7 +121,8 @@ func (s *Server) URL() string { return s.srv.URL + apiPrefix }
 // ("/income/invoices/12") or a spec template ("/income/invoices/{id}"); a
 // concrete override beats a template override. A non-empty body is sent as
 // application/json unless hdr sets Content-Type. Requests are still
-// validated first.
+// validated first; a concrete override for a method and path outside the
+// spec answers them without validation (only the bearer token is checked).
 func (s *Server) On(method, path string, status int, body []byte, hdr ...string) {
 	if len(hdr)%2 != 0 {
 		panic(fmt.Sprintf("mockapi: On(%s %s): headers must be key, value pairs, got %d values", method, path, len(hdr)))
@@ -212,6 +216,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		route, pathParams, err = s.router.FindRoute(vr)
 	}
 	if err != nil {
+		// a path or method outside the spec is only answered by an
+		// explicit concrete override (papierkram api, unknown paths)
+		if h := s.override(r.Method, rel, ""); h != nil {
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			h(w, r)
+			return
+		}
 		s.record(r, errors.New("Pfad/Methode nicht in der API-Spec"))
 		s.writeError(w, http.StatusNotFound, "not_found", "Nicht gefunden")
 		return
@@ -312,6 +323,9 @@ func (s *Server) override(method, concrete, template string) http.HandlerFunc {
 	defer s.mu.Unlock()
 	if h := s.overrides[overrideKey(method, concrete)]; h != nil {
 		return h
+	}
+	if template == "" {
+		return nil
 	}
 	return s.overrides[overrideKey(method, template)]
 }

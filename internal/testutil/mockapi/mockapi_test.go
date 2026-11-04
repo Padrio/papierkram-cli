@@ -561,3 +561,50 @@ func TestParallelServers(t *testing.T) {
 		})
 	}
 }
+
+// An explicit override for a path or method outside the spec answers it
+// (papierkram api against paths the spec does not know); the request is
+// recorded and not a violation. Without such an override the path stays a
+// violation, and a template override never covers a path outside the spec.
+func TestOverrideForPathOutsideSpec(t *testing.T) {
+	s := mockapi.New(t, mockapi.WithoutAutoFail())
+	s.On(http.MethodGet, "/nope", http.StatusOK, []byte(`{"ok":1}`), "Content-Type", "application/json")
+	s.On(http.MethodPatch, "/income/invoices/1", http.StatusAccepted, nil)
+	s.On(http.MethodPost, "/income/invoices/{id}/nope", http.StatusOK, nil)
+
+	resp, b := send(t, s, http.MethodGet, "/nope?x=1", "")
+	if resp.StatusCode != http.StatusOK || string(b) != `{"ok":1}` {
+		t.Errorf("GET /nope: %d %s", resp.StatusCode, b)
+	}
+	if resp.Header.Get("X-Remaining-Quota") != "9000" {
+		t.Errorf("quota header missing: %v", resp.Header)
+	}
+	if resp, _ = send(t, s, http.MethodPatch, "/income/invoices/1", `{"a":1}`); resp.StatusCode != http.StatusAccepted {
+		t.Errorf("PATCH: %d", resp.StatusCode)
+	}
+	if v := s.Violations(); len(v) != 0 {
+		t.Errorf("violations with override: %v", v)
+	}
+	reqs := s.Requests()
+	if len(reqs) != 2 || reqs[0].Path != "/nope" || reqs[0].Query.Get("x") != "1" || string(reqs[1].Body) != `{"a":1}` {
+		t.Errorf("requests = %+v", reqs)
+	}
+
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/nope2"},
+		{http.MethodPost, "/income/invoices/7/nope"}, // template override does not count
+		{http.MethodPost, "/nope"},                   // other method
+	} {
+		if resp, _ := send(t, s, tc.method, tc.path, ""); resp.StatusCode != http.StatusNotFound {
+			t.Errorf("%s %s: status %d, want 404", tc.method, tc.path, resp.StatusCode)
+		}
+	}
+	if v := s.Violations(); len(v) != 3 {
+		t.Errorf("violations = %v, want 3", v)
+	}
+
+	// still no request without a bearer token
+	if resp, _ := send(t, s, http.MethodGet, "/nope", "", "Authorization", ""); resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("without token: %d", resp.StatusCode)
+	}
+}
