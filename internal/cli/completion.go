@@ -33,9 +33,9 @@ var completionShells = []string{"bash", "zsh", "fish", "powershell"}
 func completionLong() string {
 	return fmt.Sprintf(`Gibt das Skript für die Shell-Vervollständigung aus (bash, zsh, fish oder powershell).
 
-Vervollständigt werden Befehle, Flags, erlaubte Werte (z. B. -o, --state, die %d Ausgabekategorien bei --item category=), Kontextnamen aus der config.toml und IDs.
+Vervollständigt werden Befehle, Flags, erlaubte Werte (z. B. -o, --state, die %d Ausgabekategorien bei --item category=), Kontextnamen aus der config.toml und IDs. Kategorien mit Komma (z. B. "Gas, Strom, Wasser") stehen in Anführungszeichen: dafür mit category=" beginnen.
 
-IDs (z. B. papierkram invoice describe <Tab>, --company <Tab>) lädt die Vervollständigung per Listenabfrage aus der API: erste Seite, bis zu %d Einträge, angezeigt als ID mit Name. Jede Abfrage kostet %d Credit. Das Ergebnis wird je Kontext und Ressource %d Sekunden im Cache-Verzeichnis gehalten. Ohne Token, bei Fehlern oder nach %d Sekunden gibt es keine IDs, aber nie eine Meldung. Abschalten je Kontext in der config.toml:
+IDs (z. B. papierkram invoice describe <Tab>, --company <Tab>) lädt die Vervollständigung per Listenabfrage aus der API: erste Seite, bis zu %d Einträge, angezeigt als ID mit Name. Jede Abfrage kostet %d Credit. Das Ergebnis wird je Kontext und Ressource %d Sekunden im Cache-Verzeichnis gehalten; so lange zeigt die Vervollständigung die IDs auch ohne neue Anfrage. auth logout, context delete und context rename löschen den Cache des Kontexts. Ohne Token wird nichts geladen; bei Fehlern oder nach %d Sekunden gibt es keine IDs, aber nie eine Meldung. Das Token wird erst gelesen, wenn eine Anfrage nötig ist; bei gesperrtem Schlüsselbund (Linux) kann dabei ein Entsperrdialog erscheinen, completion_lookup = false vermeidet jeden Zugriff. Abschalten je Kontext in der config.toml:
 
   [contexts.<name>]
   completion_lookup = false
@@ -190,6 +190,9 @@ func newAccount(c *cobra.Command) bool {
 // type but text (numbers, IDs, dates, durations). Switches take no value.
 func takesNoFile(f *pflag.Flag) bool {
 	typ := f.Value.Type()
+	if t := f.Annotations[flagValueType]; len(t) == 1 {
+		typ = t[0] // the contract type: date filters are text flags (review R2-M2)
+	}
 	return f.NoOptDefVal == "" && typ != "string" && typ != "stringArray"
 }
 
@@ -420,7 +423,15 @@ func schemaArgCompletion(c *cobra.Command, args []string, toComplete string) ([]
 // nothing (no file names either).
 func apiArgCompletion(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) == 0 {
-		return withPrefix(apiMethods, strings.ToUpper(toComplete)), cobra.ShellCompDirectiveNoFileComp
+		// in the case the user started typing (api accepts both), so the
+		// shell's own prefix filter keeps them (review R2-M6)
+		out := withPrefix(apiMethods, strings.ToUpper(toComplete))
+		if toComplete != "" && toComplete == strings.ToLower(toComplete) {
+			for i := range out {
+				out[i] = strings.ToLower(out[i])
+			}
+		}
+		return out, cobra.ShellCompDirectiveNoFileComp
 	}
 	return nil, cobra.ShellCompDirectiveNoFileComp
 }

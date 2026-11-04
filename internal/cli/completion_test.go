@@ -494,8 +494,13 @@ func TestCompletionCoversEnumFlagsAndIDs(t *testing.T) {
 	var ids int
 	walk(root, func(c *cobra.Command) {
 		c.LocalFlags().VisitAll(func(f *pflag.Flag) {
-			// switches take no value; text flags may name files
-			if f.NoOptDefVal != "" || len(f.Annotations[flagEnum]) == 0 && (f.Value.Type() == "string" || f.Value.Type() == "stringArray") {
+			// switches take no value; text flags may name files, unless
+			// their contract type says otherwise (date filters, review R2-M2)
+			typ := f.Value.Type()
+			if v := f.Annotations[flagValueType]; len(v) == 1 {
+				typ = v[0]
+			}
+			if f.NoOptDefVal != "" || len(f.Annotations[flagEnum]) == 0 && (typ == "string" || typ == "stringArray") {
 				return
 			}
 			if _, ok := c.GetFlagCompletionFunc(f.Name); !ok {
@@ -534,7 +539,8 @@ func TestCompletionCommand(t *testing.T) {
 	// the help is German and names the credits and the switch
 	app, out, _ := newTestApp(t)
 	wantExit(t, app, Run(app, []string{"completion", "--help"}), 0)
-	for _, want := range []string{"Credit", "completion_lookup = false", "60 Sekunden", "~/.zshrc", "PowerShell"} {
+	for _, want := range []string{"Credit", "completion_lookup = false", "60 Sekunden", "~/.zshrc", "PowerShell",
+		`category="`, "Entsperrdialog", "auth logout"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("Hilfe ohne %q", want)
 		}
@@ -678,6 +684,11 @@ func TestCompletionMetaArgsAndNumbers(t *testing.T) {
 	complete(t, app, "schema", "voucher", "document", "").want(t, []string{"delete"}, noFile)
 	complete(t, app, "schema", "info", "").want(t, nil, noFile)
 	complete(t, app, "api", "").want(t, apiMethods, noFile)
+	// in the case the user started typing (review R2-M6)
+	complete(t, app, "api", "g").want(t, []string{"get"}, noFile)
+	complete(t, app, "api", "P").want(t, []string{"POST", "PUT", "PATCH"}, noFile)
+	complete(t, app, "api", "pa").want(t, []string{"patch"}, noFile)
+	complete(t, app, "invoice", "list", "--from", "").want(t, nil, noFile)
 	complete(t, app, "api", "GET", "").want(t, nil, noFile)
 	wantRequests(t, srv, 0)
 }
