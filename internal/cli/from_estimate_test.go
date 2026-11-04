@@ -271,18 +271,42 @@ func TestInvoiceFromEstimateItemsReplace(t *testing.T) {
 	}
 }
 
-// Without --from-estimate invoice create sends exactly what the generic
-// builder sends.
+// Without --from-estimate the registered invoice create (with the extra
+// flag) behaves like the plain create of the builder tests: the same
+// bodies and exit codes as TestWriteNestedRefsAndBilling,
+// TestWriteItemObjectFields, TestWriteRequiredFieldsComeFromFlagsOrInput (R17) and the usage
+// checks, and no read. The builder tests run the command without the
+// extra; this runs the one users get.
 func TestInvoiceCreateWithoutFromEstimateUnchanged(t *testing.T) {
-	args := []string{"invoice", "create", "--name", "R", "--customer", "3", "--payment-term", "4", "--item", item1, "-o", "json"}
-	app, srv := apiApp(t)
-	wantExit(t, app, Run(app, args), 0)
-	plain := wantRequests(t, srv, 1)[0]
-	app, srv = apiApp(t)
-	wantExit(t, app, runWrite(t, app, args...), 0) // the command as the builder makes it
-	generic := wantRequests(t, srv, 1)[0]
-	if plain.Method != generic.Method || plain.Path != generic.Path || !bytes.Equal(plain.Body, generic.Body) {
-		t.Errorf("mit Registry: %s %s %s\ngenerisch: %s %s %s", plain.Method, plain.Path, plain.Body, generic.Method, generic.Path, generic.Body)
+	for _, tc := range []struct {
+		args []string
+		exit int
+		body string // the POST body; "" means no request
+		errs string // part of stderr
+	}{
+		{[]string{"--name", "Rechnung", "--payment-term", "4", "--contact-person", "7", "--customer", "12", "--customer-project", "3",
+			"--billing-company", "Müller & Söhne", "--billing-zip", "10115", "--document-date", "2026-11-04", "--gross=false", "--item", item1},
+			0, `{"name":"Rechnung","payment_term":{"id":4},"customer":{"id":12,"contact_person":{"id":7},"project":{"id":3}},
+			"billing":{"company":"Müller & Söhne","zip":"10115"},"document_date":"2026-11-04","gross":false,
+			"line_items":[{"name":"Beratung","quantity":2,"price":100,"vat_rate":0.19}]}`, ""},
+		{[]string{"--name", "R", "--payment-term", "4", "--item", item1 + ",proposition=2"},
+			0, `{"name":"R","payment_term":{"id":4},"line_items":[{"name":"Beratung","quantity":2,"price":100,"vat_rate":0.19,"proposition":{"id":2}}]}`, ""},
+		{[]string{"--name", "R", "--payment-term", "4"}, 5, "", "line_items"},
+		{[]string{"--name", "R", "--payment-term", "4", "--item", item1 + ",proposition=zwei"}, 5, "", "proposition"},
+		{[]string{"--item", "nam=A", "--document-date", "nie"}, 2, "", `unbekannter Schlüssel "nam"`},
+		{[]string{"--name", "R", "--payment-term", "4", "--document-date", "nie", "--item", item1}, 5, "", "--document-date"},
+		{[]string{"--input", "-", "--items", "-"}, 2, "", "Standardeingabe"},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, Run(app, append(append([]string{"invoice", "create"}, tc.args...), "-o", "json")), tc.exit)
+		if tc.body == "" {
+			wantRequests(t, srv, 0)
+		} else {
+			wantBody(t, srv, "POST", "/income/invoices", tc.body)
+		}
+		if _, errs := bufs(app); !strings.Contains(errs, tc.errs) {
+			t.Errorf("%v: stderr = %q", tc.args, errs)
+		}
 	}
 }
 
