@@ -20,14 +20,25 @@ import (
 // noun, the ID, and when known the name and the gross amount; for the send
 // class also the way of sending, recipient and subject (see sendSummary);
 // Details are further lines a handler adds from its body (the payment of
-// voucher pay, see payDetails).
+// voucher pay, see payDetails). Label replaces resource and ID where the
+// request is no object of a resource (papierkram api to a path outside the
+// spec: "POST /x/y").
 type Summary struct {
 	Resource           string
 	ID                 int64
+	Label              string
 	Name, Amount       string
 	Via                string
 	Recipient, Subject string
 	Details            []Detail
+}
+
+// subject is what a confirmation names: Label, or resource and ID.
+func (s Summary) subject() string {
+	if s.Label != "" {
+		return s.Label
+	}
+	return fmt.Sprintf("%s %d", s.Resource, s.ID)
 }
 
 // Detail is one labelled line of a confirmation summary.
@@ -43,6 +54,7 @@ var actionVerbs = map[string]string{
 	"reverse":         "mit Gegenbuchung stornieren",
 	"pay":             "als bezahlt buchen",
 	"deliver":         "versenden",
+	"api":             "senden",
 }
 
 func actionVerb(action string) string {
@@ -67,7 +79,7 @@ func (a *App) mustAsk(e registry.Entry, s Summary) (bool, error) {
 	}
 	if !a.StdinTTY || a.Flags.NoInput {
 		return false, clierr.New(clierr.CodeConfirmation,
-			fmt.Sprintf("Bestätigung erforderlich: %s %d %s", s.Resource, s.ID, actionVerb(e.Action)),
+			fmt.Sprintf("Bestätigung erforderlich: %s %s", s.subject(), actionVerb(e.Action)),
 			"--yes verwenden (ohne Terminal und mit --no-input wird nicht nachgefragt)")
 	}
 	return true, nil
@@ -85,10 +97,10 @@ func (a *App) confirm(ctx context.Context, e registry.Entry, s Summary) error {
 	}
 	// texts from --input or the API: no \r, escape or line break may
 	// overwrite or hide what is being confirmed
-	for _, f := range []*string{&s.Name, &s.Amount, &s.Via, &s.Recipient, &s.Subject} {
+	for _, f := range []*string{&s.Label, &s.Name, &s.Amount, &s.Via, &s.Recipient, &s.Subject} {
 		*f = printable(*f)
 	}
-	head := fmt.Sprintf("%s %d", s.Resource, s.ID)
+	head := s.subject()
 	if s.Name != "" {
 		head += " „" + s.Name + "“"
 	}

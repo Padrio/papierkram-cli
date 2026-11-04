@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -369,12 +370,30 @@ func (a *App) beforeMutation(c *cobra.Command, e registry.Entry, client *api.Cli
 // both shown by --dry-run (spec 8.4), a summary of its own for the
 // confirmation, used instead of the one loaded by fetchSummary (an object
 // without a GET of its own, such as a document of a voucher), and details
-// added to either summary (the payment of voucher pay).
+// added to either summary (the payment of voucher pay). raw is the
+// request of papierkram api, which --dry-run shows instead of the one
+// built from the operation of e (path and query as given).
 type sendExtras struct {
 	upload  *UploadInfo
 	read    *ReadInfo
 	summary *Summary
 	details []Detail
+	raw     *rawRequest
+}
+
+// rawRequest is a request sent with api.Client.CallRaw.
+type rawRequest struct {
+	method, path string
+	query        url.Values
+}
+
+// preview is the method and URL a dry run shows: those of the raw request
+// of x, else of the operation of e.
+func (x sendExtras) preview(client *api.Client, e registry.Entry, params []int64) (string, string, error) {
+	if x.raw != nil {
+		return client.PreviewRaw(x.raw.method, x.raw.path, x.raw.query)
+	}
+	return client.Preview(e.OperationID, params, nil)
 }
 
 // beforeSend is beforeMutation with the extras of a handler.
@@ -383,7 +402,7 @@ func (a *App) beforeSend(c *cobra.Command, e registry.Entry, client *api.Client,
 		return false, err
 	}
 	if a.Flags.DryRun {
-		method, url, err := client.Preview(e.OperationID, params, nil)
+		method, url, err := x.preview(client, e, params)
 		if err != nil {
 			return false, err
 		}
