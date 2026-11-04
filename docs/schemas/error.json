@@ -12,11 +12,17 @@
       "required": ["code", "message", "exit_code"],
       "oneOf": [
         {
-          "description": "Exit 1: unerwarteter Fehler (error) oder Serverfehler 5xx (server_error).",
-          "properties": {"code": {"type": "string", "enum": ["error", "server_error"]}, "exit_code": {"type": "integer", "enum": [1]}}
+          "description": "Exit 1: unerwarteter Fehler, z. B. ein unerwarteter HTTP-Status unter 500 oder ein lokaler Fehler.",
+          "properties": {"code": {"type": "string", "enum": ["error"]}, "exit_code": {"type": "integer", "enum": [1]}, "http_status": {"type": "integer", "maximum": 499}}
         },
         {
-          "description": "Exit 2: falsche Flags oder Argumente, fehlende Pflichtangabe; nichts wurde gesendet.",
+          "description": "Exit 1: Serverfehler der API (HTTP 5xx); http_status ist immer gesetzt.",
+          "required": ["http_status"],
+          "properties": {"code": {"type": "string", "enum": ["server_error"]}, "exit_code": {"type": "integer", "enum": [1]}, "http_status": {"type": "integer", "minimum": 500}}
+        },
+        {
+          "description": "Exit 2: falsche Flags oder Argumente, fehlende Pflichtangabe; nichts wurde gesendet, daher kein http_status.",
+          "not": {"required": ["http_status"]},
           "properties": {"code": {"type": "string", "enum": ["usage"]}, "exit_code": {"type": "integer", "enum": [2]}}
         },
         {
@@ -40,23 +46,27 @@
           "properties": {"code": {"type": "string", "enum": ["conflict"]}, "exit_code": {"type": "integer", "enum": [7]}, "http_status": {"type": "integer", "enum": [409]}}
         },
         {
-          "description": "Exit 8: Bestätigung fehlt oder wurde abgelehnt; nichts wurde gesendet.",
+          "description": "Exit 8: Bestätigung fehlt oder wurde abgelehnt; die Änderung wurde nicht gesendet, daher kein http_status.",
+          "not": {"required": ["http_status"]},
           "properties": {"code": {"type": "string", "enum": ["confirmation_required"]}, "exit_code": {"type": "integer", "enum": [8]}}
         },
         {
-          "description": "Exit 9: Schreibschutz (PAPIERKRAM_READ_ONLY oder read_only im Kontext); nichts wurde gesendet.",
+          "description": "Exit 9: Schreibschutz (PAPIERKRAM_READ_ONLY oder read_only im Kontext); nichts wurde gesendet, daher kein http_status.",
+          "not": {"required": ["http_status"]},
           "properties": {"code": {"type": "string", "enum": ["read_only"]}, "exit_code": {"type": "integer", "enum": [9]}}
         },
         {
-          "description": "Exit 10: Netzwerkfehler (Timeout, DNS, TLS) bei einem Lesezugriff oder bevor eine Änderung gesendet wurde.",
+          "description": "Exit 10: Netzwerkfehler (Timeout, DNS, TLS) bei einem Lesezugriff oder bevor eine Änderung gesendet wurde; keine Antwort, daher kein http_status.",
+          "not": {"required": ["http_status"]},
           "properties": {"code": {"type": "string", "enum": ["network"]}, "exit_code": {"type": "integer", "enum": [10]}}
         },
         {
-          "description": "Exit 11: mehrstufiger Befehl teilweise ausgeführt (z. B. voucher create --file); der Hinweis nennt den Befehl zum Nachholen. NICHT den ganzen Befehl wiederholen.",
+          "description": "Exit 11: mehrstufiger Befehl teilweise ausgeführt (z. B. voucher create --file); der Hinweis nennt den Befehl zum Nachholen. NICHT den ganzen Befehl wiederholen. http_status ist der des fehlgeschlagenen Schritts, falls es eine Antwort gab.",
           "properties": {"code": {"type": "string", "enum": ["partial"]}, "exit_code": {"type": "integer", "enum": [11]}}
         },
         {
-          "description": "Exit 12: Ergebnis unbekannt, die Verbindung brach ab, nachdem POST, PUT oder DELETE gesendet wurde; vor einer Wiederholung per describe oder list prüfen.",
+          "description": "Exit 12: Ergebnis unbekannt, die Verbindung brach ab, nachdem POST, PUT oder DELETE gesendet wurde; vor einer Wiederholung per describe oder list prüfen. Keine vollständige Antwort, daher kein http_status.",
+          "not": {"required": ["http_status"]},
           "properties": {"code": {"type": "string", "enum": ["outcome_unknown"]}, "exit_code": {"type": "integer", "enum": [12]}}
         }
       ],

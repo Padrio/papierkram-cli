@@ -373,9 +373,23 @@ func TestContractSchemasStrict(t *testing.T) {
 					e := errOf(d)
 					e["code"], e["exit_code"], e["http_status"] = "error", 1.0, 200.0
 				}, "number must be at least 300"},
-				"hint leer":           {func(d map[string]any) { errOf(d)["hint"] = "" }, "minimum string length is 1"},
-				"correlation_id null": {func(d map[string]any) { errOf(d)["correlation_id"] = nil }, "Value is not nullable"},
-				"exit_code als Text":  {func(d map[string]any) { errOf(d)["exit_code"] = "4" }, `Error at "/exit_code": value is not one of the allowed values [4]`},
+				"server_error mit 404":       {withCode("server_error", 1, 404), `Error at "/http_status": number must be at least 500`},
+				"server_error ohne Status":   {withCode("server_error", 1, 0), `property "http_status" is missing`},
+				"server_error mit 503":       {withCode("server_error", 1, 503), ""},
+				"error mit 500":              {withCode("error", 1, 500), `Error at "/http_status": number must be at most 499`},
+				"error mit 418":              {withCode("error", 1, 418), ""},
+				"error ohne Status":          {withCode("error", 1, 0), ""},
+				"usage mit Status":           {withCode("usage", 2, 400), `Doesn't match schema "not"`},
+				"confirmation mit Status":    {withCode("confirmation_required", 8, 409), `Doesn't match schema "not"`},
+				"read_only mit Status":       {withCode("read_only", 9, 403), `Doesn't match schema "not"`},
+				"network mit Status":         {withCode("network", 10, 502), `Doesn't match schema "not"`},
+				"outcome_unknown mit Status": {withCode("outcome_unknown", 12, 504), `Doesn't match schema "not"`},
+				"partial mit 413":            {withCode("partial", 11, 413), ""},
+				"partial ohne Status":        {withCode("partial", 11, 0), ""},
+				"auth ohne Status":           {withCode("auth", 3, 0), ""},
+				"hint leer":                  {func(d map[string]any) { errOf(d)["hint"] = "" }, "minimum string length is 1"},
+				"correlation_id null":        {func(d map[string]any) { errOf(d)["correlation_id"] = nil }, "Value is not nullable"},
+				"exit_code als Text":         {func(d map[string]any) { errOf(d)["exit_code"] = "4" }, `Error at "/exit_code": value is not one of the allowed values [4]`},
 			}},
 		{"dry-run", `{"dry_run":true,"method":"POST","url":"https://firma.papierkram.de/api/v1/expense/vouchers","body":{"name":"Papier"},` +
 			`"upload":{"method":"POST","url":"https://firma.papierkram.de/api/v1/expense/vouchers/{voucher_id}/documents","credits":10,"name":"beleg.pdf","size":15,"mime_type":"application/pdf"},"credits":60}`,
@@ -475,6 +489,19 @@ func TestContractSchemasStrict(t *testing.T) {
 // withMIME sets the MIME type of the upload of a decoded dry-run document.
 func withMIME(v string) func(d map[string]any) {
 	return func(d map[string]any) { objOf(d, "upload")["mime_type"] = v }
+}
+
+// withCode sets code, exit code and HTTP status (0: none) of a decoded
+// error document.
+func withCode(code string, exit, status int) func(d map[string]any) {
+	return func(d map[string]any) {
+		e := errOf(d)
+		e["code"], e["exit_code"] = code, float64(exit)
+		delete(e, "http_status")
+		if status != 0 {
+			e["http_status"] = float64(status)
+		}
+	}
 }
 
 // errOf is the error object of a decoded error document.
