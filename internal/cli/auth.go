@@ -15,6 +15,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
+	"github.com/Padrio/papierkram-cli/internal/redact"
 )
 
 // maxTokenInput bounds what auth login reads from stdin.
@@ -144,7 +145,7 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 	}
 	r.ContextSource, r.Token, r.TokenSource = source, token, ""
 	if u := a.Env("PAPIERKRAM_BASE_URL"); u != "" {
-		_, _ = fmt.Fprintf(a.Err, "Hinweis: Das Token wird gegen PAPIERKRAM_BASE_URL (%s) geprüft.\n", u)
+		_, _ = fmt.Fprintf(a.Err, "Hinweis: Das Token wird gegen PAPIERKRAM_BASE_URL (%s) geprüft.\n", printable(redact.URL(u)))
 	}
 	client, err := a.clientFor(r)
 	if err != nil {
@@ -394,7 +395,7 @@ func newAuthStatusCmd(app *App) *cobra.Command {
 			}
 			st := statusJSON{
 				Context: r.Context, ContextSource: r.ContextSource,
-				Subdomain: r.Subdomain, BaseURL: r.BaseURL, TokenSource: r.TokenSource,
+				Subdomain: r.Subdomain, BaseURL: printable(redact.URL(r.BaseURL)), TokenSource: r.TokenSource,
 				ReadOnly: r.ReadOnly, ReadOnlySource: r.ReadOnlySource,
 				Quota: quotaJSON{app.quota.Remaining, app.quota.Consumed, app.quota.Known},
 			}

@@ -338,3 +338,16 @@ func TestSelectContext(t *testing.T) {
 		t.Errorf("nil config: got %q", name)
 	}
 }
+
+// Controller ruling N1: the base URL in the printed form of Resolved has
+// no userinfo, also when it cannot be parsed.
+func TestResolvedNeverPrintsBaseURLCredentials(t *testing.T) {
+	for _, u := range []string{"http://alice:s3cret@127.0.0.1:1/api/v1", "http://alice:s3cret@127.0.0.1:badport/api/v1"} {
+		r := Resolved{BaseURL: u}
+		for _, s := range []string{r.String(), fmt.Sprintf("%v %+v %#v %s", r, r, r, r)} {
+			if strings.Contains(s, "alice") || strings.Contains(s, "s3cret") {
+				t.Errorf("%s", s)
+			}
+		}
+	}
+}

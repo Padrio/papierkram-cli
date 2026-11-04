@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
+	"github.com/Padrio/papierkram-cli/internal/redact"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/timer"
 )
@@ -162,7 +162,7 @@ func (a *App) runTimeStart(c *cobra.Command, e registry.Entry) error {
 		Task:      task.ID,
 		User:      user.ID,
 		Comment:   flagString(c, "comments"),
-		BaseURL:   r.BaseURL,
+		BaseURL:   redact.URL(r.BaseURL), // never userinfo in the file (N1)
 	}
 	if err := timer.Save(path, st); err != nil {
 		if errors.Is(err, fs.ErrExist) {
@@ -247,7 +247,7 @@ func accountHost(baseURL string) string {
 	if baseURL == "" {
 		return ""
 	}
-	return printable(urlHost(baseURL))
+	return printable(redact.Host(baseURL))
 }
 
 // timerMinutes is the wall-clock difference from start to now (both in
@@ -278,7 +278,7 @@ func (a *App) runTimeStatus(c *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	if st != nil && st.BaseURL != r.BaseURL {
+	if st != nil && !sameAccount(st.BaseURL, r.BaseURL) {
 		// time stop would refuse (controller ruling C1): say so now
 		ce := clierr.From(errTimerAccount(st.BaseURL, r.BaseURL))
 		output.Warn(a.Err, ce.Message+". "+ce.Hint)
@@ -321,7 +321,7 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 		return clierr.New(clierr.CodeUsage, fmt.Sprintf("Kein Timer läuft (%s)", contextLabel(r.Context)),
 			"Timer starten: papierkram time start --task <id>; ohne Timer buchen: papierkram time log")
 	}
-	if st.BaseURL != r.BaseURL {
+	if !sameAccount(st.BaseURL, r.BaseURL) {
 		return errTimerAccount(st.BaseURL, r.BaseURL)
 	}
 	// eff is the timer with the comment of this stop (-m replaces it)
@@ -364,6 +364,16 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 	return nil
 }
 
+// sameAccount reports whether the base URL a timer was started with is
+// the effective one, both without userinfo (other credentials for the
+// same URL are the same account; the state holds none, N1). A state
+// without base URL (first format) never matches. Two unparseable URLs
+// both become redact.Invalid; no request can be built with them, so
+// nothing is booked into a wrong account.
+func sameAccount(started, now string) bool {
+	return started != "" && redact.URL(started) == redact.URL(now)
+}
+
 // errTimerAccount refuses to book a timer into another account than the
 // one it was started for (controller ruling): its task and user IDs
 // belong there. A state without base URL (first format) is a mismatch
@@ -371,21 +381,12 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 func errTimerAccount(started, now string) error {
 	from := "einem unbekannten Account (Timer-Datei ohne Angabe, ältere Version)"
 	if started != "" {
-		from = printable(urlHost(started))
+		from = printable(redact.Host(started))
 	}
 	return clierr.New(clierr.CodeUsage,
-		fmt.Sprintf("Timer wurde für %s gestartet, wirksam ist %s", from, printable(urlHost(now))),
+		fmt.Sprintf("Timer wurde für %s gestartet, wirksam ist %s", from, printable(redact.Host(now))),
 		"Der Timer läuft weiter. Zum Account des Starts zurückwechseln (Subdomain bzw. PAPIERKRAM_BASE_URL) und erneut papierkram time stop, "+
 			"oder den Timer mit papierkram time discard verwerfen")
-}
-
-// urlHost is the host (with port) of a base URL, the URL itself when it
-// has none.
-func urlHost(raw string) string {
-	if u, err := url.Parse(raw); err == nil && u.Host != "" {
-		return u.Host
-	}
-	return raw
 }
 
 // timerPeriod is the period of st that time stop books: the date and the

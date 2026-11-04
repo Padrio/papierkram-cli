@@ -13,6 +13,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/namecache"
 	"github.com/Padrio/papierkram-cli/internal/output"
+	"github.com/Padrio/papierkram-cli/internal/redact"
 )
 
 // The summary of time log in a terminal (spec 9.6): company, project,
@@ -35,7 +36,8 @@ func (a *App) names() *namecache.Cache { return namecache.New(a.cacheDir(), a.No
 
 // cacheScope is the account of r for cache keys: context and base URL,
 // since environment variables can point a context to another account.
-func cacheScope(r *config.Resolved) string { return r.Context + " " + r.BaseURL }
+// The URL is without userinfo: the scope is stored in the cache files.
+func cacheScope(r *config.Resolved) string { return r.Context + " " + redact.URL(r.BaseURL) }
 
 // cachedName is the cached value of an object: its name and, for a task
 // its project, for a project its company.

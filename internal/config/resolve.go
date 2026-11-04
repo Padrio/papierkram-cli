@@ -8,6 +8,7 @@ import (
 
 	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/redact"
 )
 
 // Source identifiers; stable strings shown by `auth status` and --debug.
@@ -49,14 +50,15 @@ type Resolved struct {
 	CompletionLookup bool
 }
 
-// String renders the Resolved without the token (masked as ***).
+// String renders the Resolved without the token (masked as ***) and
+// without userinfo of the base URL (redact).
 func (r Resolved) String() string {
 	tok := ""
 	if r.Token != "" {
 		tok = "***"
 	}
 	return fmt.Sprintf("Resolved{Context:%q(%s) Subdomain:%q BaseURL:%q Token:%q(%s) ReadOnly:%t(%s) Timeout:%s Output:%q User:%d CompletionLookup:%t}",
-		r.Context, r.ContextSource, r.Subdomain, r.BaseURL, tok, r.TokenSource,
+		r.Context, r.ContextSource, r.Subdomain, redact.URL(r.BaseURL), tok, r.TokenSource,
 		r.ReadOnly, r.ReadOnlySource, r.Timeout, r.Output, r.User, r.CompletionLookup)
 }
 
