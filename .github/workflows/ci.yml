@@ -157,6 +157,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y zsh fish
           REQUIRE_ALL_SHELLS=1 sh scripts/check-completions.sh
+      # the notes script of release.yml: a section is found, a missing one fails
+      - name: release notes script
+        run: |
+          printf '%s\n' '## [Unreleased]' '' '## [1.2.3] - 2027-01-01' '' '- Eintrag' '' '[1.2.3]: https://example.invalid' > "$RUNNER_TEMP/cl.md"
+          test "$(sh scripts/release-notes.sh v1.2.3 "$RUNNER_TEMP/cl.md")" = '- Eintrag'
+          if sh scripts/release-notes.sh v9.9.9 "$RUNNER_TEMP/cl.md"; then exit 1; fi
       # dist/, completions/ and man/ are in .gitignore
       - name: snapshot leaves the tree clean
         run: |

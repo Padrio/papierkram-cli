@@ -1,0 +1,51 @@
+name: Release
+
+# Runs only when Pascal pushes a version tag (docs/release.md); never on
+# branches, pull requests or forks. Publishes the GitHub release, the
+# Homebrew cask (Padrio/homebrew-tap) and the Scoop manifest
+# (Padrio/scoop-bucket) with GoReleaser (.goreleaser.yaml).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # a fork that copies the tag never publishes
+    if: github.repository == 'Padrio/papierkram-cli' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # GoReleaser reads tags and the commit date from the history
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.x'
+      # the notes live outside the work tree: GoReleaser refuses a dirty tree
+      - name: release notes from CHANGELOG.md
+        run: sh scripts/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
+      - name: token for tap and bucket is set
+        env:
+          PACKAGES_GITHUB_TOKEN: ${{ secrets.PACKAGES_GITHUB_TOKEN }}
+        run: |
+          if [ -z "$PACKAGES_GITHUB_TOKEN" ]; then
+            echo "Secret PACKAGES_GITHUB_TOKEN fehlt (docs/release.md, Voraussetzungen)" >&2
+            exit 1
+          fi
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --clean --release-notes ${{ runner.temp }}/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_GITHUB_TOKEN: ${{ secrets.PACKAGES_GITHUB_TOKEN }}
