@@ -1,18 +1,17 @@
 package projectfile
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pelletier/go-toml/v2/unstable"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/output"
+	"github.com/Padrio/papierkram-cli/internal/safefile"
 )
 
 // Changes are the keys local init sets; a nil field leaves its key as it
@@ -105,47 +104,12 @@ func Save(path string, ch Changes) (SaveResult, error) {
 	if exists {
 		mode = st.Mode().Perm()
 	}
-	if err := writeAtomic(path, out, mode, exists); err != nil {
+	if err := safefile.WriteAtomic(path, out, mode, exists); err != nil {
 		return SaveResult{}, fileErr(path, "schreiben", err)
 	}
 	res.Created = !exists
 	res.HadComments = exists && hasComments(data)
 	return res, nil
-}
-
-// writeAtomic writes data to a new temporary file next to path with mode
-// (the umask applies at creation; exact sets it on the open file, for the
-// mode of a replaced file) and renames it to path.
-func writeAtomic(path string, data []byte, mode fs.FileMode, exact bool) error {
-	dir, base := filepath.Dir(path), filepath.Base(path)
-	var f *os.File
-	var err error
-	for range 10 {
-		name := filepath.Join(dir, "."+base+"."+rand.Text()[:12]+".tmp")
-		f, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, mode)
-		if !errors.Is(err, fs.ErrExist) {
-			break
-		}
-	}
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer func() { _ = os.Remove(tmp) }() // no-op after the rename
-	_, err = f.Write(data)
-	if err == nil && exact {
-		_ = f.Chmod(mode) // best effort (file systems without Unix modes)
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
 
 // hasComments reports whether the TOML document data has a comment (a #

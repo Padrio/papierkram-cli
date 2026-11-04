@@ -11,13 +11,14 @@
 package namecache
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/Padrio/papierkram-cli/internal/safefile"
 )
 
 // TTL is how long an entry is used after it was stored.
@@ -100,13 +101,5 @@ func (c *Cache) Put(scope, resource, id string, v any) {
 	if os.MkdirAll(c.dir, 0o700) != nil {
 		return
 	}
-	target := c.path(scope, resource, id)
-	tmp := target + "." + rand.Text()[:8] + ".tmp"
-	if os.WriteFile(tmp, data, 0o600) != nil {
-		_ = os.Remove(tmp)
-		return
-	}
-	if os.Rename(tmp, target) != nil {
-		_ = os.Remove(tmp)
-	}
+	_ = safefile.WriteAtomic(c.path(scope, resource, id), data, 0o600, false)
 }

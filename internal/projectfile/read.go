@@ -3,62 +3,38 @@ package projectfile
 import (
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
-	"os"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/output"
+	"github.com/Padrio/papierkram-cli/internal/safefile"
 )
 
 // errSymlink reports a symbolic link where follow is false (Save).
-var errSymlink = errors.New("symbolic link")
+var errSymlink = safefile.ErrSymlink
 
 // readRegular reads the project file at path, which may come from a
-// cloned repository (review I1): only a regular file of at most MaxSize
-// bytes. A device (a checked-in link to /dev/zero), a FIFO (would block)
-// or a directory is a usage error before it is opened; the opened handle
-// is checked again, so a file swapped in between is never read beyond
+// cloned repository (review I1), through safefile.ReadRegular: only a
+// regular file of at most MaxSize bytes. A device (a checked-in link to
+// /dev/zero), a FIFO (would block) or a directory is a usage error before
+// it is opened, and a file swapped in between is never read beyond
 // MaxSize+1 bytes. With follow a symbolic link to a regular file is read
 // (a shared file in a monorepo); without (Save) a link is errSymlink and,
 // where the platform allows, the open does not follow one either.
 func readRegular(path string, follow bool) ([]byte, error) {
-	stat := os.Stat
-	if !follow {
-		stat = os.Lstat
-	}
-	st, err := stat(path)
-	if err != nil {
-		return nil, fileErr(path, "lesen", err)
-	}
-	if st.Mode()&fs.ModeSymlink != 0 {
+	data, err := safefile.ReadRegular(path, follow, MaxSize)
+	switch {
+	case err == nil:
+		return data, nil
+	case errors.Is(err, safefile.ErrSymlink):
 		return nil, errSymlink
-	}
-	if !st.Mode().IsRegular() {
+	case errors.Is(err, safefile.ErrNotRegular):
 		return nil, notRegular(path)
-	}
-	f, err := openRead(path, follow)
-	if err != nil {
-		return nil, fileErr(path, "lesen", err)
-	}
-	defer func() { _ = f.Close() }()
-	fst, err := f.Stat()
-	if err != nil {
-		return nil, fileErr(path, "lesen", err)
-	}
-	if !fst.Mode().IsRegular() || !os.SameFile(st, fst) {
-		return nil, notRegular(path)
-	}
-	data, err := io.ReadAll(io.LimitReader(f, MaxSize+1))
-	if err != nil {
-		return nil, fileErr(path, "lesen", err)
-	}
-	if len(data) > MaxSize {
+	case errors.Is(err, safefile.ErrTooLarge):
 		return nil, clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("Projektdatei %s ist zu groß (mehr als %d KiB)", output.Printable(path), MaxSize>>10),
 			"Die Projektdatei enthält nur wenige IDs und Aliase; Datei prüfen")
 	}
-	return data, nil
+	return nil, fileErr(path, "lesen", err)
 }
 
 // notRegular is the usage error for a project file that is no regular
