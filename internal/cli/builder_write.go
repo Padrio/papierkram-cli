@@ -170,9 +170,10 @@ func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error 
 // runWriteThen is runWrite with an optional upload after create (up, see
 // createUpload; nil runs runWrite unchanged). The file is checked with the
 // flags (exit 2, before anything is resolved or sent); --dry-run shows the
-// create with the file and the credits of both, the confirmation is that of
-// both classes, asked once before the create (createUpload.run). After the
-// create the file goes to the new object (uploadCreated).
+// create, the upload as a second request and the credits of both; upload
+// and create share their class (checkCreateFile), so the confirmation of
+// create is that of the run. After the create the file goes to the new
+// object (uploadCreated).
 func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, up *createUpload) error {
 	params, err := pathValues(c, e, args)
 	if err != nil {
@@ -192,13 +193,16 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, up
 			return err
 		}
 		defer up.close()
-		run, extras.upload = up.run(e), up.file.info()
+		run = up.run(e)
 	}
-	// the read-only gate depends on the class only, and create and upload
-	// are both mutations: the gate of e is that of the whole run
+	// create and upload have the same class (checkCreateFile): the gate of
+	// e is that of the whole run
 	client, r, err := a.mutationClient(e)
 	if err != nil {
 		return err
+	}
+	if up != nil {
+		extras.upload = up.dryRunStep(client)
 	}
 	body, _, err := a.buildBody(c, e, isUpdate)
 	if err != nil {

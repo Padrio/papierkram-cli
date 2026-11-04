@@ -10,10 +10,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
+	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/testutil/mockapi"
 )
@@ -327,10 +331,23 @@ func TestVoucherCreateFileDryRun(t *testing.T) {
 	wantExit(t, app, Run(app, append(append([]string{}, voucherCreateArgs...), "--file", path, "--dry-run", "-o", "json")), 0)
 	wantRequests(t, srv, 0)
 	want := fmt.Sprintf(`{"body":{"line_items":[{"amount":11.90,"category":"Bürobedarf","name":"Papier","vat_rate":0.19}],"name":"Papier","provenance":"domestic"},`+
-		`"credits":60,"dry_run":true,"method":"POST","upload":{"mime_type":"application/pdf","name":"beleg.pdf","size":%d},"url":"%s/expense/vouchers"}`,
-		len(pdfContent), srv.URL())
+		`"credits":60,"dry_run":true,"method":"POST","upload":{"credits":10,"method":"POST","mime_type":"application/pdf","name":"beleg.pdf","size":%d,`+
+		`"url":"%s/expense/vouchers/{voucher_id}/documents"},"url":"%s/expense/vouchers"}`,
+		len(pdfContent), srv.URL(), srv.URL())
 	if out := mustOut(app); canonJSON(t, []byte(out)) != want {
 		t.Errorf("stdout = %s\nerwartet %s", out, want)
+	}
+
+	// text: the upload is visibly a second request
+	app, srv = apiApp(t)
+	wantExit(t, app, Run(app, append(append([]string{}, voucherCreateArgs...), "--file", path, "--dry-run")), 0)
+	wantRequests(t, srv, 0)
+	out := mustOut(app)
+	second := fmt.Sprintf("\nDanach (zweite Anfrage, an den neuen Beleg):\nMethode: POST\nURL:     %s/expense/vouchers/{voucher_id}/documents\n"+
+		"Credits: 10\nDatei:   beleg.pdf (%d Bytes, application/pdf)\n", srv.URL(), len(pdfContent))
+	if !strings.HasPrefix(out, "Probelauf – nichts gesendet\nMethode: POST\nURL:     "+srv.URL()+"/expense/vouchers\nCredits: 60 (beide Anfragen)\n") ||
+		!strings.HasSuffix(out, second) {
+		t.Errorf("stdout = %s", out)
 	}
 }
 
@@ -388,11 +405,19 @@ func TestR39_VoucherFileUploadPartial(t *testing.T) {
 			srv.On("POST", "/expense/vouchers/290/documents", http.StatusInternalServerError,
 				[]byte(`{"type":"error","message":"kaputt"}`))
 		}, "Ergebnis des Hochladens unbekannt (kaputt): die Datei ist möglicherweise schon angehängt – vor dem Nachholen per papierkram voucher describe 290 prüfen"},
-		{"Verbindungsabbruch", func(srv *mockapi.Server) {
+		{"keine Antwort nach dem Senden", func(srv *mockapi.Server) {
 			srv.OnFunc("POST", "/expense/vouchers/290/documents", func(_ http.ResponseWriter, r *http.Request) {
 				<-r.Context().Done() // request fully read, no answer until the client gives up
 			})
 		}, "die Datei ist möglicherweise schon angehängt – vor dem Nachholen per papierkram voucher describe 290 prüfen"},
+		{"Verbindung nach dem Senden geschlossen", func(srv *mockapi.Server) {
+			srv.OnFunc("POST", "/expense/vouchers/290/documents", func(w http.ResponseWriter, _ *http.Request) {
+				conn, _, err := http.NewResponseController(w).Hijack() // request fully read
+				if err == nil {
+					_ = conn.Close()
+				}
+			})
+		}, "(Verbindung vom Server geschlossen)): die Datei ist möglicherweise schon angehängt"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -425,6 +450,9 @@ func TestR39_VoucherFileUploadPartial(t *testing.T) {
 			}
 			if !strings.Contains(errs, `"code":"partial"`) || !strings.Contains(errs, `"exit_code":11`) || !strings.Contains(errs, retry) {
 				t.Errorf("stderr = %s", errs)
+			}
+			if timedOut := strings.HasPrefix(tc.name, "keine Antwort"); timedOut != strings.Contains(errs, "--timeout 120s") {
+				t.Errorf("Hinweis auf --timeout nur bei Zeitüberschreitung: %s", errs)
 			}
 			assertNoToken(t, app)
 		})
@@ -469,23 +497,129 @@ func TestShellQuote(t *testing.T) {
 // id null and the hint to look the voucher up.
 func TestVoucherCreateFileWithoutID(t *testing.T) {
 	path := writeFile(t, "beleg.pdf", pdfContent)
-	app, srv := apiApp(t)
-	srv.On("POST", "/expense/vouchers", http.StatusCreated, nil)
-	wantExit(t, app, Run(app, append(append([]string{}, voucherCreateArgs...), "--file", path, "-o", "json")), 11)
-	wantRequests(t, srv, 1)
-	out, errs := bufs(app)
-	for _, want := range []string{`"id": null`, `"retry_command": "papierkram voucher upload <id> ` + path + `"`, "papierkram voucher list suchen"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("stdout ohne %q:\n%s", want, out)
+	for _, format := range []string{"json", "table"} {
+		app, srv := apiApp(t)
+		srv.On("POST", "/expense/vouchers", http.StatusCreated, nil)
+		wantExit(t, app, Run(app, append(append([]string{}, voucherCreateArgs...), "--file", path, "-o", format)), 11)
+		wantRequests(t, srv, 1)
+		out, errs := bufs(app)
+		// no placeholder: <id> would be a shell redirection that empties the file
+		for _, bad := range []string{"<", ">", "papierkram voucher upload"} {
+			if strings.Contains(out, bad) || strings.Contains(errs, bad) {
+				t.Errorf("%s: Ausgabe enthält %q:\nstdout: %s\nstderr: %s", format, bad, out, errs)
+			}
+		}
+		if !strings.Contains(errs, "Beleg-ID unbekannt") || !strings.Contains(errs, "papierkram voucher list") {
+			t.Errorf("%s: stderr = %s", format, errs)
+		}
+		if format == "json" {
+			if canonJSON(t, []byte(out)) != `{"completed":["create"],"failed":["upload"],"id":null,"retry_command":null,"warnings":[`+
+				`"Beleg angelegt, Beleg-ID unbekannt (API lieferte keine ID des angelegten Objekts): Datei nicht hochgeladen – Beleg per papierkram voucher list suchen und die Datei mit voucher upload an ihn hochladen; NICHT den ganzen Befehl wiederholen (sonst ein zweiter Beleg)"]}` {
+				t.Errorf("stdout = %s", out)
+			}
+			if !strings.Contains(errs, `"code":"partial"`) {
+				t.Errorf("stderr = %s", errs)
+			}
 		}
 	}
-	if !strings.Contains(errs, `"code":"partial"`) {
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Every 4xx answer to the upload, also one without its own error code
+// (413, 415), is a clean failure: nothing attached, no describe check.
+func TestVoucherCreateFileUpload4xxIsClean(t *testing.T) {
+	path := writeFile(t, "beleg.pdf", pdfContent)
+	for _, status := range []int{http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType, http.StatusMethodNotAllowed, http.StatusUnprocessableEntity} {
+		app, srv := apiApp(t)
+		srv.On("POST", "/expense/vouchers/290/documents", status, []byte(`{"type":"error","message":"abgelehnt"}`))
+		wantExit(t, app, Run(app, append(append([]string{}, voucherCreateArgs...), "--file", path, "-o", "json")), 11)
+		wantRequests(t, srv, 2)
+		out, errs := bufs(app)
+		if !strings.Contains(out, "Beleg 290 angelegt, Datei nicht hochgeladen: abgelehnt") || strings.Contains(out+errs, "möglicherweise") {
+			t.Errorf("%d: stdout = %s\nstderr = %s", status, out, errs)
+		}
+	}
+}
+
+// An upload that fails without an HTTP status because the file shrank
+// after the check was never completely sent: a clean failure.
+func TestVoucherCreateFileUploadWithoutStatusIsClean(t *testing.T) {
+	path := writeFile(t, "beleg.pdf", pdfContent)
+	app, _, _ := newTestApp(t)
+	srv := mockapi.New(t, mockapi.WithoutAutoFail()) // the cut upload body is no valid request
+	app.Env = envMap(map[string]string{"PAPIERKRAM_BASE_URL": srv.URL(), "PAPIERKRAM_TOKEN": "test-token-upload"})
+	srv.OnFunc("POST", "/expense/vouchers", func(w http.ResponseWriter, _ *http.Request) {
+		if err := os.Truncate(path, 3); err != nil {
+			t.Error(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"id":290,"type":"expense_voucher"}`)
+	})
+	wantExit(t, app, Run(app, append(append([]string{}, voucherCreateArgs...), "--file", path, "-o", "json")), 11)
+	out, errs := bufs(app)
+	if !strings.Contains(out, "hat sich beim Hochladen verändert") || strings.Contains(out+errs, "möglicherweise") {
+		t.Errorf("stdout = %s\nstderr = %s", out, errs)
+	}
+}
+
+func TestUploadUncertain(t *testing.T) {
+	for _, tc := range []struct {
+		err  *clierr.Error
+		want bool
+	}{
+		{&clierr.Error{Code: clierr.CodeOutcomeUnknown}, true},
+		{&clierr.Error{Code: clierr.CodeNetwork}, true},
+		{&clierr.Error{Code: clierr.CodeServer, HTTPStatus: 502}, true},
+		{&clierr.Error{Code: clierr.CodeError, HTTPStatus: 413}, false},
+		{&clierr.Error{Code: clierr.CodeError, HTTPStatus: 415}, false},
+		{&clierr.Error{Code: clierr.CodeValidation, HTTPStatus: 422}, false},
+		{&clierr.Error{Code: clierr.CodeNotFound, HTTPStatus: 404}, false},
+		{&clierr.Error{Code: clierr.CodeError}, false}, // file not readable
+	} {
+		if got := uploadUncertain(tc.err); got != tc.want {
+			t.Errorf("uploadUncertain(%s, %d) = %v", tc.err.Code, tc.err.HTTPStatus, got)
+		}
+	}
+}
+
+// The retry command names the absolute path, so it works from any
+// directory and never starts with "-".
+func TestVoucherCreateFileRetryAbsolutePath(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile("-x.pdf", []byte(pdfContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wd, _ := os.Getwd()
+	app, srv := apiApp(t)
+	srv.On("POST", "/expense/vouchers/290/documents", http.StatusUnprocessableEntity, []byte(`{"type":"error","message":"abgelehnt"}`))
+	wantExit(t, app, Run(app, append(append([]string{}, voucherCreateArgs...), "--file=-x.pdf", "-o", "json")), 11)
+	out := mustOut(app)
+	want := "papierkram voucher upload 290 " + shellQuote(filepath.Join(wd, "-x.pdf"))
+	if !strings.Contains(out, `"retry_command": "`+want+`"`) || strings.Contains(out, " -x.pdf") {
+		t.Errorf("stdout = %s\nerwartet %s", out, want)
+	}
+}
+
+// A timeout names --timeout: large files on a slow line need more than
+// the default; the outcome stays unknown (exit 12 for upload alone).
+func TestVoucherUploadTimeoutHint(t *testing.T) {
+	path := writeFile(t, "beleg.pdf", pdfContent)
+	app, srv := apiApp(t)
+	srv.OnFunc("POST", "/expense/vouchers/295/documents", func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	})
+	code := waitExit(t, func() int { return Run(app, []string{"voucher", "upload", "295", path, "--timeout", "300ms"}) })
+	wantExit(t, app, code, 12)
+	if _, errs := bufs(app); !strings.Contains(errs, "größere Dateien brauchen ggf. --timeout 120s") {
 		t.Errorf("stderr = %s", errs)
 	}
 }
 
-// The run of create --file costs both requests; a confirmation needed only
-// by the upload would be asked once, before the create.
+// The run of create --file costs both requests.
 func TestCreateUploadRun(t *testing.T) {
 	create, ok1 := registry.Lookup("voucher", "create")
 	upload, ok2 := registry.Lookup("voucher", "upload")
@@ -493,11 +627,35 @@ func TestCreateUploadRun(t *testing.T) {
 		t.Fatal("voucher create/upload nicht registriert")
 	}
 	run := (&createUpload{entry: upload}).run(create)
-	if run.Credits != 60 || run.Class != create.Class || run.OperationID != create.OperationID {
+	want := create
+	want.Credits = 60
+	if !reflect.DeepEqual(run, want) {
 		t.Errorf("run = %+v", run)
 	}
-	upload.Class = registry.ClassDestructive
-	if run := (&createUpload{entry: upload}).run(create); run.Class != registry.ClassDestructive || run.Credits != 60 {
-		t.Errorf("run mit bestätigungspflichtigem Upload = %+v", run)
+}
+
+// create --file asks no confirmation of its own: an upload class that
+// needs one (or a different one than create) must fail the build loudly
+// instead of being skipped.
+func TestCreateFileUploadNeedsNoOwnConfirmation(t *testing.T) {
+	create, _ := registry.Lookup("voucher", "create")
+	upload, _ := registry.Lookup("voucher", "upload")
+	if err := checkCreateFile(create, upload); err != nil {
+		t.Fatalf("Registry: %v", err)
 	}
+	for _, class := range []registry.Class{registry.ClassDestructive, registry.ClassSend, registry.ClassReadOnly} {
+		up := upload
+		up.Class = class
+		if checkCreateFile(create, up) == nil {
+			t.Errorf("Upload der Klasse %s wird nicht abgelehnt", class)
+		}
+	}
+	upload.Class = registry.ClassDestructive
+	defer func() {
+		if recover() == nil {
+			t.Error("addCreateFile baut --file trotz bestätigungspflichtigem Upload")
+		}
+	}()
+	app, _ := apiApp(t)
+	app.addCreateFileWith(create, upload, &cobra.Command{RunE: func(*cobra.Command, []string) error { return nil }})
 }

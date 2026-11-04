@@ -2,14 +2,15 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -28,7 +29,7 @@ import (
 
 const uploadLong = `
 
-Die Datei wird als multipart/form-data hochgeladen; der MIME-Typ folgt aus der Dateiendung (unbekannte Endung: application/octet-stream). Gesendet wird nur der Dateiname ohne Verzeichnis und ohne Steuer- oder unsichtbare Zeichen. Die Datei muss vorhanden, lesbar und nicht leer sein, sonst bricht der Befehl ohne Anfrage ab. --dry-run zeigt Dateiname, Größe und MIME-Typ.`
+Die Datei wird als multipart/form-data hochgeladen; der MIME-Typ folgt aus der Dateiendung (unbekannte Endung: application/octet-stream). Gesendet wird nur der Dateiname ohne Verzeichnis und ohne Steuer- oder unsichtbare Zeichen. Die Datei muss vorhanden, lesbar und nicht leer sein, sonst bricht der Befehl ohne Anfrage ab. --dry-run zeigt Dateiname, Größe und MIME-Typ. Die ganze Datei muss innerhalb von --timeout (Standard 30 s) übertragen sein; größere Dateien brauchen ggf. --timeout 120s.`
 
 const documentDeleteLong = `
 
@@ -36,7 +37,7 @@ Löscht die Datei <datei-id> des Belegs <beleg-id>; die IDs stehen in voucher de
 
 const createFileLong = `
 
---file datei lädt die Datei nach dem Anlegen an den neuen Beleg hoch (%s; --dry-run zeigt beide Schritte und die Summe). Die Datei wird vor jeder Anfrage geprüft: fehlt sie, ist sie leer oder nicht lesbar, wird nichts angelegt. Scheitert nur das Hochladen, bleibt der Beleg bestehen: Exit 11 mit Beleg-ID und dem Befehl zum Nachholen (papierkram voucher upload <id> <datei>) – dann NICHT den ganzen Befehl wiederholen, sonst entsteht ein zweiter Beleg.`
+--file datei lädt die Datei nach dem Anlegen an den neuen Beleg hoch (%s; --dry-run zeigt beide Schritte und die Summe). Die Datei wird vor jeder Anfrage geprüft: fehlt sie, ist sie leer oder nicht lesbar, wird nichts angelegt. Scheitert nur das Hochladen, bleibt der Beleg bestehen: Exit 11 mit Beleg-ID und dem Befehl zum Nachholen (papierkram voucher upload mit Beleg-ID und absolutem Dateipfad) – dann NICHT den ganzen Befehl wiederholen, sonst entsteht ein zweiter Beleg.`
 
 // newUploadCmd builds the upload command of a voucher (class create: no
 // confirmation).
@@ -99,7 +100,7 @@ func (a *App) runUpload(c *cobra.Command, e registry.Entry, args []string) error
 	}
 	resp, err := file.send(c, client, params)
 	if err != nil {
-		return err
+		return withTimeoutHint(err)
 	}
 	if len(bytes.TrimSpace(resp.Body)) > 0 {
 		return a.render(c, resp.Body, e.Columns)
@@ -173,7 +174,7 @@ func (a *App) runDocumentDelete(c *cobra.Command, e registry.Entry, args []strin
 // operation and form field it is sent with.
 type uploadFile struct {
 	f           *os.File
-	arg         string // the path as given
+	abs         string // the absolute path (retry command)
 	name        string // the name sent (uploadName)
 	size        int64
 	opID, field string
@@ -212,7 +213,20 @@ func openUpload(e registry.Entry, label, path string) (*uploadFile, error) {
 		_ = f.Close()
 		return nil, uploadFileError(label, path, err)
 	}
-	return &uploadFile{f: f, arg: path, name: uploadName(path), size: fi.Size(), opID: e.OperationID, field: field}, nil
+	return &uploadFile{f: f, abs: absPath(path), name: uploadName(path), size: fi.Size(), opID: e.OperationID, field: field}, nil
+}
+
+// absPath is path made absolute against the working directory the file
+// was opened in, so a command naming it works from any directory and never
+// starts with "-"; when that fails, a path starting with "-" gets "./".
+func absPath(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	if strings.HasPrefix(path, "-") {
+		return "." + string(filepath.Separator) + path
+	}
+	return path
 }
 
 // checkUploadInfo rejects what is no regular file with content.
@@ -316,6 +330,15 @@ func (a *App) addCreateFile(e registry.Entry, cmd *cobra.Command) {
 		// fail closed: without the upload entry --file cannot work
 		panic(fmt.Sprintf("registry: %s create --file ohne Eintrag %s upload", e.Resource, e.Resource))
 	}
+	a.addCreateFileWith(e, up, cmd)
+}
+
+// addCreateFileWith is addCreateFile with the upload entry up. It fails
+// closed (panic, like entryKind) when up does not fit checkCreateFile.
+func (a *App) addCreateFileWith(e, up registry.Entry, cmd *cobra.Command) {
+	if err := checkCreateFile(e, up); err != nil {
+		panic(err)
+	}
 	cmd.Long += fmt.Sprintf(createFileLong, moreCredits(up.Credits))
 	cmd.Flags().String("file", "", "Datei (Belegbild), die nach dem Anlegen an den Beleg hochgeladen wird")
 	write := cmd.RunE
@@ -342,26 +365,45 @@ func (up *createUpload) open() (err error) {
 
 func (up *createUpload) close() { up.file.close() }
 
+// checkCreateFile requires the upload of create --file to have the class
+// of create: the run asks no confirmation of its own and passes one
+// read-only gate, so an upload that needed a confirmation (or any other
+// class) must not be built silently.
+func checkCreateFile(create, upload registry.Entry) error {
+	if upload.Class != create.Class {
+		return fmt.Errorf("registry: %s %s hat Klasse %q, %s %s aber %q – %s create --file müsste dafür Bestätigung und Schreibschutz eigens behandeln",
+			upload.Resource, upload.Action, upload.Class, create.Resource, create.Action, create.Class, create.Resource)
+	}
+	return nil
+}
+
 // run is the entry of the whole run for the protection layer: the credits
-// of create and upload together (--dry-run), and the class of the upload
-// when only it needs a confirmation, so it is asked once before the create
-// and never after it.
+// of create and upload together (--dry-run); the class is that of both
+// (checkCreateFile).
 func (up *createUpload) run(e registry.Entry) registry.Entry {
 	run := e
 	run.Credits += up.entry.Credits
-	if confirmed(up.entry) && !confirmed(run) {
-		run.Class = up.entry.Class
-	}
 	return run
 }
 
+// dryRunStep is the upload as the second request of the dry run: method,
+// URL with the ID still a template ({voucher_id}; display only), credits
+// and the file.
+func (up *createUpload) dryRunStep(client *api.Client) *UploadInfo {
+	info := up.file.info()
+	info.Method, info.URL, info.Credits = up.entry.Method, client.TemplateURL(up.entry.Path), up.entry.Credits
+	info.Then = fmt.Sprintf("Danach (zweite Anfrage, an den neuen %s)", resourceNoun(up.entry.Resource))
+	return info
+}
+
 // partialJSON is the result of create --file when only the upload failed
-// (spec 9.3, exit 11). id is null when the API sent no ID.
+// (spec 9.3, exit 11). id and retry_command are null when the API sent no
+// ID: a command with a placeholder could be run by mistake.
 type partialJSON struct {
 	ID           *int64   `json:"id"`
 	Completed    []string `json:"completed"`
 	Failed       []string `json:"failed"`
-	RetryCommand string   `json:"retry_command"`
+	RetryCommand *string  `json:"retry_command"`
 	Warnings     []string `json:"warnings"`
 }
 
@@ -394,42 +436,46 @@ func createdID(body []byte) (int64, bool) {
 // uploadPartial reports a create whose upload failed (spec 9.3, 10.4): the
 // partial result on stdout (structured: partialJSON; table: German lines),
 // the warning on stderr, and exit 11 with the command that uploads the file
-// alone. When the upload may have arrived (no answer, a 5xx or another
-// unexpected status), the warning says to check the object with describe
-// first.
+// alone (absolute path, shell-quoted). When the upload may have arrived (no
+// answer, network error, 5xx), the warning says to check the object with
+// describe first. Without an ID there is no command at all.
 func (a *App) uploadPartial(o output.Options, e registry.Entry, up *createUpload, id *int64, err error) error {
 	ce := clierr.From(err)
 	noun := resourceNoun(e.Resource)
-	idText := "<id>"
-	if id != nil {
-		idText = strconv.FormatInt(*id, 10)
-	}
-	retry := fmt.Sprintf("papierkram %s %s %s %s", up.entry.Resource, up.entry.Action, idText, shellQuote(up.file.arg))
-	describe := fmt.Sprintf("papierkram %s describe %s", e.Resource, idText)
 	again := fmt.Sprintf("NICHT den ganzen Befehl wiederholen (sonst ein zweiter %s)", noun)
 	out := &clierr.Error{Code: clierr.CodePartial, HTTPStatus: ce.HTTPStatus, CorrelationID: ce.CorrelationID, Cause: err}
-	var warning string
-	switch {
-	case id == nil:
-		warning = fmt.Sprintf("%s angelegt, Datei nicht hochgeladen: %s – %s per papierkram %s list suchen, dann nur das Hochladen nachholen: %s; %s",
-			noun, ce.Message, noun, e.Resource, retry, again)
-		out.Message = fmt.Sprintf("%s angelegt, Hochladen nicht möglich: %s", noun, ce.Message)
-		out.Hint = fmt.Sprintf("%s per papierkram %s list suchen, dann nur das Hochladen nachholen: %s – %s", noun, e.Resource, retry, again)
-	case uploadUncertain(ce):
-		warning = fmt.Sprintf("%s %s angelegt; Ergebnis des Hochladens unbekannt (%s): die Datei ist möglicherweise schon angehängt – vor dem Nachholen per %s prüfen, dann nur das Hochladen nachholen: %s; %s",
-			noun, idText, ce.Message, describe, retry, again)
-		out.Message = fmt.Sprintf("%s %s angelegt, Ergebnis des Hochladens unbekannt: %s", noun, idText, ce.Message)
-		out.Hint = fmt.Sprintf("vor dem Nachholen per %s prüfen, ob die Datei schon angehängt ist; sonst nur das Hochladen nachholen: %s – %s", describe, retry, again)
-	default:
-		warning = fmt.Sprintf("%s %s angelegt, Datei nicht hochgeladen: %s – nur das Hochladen nachholen: %s; %s", noun, idText, ce.Message, retry, again)
-		out.Message = fmt.Sprintf("%s %s angelegt, Hochladen fehlgeschlagen: %s", noun, idText, ce.Message)
-		out.Hint = fmt.Sprintf("nur das Hochladen nachholen: %s – %s", retry, again)
+	var warning, text string
+	var retry *string
+	if id == nil {
+		warning = fmt.Sprintf("%s angelegt, %s-ID unbekannt (%s): Datei nicht hochgeladen – %s per papierkram %s list suchen und die Datei mit %s %s an ihn hochladen; %s",
+			noun, noun, ce.Message, noun, e.Resource, up.entry.Resource, up.entry.Action, again)
+		out.Message = fmt.Sprintf("%s angelegt, %s-ID unbekannt: %s; Datei nicht hochgeladen", noun, noun, ce.Message)
+		out.Hint = fmt.Sprintf("%s per papierkram %s list suchen und die Datei mit %s %s an ihn hochladen – %s", noun, e.Resource, up.entry.Resource, up.entry.Action, again)
+		text = fmt.Sprintf("%s angelegt, Datei nicht hochgeladen (erledigt: create; fehlgeschlagen: upload).\n%s-ID unbekannt: per papierkram %s list suchen.\n",
+			e.Resource, noun, e.Resource)
+	} else {
+		cmd := fmt.Sprintf("papierkram %s %s %d %s", up.entry.Resource, up.entry.Action, *id, shellQuote(up.file.abs))
+		retry = &cmd
+		describe := fmt.Sprintf("papierkram %s describe %d", e.Resource, *id)
+		if uploadUncertain(ce) {
+			warning = fmt.Sprintf("%s %d angelegt; Ergebnis des Hochladens unbekannt (%s): die Datei ist möglicherweise schon angehängt – vor dem Nachholen per %s prüfen, dann nur das Hochladen nachholen: %s; %s",
+				noun, *id, ce.Message, describe, cmd, again)
+			out.Message = fmt.Sprintf("%s %d angelegt, Ergebnis des Hochladens unbekannt: %s", noun, *id, ce.Message)
+			out.Hint = fmt.Sprintf("vor dem Nachholen per %s prüfen, ob die Datei schon angehängt ist; sonst nur das Hochladen nachholen: %s – %s", describe, cmd, again)
+		} else {
+			warning = fmt.Sprintf("%s %d angelegt, Datei nicht hochgeladen: %s – nur das Hochladen nachholen: %s; %s", noun, *id, ce.Message, cmd, again)
+			out.Message = fmt.Sprintf("%s %d angelegt, Hochladen fehlgeschlagen: %s", noun, *id, ce.Message)
+			out.Hint = fmt.Sprintf("nur das Hochladen nachholen: %s – %s", cmd, again)
+		}
+		text = fmt.Sprintf("%s %d angelegt, Datei nicht hochgeladen (erledigt: create; fehlgeschlagen: upload).\nNachholen: %s\n", e.Resource, *id, cmd)
+	}
+	if timedOut(err) {
+		out.Hint += "; " + timeoutHint
 	}
 	output.Warn(a.Err, warning)
 	var werr error
 	if ownText(o) {
-		_, werr = fmt.Fprintf(a.Out, "%s %s angelegt, Datei nicht hochgeladen (erledigt: create; fehlgeschlagen: upload).\nNachholen: %s\n",
-			e.Resource, idText, retry)
+		_, werr = io.WriteString(a.Out, text)
 	} else {
 		werr = output.RenderValue(o, partialJSON{ID: id, Completed: []string{"create"}, Failed: []string{"upload"},
 			RetryCommand: retry, Warnings: []string{warning}}, output.Columns{})
@@ -441,17 +487,35 @@ func (a *App) uploadPartial(o output.Options, e registry.Entry, up *createUpload
 }
 
 // uploadUncertain reports an upload failure that does not prove the file
-// was not attached: no answer after sending (outcome_unknown), a 5xx or an
-// unexpected status (like deliverFailed). A file that could not be read
-// (no HTTP status) was never completely sent.
+// was not attached: no complete answer (outcome_unknown, network) or a 5xx.
+// Every 4xx, also one without its own code (413, 415), and a file that
+// could not be read (no HTTP status) are clean failures.
 func uploadUncertain(ce *clierr.Error) bool {
 	switch ce.Code {
-	case clierr.CodeOutcomeUnknown, clierr.CodeServer:
+	case clierr.CodeOutcomeUnknown, clierr.CodeNetwork, clierr.CodeServer:
 		return true
-	case clierr.CodeError:
-		return ce.HTTPStatus != 0
 	}
-	return false
+	return ce.HTTPStatus >= 500
+}
+
+// timeoutHint names --timeout: the whole file has to go out within it.
+const timeoutHint = "größere Dateien brauchen ggf. --timeout 120s"
+
+// timedOut reports an upload that ran into the request timeout.
+func timedOut(err error) bool { return errors.Is(err, context.DeadlineExceeded) }
+
+// withTimeoutHint adds timeoutHint to the hint of an upload error caused
+// by the timeout; the code (network, outcome_unknown) stays.
+func withTimeoutHint(err error) error {
+	if !timedOut(err) {
+		return err
+	}
+	ce := *clierr.From(err)
+	if ce.Hint != "" {
+		ce.Hint += "; "
+	}
+	ce.Hint += timeoutHint
+	return &ce
 }
 
 // shellSafe are arguments a POSIX shell takes as they are.

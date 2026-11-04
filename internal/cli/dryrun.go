@@ -12,13 +12,22 @@ import (
 )
 
 // UploadInfo describes the file of an upload in a dry run (spec 8.4:
-// file name, size, MIME type). It is filled by the upload commands
-// (Task 33).
+// file name, size, MIME type). When the upload is a request of its own
+// after the one shown (voucher create --file), Method, URL (a path
+// template: the ID is not known yet; display only) and Credits describe
+// it, and Then is the German heading of that second request.
 type UploadInfo struct {
-	Name string `json:"name"`
-	Size int64  `json:"size"`
-	MIME string `json:"mime_type"`
+	Method  string `json:"method,omitempty"`
+	URL     string `json:"url,omitempty"`
+	Credits int    `json:"credits,omitempty"`
+	Name    string `json:"name"`
+	Size    int64  `json:"size"`
+	MIME    string `json:"mime_type"`
+	Then    string `json:"-"`
 }
+
+// step reports an upload shown as a request of its own.
+func (u *UploadInfo) step() bool { return u != nil && u.URL != "" }
 
 // dryRunJSON is the -o json contract of --dry-run (spec 8.4).
 type dryRunJSON struct {
@@ -43,8 +52,12 @@ func (a *App) dryRun(ctx context.Context, e registry.Entry, method, url string, 
 		return output.RenderValue(o, v, output.Columns{})
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Probelauf – nichts gesendet\nMethode: %s\nURL:     %s\nCredits: %d\n", method, url, e.Credits)
-	if upload != nil {
+	fmt.Fprintf(&b, "Probelauf – nichts gesendet\nMethode: %s\nURL:     %s\nCredits: %d", method, url, e.Credits)
+	if upload.step() {
+		b.WriteString(" (beide Anfragen)")
+	}
+	b.WriteByte('\n')
+	if upload != nil && !upload.step() {
 		fmt.Fprintf(&b, "Datei:   %s (%d Bytes, %s)\n", upload.Name, upload.Size, upload.MIME)
 	}
 	if body == nil {
@@ -59,6 +72,10 @@ func (a *App) dryRun(ctx context.Context, e registry.Entry, method, url string, 
 		}
 		b.WriteString("Body:\n")
 		b.Write(buf.Bytes())
+	}
+	if upload.step() {
+		fmt.Fprintf(&b, "\n%s:\nMethode: %s\nURL:     %s\nCredits: %d\nDatei:   %s (%d Bytes, %s)\n",
+			upload.Then, upload.Method, upload.URL, upload.Credits, upload.Name, upload.Size, upload.MIME)
 	}
 	_, err := fmt.Fprint(a.Out, b.String())
 	return err
