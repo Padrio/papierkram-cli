@@ -87,9 +87,10 @@ var licenses = map[string]string{
 // stdlib names the Go standard library and runtime in the notices.
 const stdlib = "Go (Standardbibliothek und Laufzeit)"
 
-// licenseFile matches the files of a module root that carry its license
-// or notices (LICENSE, LICENSE.md, COPYING, NOTICE, APACHE-LICENSE-2.0).
-var licenseFile = regexp.MustCompile(`(?i)^(licen[cs]e|copying|notice|apache-license)([-._].*)?$`)
+// licenseFile matches the files of a module root that carry its license,
+// notices or patent grant (LICENSE, LICENSE.md, COPYING, NOTICE,
+// APACHE-LICENSE-2.0, PATENTS).
+var licenseFile = regexp.MustCompile(`(?i)^(licen[cs]e|copying|notice|apache-license|patents)([-._].*)?$`)
 
 // module is one module of the notices.
 type module struct {
@@ -289,7 +290,7 @@ Viele Fallen der Papierkram-API hat [papierkram-mcp-server](https://github.com/W
 
 ## Im Binary enthalten
 
-Diese Module bindet ` + "`go build`" + ` in das Binary ` + "`papierkram`" + ` der Release-Ziele (` + strings.Join(targets, ", ") + `) ein. Ihre Lizenz- und Hinweistexte stehen vollständig unten.
+Diese Module bindet ` + "`go build`" + ` in das Binary ` + "`papierkram`" + ` der Release-Ziele (` + strings.Join(targets, ", ") + `) ein. Ihre Lizenz- und Hinweistexte stehen vollständig unten, ebenso die Patentzusagen (PATENTS) von Go und golang.org/x.
 
 | Modul | Version | Lizenz (SPDX) | Plattformen |
 |---|---|---|---|
@@ -301,7 +302,7 @@ Diese Module bindet ` + "`go build`" + ` in das Binary ` + "`papierkram`" + ` de
 	b.WriteString(`
 ## Nicht im Binary enthalten
 
-Diese Anforderungen aus ` + "`go.mod`" + ` nutzt das Projekt nur für Tests (z. B. ` + "`github.com/rogpeppe/go-internal`" + ` mit testscript), Code-Generierung (oapi-codegen) und Werkzeuge; sie werden nicht ausgeliefert.
+Diese Anforderungen aus ` + "`go.mod`" + ` (direkte und indirekte) nutzt das Projekt nur für Tests (z. B. ` + "`github.com/rogpeppe/go-internal`" + ` mit testscript), Code-Generierung (oapi-codegen) und Werkzeuge; sie werden nicht ausgeliefert. Der übrige Modulgraph (` + "`go list -m all`" + `) nennt weitere Module, die nur als Versionsangabe in Abhängigkeiten anderer Module vorkommen; sie werden weder gebaut noch ausgeliefert und sind deshalb nicht aufgeführt.
 
 | Modul | Version | Lizenz (SPDX) |
 |---|---|---|
@@ -310,11 +311,13 @@ Diese Anforderungen aus ` + "`go.mod`" + ` nutzt das Projekt nur für Tests (z. 
 		fmt.Fprintf(&b, "| `%s` | %s | %s |\n", m.Path, m.Version, licenses[m.Path])
 	}
 	b.WriteString("\n## Lizenztexte\n")
-	goLicense, err := readGoLicense(goroot)
-	if err != nil {
-		return "", err
+	for _, name := range []string{"LICENSE", "PATENTS"} {
+		data, err := readGoFile(goroot, name)
+		if err != nil {
+			return "", err
+		}
+		writeText(&b, stdlib, name, string(data))
 	}
-	writeText(&b, stdlib, "LICENSE", string(goLicense))
 	for _, m := range bin {
 		names, err := licenseTexts(m.Dir)
 		if err != nil {
@@ -331,19 +334,19 @@ Diese Anforderungen aus ` + "`go.mod`" + ` nutzt das Projekt nur für Tests (z. 
 	return b.String(), nil
 }
 
-// readGoLicense reads the license of the Go distribution: GOROOT/LICENSE,
-// or one level up where a package manager keeps GOROOT in a subdirectory
-// (Homebrew: libexec).
-func readGoLicense(goroot string) ([]byte, error) {
+// readGoFile reads a file of the Go distribution (LICENSE, PATENTS):
+// GOROOT/name, or one level up where a package manager keeps GOROOT in a
+// subdirectory (Homebrew keeps LICENSE outside libexec).
+func readGoFile(goroot, name string) ([]byte, error) {
 	var errs []error
-	for _, p := range []string{filepath.Join(goroot, "LICENSE"), filepath.Join(filepath.Dir(goroot), "LICENSE")} {
+	for _, p := range []string{filepath.Join(goroot, name), filepath.Join(filepath.Dir(goroot), name)} {
 		data, err := os.ReadFile(p)
 		if err == nil {
 			return data, nil
 		}
 		errs = append(errs, err)
 	}
-	return nil, fmt.Errorf("keine Lizenzdatei der Go-Standardbibliothek gefunden: %w", errors.Join(errs...))
+	return nil, fmt.Errorf("keine Datei %s der Go-Distribution gefunden: %w", name, errors.Join(errs...))
 }
 
 // writeText adds one license or notice file under a heading.

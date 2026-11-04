@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -17,6 +18,11 @@ func TestNoticesUpToDate(t *testing.T) {
 	t.Chdir("../..")
 	want, err := generate(goCmd)
 	if err != nil {
+		// a cold module cache without network (modules of another OS);
+		// in CI the error stays fatal
+		if os.Getenv("CI") == "" && missingModules(err) {
+			t.Skipf("Module fehlen im Cache, erst go mod download ausführen: %v", err)
+		}
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(output)
@@ -62,12 +68,12 @@ func TestGenerateRefusesModulesWithoutLicenseEntry(t *testing.T) {
 }
 
 func TestLicenseFilePattern(t *testing.T) {
-	for _, name := range []string{"LICENSE", "LICENSE.md", "LICENSE.txt", "License", "LICENCE", "COPYING", "NOTICE", "APACHE-LICENSE-2.0"} {
+	for _, name := range []string{"LICENSE", "LICENSE.md", "LICENSE.txt", "License", "LICENCE", "COPYING", "NOTICE", "APACHE-LICENSE-2.0", "PATENTS"} {
 		if !licenseFile.MatchString(name) {
 			t.Errorf("%s: nicht erkannt", name)
 		}
 	}
-	for _, name := range []string{"PATENTS", "AUTHORS", "README.md", "licenses.go", "go.mod"} {
+	for _, name := range []string{"AUTHORS", "README.md", "licenses.go", "go.mod"} {
 		if licenseFile.MatchString(name) {
 			t.Errorf("%s: als Lizenzdatei erkannt", name)
 		}
@@ -92,5 +98,26 @@ func TestPlatforms(t *testing.T) {
 	}
 	if got := platforms([]string{"windows/amd64", "windows/arm64"}); got != "nur windows" {
 		t.Errorf("windows: %q", got)
+	}
+}
+
+// missingModules reports a go command error that only says modules could
+// not be fetched (offline, GOPROXY=off, GOFLAGS=-mod=mod without network).
+func missingModules(err error) bool {
+	msg := err.Error()
+	for _, s := range []string{"module lookup disabled", "dial tcp", "no such host", "cannot find module providing package", "missing go.sum entry"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestMissingModules(t *testing.T) {
+	if !missingModules(errors.New("go list -deps: exit status 1: github.com/godbus/dbus/v5@v5.2.2: module lookup disabled by GOPROXY=off")) {
+		t.Error("GOPROXY=off nicht erkannt")
+	}
+	if missingModules(errors.New("keine Lizenz für example.com/neu eingetragen")) {
+		t.Error("fehlender Lizenzeintrag als Cache-Problem erkannt")
 	}
 }
