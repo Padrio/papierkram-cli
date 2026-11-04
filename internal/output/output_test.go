@@ -41,6 +41,18 @@ func TestJSONKeepsNumbersExact(t *testing.T) {
 	}
 }
 
+// An API body that ends with a newline (or CRLF) gives no blank line
+// after the JSON output: json.Indent keeps trailing whitespace.
+func TestJSONDropsTrailingWhitespaceOfBody(t *testing.T) {
+	for _, raw := range []string{precise + "\n", precise + "\r\n", "\n " + precise + " \t\n"} {
+		got := mustRender(t, Options{Format: FormatJSON}, raw)
+		want := mustRender(t, Options{Format: FormatJSON}, precise)
+		if got != want {
+			t.Errorf("Body %q: got %q, want %q", raw, got, want)
+		}
+	}
+}
+
 func TestJSONFieldsKeepNumbersExact(t *testing.T) {
 	got := mustRender(t, Options{Format: FormatJSON, Fields: []string{"total_gross", "id", "name"}}, precise)
 	want := "{\n  \"total_gross\": 1190.00,\n  \"id\": 9007199254740993,\n  \"name\": \"Müller & Söhne <GmbH>\"\n}\n"

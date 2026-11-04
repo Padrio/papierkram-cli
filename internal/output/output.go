@@ -134,7 +134,9 @@ func renderJSON(o Options, raw []byte) error {
 		}
 	}
 	var b bytes.Buffer
-	if err := json.Indent(&b, raw, "", "  "); err != nil {
+	// json.Indent keeps trailing whitespace: a body ending in a newline
+	// would print a blank line
+	if err := json.Indent(&b, bytes.TrimSpace(raw), "", "  "); err != nil {
 		return invalidJSON(err)
 	}
 	b.WriteByte('\n')
