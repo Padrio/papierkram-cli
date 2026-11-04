@@ -233,3 +233,23 @@ func TestTransportAllowsPlainDeliverPDF(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 }
+
+// The base transport of the suite ignores the proxy variables of the
+// shell: a (TLS-terminating) proxy would see the token.
+func TestDirectTransportIgnoresProxy(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:9")
+	t.Setenv("NO_PROXY", "")
+	b := DirectTransport()
+	if b.Proxy != nil {
+		req, _ := http.NewRequest("GET", "https://example-sandbox.papierkram.de/api/v1/info", nil)
+		u, err := b.Proxy(req)
+		t.Fatalf("Proxy is set (would use %v, %v)", u, err)
+	}
+	if b == http.DefaultTransport {
+		t.Error("DirectTransport returns the shared DefaultTransport")
+	}
+	if http.DefaultTransport.(*http.Transport).Proxy == nil {
+		t.Error("DirectTransport changed http.DefaultTransport")
+	}
+}

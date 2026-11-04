@@ -51,7 +51,8 @@ go test -tags e2e -v ./e2e/...
   temporäre Verzeichnisse für Config und Cache. Deine Config, dein
   Schlüsselbund und andere `PAPIERKRAM_*`-Variablen werden nie gelesen.
 - Anfragen gehen nur an `https://<subdomain>.papierkram.de`; alles andere
-  lehnt der Transport der Suite ab.
+  lehnt der Transport der Suite ab. Er geht direkt, ohne Proxy:
+  `HTTPS_PROXY`, `HTTP_PROXY` und `NO_PROXY` der Shell werden ignoriert.
 - `deliver` geht nur mit `--via pdf` hinaus. Eine E-Mail verschickt die
   Suite nie; auch das erzwingt der Transport (`send_via` genau `"pdf"`,
   kein `email`-Schlüssel).

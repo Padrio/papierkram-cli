@@ -84,7 +84,7 @@ func newLiveSuite(getenv func(string) string, red e2eguard.Redactor) (*liveSuite
 		prefix:   e2eguard.Prefix(runID),
 		red:      red,
 		meter:    meter,
-		tr:       &e2eguard.Transport{Base: http.DefaultTransport, Scheme: "https", Host: norm + ".papierkram.de", Meter: meter},
+		tr:       &e2eguard.Transport{Base: e2eguard.DirectTransport(), Scheme: "https", Host: norm + ".papierkram.de", Meter: meter},
 		loc:      loc,
 		mainDir:  dir,
 		fixtures: map[string]map[string]any{},

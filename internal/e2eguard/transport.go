@@ -53,6 +53,15 @@ type Transport struct {
 	exchanges []Exchange
 }
 
+// DirectTransport is the base transport for the live suite: a copy of
+// http.DefaultTransport without proxy. HTTPS_PROXY and the like of the
+// shell are ignored, so no proxy ever sees a request with the token.
+func DirectTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.Proxy = nil
+	return t
+}
+
 // RoundTrip implements http.RoundTripper.
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.URL.Scheme != t.Scheme || req.URL.Host != t.Host {
