@@ -243,3 +243,31 @@ func TestCommandsJSONReadOnlyBlocking(t *testing.T) {
 		}
 	}
 }
+
+// The alternatives of deliver --via hold at run time: --input with
+// send_via replaces --via (--dry-run, exit 0), without both the command
+// stops (exit 2, --via named), for invoice and estimate.
+func TestDeliverViaAlternativeRuns(t *testing.T) {
+	d := decodeCommands(t, runCommandsJSON(t, "--json"))
+	for _, res := range []string{"invoice", "estimate"} {
+		via := d.find(t, res+" deliver").flag(t, "via")
+		if !via.Required || len(via.Alternatives) == 0 {
+			t.Fatalf("%s deliver --via = %+v", res, via)
+		}
+		for _, alt := range via.Alternatives {
+			if alt != "--input" {
+				t.Fatalf("%s deliver --via: Alternative %s ohne Lauf-Test", res, alt)
+			}
+			body := filepath.Join(t.TempDir(), "deliver.json")
+			if err := os.WriteFile(body, []byte(`{"send_via":"pdf"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if code, errs := runLine(t, nil, []string{res, "deliver", "5", alt, body, "--dry-run"}); code != 0 {
+				t.Errorf("%s deliver %s ohne --via: exit %d, %q", res, alt, code, errs)
+			}
+		}
+		if code, errs := runLine(t, nil, []string{res, "deliver", "5", "--dry-run"}); code != 2 || !strings.Contains(errs, "--via") {
+			t.Errorf("%s deliver ohne --via und Alternative: exit %d, %q", res, code, errs)
+		}
+	}
+}

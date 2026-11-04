@@ -71,15 +71,21 @@ func (a *App) newDeliverCmd(e registry.Entry) *cobra.Command {
 	fs := cmd.Flags()
 	fs.String("via", "", "Versandart: "+strings.Join(deliverModes(e), " oder ")+" (Pflicht; pdf finalisiert ohne E-Mail)")
 	markRequired(fs, "via")
-	addAlternatives(fs, "via", "--input") // send_via may come from --input
 	markEnum(fs, "via", deliverModes(e))
 	fs.String("to", "", "Empfängeradresse der E-Mail (Pflicht bei --via email)")
 	fs.String("subject", "", "Betreff der E-Mail, Platzhalter erlaubt (Pflicht bei --via email)")
 	fs.String("body", "", "Text der E-Mail, Platzhalter erlaubt (Pflicht bei --via email, sonst --body-file)")
 	fs.String("body-file", "", "Text der E-Mail aus Datei oder - für die Standardeingabe")
-	fs.String("input", "", "Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder")
+	fs.String(deliverBodyFlag, "", "Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder")
+	// with the body flag, checkDeliverFlags leaves send_via to the body
+	addAlternatives(fs, "via", "--"+deliverBodyFlag)
 	return cmd
 }
+
+// deliverBodyFlag gives the whole deliver body; send_via may come from it,
+// so checkDeliverFlags checks the body only after the merge and --via
+// names it as its alternative.
+const deliverBodyFlag = "input"
 
 // deliverModes are the values of send_via in the request schema.
 func deliverModes(e registry.Entry) []string {
@@ -350,13 +356,13 @@ func (d readback) result(cols output.Columns, warnings []string) []byte {
 // merge, except that --via pdf never takes mail flags.
 func checkDeliverFlags(c *cobra.Command, e registry.Entry) error {
 	fs := c.Flags()
-	for _, flag := range []string{"input", "body-file"} {
+	for _, flag := range []string{deliverBodyFlag, "body-file"} {
 		if fs.Changed(flag) && flagString(c, flag) == "" {
 			return errMissingPath("--" + flag)
 		}
 	}
 	via, modes := flagString(c, "via"), deliverModes(e)
-	input := fs.Changed("input")
+	input := fs.Changed(deliverBodyFlag)
 	switch {
 	case fs.Changed("via") && !slices.Contains(modes, via):
 		return clierr.New(clierr.CodeUsage, fmt.Sprintf("ungültiger Wert %q für --via: erlaubt sind %s", via, strings.Join(modes, ", ")),
@@ -364,7 +370,7 @@ func checkDeliverFlags(c *cobra.Command, e registry.Entry) error {
 	case fs.Changed("body") && fs.Changed("body-file"):
 		return clierr.New(clierr.CodeUsage, "--body und --body-file nicht zusammen verwenden",
 			"Text der E-Mail entweder direkt per --body oder aus einer Datei per --body-file angeben")
-	case flagString(c, "input") == "-" && flagString(c, "body-file") == "-":
+	case flagString(c, deliverBodyFlag) == "-" && flagString(c, "body-file") == "-":
 		return clierr.New(clierr.CodeUsage, "--input - und --body-file - lesen beide die Standardeingabe",
 			"nur eines davon mit - angeben, das andere als Datei")
 	case !input || via == viaPDF:
