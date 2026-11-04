@@ -169,9 +169,10 @@ func applyGerman(root *cobra.Command) {
 	root.SetUsageTemplate(usageTemplate)
 	root.SetHelpTemplate(helpTemplate)
 	help := &cobra.Command{
-		Use:   "help [Befehl]",
-		Short: "Hilfe zu einem Befehl anzeigen",
-		Long:  "Zeigt die Hilfe zu einem beliebigen Befehl an.",
+		Use:     "help [Befehl]",
+		Short:   "Hilfe zu einem Befehl anzeigen",
+		Long:    "Zeigt die Hilfe zu einem beliebigen Befehl an.",
+		Example: "  papierkram help invoice create\n  papierkram help time log",
 		RunE: func(c *cobra.Command, args []string) error {
 			target, rest, err := c.Root().Find(args)
 			if target == nil || err != nil || (target == c.Root() && len(args) > 0) {

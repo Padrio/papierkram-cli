@@ -562,8 +562,11 @@ func TestCommandsJSONExamples(t *testing.T) {
 			t.Errorf("%s: %q", name, got)
 		}
 	}
-	if got := d.find(t, "version").Examples; got == nil {
-		t.Error("version: examples null statt []")
+	// every command has at least two examples (help included)
+	for _, c := range d.Commands {
+		if len(c.Examples) < 2 {
+			t.Errorf("%s: %d Beispiele", c.Command, len(c.Examples))
+		}
 	}
 }
 

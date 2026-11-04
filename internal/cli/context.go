@@ -134,6 +134,7 @@ func newContextUseCmd(app *App) *cobra.Command {
 		Use:         "use <name>",
 		Annotations: writesConfig(),
 		Short:       "Kontext aktivieren",
+		Example:     "  papierkram context use firma-gmbh\n  papierkram context use agent",
 		Args:        exactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, path, err := app.loadConfig()
@@ -196,6 +197,7 @@ func newContextListCmd(app *App) *cobra.Command {
 		Annotations: readsOnly(),
 		Short:       "Kontexte auflisten",
 		Long:        "Listet alle Kontexte auf; der aktive Kontext ist markiert. Tokens werden nie ausgegeben.",
+		Example:     "  papierkram context list\n  papierkram context list -o json",
 		Args:        noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			cfg, _, err := app.loadConfig()
@@ -225,7 +227,8 @@ func newContextActiveCmd(app *App) *cobra.Command {
 		Short:       "Aktiven Kontext anzeigen",
 		Long: "Zeigt den in der Konfiguration gespeicherten aktiven Kontext (active_context).\n" +
 			"--context, PAPIERKRAM_CONTEXT und die Projektdatei werden hier nicht berücksichtigt.",
-		Args: noArgs,
+		Example: "  papierkram context active\n  papierkram context active -o json",
+		Args:    noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			cfg, _, err := app.loadConfig()
 			if err != nil {
@@ -259,6 +262,7 @@ func newContextDeleteCmd(app *App) *cobra.Command {
 		Annotations: writesConfig(),
 		Short:       "Kontext löschen",
 		Long:        "Löscht den Kontext und das zugehörige Token im Schlüsselbund. Eine Bestätigung ist nicht nötig.",
+		Example:     "  papierkram context delete agent\n  papierkram context delete firma-alt",
 		Args:        exactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			name := args[0]
@@ -291,6 +295,7 @@ func newContextRenameCmd(app *App) *cobra.Command {
 		Annotations: writesConfig(),
 		Short:       "Kontext umbenennen",
 		Long:        "Benennt einen Kontext um und verschiebt das Token im Schlüsselbund. Ein aktiver Kontext bleibt aktiv.",
+		Example:     "  papierkram context rename firma firma-gmbh\n  papierkram context rename agent agent-lesend",
 		Args:        exactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			oldName, newName := args[0], args[1]

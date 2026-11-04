@@ -312,8 +312,9 @@ func newAuthLogoutCmd(app *App) *cobra.Command {
 		Short:       "Token entfernen",
 		Long: "Entfernt das Token des gewählten Kontexts aus dem Schlüsselbund und aus config.toml.\n" +
 			"Der Kontext selbst bleibt erhalten. War kein Token gespeichert, ist das kein Fehler.",
-		Args: noArgs,
-		RunE: func(_ *cobra.Command, _ []string) error { return app.logout() },
+		Example: "  papierkram auth logout\n  papierkram auth logout --context firma-gmbh",
+		Args:    noArgs,
+		RunE:    func(_ *cobra.Command, _ []string) error { return app.logout() },
 	}
 }
 
@@ -394,7 +395,8 @@ func newAuthStatusCmd(app *App) *cobra.Command {
 			"oder config; das Token selbst nie), die Schreibschutzstufe und das Restkontingent.\n" +
 			"Das Kontingent stammt aus einem Aufruf von GET /info und kostet 1 Credit.\n" +
 			"Fehlt das Token oder lehnt die API es ab, werden die bekannten Angaben trotzdem ausgegeben (Exit 3).",
-		Args: noArgs,
+		Example: "  papierkram auth status\n  papierkram auth status --context firma-gmbh -o json",
+		Args:    noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			r, err := app.resolveConfig()
 			if err != nil {

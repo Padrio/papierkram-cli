@@ -15,6 +15,7 @@ func newVersionCmd(app *App) *cobra.Command {
 		Use:         "version",
 		Annotations: readsOnly(),
 		Short:       "Version, Commit und Build-Datum anzeigen",
+		Example:     "  papierkram version\n  papierkram version -o json",
 		Args:        noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			if o := app.outputOptions(c.Context(), app.Flags.Output); !ownText(o) {
