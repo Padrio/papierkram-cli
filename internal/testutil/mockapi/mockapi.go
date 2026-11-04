@@ -45,10 +45,12 @@ import (
 const apiPrefix = "/api/v1"
 
 // Default quota headers of every response (spec 4.3); On, OnFunc can
-// override them.
+// override them. X-Consumed-Quota is the cost of the answered request, not
+// a running total (measured live 2026-11-04); 1 is the cost of most
+// requests.
 const (
 	defaultRemainingQuota = "9000"
-	defaultConsumedQuota  = "1000"
+	defaultConsumedQuota  = "1"
 )
 
 // fakePDF is the default body of operations that return application/pdf.

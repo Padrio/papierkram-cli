@@ -436,7 +436,7 @@ func TestAuthStatusText(t *testing.T) {
 		t.Fatalf("exit = %d, stderr = %s", code, errs)
 	}
 	out, errs := bufs(app)
-	for _, want := range []string{"b (--context)", "firma-b", "keychain", "an (env: PAPIERKRAM_READ_ONLY)", "50 Credits", "verbraucht: 1000"} {
+	for _, want := range []string{"b (--context)", "firma-b", "keychain", "an (env: PAPIERKRAM_READ_ONLY)", "50 Credits", "verbraucht: 1)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stdout ohne %q:\n%s", want, out)
 		}

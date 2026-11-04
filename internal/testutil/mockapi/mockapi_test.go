@@ -148,7 +148,7 @@ func TestClientEndToEnd(t *testing.T) {
 	if env, _ := got.(map[string]any); env["type"] != "list" {
 		t.Errorf("want list envelope, got %v", env["type"])
 	}
-	if resp.Quota != (api.Quota{Remaining: 9000, Consumed: 1000, Known: true}) {
+	if resp.Quota != (api.Quota{Remaining: 9000, Consumed: 1, Known: true}) {
 		t.Errorf("quota = %+v", resp.Quota)
 	}
 
@@ -336,7 +336,7 @@ func TestOverrides(t *testing.T) {
 	if resp.Header.Get("X-Remaining-Quota") != "5" || resp.Header.Get("X-Extra") != "ja" {
 		t.Errorf("override headers not applied: %v", resp.Header)
 	}
-	if resp.Header.Get("X-Consumed-Quota") != "1000" {
+	if resp.Header.Get("X-Consumed-Quota") != "1" {
 		t.Errorf("default X-Consumed-Quota missing on override: %v", resp.Header)
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
@@ -391,7 +391,7 @@ func TestOnFunc(t *testing.T) {
 	if resp.StatusCode != http.StatusAccepted || string(b) != `{"name":"Neu"}` {
 		t.Errorf("OnFunc: %d %s (handler must see the full body)", resp.StatusCode, b)
 	}
-	if resp.Header.Get("X-Remaining-Quota") != "1" || resp.Header.Get("X-Consumed-Quota") != "1000" {
+	if resp.Header.Get("X-Remaining-Quota") != "1" || resp.Header.Get("X-Consumed-Quota") != "1" {
 		t.Errorf("quota headers: %v", resp.Header)
 	}
 }
@@ -420,7 +420,7 @@ func TestDefaults(t *testing.T) {
 		t.Errorf("delete: %d %q, want 204 empty", resp.StatusCode, b)
 	}
 
-	if resp.Header.Get("X-Remaining-Quota") != "9000" || resp.Header.Get("X-Consumed-Quota") != "1000" {
+	if resp.Header.Get("X-Remaining-Quota") != "9000" || resp.Header.Get("X-Consumed-Quota") != "1" {
 		t.Errorf("quota headers missing: %v", resp.Header)
 	}
 }
