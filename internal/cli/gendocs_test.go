@@ -248,6 +248,10 @@ func TestGenDocsRemovesStalePages(t *testing.T) {
 	files := map[string]bool{ // name -> survives
 		"papierkram_alt_befehl.md": false, "papierkram-alt.1": false,
 		"README.md": true, "notizen.txt": true, "papierkram_notiz.txt": true, "anders.1": true,
+		// not a name gen-docs could write (review R2-M3); no two names
+		// differ only in case (case-insensitive file systems)
+		"papierkram-notizen.md": true, "papierkramXYZ.md": true, "papierkram_X.md": true, "papierkram__x.md": true,
+		"papierkramXYZ.1": true, "papierkram_alt.1": true, "papierkram-X.1": true, "papierkram.md.bak": true,
 	}
 	for _, dir := range []string{md, man, both} {
 		for name := range files {
@@ -276,6 +280,17 @@ func TestGenDocsRemovesStalePages(t *testing.T) {
 		}
 		if !slices.Contains(got, "papierkram_ordner.md") {
 			t.Errorf("%s: Verzeichnis entfernt", dir)
+		}
+	}
+	// every name gen-docs writes is one it would remove when stale
+	for _, n := range wantMD {
+		if !generatedPage[".md"].MatchString(n) {
+			t.Errorf("%s passt nicht zum Muster", n)
+		}
+	}
+	for _, n := range wantMan {
+		if !generatedPage[".1"].MatchString(n) {
+			t.Errorf("%s passt nicht zum Muster", n)
 		}
 	}
 	got := dirNames(t, both)

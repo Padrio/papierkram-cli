@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -127,9 +128,18 @@ func (a *App) genDocs(root *cobra.Command, mdDir, manDir string) error {
 	return err
 }
 
+// generatedPage matches the file names gen-docs writes (markdownName,
+// manName: the command path joined by "_" or "-", command names of
+// lowercase letters, digits and inner hyphens): only such files are
+// removed as stale, never a user's papierkram-notizen.md (review R2-M3).
+var generatedPage = map[string]*regexp.Regexp{
+	".md": regexp.MustCompile(`^papierkram(_[a-z0-9]+(-[a-z0-9]+)*)*\.md$`),
+	".1":  regexp.MustCompile(`^papierkram(-[a-z0-9]+)*\.1$`),
+}
+
 // removeStalePages removes the pages of commands that no longer exist:
-// files in dir named like gen-docs' own (papierkram*<suffix>) that this
-// run did not write. Directories and every other file stay (review M8).
+// files in dir with a name gen-docs writes (generatedPage) that this run
+// did not write. Directories and every other file stay (review M8).
 func removeStalePages(dir, suffix string, written map[string]bool) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -138,7 +148,7 @@ func removeStalePages(dir, suffix string, written map[string]bool) (int, error) 
 	n := 0
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || written[name] || !strings.HasPrefix(name, "papierkram") || !strings.HasSuffix(name, suffix) {
+		if e.IsDir() || written[name] || !generatedPage[suffix].MatchString(name) {
 			continue
 		}
 		path := filepath.Join(dir, name)
