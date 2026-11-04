@@ -7,6 +7,8 @@ Rechnung ändern.
 
 Kosten: 1 Credit je Anfrage.
 
+Ohne --payment-term und ohne payment_term in --input liest das CLI die Rechnung vorher (1 weiterer Credit) und sendet ihre aktuelle Zahlungsbedingung (payment_term.id) mit: Ein PUT ohne payment_term stellt die Rechnung sonst auf die Standard-Zahlungsbedingung des Accounts um und ändert das Fälligkeitsdatum (gemessen 2026-11-04). --dry-run liest ebenfalls und zeigt das Lesen. Scheitert das Lesen, wird nichts geändert. Mit --payment-term entfällt das Lesen.
+
 Verwendung:
   papierkram invoice update <id> [Optionen]
 

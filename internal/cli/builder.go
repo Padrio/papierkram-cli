@@ -91,11 +91,13 @@ var groupCmds = map[string][]func(*App) *cobra.Command{
 
 // entryExtras add a step of their own to a generic command, by operation
 // (voucher create --file, spec 9.3; invoice create --from-estimate, spec
-// 9.4). Without their flags the command runs exactly as the builder made
-// it.
+// 9.4; the read of invoice update that keeps the payment term, ruling
+// E2E-A). Without their flags (the read: with a payment term given) the
+// command runs exactly as the builder made it.
 var entryExtras = map[string]func(*App, registry.Entry, *cobra.Command){
 	"CreateVoucher": (*App).addCreateFile,
 	"CreateInvoice": (*App).addFromEstimate,
+	"UpdateInvoice": (*App).addKeepPaymentTerm,
 }
 
 // entryCmd builds the command of e: the generic one (with its extras), the

@@ -65,8 +65,14 @@ func (a *App) dryRun(ctx context.Context, e registry.Entry, method, url string, 
 		return output.RenderValue(o, v, output.Columns{})
 	}
 	var b strings.Builder
+	// a read builds the body of a create (--from-estimate) or completes
+	// that of an update (invoice update keeps its payment term)
+	done, again := "angelegt", "erneutes Lesen und Anlegen"
+	if e.Action == "update" {
+		done, again = "geändert", "erneutes Lesen und Ändern"
+	}
 	if x.read != nil {
-		fmt.Fprintf(&b, "Probelauf – nichts angelegt\nGelesen: %s %s (%s, bereits verbraucht)\n", x.read.Method, x.read.URL, creditsText(x.read.Credits))
+		fmt.Fprintf(&b, "Probelauf – nichts %s\nGelesen: %s %s (%s, bereits verbraucht)\n", done, x.read.Method, x.read.URL, creditsText(x.read.Credits))
 	} else {
 		b.WriteString("Probelauf – nichts gesendet\n")
 	}
@@ -75,7 +81,7 @@ func (a *App) dryRun(ctx context.Context, e registry.Entry, method, url string, 
 	case upload.step():
 		b.WriteString(" (beide Anfragen)")
 	case x.read != nil:
-		b.WriteString(" (erneutes Lesen und Anlegen)")
+		b.WriteString(" (" + again + ")")
 	}
 	b.WriteByte('\n')
 	if upload != nil && !upload.step() {

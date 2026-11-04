@@ -197,9 +197,14 @@ func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error 
 //     the field flags and line items are checked, and replaces --input as
 //     the base the flags override (buildBodyFrom). --dry-run reads too and
 //     names the read; its credits are those of the create.
+//   - keep reads the invoice when the body of invoice update has no
+//     payment_term and sends its current one (keepPaymentTerm, ruling
+//     E2E-A). It runs after the body is built and validated, then counts
+//     its credits and shows the read in --dry-run like from.
 type writeSteps struct {
 	up   *createUpload
 	from *fromEstimate
+	keep *keepPaymentTerm
 }
 
 // runWriteThen is runWrite with the steps s.
@@ -256,6 +261,16 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 			return s.from.bodyErr(err)
 		}
 		return err
+	}
+	if s.keep != nil {
+		read, err := s.keep.apply(c, a, client, params, ws, body)
+		if err != nil {
+			return err
+		}
+		if read != nil {
+			run.Credits += read.Credits
+			extras.read = read
+		}
 	}
 	a.flushPresetHints()
 	if proceed, err := a.beforeSend(c, run, client, params, body, extras); !proceed || err != nil {

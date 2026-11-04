@@ -391,7 +391,7 @@ var commandsColumns = output.Columns{Table: []output.Column{
 	{Header: "KURZ", Path: "short"},
 }}
 
-const commandsLong = `Listet alle Befehle mit Klasse (Spec 8.1), Credits je Aufruf (bei deliver mit Nachlesen; Flags wie --file und --from-estimate sowie --all kosten zusätzlich) und Kurzhilfe.
+const commandsLong = `Listet alle Befehle mit Klasse (Spec 8.1), Credits je Aufruf (bei deliver mit Nachlesen, bei invoice update mit dem Lesen der Rechnung; Flags wie --file und --from-estimate sowie --all kosten zusätzlich) und Kurzhilfe.
 
 Mit --json (oder -o json|yaml, --jq) kommt die maschinenlesbare Liste für Agents: je Befehl Verwendungszeile mit Positionsargumenten, Aliase, Kurzhilfe, Klasse, Credits, Operation (operation_id, method, path), Flags mit Kurzform, Typ, Pflicht (mit gleichwertigen Flags unter alternatives), Wiederholbarkeit, erlaubten Werten und Hilfetext sowie Beispiele; die globalen Flags stehen einmal unter global_flags. Vertrag: docs/schemas/commands.json (Version 1).
 

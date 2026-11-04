@@ -172,10 +172,13 @@ func TestIncomeUpdateSendsOnlyChangedFields(t *testing.T) {
 	wantBody(t, srv, "PUT", "/income/invoices/459", `{"name":"Beratung November","payment_term":{"id":1131}}`)
 
 	// what the live suite sent before payment_term changed (run 2,
-	// 2026-11-04): only description, no reference
+	// 2026-11-04) was only description; now the current payment term of
+	// the invoice goes along (ruling E2E-A, keep_payment_term_test.go)
 	app, srv = apiApp(t)
 	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--description", "pk-e2e-teilupdate", "-o", "json"}), 0)
-	wantBody(t, srv, "PUT", "/income/invoices/459", `{"description":"pk-e2e-teilupdate"}`)
+	if reqs := wantRequests(t, srv, 2); canonJSON(t, reqs[1].Body) != canonJSON(t, []byte(`{"description":"pk-e2e-teilupdate","payment_term":{"id":1130}}`)) {
+		t.Errorf("body = %s", reqs[1].Body)
+	}
 
 	app, srv = apiApp(t)
 	wantExit(t, app, Run(app, []string{"estimate", "update", "349", "--description", "Gültig bis Jahresende", "-o", "json"}), 0)
@@ -392,7 +395,9 @@ func TestIncomeMutationsDryRun(t *testing.T) {
 			"POST", "/income/invoices", `"credits": 50`, `"vat_rate": 0.19`},
 		{[]string{"estimate", "create", "--name", "A", "--document-date", "2026-11-04", "--item", "name=A,qty=1,price=5,vat=19"},
 			"POST", "/income/estimates", `"credits": 50`, `"name": "A"`},
-		{[]string{"invoice", "update", "459", "--name", "Neu"},
+		// with --payment-term the update reads nothing (see
+		// TestInvoiceUpdateKeepPaymentTermDryRun for the read)
+		{[]string{"invoice", "update", "459", "--name", "Neu", "--payment-term", "1130"},
 			"PUT", "/income/invoices/459", `"credits": 1`, `"name": "Neu"`},
 		{[]string{"estimate", "cancel", "349"},
 			"POST", "/income/estimates/349/cancel", `"credits": 1`, `"body": null`},

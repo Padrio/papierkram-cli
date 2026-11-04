@@ -77,18 +77,30 @@ func runLineServer(t *testing.T, env map[string]string, words []string) (int, st
 }
 
 // dryRunRequests checks what a --dry-run sent to the mock: nothing but GET,
-// and a GET only as the read-only pre-step of invoice create
-// --from-estimate (reading the estimate, shown as "read").
+// and a GET only as a read-only pre-step shown as "read": invoice create
+// --from-estimate reading the estimate, or invoice update without
+// --payment-term reading the invoice it changes (ruling E2E-A).
 func dryRunRequests(srv *mockapi.Server, words []string) error {
 	for _, r := range srv.Requests() {
 		if r.Method != "GET" {
 			return fmt.Errorf("--dry-run sendete %s %s", r.Method, r.Path)
 		}
-		if !slices.Contains(words, "--from-estimate") {
+		if !slices.Contains(words, "--from-estimate") && !readsInvoiceForUpdate(words, r.Path) {
 			return fmt.Errorf("--dry-run sendete GET %s ohne erlaubten Lese-Vorschritt", r.Path)
 		}
 	}
 	return nil
+}
+
+// readsInvoiceForUpdate: words are an invoice update of the invoice at
+// path, without --payment-term.
+func readsInvoiceForUpdate(words []string, path string) bool {
+	for i := 0; i+2 < len(words); i++ {
+		if (words[i] == "invoice" || words[i] == "rechnung") && words[i+1] == "update" {
+			return path == "/income/invoices/"+words[i+2] && !slices.Contains(words, "--payment-term")
+		}
+	}
+	return false
 }
 
 // exampleRuns returns the examples of c as argument lists that run
@@ -131,6 +143,7 @@ func TestDryRunRequests(t *testing.T) {
 		{[]string{"invoice", "create", "--from-estimate", "349", "--payment-term", "1130", "--dry-run"}, true},
 		// a mutation without --dry-run reaches the mock: POST
 		{[]string{"company", "create", "--name", "X", "--contact-type", "customer"}, false},
+		{[]string{"invoice", "update", "459", "--description", "X", "--dry-run"}, true},
 		// a GET without the from-estimate pre-step
 		{[]string{"invoice", "list"}, false},
 	} {

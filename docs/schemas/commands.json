@@ -79,7 +79,7 @@
             "enum": ["read_only", "create", "update", "archive", "destructive", "send", "local", "per_request"]
           },
           "credits": {
-            "description": "Credits eines Aufrufs (Spec 4.3, 8.5): die Operation, bei deliver zuzüglich des Nachlesens; 0 ohne Anfrage; null bei class per_request (Kosten der jeweiligen Operation). Zusätzlich kosten Flags mit credits (--file, --from-estimate) sowie --all und lokale Filter (company list --type) je geladener Seite.",
+            "description": "Credits eines Aufrufs (Spec 4.3, 8.5): die Operation, bei deliver zuzüglich des Nachlesens, bei invoice update zuzüglich des Lesens der Rechnung (entfällt mit --payment-term oder payment_term in --input); 0 ohne Anfrage; null bei class per_request (Kosten der jeweiligen Operation). Zusätzlich kosten Flags mit credits (--file, --from-estimate) sowie --all und lokale Filter (company list --type) je geladener Seite.",
             "type": "integer",
             "minimum": 0,
             "nullable": true

@@ -345,7 +345,9 @@ func TestCommandsJSONRegistryEntries(t *testing.T) {
 		name := strings.TrimSpace(e.Resource + " " + e.Action)
 		c := d.find(t, name)
 		credits := e.Credits
-		if e.Action == "deliver" { // deliver reads the document back
+		// deliver reads the document back, invoice update reads the
+		// invoice to keep its payment term (ruling E2E-A)
+		if e.Action == "deliver" || e.OperationID == "UpdateInvoice" {
 			read, _ := registry.Lookup(e.Resource, "describe")
 			credits += read.Credits
 		}
