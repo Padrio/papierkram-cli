@@ -34,9 +34,14 @@ go test -count=1 -tags e2e -v ./e2e/...
 ```
 
 In GitHub: Workflow „E2E (Sandbox)“ manuell starten (`workflow_dispatch`) und
-im Eingabefeld die Subdomain der Sandbox zur Bestätigung eingeben. Subdomain
-und Token kommen aus den Repository-Secrets `PAPIERKRAM_E2E_SUBDOMAIN` und
-`PAPIERKRAM_E2E_TOKEN`.
+im Eingabefeld die Subdomain der Sandbox zur Bestätigung eingeben. Der Job
+läuft nur auf `main` (`if: github.ref == 'refs/heads/main'`); von einem
+anderen Branch gestartet, wird er übersprungen. Er nutzt die GitHub-Umgebung
+`sandbox` (`environment: sandbox`): Subdomain und Token gehören dort als
+Secrets `PAPIERKRAM_E2E_SUBDOMAIN` und `PAPIERKRAM_E2E_TOKEN` hinein. Umgebung,
+Secrets und Schutzregeln (z. B. Pflicht-Freigabe, nur Branch `main`) richtet
+der Repository-Inhaber in den Repository-Einstellungen ein; das Repository
+selbst legt sie nicht an.
 
 Ohne die Variablen (Nachweis, dass alles überspringt):
 
@@ -94,6 +99,14 @@ Anfrage, die in die Reserve greifen würde, wird nicht gesendet, und reicht das
 Budget für einen Test nicht mehr, werden dieser und alle folgenden Tests mit
 Begründung übersprungen. Erst das Aufräumen am Ende darf die Reserve nutzen.
 Am Ende steht die Summe im Log.
+
+## Bewusst nicht gemessen
+
+- Die maximale Dateigröße beim Upload (Spezifikation 17) bleibt bewusst
+  offen: Sie zu messen hieße, große Dateien in einen echten Account
+  hochzuladen. Der Punkt steht in den offenen Punkten der Doku.
+- `voucher pay` mit Betrag und Bankumsatz zusammen (siehe oben: die Suite
+  bezahlt nie).
 
 ## Messungen
 
