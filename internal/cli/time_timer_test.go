@@ -706,3 +706,20 @@ func TestTimerHintCommandsQuoteAndNameComment(t *testing.T) {
 	wantExit(t, app, at(app, morning(t), "time", "stop", "--context", "plain", "-m", "neu"), 1)
 	wantStderr(t, app, `-m "<Kommentar>"`)
 }
+
+// Review M4: a file where the cache directory belongs means no timer for
+// status and discard; start cannot save and names the cache directory.
+func TestTimerBrokenCacheDirectory(t *testing.T) {
+	app, srv := logApp(t, nine(t))
+	if err := os.WriteFile(filepath.Join(app.CacheDir, "papierkram"), []byte("kein Verzeichnis"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wantExit(t, app, at(app, morning(t), "time", "status", "-o", "json"), 0)
+	if out, _ := bufs(app); canonJSON(t, []byte(out)) != `{"running":false}` {
+		t.Errorf("status = %s", out)
+	}
+	wantExit(t, app, at(app, morning(t), "time", "discard"), 0)
+	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 1)
+	wantStderr(t, app, "Timer nicht gespeichert", "Cache-Verzeichnis")
+	wantRequests(t, srv, 0)
+}

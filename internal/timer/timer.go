@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
@@ -94,13 +95,16 @@ func escape(s string) string {
 // DiscardHint is the way out of a state that cannot be used.
 const DiscardHint = "Timer-Datei verwerfen: papierkram time discard (die bisher erfasste Zeit des Timers geht dabei verloren)"
 
-// Load reads the state at path; nil without a file. A file that is no
+// Load reads the state at path; nil without a file (also when a file
+// blocks the directory). A file that is no
 // regular file (also a symbolic link), larger than MaxSize, no valid
 // state or unreadable is an error (exit 1) that names time discard.
 func Load(path string) (*State, error) {
 	data, err := safefile.ReadRegular(path, false, MaxSize)
 	switch {
-	case errors.Is(err, fs.ErrNotExist):
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
+		// ENOTDIR: a file blocks the cache directory; there is no timer
+		// (start then fails to save and names the directory, review M4)
 		return nil, nil
 	case errors.Is(err, safefile.ErrSymlink), errors.Is(err, safefile.ErrNotRegular):
 		return nil, invalid(path, "keine reguläre Datei", nil)

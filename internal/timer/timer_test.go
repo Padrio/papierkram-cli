@@ -222,3 +222,15 @@ func TestSaveValidatesLikeLoad(t *testing.T) {
 		}
 	}
 }
+
+// Review M4: a cache directory where a file blocks the path (ENOTDIR)
+// holds no timer; it is no corrupt state.
+func TestLoadWithFileInPathIsNoTimer(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "papierkram"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := Load(Path(dir, "firma")); st != nil || err != nil {
+		t.Errorf("Load = %+v, %v", st, err)
+	}
+}

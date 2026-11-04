@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -500,11 +499,6 @@ func (a *App) runTimeDiscard(c *cobra.Command) error {
 	path, st, lerr := a.loadTimer(r)
 	if path == "" {
 		return lerr
-	}
-	if st == nil && lerr != nil {
-		if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
-			lerr = nil // a broken cache directory holds no timer
-		}
 	}
 	o := a.outputOptions(c.Context(), a.outputFormat(r))
 	if st == nil && lerr == nil {
