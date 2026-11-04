@@ -314,7 +314,7 @@ func (a *App) runAPI(c *cobra.Command, args []string) error {
 	}
 	raw := &rawRequest{method: call.method, path: call.path.send, query: query}
 	if call.method != "GET" {
-		x := sendExtras{raw: raw}
+		x := sendExtras{raw: raw, details: apiDetails(raw, body)}
 		if call.target.unknown() {
 			x.summary = &Summary{Label: call.method + " " + call.path.send}
 		}
@@ -355,6 +355,34 @@ func (a *App) runAPI(c *cobra.Command, args []string) error {
 		return err
 	}
 	return a.renderAPI(o, call, resp)
+}
+
+// confirmBodyRunes caps the body shown in a confirmation.
+const confirmBodyRunes = 500
+
+// apiDetails are the lines the confirmation of api adds (destructive and
+// send, e.g. voucher pay, which shows the payment like the pay command):
+// method with path and query (relative, so without host or userinfo) and
+// the body as compact JSON, cut to confirmBodyRunes characters. confirm
+// makes both printable.
+func apiDetails(raw *rawRequest, body map[string]any) []Detail {
+	req := raw.method + " " + raw.path
+	if len(raw.query) > 0 {
+		req += "?" + raw.query.Encode()
+	}
+	details := []Detail{{Label: "Anfrage", Value: req}}
+	if body != nil {
+		data, err := encodeBody(body)
+		if err != nil {
+			return details
+		}
+		text := string(data)
+		if r := []rune(text); len(r) > confirmBodyRunes {
+			text = string(r[:confirmBodyRunes]) + "…"
+		}
+		details = append(details, Detail{Label: "Body", Value: text})
+	}
+	return details
 }
 
 // checkAPIBody applies the rules of the body after it is built: for the

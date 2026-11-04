@@ -685,3 +685,47 @@ func TestAPIRepeatedBasePrefix(t *testing.T) {
 		wantStderrHas(t, app, "/api/v1 nur einmal")
 	}
 }
+
+// Review M3: the confirmation of api shows method, path with query and
+// the body, compact and cut to about 500 characters (voucher pay through
+// api shows the payment).
+func TestAPIConfirmationShowsRequest(t *testing.T) {
+	app, srv := apiApp(t)
+	app.StdinTTY = true
+	app.In = strings.NewReader("ja\n")
+	wantExit(t, app, runAPI(app, "POST", "/expense/vouchers/7/pay", "-F", "value=19.99", "-f", "payment_date=2026-11-04", "-o", "json"), 0)
+	wantRequests(t, srv, 2) // summary GET, pay
+	wantStderrHas(t, app, "Anfrage:   POST /expense/vouchers/7/pay\n", `Body:      {"payment_date":"2026-11-04","value":19.99}`+"\n")
+
+	app, srv = apiApp(t)
+	app.StdinTTY = true
+	app.In = strings.NewReader("nein\n")
+	long := strings.Repeat("ä", 600)
+	wantExit(t, app, runAPI(app, "PUT", "/x/y?a=1", "-f", "text="+long, "-f", "ctl=\x1b[2Jx"), 8)
+	wantRequests(t, srv, 0)
+	_, errs := bufs(app)
+	wantStderrHas(t, app, "Anfrage:   PUT /x/y?a=1\n", `Body:      {"ctl":"\u001b[2Jx","text":"äää`)
+	var body string
+	for line := range strings.SplitSeq(errs, "\n") {
+		if strings.HasPrefix(line, "Body:") {
+			body = line
+		}
+	}
+	if n := len([]rune(strings.TrimSpace(strings.TrimPrefix(body, "Body:")))); n > 501 || !strings.HasSuffix(body, "…") {
+		t.Errorf("Body-Zeile (%d Zeichen) nicht gekürzt: %q", n, body)
+	}
+	if strings.ContainsRune(errs, 0x1b) {
+		t.Errorf("Steuerzeichen in der Rückfrage: %q", errs)
+	}
+
+	// deliver: way of sending plus request
+	app, srv = apiApp(t)
+	app.StdinTTY = true
+	app.In = strings.NewReader("nein\n")
+	wantExit(t, app, runAPI(app, "POST", "/income/invoices/12/deliver", "-F", "send_via=email",
+		"-f", "email.recipient=kunde@example.org", "-f", "email.subject=Rechnung", "-f", "email.body=Hallo"), 8)
+	wantStderrHas(t, app, "Empfänger: kunde@example.org", "Anfrage:   POST /income/invoices/12/deliver\n", `"send_via":"email"`)
+	if n := len(srv.Requests()); n != 1 { // only the summary GET
+		t.Errorf("%d Requests", n)
+	}
+}
