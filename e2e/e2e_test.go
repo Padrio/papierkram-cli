@@ -26,17 +26,18 @@
 //	  51, user 1, time entry 10, custom attribute 10,
 //	  10 × (describe, update, describe)                           113
 //	ReplaceLineItems: describe, update, describe                    3
-//	Carries (13 subtests, 2 time entries of 10 in no. 12)          35
+//	Carries (13 subtests, 2 time entries of 10 in no. 12,
+//	  describe, update, describe in no. 6)                         37
 //	final cleanup: 1 delete per object (12 fixtures and up to 2
 //	  midnight time entries = 14); a final document costs up to 3
 //	  more (cancel, delete, archive)                               14
-//	                                                     total    426
+//	                                                     total    428
 //
 // Of the budget, cleanupReserve = 46 is kept for the final cleanup: the
 // documented worst case (e2eguard.CleanupReserve) for the 4 documents
 // (2 estimates, invoice, voucher; 4 each) and up to 10 other objects
 // (2 each), plus a margin of 10. Tests may use 490 - 46 = 444 (planned:
-// 412). The meter (e2eguard.Meter) counts every sent request, rejected
+// 414). The meter (e2eguard.Meter) counts every sent request, rejected
 // ones too, with max(documented cost, X-Consumed-Quota), the header being
 // the cost of that one request; before the cleanup the transport refuses every
 // request that would cut into the reserve, and need() skips a test (and
@@ -53,16 +54,18 @@
 //	  line_items replace all; carries 1 (ISO deadline), 2 (describe |
 //	  update round trip keeps contact person and project), 3 (estimate
 //	  PUT with sent_on/sent_to null), 4 (voucher PUT with
-//	  entertainment_persons []), 6 (billable_duration in seconds),
+//	  entertainment_persons []),
 //	  8 (PDF download Accept/Content-Type), 9 (price_gross 0.0 with
 //	  gross=false), 11 (duration = wall clock difference on a normal day).
 //	measured only: empty deliver body, upload of png/jpg/txt, voucher
 //	  state values, GET /info cost, carries 5 (due_time_unit values),
-//	  7 (sent_on after deliver pdf), 10 (pay body with value null and a
+//	  6 (billable_duration on create and update; run 1: the create
+//	  stored duration instead), 7 (sent_on after deliver pdf), 10 (pay body with value null and a
 //	  transaction that does not exist: the suite never pays),
 //	  12 (end 00:00/24:00), 13 (structure of GET /info).
 //	A measurement that differs from what the CLI assumes (GET /info cost
-//	  vs. registry, due_time_unit other than "day") is logged as
+//	  vs. registry, due_time_unit other than "day", billable_duration
+//	  not stored as sent) is logged as
 //	  ABWEICHUNG and listed again in a summary at the end of the run;
 //	  it does not fail the run.
 package e2e

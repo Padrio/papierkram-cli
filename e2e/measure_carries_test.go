@@ -131,14 +131,32 @@ func TestE2E_Carries(t *testing.T) {
 	})
 
 	// 6. Time entry billable_duration: seconds in the request (overlay
-	// section 15). Hard.
+	// section 15). Measured: run 1 (2026-11-04) stored duration (5400)
+	// instead of the 1800 sent with the create, which the CLI cannot
+	// change (docs/offene-punkte.md, point 15). It also measures whether
+	// an update sets the value afterwards.
 	t.Run("06_BillableDurationSeconds", func(t *testing.T) {
 		te := idOf(s.timeEntry(t))
-		s.need(t, 1)
+		var sent any = "nicht aufgezeichnet"
+		if body := s.sentBody(t, "time", te); body != nil {
+			sent = body["billable_duration"]
+		}
+		s.need(t, 3)
 		m := s.ok(t, "", "time", "describe", ids(te))
-		s.measuref(t, "billable_duration", "gesendet %d, gespeichert %v, duration %v", billable, m["billable_duration"], m["duration"])
+		s.measuref(t, "billable_duration", "Anlegen: gesendet %v (%s), gespeichert %v, duration %v",
+			sent, jsonType(sent), m["billable_duration"], m["duration"])
 		if str(m["billable_duration"]) != fmt.Sprint(billable) {
-			s.errorf(t, "billable_duration %d (Sekunden) gespeichert als %v", billable, m["billable_duration"])
+			s.deviatef(t, "billable_duration: beim Anlegen gesendet %v, gespeichert %v (duration %v)", sent, m["billable_duration"], m["duration"])
+		}
+		r := s.run(t, "", "time", "update", ids(te), "--billable-duration", strconv.Itoa(billable), "-o", "json")
+		if r.code != 0 {
+			s.measuref(t, "billable_duration", "Ändern: Exit %d: %s", r.code, strings.TrimSpace(r.stderr))
+			return
+		}
+		m = s.ok(t, "", "time", "describe", ids(te))
+		s.measuref(t, "billable_duration", "Ändern: gesendet %d, gespeichert %v, duration %v", billable, m["billable_duration"], m["duration"])
+		if str(m["billable_duration"]) != fmt.Sprint(billable) {
+			s.deviatef(t, "billable_duration: per time update gesendet %d, gespeichert %v", billable, m["billable_duration"])
 		}
 	})
 

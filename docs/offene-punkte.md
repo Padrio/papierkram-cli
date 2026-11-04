@@ -27,7 +27,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 12 | `entertainment_persons: []` im Beleg-`PUT` | wird akzeptiert | `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` | hart (Bedeutung: Messung) |
 | 13 | `supply_date` im Antwortformat und `customer` als `{id}` im Rundlauf | wird akzeptiert, Kontaktperson und Projekt bleiben | `TestE2E_Carries/02_InvoiceRoundTrip` | hart |
 | 14 | Werte von `due_time_unit` | meist `day`; die Tabelle zeigt `ZIEL` und `EINHEIT` getrennt | `TestE2E_Carries/05_PaymentTermUnits` | Messung |
-| 15 | Einheit von `billable_duration` | Sekunden | `TestE2E_Carries/06_BillableDurationSeconds` | hart |
+| 15 | Einheit von `billable_duration` | Sekunden; beim Anlegen überschreibt die API den Wert (gemessen) | `TestE2E_Carries/06_BillableDurationSeconds` | Messung |
 | 16 | Setzt `deliver --via pdf` `sent_on`? | ja (für das Nachlesen nach Abbruch) | `TestE2E_Carries/07_DeliverPdfSentOn` | Messung |
 | 17 | `Accept` beim PDF-Download | `application/pdf, application/json;q=0.9` ergibt 200 `application/pdf` | `TestE2E_Carries/08_PDFDownloadAccept` | hart |
 | 18 | `price_gross: 0.0` bei `gross: false` (`--from-estimate`) | wird akzeptiert | `TestE2E_Carries/09_FromEstimatePriceGrossZero` | hart |
@@ -132,7 +132,9 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 - **Offen:** In welcher Einheit erwartet die API `billable_duration` im Request?
 - **Annahme:** Sekunden (Overlay).
-- **E2E:** `TestE2E_Carries/06_BillableDurationSeconds` (hart).
+- **Gemessen 2026-11-04: API überschreibt billable_duration mit duration bei create.** Ein Zeiteintrag 09:00–10:30 mit `billable_duration` 1800 wurde mit `billable_duration` 5400 gespeichert, also mit `duration`. Die Einheit lässt sich so nicht bestätigen. Das CLI kann dagegen nichts tun; die Hilfe von `time create --billable-duration` weist darauf hin.
+- **Offen:** Ob `time update --billable-duration` den Wert danach setzt (und ob dann in Sekunden), ist noch nicht gemessen.
+- **E2E:** `TestE2E_Carries/06_BillableDurationSeconds` (Messung, seit 2026-11-04 nicht mehr hart): misst den Wert nach dem Anlegen und nach `time update --billable-duration`; weicht der gespeicherte Wert vom gesendeten ab, steht das als `ABWEICHUNG` im Log.
 
 ### 16. Setzt `deliver --via pdf` `sent_on`?
 
