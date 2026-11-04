@@ -625,3 +625,22 @@ func TestTimerStatusAgreesWithStopOnDSTDays(t *testing.T) {
 		})
 	}
 }
+
+// Review M3: a time zone change between start and stop books the clock
+// times of the stop location; the help says so.
+func TestTimerStopInAnotherTimeZone(t *testing.T) {
+	app, srv := logApp(t, nine(t))
+	wantExit(t, app, at(app, berlinAt(t, 2026, 11, 4, 9, 0, 0), "time", "start", "--task", "545", "--user", "1"), 0)
+	london, err := time.LoadLocation("Europe/London")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Location = london
+	wantExit(t, app, at(app, time.Date(2026, 11, 4, 11, 0, 0, 0, london), "time", "stop", "-o", "json"), 0)
+	wantBody(t, srv, "POST", timeEntries,
+		`{"entry_date":"2026-11-04","started_at_time":"08:00","ended_at_time":"11:00","task":{"id":545},"user":{"id":1}}`)
+	cmd, _, _ := NewRootCmd(app).Find([]string{"time", "stop"})
+	if !strings.Contains(cmd.Long, "Zeitzone") || !strings.Contains(cmd.Long, "Stopp-Orts") {
+		t.Errorf("help without the time zone rule: %s", cmd.Long)
+	}
+}

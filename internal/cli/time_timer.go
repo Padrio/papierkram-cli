@@ -79,7 +79,10 @@ func (a *App) newTimeStopCmd() *cobra.Command {
 		Short: "Timer stoppen und als Zeiteintrag buchen",
 		Long: "Bucht die Zeit des Timers wie time log: Datum und Uhrzeit des Starts bis jetzt (in ganzen Minuten), " +
 			"Aufgabe, Benutzer und Kommentar des Timers; -m ersetzt den Kommentar. " +
-			"Einträge über Mitternacht und unter einer Minute werden abgelehnt (Exit 2).\n\n" +
+			"Einträge über Mitternacht und unter einer Minute werden abgelehnt (Exit 2). " +
+			"Start und Ende gelten in der Zeitzone des Rechners beim Stoppen: Wechselt die Zeitzone zwischen time start und time stop " +
+			"(z. B. auf Reisen), werden die Uhrzeiten des Stopp-Orts gebucht (Start 09:00 in Berlin, Stopp 11:00 in London ergibt 08:00–11:00); " +
+			"die Dauer bleibt richtig.\n\n" +
 			"Im Terminal zeigt der Befehl vorher eine Zusammenfassung und fragt nach (Enter = ja), wie time log; --dry-run zeigt die Anfrage. " +
 			"Der Timer wird erst gelöscht, wenn der Zeiteintrag angelegt ist; bei jedem Fehler, Abbruch oder Probelauf läuft er weiter " +
 			"(dann von Hand mit papierkram time log buchen oder mit papierkram time discard verwerfen)." +
