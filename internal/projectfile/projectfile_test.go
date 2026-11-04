@@ -405,12 +405,10 @@ func TestLoad_InvalidContext(t *testing.T) {
 // hint of ResolveTask and the path are made printable.
 func TestMessagesArePrintable(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "evil\x1b[2J")
-	p := write(t, dir, FileName, "[tasks]\n\"x\\u001b[31m\" = 5\n")
-	f, err := Load(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = f.ResolveTask("nix")
+	// Load rejects such aliases (TestLoad_AliasWithControlCharacters);
+	// ResolveTask filters them anyway
+	f := &File{Tasks: map[string]int64{"x\x1b[31m": 5}}
+	_, err := f.ResolveTask("nix")
 	var ce *clierr.Error
 	if !errors.As(err, &ce) || strings.Contains(ce.Message+ce.Hint, "\x1b") {
 		t.Errorf("ResolveTask: %q / %q", ce.Message, ce.Hint)
@@ -454,5 +452,47 @@ func TestSave_RefusesSymlink(t *testing.T) {
 	}
 	if _, err := os.Stat(target); err == nil {
 		t.Error("file created behind a dangling link")
+	}
+}
+
+// Security review: an alias with a control or invisible format character
+// is rejected (exit 2), and the hint quotes the alias.
+func TestLoad_AliasWithControlCharacters(t *testing.T) {
+	for _, alias := range []string{`t\u001b[31m`, `t\u202eevil`} {
+		p := write(t, t.TempDir(), FileName, "[tasks]\n\""+alias+"\" = 5\n")
+		_, err := Load(p)
+		var ce *clierr.Error
+		if !errors.As(err, &ce) || ce.Code != clierr.CodeUsage {
+			t.Errorf("alias %s: err = %v", alias, err)
+			continue
+		}
+		if strings.ContainsAny(ce.Message+ce.Hint, "\x1b\u202e") {
+			t.Errorf("alias %s: raw in %q / %q", alias, ce.Message, ce.Hint)
+		}
+	}
+	// the hint of an invalid alias value quotes the alias
+	p := write(t, t.TempDir(), FileName, "[tasks]\ntickets = \"x\"\n")
+	_, err := Load(p)
+	var ce *clierr.Error
+	if !errors.As(err, &ce) || !strings.Contains(ce.Hint, `"tickets"`) {
+		t.Errorf("hint = %v", err)
+	}
+}
+
+// Security review: a read error shows the cleaned path and only the
+// underlying error, never the raw path of the wrapped *fs.PathError.
+func TestLoad_ReadErrorPathPrintable(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "evil\x1b[2J")
+	p := filepath.Join(mkdir(t, dir), FileName)
+	mkdir(t, p) // a directory: reading fails
+	_, err := Load(p)
+	if err == nil || strings.Contains(err.Error(), "\x1b") || !strings.Contains(err.Error(), "evil [2J") {
+		t.Errorf("err = %q", err)
+	}
+	// Save: the same for its errors
+	link := filepath.Join(mkdir(t, filepath.Join(t.TempDir(), "x\x1b[2J")), FileName)
+	mkdir(t, link)
+	if _, err := Save(link, Changes{Project: i64(1)}); err == nil || strings.Contains(err.Error(), "\x1b") {
+		t.Errorf("Save err = %q", err)
 	}
 }

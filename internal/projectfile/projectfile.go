@@ -4,6 +4,7 @@ package projectfile
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -79,7 +80,7 @@ func gitRoot(dir string) (string, bool) {
 func Load(path string) (*File, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("%s lesen: %w", output.Printable(path), err)
+		return nil, fileErr(path, "lesen", err)
 	}
 	m, err := decode(path, data)
 	if err != nil {
@@ -137,6 +138,13 @@ func Load(path string) (*File, error) {
 		sort.Strings(aliases) // deterministic error for the first bad alias
 		for _, alias := range aliases {
 			val := tbl[alias]
+			// The file may come from a cloned repository and aliases are
+			// printed in hints: no terminal escapes or invisible characters.
+			if strings.ContainsFunc(alias, output.Invisible) {
+				return nil, clierr.New(clierr.CodeUsage,
+					fmt.Sprintf("Projektdatei %s: Aufgaben-Alias %q enthält Steuerzeichen oder unsichtbare Zeichen", shown, alias),
+					"Alias nur aus sichtbaren Zeichen bilden, z. B. [tasks] tickets = 57")
+			}
 			// A numeric alias would be shadowed by the ID parsing in ResolveTask.
 			if _, err := strconv.ParseInt(alias, 10, 64); err == nil {
 				return nil, clierr.New(clierr.CodeUsage,
@@ -147,7 +155,7 @@ func Load(path string) (*File, error) {
 			if !isInt || id <= 0 {
 				return nil, clierr.New(clierr.CodeUsage,
 					fmt.Sprintf("Projektdatei %s: Aufgaben-Alias %q muss eine positive ganze Zahl sein", shown, alias),
-					"Beispiel: [tasks] "+alias+" = 123")
+					fmt.Sprintf("Beispiel: [tasks] %q = 123", alias))
 			}
 			f.Tasks[alias] = id
 		}
@@ -159,6 +167,22 @@ func Load(path string) (*File, error) {
 	}
 	sort.Strings(f.Unknown)
 	return f, nil
+}
+
+// fileErr is a file system error of the project file at path: the path
+// made printable plus only the underlying error. The raw text of a
+// wrapped *fs.PathError or *os.LinkError would repeat the path unfiltered
+// (a directory of a cloned repository may carry terminal escapes).
+func fileErr(path, op string, err error) error {
+	var pe *fs.PathError
+	var le *os.LinkError
+	switch {
+	case errors.As(err, &pe):
+		err = pe.Err
+	case errors.As(err, &le):
+		err = le.Err
+	}
+	return fmt.Errorf("%s %s: %w", output.Printable(path), op, err)
 }
 
 // decode parses the TOML of the project file at path; a syntax error is a

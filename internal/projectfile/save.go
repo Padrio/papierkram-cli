@@ -50,7 +50,7 @@ func Save(path string, ch Changes) (SaveResult, error) {
 	exists := err == nil
 	switch {
 	case err != nil && !errors.Is(err, fs.ErrNotExist):
-		return res, fmt.Errorf("%s prüfen: %w", shown, err)
+		return res, fileErr(path, "prüfen", err)
 	case exists && st.Mode()&fs.ModeSymlink != 0:
 		return res, clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("Projektdatei %s ist ein symbolischer Link – nicht überschrieben", shown),
@@ -63,7 +63,7 @@ func Save(path string, ch Changes) (SaveResult, error) {
 	var data []byte
 	if exists {
 		if data, err = os.ReadFile(path); err != nil {
-			return res, fmt.Errorf("%s lesen: %w", shown, err)
+			return res, fileErr(path, "lesen", err)
 		}
 	}
 	m := map[string]any{}
@@ -104,7 +104,7 @@ func Save(path string, ch Changes) (SaveResult, error) {
 		mode = st.Mode().Perm()
 	}
 	if err := writeAtomic(path, out, mode, exists); err != nil {
-		return SaveResult{}, fmt.Errorf("%s schreiben: %w", shown, err)
+		return SaveResult{}, fileErr(path, "schreiben", err)
 	}
 	res.Created = !exists
 	res.HadComments = exists && hasComments(data)
