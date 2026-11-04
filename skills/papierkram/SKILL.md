@@ -1,13 +1,13 @@
 ---
 name: papierkram
-description: Bedient die Buchhaltung Papierkram über das CLI `papierkram` (Kurzform `pk`). Verwenden, wenn der Nutzer in Papierkram Rechnungen, Angebote, Belege, Firmen, Projekte oder Zeiteinträge ansehen oder ändern will, etwa einen Beleg hochladen und zuordnen, eine Rechnung aus einem Angebot erstellen und versenden, offene Posten prüfen oder Zeiten erfassen und abrechnen, oder wenn Ausgabe, Exit-Code oder Fehler eines `papierkram`-Befehls auszuwerten sind.
+description: Bedient die Buchhaltung Papierkram über das CLI `papierkram`. Verwenden, wenn der Nutzer in Papierkram Rechnungen, Angebote, Belege, Firmen, Projekte oder Zeiteinträge ansehen oder ändern will, etwa einen Beleg hochladen und zuordnen, eine Rechnung aus einem Angebot erstellen und versenden, offene Posten prüfen oder Zeiten erfassen und abrechnen, oder wenn Ausgabe, Exit-Code oder Fehler eines `papierkram`-Befehls auszuwerten sind.
 ---
 
 # Papierkram mit dem CLI `papierkram`
 
 Das CLI beschreibt sich selbst, prüft jeden Body vor dem Senden und hat feste Exit-Codes. Dieser Skill fasst die Regeln für Agents zusammen und zeigt vier Abläufe. Verbindlich ist [AGENTS.md](https://github.com/Padrio/papierkram-cli/blob/main/AGENTS.md) (JSON-Vertrag, Fehler, Exit 11 und 12 im Detail); bei Widersprüchen gilt AGENTS.md.
 
-Alle IDs unten sind Beispiele. IDs immer per `list` ermitteln, nie raten; Flags nehmen IDs, keine Namen.
+Befehle immer als `papierkram` aufrufen (die Kurzform `pk` gibt es nicht bei jeder Installation). Alle IDs unten sind Beispiele. IDs immer per `list` ermitteln, nie raten; Flags nehmen IDs, keine Namen.
 
 ## Sicherheitsregeln
 
@@ -117,15 +117,15 @@ PAPIERKRAM_READ_ONLY=1 papierkram invoice list --company 3214 --all --max-pages 
 PAPIERKRAM_READ_ONLY=1 papierkram invoice describe 459 -o json --no-input
 ```
 
-Die zweite Zeile listet überfällige Rechnungen (Fälligkeit vor heute, UTC), die dritte summiert die offenen Beträge eines Kunden. `--all` kostet 1 Credit je Seite; bei `has_more: true` im Ergebnis ohne `--all` gibt es weitere Seiten.
+Die zweite Zeile listet überfällige Rechnungen (Fälligkeit vor heute, UTC), die dritte summiert die offenen Beträge eines Kunden. `--all` kostet 1 Credit je Seite; bei `has_more: true` im Ergebnis ohne `--all` gibt es weitere Seiten. Meldet stderr, dass `--max-pages` erreicht ist („5 von N Seiten geladen“), sind Liste und Summe unvollständig: das dem Menschen sagen und nicht als Gesamtbetrag ausgeben.
 
 ## Ablauf 4: Zeiten erfassen und abrechnen
 
-Standardwerte für ein Verzeichnis (Projekt, Aufgabe, Benutzer) legt die Projektdatei fest; `local show` zeigt, was gilt. Aufgaben-Aliase aus `[tasks]` gehen statt IDs:
+Standardwerte für ein Verzeichnis (Projekt, Aufgabe, Benutzer) legt die Projektdatei `.papierkram.toml` fest; `local show` zeigt, was gilt. Aufgaben-Aliase aus `[tasks]` gehen statt IDs. `local init` nur auf Wunsch des Nutzers: Es schreibt die Projektdatei neu (Kommentare gehen verloren) und kennt kein `--dry-run`; deshalb vorher `local show` lesen und die geplante Änderung nennen:
 
 ```sh
-papierkram local init --project 4963 --task 545 --no-input
 papierkram local show -o json --no-input
+papierkram local init --project 4963 --task 545 --no-input
 ```
 
 Zeit nachtragen (10 Credits je Eintrag, **nicht** idempotent: jeder Aufruf legt einen neuen Eintrag an):
@@ -133,6 +133,7 @@ Zeit nachtragen (10 Credits je Eintrag, **nicht** idempotent: jeder Aufruf legt 
 ```sh
 papierkram time log --task 545 --from 9:00 --to 10:30 -m "Abstimmung mit Kunde" --dry-run -o json --no-input
 papierkram time log --task 545 --from 9:00 --to 10:30 -m "Abstimmung mit Kunde" -o json --no-input
+papierkram time log --task tickets --date gestern --from 14:00 --duration 1h30m --dry-run -o json --no-input
 papierkram time log --task tickets --date gestern --from 14:00 --duration 1h30m -o json --no-input
 ```
 
@@ -147,14 +148,14 @@ papierkram time stop -o json --no-input
 
 `time stop` nach Exit 11 **nie** erneut ausführen: Der Eintrag ist angelegt. Nach Prüfung per `time list --since heute` den Timer mit `papierkram time discard --yes` verwerfen, nur mit Freigabe (die erfasste Zeit geht verloren).
 
-Abrechnen: offene Zeiten eines Projekts lesen und die abrechenbaren Stunden summieren (`billable_duration` in Sekunden):
+Abrechnen: offene Zeiten eines Projekts lesen und die abrechenbaren Stunden summieren. Das CLI nimmt `billable_duration` in Sekunden an; bestätigt ist das erst mit der E2E-Messung ([offene Punkte](https://github.com/Padrio/papierkram-cli/blob/main/docs/offene-punkte.md), Nr. 15). Deshalb die Summe mit den Einzeleinträgen vergleichen und dem Menschen vor dem Anlegen der Rechnung nennen:
 
 ```sh
 PAPIERKRAM_READ_ONLY=1 papierkram time list --project 4963 --state unbilled --all --max-pages 5 -o json --no-input --fields id,started_at,duration,billable_duration,comments
 PAPIERKRAM_READ_ONLY=1 papierkram time list --project 4963 --state unbilled --all --max-pages 5 -o json --no-input --jq '([.entries[].billable_duration // 0] | add // 0) / 3600'
 ```
 
-Aus der Summe eine Rechnung anlegen (Kunde, Zahlungsbedingung und Stundensatz kommen vom Menschen) und danach wie in Ablauf 2 nur nach Bestätigung versenden:
+Aus der bestätigten Summe eine Rechnung anlegen (Kunde, Zahlungsbedingung und Stundensatz kommen vom Menschen) und danach wie in Ablauf 2 nur nach Bestätigung versenden:
 
 ```sh
 papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --item "name=Beratung Oktober,qty=12.5,unit=Stunde,price=100,vat=19" --dry-run -o json --no-input
