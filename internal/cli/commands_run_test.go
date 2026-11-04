@@ -195,7 +195,8 @@ func TestCommandsJSONFlagTypesMatchCLI(t *testing.T) {
 // PAPIERKRAM_READ_ONLY: it is derived from the guard annotations
 // (pk:writes-config, a pk:class other than read_only) and checked by
 // running every example of every command under read-only: a blocked
-// command exits 9 with one of them, a free one with none.
+// command exits 9 with one of them, a free one with none and with exit 0
+// for at least one.
 func TestCommandsJSONReadOnlyBlocking(t *testing.T) {
 	d := decodeCommands(t, runCommandsJSON(t, "--json"))
 	app, _ := apiApp(t)
@@ -214,7 +215,7 @@ func TestCommandsJSONReadOnlyBlocking(t *testing.T) {
 		if *c.Blocked != guarded {
 			t.Errorf("%s: blocked_by_read_only %v, Schutz-Annotationen %v", c.Command, *c.Blocked, guarded)
 		}
-		exit9 := false
+		exit9, exit0 := false, false
 		for _, ex := range c.Examples {
 			words, err := shellWords(ex)
 			if err != nil {
@@ -224,12 +225,21 @@ func TestCommandsJSONReadOnlyBlocking(t *testing.T) {
 			if dryRunnable(c) {
 				words = append(words, "--dry-run")
 			}
-			if code, _ := runLine(t, map[string]string{"PAPIERKRAM_READ_ONLY": "1"}, words); code == 9 {
+			switch code, _ := runLine(t, map[string]string{"PAPIERKRAM_READ_ONLY": "1"}, words); code {
+			case 9:
 				exit9 = true
+			case 0:
+				exit0 = true
 			}
 		}
 		if exit9 != *c.Blocked {
 			t.Errorf("%s: blocked_by_read_only %v, unter PAPIERKRAM_READ_ONLY Exit 9: %v", c.Command, *c.Blocked, exit9)
+		}
+		// a free command really runs under read-only: some example ends
+		// with exit 0, so "no exit 9" is not only the result of earlier
+		// errors
+		if !*c.Blocked && !exit0 {
+			t.Errorf("%s: frei, aber kein Beispiel endet unter PAPIERKRAM_READ_ONLY mit Exit 0", c.Command)
 		}
 	}
 }
