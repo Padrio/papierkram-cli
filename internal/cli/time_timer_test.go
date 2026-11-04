@@ -742,3 +742,19 @@ func TestTimerStatusShowsAccount(t *testing.T) {
 	wantRequests(t, srv, 0)
 	wantRequests(t, other, 0)
 }
+
+// Review N3: time start refuses a base URL that cannot be parsed (exit
+// 2, nothing saved): time stop could never book such a timer.
+func TestTimerStartRefusesInvalidBaseURL(t *testing.T) {
+	app, srv := logApp(t, nine(t))
+	app.Env = envMap(map[string]string{"PAPIERKRAM_BASE_URL": "http://alice:s3cret@127.0.0.1:badport/api/v1", "PAPIERKRAM_TOKEN": "test-token-log"})
+	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 2)
+	wantStderr(t, app, "Basis-URL", "ungültig", "PAPIERKRAM_BASE_URL")
+	if out, errs := bufs(app); strings.Contains(out+errs, "alice") || strings.Contains(out+errs, "s3cret") {
+		t.Errorf("credentials shown: %s%s", out, errs)
+	}
+	if timerFile(t, app, "") != nil {
+		t.Error("state saved")
+	}
+	wantRequests(t, srv, 0)
+}

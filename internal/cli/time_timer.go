@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -131,6 +132,12 @@ func (a *App) runTimeStart(c *cobra.Command, e registry.Entry) error {
 	_, r, err := a.mutationClient(e)
 	if err != nil {
 		return err
+	}
+	if _, err := url.Parse(r.BaseURL); err != nil {
+		// no request can be built with it: time stop could never book
+		// the timer (review N3); the URL is not shown (credentials)
+		return clierr.New(clierr.CodeUsage, "Basis-URL ist ungültig: "+redact.URL(r.BaseURL)+", Timer nicht gestartet",
+			"PAPIERKRAM_BASE_URL bzw. die Subdomain des Kontexts prüfen")
 	}
 	task, user, err := a.timeLogPresets(c, r)
 	if err != nil {
@@ -367,9 +374,10 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 // sameAccount reports whether the base URL a timer was started with is
 // the effective one, both without userinfo (other credentials for the
 // same URL are the same account; the state holds none, N1). A state
-// without base URL (first format) never matches. Two unparseable URLs
-// both become redact.Invalid; no request can be built with them, so
-// nothing is booked into a wrong account.
+// without base URL (first format) never matches. time start refuses an
+// unparseable base URL, so a stored placeholder (redact.Invalid) comes
+// only from an edited file; it parses as a relative path and never
+// matches a base URL, so stop refuses it (exit 2).
 func sameAccount(started, now string) bool {
 	return started != "" && redact.URL(started) == redact.URL(now)
 }
