@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
 )
 
@@ -167,7 +168,10 @@ func NewRootCmd(app *App) *cobra.Command {
 	f.BoolVar(&fl.DryRun, "dry-run", false, "Mutation nur anzeigen, nicht senden")
 	f.BoolVar(&fl.NoColor, "no-color", false, "Farben abschalten")
 	markEnum(f, "output", outputFormats)
+	// the order of config.SelectContext: flag > PAPIERKRAM_CONTEXT >
+	// project file > active_context
 	annotate(f, "context", flagEnv, "PAPIERKRAM_CONTEXT")
+	annotate(f, "context", flagDefaultFrom, config.SourceFlag, config.SourceEnv, config.SourceProjectFile, config.SourceConfig)
 
 	root.AddCommand(newVersionCmd(app))
 	root.AddCommand(newContextCmd(app))

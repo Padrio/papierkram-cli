@@ -106,9 +106,15 @@
               "type": "object",
               "additionalProperties": false,
               "required": ["name", "type", "required", "repeatable", "enum", "description"],
-              "anyOf": [
-                {"description": "ohne alternatives", "not": {"required": ["alternatives"]}},
-                {"description": "alternatives nur bei Pflicht-Flags", "properties": {"required": {"type": "boolean", "enum": [true]}}}
+              "allOf": [
+                {"anyOf": [
+                  {"description": "ohne alternatives", "not": {"required": ["alternatives"]}},
+                  {"description": "alternatives nur bei Pflicht-Flags", "properties": {"required": {"type": "boolean", "enum": [true]}}}
+                ]},
+                {"anyOf": [
+                  {"description": "env gesetzt", "required": ["env"]},
+                  {"description": "keine Quelle env", "properties": {"default_from": {"type": "array", "items": {"type": "string", "not": {"enum": ["env"]}}}}}
+                ]}
               ],
               "properties": {
                 "name": {
@@ -150,13 +156,13 @@
                   "enum": [true]
                 },
                 "default_from": {
-                  "description": "Quellen des Werts in Vorrangreihenfolge, wenn das Flag fehlt (Spec 9.8): flag, env (siehe env), projectfile (.papierkram.toml), context (Standardwert des Kontexts).",
+                  "description": "Quellen des Werts in Vorrangreihenfolge, wenn das Flag fehlt (Spec 9.8, 10.1): flag, env (die Variable in env, dann Pflicht), projectfile (.papierkram.toml), context (Standardwert des Kontexts), config (active_context in config.toml, nur bei --context).",
                   "type": "array",
                   "minItems": 1,
                   "uniqueItems": true,
                   "items": {
                     "type": "string",
-                    "enum": ["flag", "env", "projectfile", "context"]
+                    "enum": ["flag", "env", "projectfile", "context", "config"]
                   }
                 },
                 "alternatives": {
@@ -197,9 +203,15 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["name", "type", "required", "repeatable", "enum", "description"],
-        "anyOf": [
-          {"description": "ohne alternatives", "not": {"required": ["alternatives"]}},
-          {"description": "alternatives nur bei Pflicht-Flags", "properties": {"required": {"type": "boolean", "enum": [true]}}}
+        "allOf": [
+          {"anyOf": [
+            {"description": "ohne alternatives", "not": {"required": ["alternatives"]}},
+            {"description": "alternatives nur bei Pflicht-Flags", "properties": {"required": {"type": "boolean", "enum": [true]}}}
+          ]},
+          {"anyOf": [
+            {"description": "env gesetzt", "required": ["env"]},
+            {"description": "keine Quelle env", "properties": {"default_from": {"type": "array", "items": {"type": "string", "not": {"enum": ["env"]}}}}}
+          ]}
         ],
         "properties": {
           "name": {
@@ -241,13 +253,13 @@
             "enum": [true]
           },
           "default_from": {
-            "description": "Quellen des Werts in Vorrangreihenfolge, wenn das Flag fehlt (Spec 9.8): flag, env (siehe env), projectfile (.papierkram.toml), context (Standardwert des Kontexts).",
+            "description": "Quellen des Werts in Vorrangreihenfolge, wenn das Flag fehlt (Spec 9.8, 10.1): flag, env (die Variable in env, dann Pflicht), projectfile (.papierkram.toml), context (Standardwert des Kontexts), config (active_context in config.toml, nur bei --context).",
             "type": "array",
             "minItems": 1,
             "uniqueItems": true,
             "items": {
               "type": "string",
-              "enum": ["flag", "env", "projectfile", "context"]
+              "enum": ["flag", "env", "projectfile", "context", "config"]
             }
           },
           "alternatives": {

@@ -164,10 +164,15 @@ func TestCommandsJSONMatchesContract(t *testing.T) {
 		"unbekanntes Flag-Feld":       func(d map[string]any) { firstFlag(d)["short"] = "x" },
 		"unbekannter Flag-Typ":        func(d map[string]any) { firstFlag(d)["type"] = "int64" },
 		"enum fehlt":                  func(d map[string]any) { delete(firstFlag(d), "enum") },
-		"unbekannte Quelle":           func(d map[string]any) { firstFlag(d)["default_from"] = []any{"config"} },
-		"globales Flag-Feld":          func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["x"] = true },
-		"falsche Vertragsversion":     func(d map[string]any) { d["version"] = 2.0 },
-		"Beispiel ohne papierkram":    func(d map[string]any) { apiCmd(d, "invoice create")["examples"] = []any{"invoice create"} },
+		"unbekannte Quelle":           func(d map[string]any) { firstFlag(d)["default_from"] = []any{"cache"} },
+		"env fehlt zu default_from": func(d map[string]any) {
+			for _, f := range apiCmd(d, "task list")["flags"].([]any) {
+				delete(f.(map[string]any), "env")
+			}
+		},
+		"globales Flag-Feld":       func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["x"] = true },
+		"falsche Vertragsversion":  func(d map[string]any) { d["version"] = 2.0 },
+		"Beispiel ohne papierkram": func(d map[string]any) { apiCmd(d, "invoice create")["examples"] = []any{"invoice create"} },
 	}
 	for name, fn := range mutate {
 		var doc map[string]any
@@ -527,7 +532,8 @@ func TestCommandsJSONFlags(t *testing.T) {
 				t.Errorf("--output = %+v", f)
 			}
 		case "context":
-			if f.Env != "PAPIERKRAM_CONTEXT" {
+			// flag > PAPIERKRAM_CONTEXT > project file > active_context (config.SelectContext)
+			if f.Env != "PAPIERKRAM_CONTEXT" || !slices.Equal(f.DefaultFrom, []string{"flag", "env", "projectfile", "config"}) {
 				t.Errorf("--context = %+v", f)
 			}
 		case "timeout":
