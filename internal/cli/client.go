@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
-	"github.com/Padrio/papierkram-cli/internal/projectfile"
 )
 
 // lowQuota is the remaining-credit threshold for the stderr warning (spec 8.5).
@@ -69,30 +67,20 @@ func checkContextOptions(r *config.Resolved) error {
 }
 
 // resolveInput collects the inputs of the context selection. The project
-// file is only read when neither --context nor PAPIERKRAM_CONTEXT decide.
+// file is only consulted when neither --context nor PAPIERKRAM_CONTEXT
+// decide.
 func (a *App) resolveInput() (config.ResolveInput, error) {
 	in := config.ResolveInput{FlagContext: a.Flags.Context, Env: a.Env, Store: a.Keyring}
-	if in.FlagContext != "" || a.Env("PAPIERKRAM_CONTEXT") != "" || a.Getwd == nil {
+	if in.FlagContext != "" || a.Env("PAPIERKRAM_CONTEXT") != "" {
 		return in, nil
 	}
-	cwd, err := a.Getwd()
+	f, err := a.projectFile()
 	if err != nil {
-		return in, nil // without a working directory there is no project file
+		return in, err
 	}
-	path, ok := projectfile.Find(cwd)
-	if !ok {
-		return in, nil
+	if f != nil {
+		in.ProjectContext = f.Context
 	}
-	f, err := projectfile.Load(path)
-	if err != nil {
-		var ce *clierr.Error
-		if !errors.As(err, &ce) {
-			ce = clierr.New(clierr.CodeError, err.Error(), "Projektdatei prüfen: "+path)
-			ce.Cause = err
-		}
-		return in, ce
-	}
-	in.ProjectContext = f.Context
 	return in, nil
 }
 

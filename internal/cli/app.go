@@ -79,6 +79,9 @@ type App struct {
 	// resolved is the configuration resolved in this invocation (nil until
 	// then); execute uses its output format for the error output.
 	resolved *config.Resolved
+
+	// pfile is the project file of this invocation (see projectFile).
+	pfile projectFileCache
 }
 
 // NewApp creates an App wired to the operating system.
