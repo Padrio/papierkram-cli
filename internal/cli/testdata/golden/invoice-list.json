@@ -1,0 +1,86 @@
+{
+  "entries": [
+    {
+      "billing": {
+        "city": "Wiesbaden",
+        "company": "Mustermann Automobile GmbH",
+        "contact_person": "John Doe",
+        "country": "Deutschland",
+        "department": "Purchasing",
+        "email": null,
+        "street": "Dotzheimer Str. 36",
+        "ust_idnr": "11/234/34567",
+        "zip": "65185"
+      },
+      "custom_template": {
+        "id": 218
+      },
+      "customer_no": null,
+      "description": "Notes for the invoice",
+      "document_date": "2020-05-01",
+      "down_payment_total_gross": 0,
+      "due_date": "2020-05-31",
+      "gross": false,
+      "id": 441,
+      "invoice_no": null,
+      "name": "My invoice",
+      "outstanding_amount": "226.0",
+      "paid_at_date": null,
+      "record_state": "active",
+      "sent_on": null,
+      "sent_to": null,
+      "sent_via": null,
+      "state": "draft",
+      "supply_date": "2026-08-28 13:41:23 +0200",
+      "total_gross": 226.0,
+      "total_net": 200.0,
+      "total_vat": 26.0,
+      "type": "invoice",
+      "type_of": ""
+    },
+    {
+      "billing": {
+        "city": "Wiesbaden",
+        "company": "Mustermann Automobile GmbH",
+        "contact_person": "Ruben Linnenbaum",
+        "country": "Deutschland",
+        "department": null,
+        "email": null,
+        "street": "Dotzheimer Str. 36",
+        "ust_idnr": "DE0999999999",
+        "zip": "65185"
+      },
+      "custom_template": {
+        "id": 218
+      },
+      "customer_no": null,
+      "description": null,
+      "document_date": "2026-08-28",
+      "down_payment_total_gross": 0,
+      "due_date": "2026-09-11",
+      "gross": false,
+      "id": 442,
+      "invoice_no": null,
+      "name": null,
+      "outstanding_amount": "119.0",
+      "paid_at_date": null,
+      "record_state": "active",
+      "sent_on": null,
+      "sent_to": null,
+      "sent_via": null,
+      "state": "draft",
+      "supply_date": "2026-08-28 13:41:23 +0200",
+      "total_gross": 119.0,
+      "total_net": 100.0,
+      "total_vat": 19.0,
+      "type": "invoice",
+      "type_of": ""
+    }
+  ],
+  "has_more": false,
+  "page": 1,
+  "page_size": 100,
+  "total_entries": 2,
+  "total_pages": 1,
+  "type": "list"
+}

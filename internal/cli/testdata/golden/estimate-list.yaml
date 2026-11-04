@@ -1,0 +1,61 @@
+entries:
+- billing:
+    city: Wiesbaden
+    company: Mustermann Automobile GmbH
+    contact_person: John Doe
+    country: Deutschland
+    department: Purchasing
+    email: null
+    street: Dotzheimer Str. 36
+    ust_idnr: "11/234/34567"
+    zip: "65185"
+  custom_template: null
+  customer_no: null
+  description: Notes for the estimate
+  document_date: "2020-05-01"
+  estimate_no: null
+  gross: false
+  id: 335
+  name: My estimate
+  record_state: active
+  sent_on: null
+  sent_to: null
+  sent_via: null
+  state: draft
+  total_gross: 226.0
+  total_net: 200.0
+  total_vat: 26.0
+  type: estimate
+- billing:
+    city: Wiesbaden
+    company: Mustermann Automobile GmbH
+    contact_person: Rieke Schreck
+    country: Deutschland
+    department: null
+    email: null
+    street: Dotzheimer Str. 36
+    ust_idnr: DE0999999999
+    zip: "65185"
+  custom_template: null
+  customer_no: null
+  description: null
+  document_date: "2026-08-28"
+  estimate_no: null
+  gross: false
+  id: 336
+  name: null
+  record_state: active
+  sent_on: null
+  sent_to: null
+  sent_via: null
+  state: draft
+  total_gross: 0.0
+  total_net: 0.0
+  total_vat: 0.0
+  type: estimate
+has_more: false
+page: 1
+page_size: 100
+total_entries: 2
+total_pages: 1
+type: list

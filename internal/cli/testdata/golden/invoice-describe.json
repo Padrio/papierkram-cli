@@ -1,0 +1,102 @@
+{
+  "billing": {
+    "city": "Wiesbaden",
+    "company": "Mustermann Automobile GmbH",
+    "contact_person": "John Doe",
+    "country": "Deutschland",
+    "department": "Purchasing",
+    "email": null,
+    "street": "Dotzheimer Str. 36",
+    "ust_idnr": "11/234/34567",
+    "zip": "65185"
+  },
+  "contact_person": {
+    "first_name": "John",
+    "id": 1205,
+    "last_name": "Doe",
+    "type": "person"
+  },
+  "custom_template": {
+    "id": 220
+  },
+  "customer": {
+    "contact_type": "customer",
+    "id": 3214,
+    "name": "Mustermann Automobile GmbH",
+    "type": "company"
+  },
+  "customer_no": null,
+  "description": "Notes for the invoice",
+  "document_charges": [],
+  "document_date": "2020-05-01",
+  "down_payment_total_gross": 0,
+  "due_date": "2020-05-31",
+  "gross": false,
+  "id": 459,
+  "invoice_no": null,
+  "line_items": [
+    {
+      "description": "Beschreibung einer Rechnungsposition",
+      "discount_calculated": 0.0,
+      "discount_calculated_gross": 0.0,
+      "discount_percentage": 0.0,
+      "document_charge": 0.0,
+      "name": "Büroartikel",
+      "position_in_group": null,
+      "price": 100.0,
+      "price_gross": 0.0,
+      "proposition": null,
+      "quantity": 1.0,
+      "total_gross": 119.0,
+      "total_net": 100.0,
+      "total_vat": 19.0,
+      "type_of": "position",
+      "unit": "Stunde",
+      "vat_rate": "19%"
+    },
+    {
+      "description": "Beschreibung einer Rechnungsposition",
+      "discount_calculated": 0.0,
+      "discount_calculated_gross": 0.0,
+      "discount_percentage": 0.0,
+      "document_charge": 0.0,
+      "name": "Heizung",
+      "position_in_group": null,
+      "price": 100.0,
+      "price_gross": 0.0,
+      "proposition": null,
+      "quantity": 1.0,
+      "total_gross": 107.0,
+      "total_net": 100.0,
+      "total_vat": 7.0,
+      "type_of": "position",
+      "unit": "Stunde",
+      "vat_rate": "7%"
+    }
+  ],
+  "name": "My invoice",
+  "outstanding_amount": "226.0",
+  "paid_at_date": null,
+  "payment_term": {
+    "id": 1130,
+    "name": "PAYMENT TERM",
+    "template_id": 1129,
+    "type": "payment_term"
+  },
+  "project": {
+    "id": 4576,
+    "name": "My project",
+    "type": "project"
+  },
+  "record_state": "active",
+  "sent_on": null,
+  "sent_to": null,
+  "sent_via": null,
+  "state": "draft",
+  "supply_date": "2026-08-28 13:41:34 +0200",
+  "total_gross": 226.0,
+  "total_net": 200.0,
+  "total_vat": 26.0,
+  "type": "invoice",
+  "type_of": ""
+}

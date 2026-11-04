@@ -1,0 +1,3 @@
+ID   NR.  NAME        STATUS  DATUM       FÄLLIG      BRUTTO  KUNDE                       NETTO  OFFEN  BEZAHLT AM  VERSENDET
+441       My invoice  draft   2020-05-01  2020-05-31  226.0   Mustermann Automobile GmbH  200.0  226.0
+442                   draft   2026-08-28  2026-09-11  119.0   Mustermann Automobile GmbH  100.0  119.0

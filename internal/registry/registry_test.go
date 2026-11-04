@@ -319,6 +319,86 @@ func TestCompanyPersonEntriesRegistered(t *testing.T) {
 	}
 }
 
+func TestInvoiceEstimateEntriesRegistered(t *testing.T) {
+	// Spec 15 no. 30–49. deliver (Task 31) and pdf (Task 32) have their
+	// own handlers: registered as Custom, not built generically.
+	want := []struct {
+		resource, action, opID string
+		class                  Class
+		credits                int
+		custom                 bool
+	}{
+		{"estimate", "list", "ListEstimates", ClassReadOnly, 1, false},
+		{"estimate", "create", "CreateEstimate", ClassCreate, 50, false},
+		{"estimate", "describe", "GetEstimate", ClassReadOnly, 1, false},
+		{"estimate", "update", "UpdateEstimate", ClassUpdate, 1, false},
+		{"estimate", "delete", "DeleteEstimate", ClassDestructive, 1, false},
+		{"estimate", "archive", "ArchiveEstimate", ClassArchive, 1, false},
+		{"estimate", "unarchive", "UnarchiveEstimate", ClassArchive, 1, false},
+		{"estimate", "cancel", "CancelEstimate", ClassDestructive, 1, false},
+		{"estimate", "deliver", "DeliverEstimate", ClassSend, 1, true},
+		{"estimate", "pdf", "GetEstimatePdf", ClassReadOnly, 1, true},
+		{"invoice", "list", "ListInvoices", ClassReadOnly, 1, false},
+		{"invoice", "create", "CreateInvoice", ClassCreate, 50, false},
+		{"invoice", "describe", "GetInvoice", ClassReadOnly, 1, false},
+		{"invoice", "update", "UpdateInvoice", ClassUpdate, 1, false},
+		{"invoice", "delete", "DeleteInvoice", ClassDestructive, 1, false},
+		{"invoice", "archive", "ArchiveInvoice", ClassArchive, 1, false},
+		{"invoice", "unarchive", "UnarchiveInvoice", ClassArchive, 1, false},
+		{"invoice", "cancel", "CancelInvoice", ClassDestructive, 1, false},
+		{"invoice", "deliver", "DeliverInvoice", ClassSend, 1, true},
+		{"invoice", "pdf", "GetInvoicePdf", ClassReadOnly, 1, true},
+	}
+	for _, w := range want {
+		e, ok := Lookup(w.resource, w.action)
+		if !ok || e.OperationID != w.opID || e.Class != w.class || e.Credits != w.credits || e.Custom != w.custom {
+			t.Errorf("Lookup(%q, %q) = %+v, %v; want %s %s %d credits, custom %v", w.resource, w.action, e, ok, w.opID, w.class, w.credits, w.custom)
+		}
+	}
+}
+
+// Spec 4.2, 7.1: invoice and estimate list filter by company, project and
+// document date.
+func TestInvoiceEstimateListFilters(t *testing.T) {
+	want := []struct{ flag, param, kind string }{
+		{"company", "company_id", "id"},
+		{"project", "project_id", "id"},
+		{"from", "document_date_range_start", "date"},
+		{"to", "document_date_range_end", "date"},
+	}
+	for _, resource := range []string{"invoice", "estimate"} {
+		e, _ := Lookup(resource, "list")
+		if len(e.Filters) != len(want) {
+			t.Fatalf("%s list: filters = %+v, want %d", resource, e.Filters, len(want))
+		}
+		for i, w := range want {
+			if f := e.Filters[i]; f.Flag != w.flag || f.Param != w.param || f.Kind != w.kind || f.Help == "" {
+				t.Errorf("%s list: filter %d = %+v, want --%s → %s (%s)", resource, i, f, w.flag, w.param, w.kind)
+			}
+		}
+	}
+}
+
+// Spec 10.3: the default columns of invoice and estimate.
+func TestInvoiceEstimateColumns(t *testing.T) {
+	want := map[string][]string{
+		"invoice":  {"id", "invoice_no", "name", "state", "document_date", "due_date", "total_gross", "billing.company"},
+		"estimate": {"id", "estimate_no", "name", "state", "document_date", "total_gross", "billing.company"},
+	}
+	for resource, paths := range want {
+		for _, action := range []string{"list", "describe"} {
+			e, _ := Lookup(resource, action)
+			var got []string
+			for _, c := range e.Columns.Table {
+				got = append(got, c.Path)
+			}
+			if !slices.Equal(got, paths) {
+				t.Errorf("%s %s: table columns %v, want %v", resource, action, got, paths)
+			}
+		}
+	}
+}
+
 // Spec 10.3: one column customer_no/supplier_no, the supplier number when
 // there is no customer number.
 func TestCompanyNumberColumn(t *testing.T) {

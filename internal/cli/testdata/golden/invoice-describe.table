@@ -1,0 +1,9 @@
+FELD    WERT
+ID      459
+NR.
+NAME    My invoice
+STATUS  draft
+DATUM   2020-05-01
+FÄLLIG  2020-05-31
+BRUTTO  226.0
+KUNDE   Mustermann Automobile GmbH

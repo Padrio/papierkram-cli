@@ -1,0 +1,90 @@
+{
+  "billing": {
+    "city": "Wiesbaden",
+    "company": "Mustermann Automobile GmbH",
+    "contact_person": "John Doe",
+    "country": "Deutschland",
+    "department": "Purchasing",
+    "email": null,
+    "street": "Dotzheimer Str. 36",
+    "ust_idnr": "11/234/34567",
+    "zip": "65185"
+  },
+  "contact_person": {
+    "first_name": "John",
+    "id": 1116,
+    "last_name": "Doe",
+    "type": "person"
+  },
+  "custom_template": null,
+  "customer": {
+    "contact_type": "customer",
+    "id": 3052,
+    "name": "Mustermann Automobile GmbH",
+    "type": "company"
+  },
+  "customer_no": null,
+  "description": "Notes for the estimate",
+  "document_charges": [],
+  "document_date": "2020-05-01",
+  "estimate_no": null,
+  "gross": false,
+  "id": 349,
+  "line_items": [
+    {
+      "description": "Beschreibung einer Rechnungsposition",
+      "discount_calculated": 0.0,
+      "discount_calculated_gross": 0.0,
+      "discount_percentage": 0.0,
+      "document_charge": 0.0,
+      "document_charge_gross": 0.0,
+      "name": "Büroartikel",
+      "position_in_group": null,
+      "price": 100.0,
+      "price_gross": 0.0,
+      "proposition": null,
+      "quantity": 1.0,
+      "total_gross": 119.0,
+      "total_net": 100.0,
+      "total_vat": 19.0,
+      "type_of": "position",
+      "unit": "Stunde",
+      "vat_rate": "19%"
+    },
+    {
+      "description": "Beschreibung einer Rechnungsposition",
+      "discount_calculated": 0.0,
+      "discount_calculated_gross": 0.0,
+      "discount_percentage": 0.0,
+      "document_charge": 0.0,
+      "document_charge_gross": 0.0,
+      "name": "Heizung",
+      "position_in_group": null,
+      "price": 100.0,
+      "price_gross": 0.0,
+      "proposition": null,
+      "quantity": 1.0,
+      "total_gross": 107.0,
+      "total_net": 100.0,
+      "total_vat": 7.0,
+      "type_of": "position",
+      "unit": "Stunde",
+      "vat_rate": "7%"
+    }
+  ],
+  "name": "My estimate",
+  "project": {
+    "id": 4316,
+    "name": "My project",
+    "type": "project"
+  },
+  "record_state": "active",
+  "sent_on": null,
+  "sent_to": null,
+  "sent_via": null,
+  "state": "draft",
+  "total_gross": 226.0,
+  "total_net": 200.0,
+  "total_vat": 26.0,
+  "type": "estimate"
+}
