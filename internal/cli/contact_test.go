@@ -346,6 +346,16 @@ func TestPersonCreateSendsBoolFlagsAsStrings(t *testing.T) {
 	wantBody(t, srv, "POST", "/contact/companies/1/persons", `{"first_name":"Anna","last_name":"Groß","flagged":"true","default":"false"}`)
 }
 
+// The API answers default as a boolean (measured 2026-11-04) but takes a
+// string: the round trip describe -o json | update --input - sends it as
+// "true" again.
+func TestPersonUpdateInputSendsBooleanDefaultAsString(t *testing.T) {
+	app, srv := apiApp(t)
+	app.In = strings.NewReader(`{"default":true,"flagged":false}`)
+	wantExit(t, app, Run(app, []string{"person", "update", "5", "--company", "7", "--input", "-", "-o", "json"}), 0)
+	wantBody(t, srv, "PUT", "/contact/companies/7/persons/5", `{"default":"true","flagged":"false"}`)
+}
+
 func TestPersonUpdateSendsOnlyChangedFields(t *testing.T) {
 	app, srv := apiApp(t)
 	wantExit(t, app, Run(app, []string{"person", "update", "5", "--company", "7", "--position", "Einkauf", "-o", "json"}), 0)

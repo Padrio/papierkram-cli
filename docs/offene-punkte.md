@@ -38,7 +38,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 23 | Antwort von `GET /info` ohne Schema | JSON wird unverändert ausgegeben | `TestE2E_Carries/13_InfoStructure` | Messung |
 | 24 | `deliver` antwortet mit leerem Body | leerer 2xx-Body ist Erfolg | `TestE2E_DeliverPdfEmptyBody` | hart (2xx, Exit 0); Body: Messung |
 | 25 | Quota-Header `X-Remaining-Quota`, `X-Consumed-Quota` | vorhanden und ganzzahlig | `TestE2E_QuotaHeadersPresent` | hart |
-| 26 | Person `default` als String | `"true"`/`"false"` | `TestE2E_PersonDefaultIsString` | hart |
+| 26 | Person `default` als String | Request `"true"`/`"false"`; Antwort Boolean (gemessen) | `TestE2E_PersonDefaultIsString` | hart |
 | 27 | **Entscheidung offen (Pascal):** `PAPIERKRAM_COMPANY`/`company` aus der Projektdatei als Default für `person … --company`? | keine Voreinstellung; nur Anzeige in `local show` | – | keine API-Frage, nicht gemessen |
 | 28 | `document_date` Pflicht beim Anlegen | Angebot: Pflicht (gemessen); Rechnung: nicht Pflicht | `TestE2E_DeliverPdfEmptyBody` (Angebot, indirekt) | Angebot erledigt; Rechnung **offen**, nicht gemessen |
 
@@ -202,6 +202,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Die Spec typisiert `default` (und `flagged`) der Kontaktperson als String.
 - **Annahme:** Das CLI sendet `"true"`/`"false"` als String.
 - **E2E:** `TestE2E_PersonDefaultIsString` (hart).
+- **Gemessen 2026-11-04 (erster Live-Lauf):** `person create --default` (gesendet als String `"true"`) wurde angenommen und gespeichert; die Antwort liefert `default` als **Boolean** `true` (JSON-Typ `boolean`), wie es das Response-Schema schon sagt. Der Request bleibt laut Spec ein String; ein Rundlauf `person describe -o json | person update --input -` wandelt das Boolean wieder in `"true"`/`"false"` um.
 
 ### 27. Entscheidung offen (Pascal): `company` als Voreinstellung?
 

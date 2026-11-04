@@ -415,7 +415,7 @@ func near(a, b float64) bool {
 
 // Spec 4.4: person default is a string ("true"); the CLI sends --default
 // as "true". Hard: accepted and stored as true; measured: the response
-// type.
+// type (run 1, 2026-11-04: boolean).
 func TestE2E_PersonDefaultIsString(t *testing.T) {
 	s := live(t)
 	pers := s.person(t)
