@@ -119,7 +119,7 @@ papierkram voucher create --name "Büromaterial" --provenance domestic --credito
 | 9 | `read_only` | Schreibschutz; nichts gesendet | abbrechen und melden; den Schutz nie umgehen (kein anderer Kontext, keine Variable ändern) |
 | 10 | `network` | Netzwerkfehler beim Lesen oder **bevor** eine Änderung gesendet wurde | später erneut versuchen; die Änderung ist nicht angekommen |
 | 11 | `partial` | mehrstufiger Befehl teilweise ausgeführt | `hint` lesen, prüfen, dann höchstens den genannten Nachholschritt; nie den ganzen Befehl (siehe unten) |
-| 12 | `outcome_unknown` | Verbindung brach ab, **nachdem** eine Änderung gesendet wurde | **nicht wiederholen**: `hint` lesen, mit `describe`/`list` prüfen, ob die Änderung angekommen ist (siehe unten) |
+| 12 | `outcome_unknown` | Verbindung brach ab, **nachdem** eine Änderung gesendet wurde, oder Weiterleitung (3xx) auf eine Änderung (das CLI folgt ihr nicht) | **nicht wiederholen**: `hint` lesen, mit `describe`/`list` prüfen, ob die Änderung angekommen ist (siehe unten) |
 
 ### Exit 11 und 12 Schritt für Schritt
 

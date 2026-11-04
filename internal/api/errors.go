@@ -80,6 +80,23 @@ func classifyStatus(status int) (clierr.Code, string, string) {
 	}
 }
 
+// isRedirect reports a 3xx status.
+func isRedirect(status int) bool { return status >= 300 && status <= 399 }
+
+// redirectError is the error of a mutation answered with a redirect, which
+// redirectPolicy does not follow. The server may have acted before
+// redirecting (Post/Redirect/Get), so the outcome is unknown. The status
+// is only in the message: outcome_unknown carries no http_status (error
+// contract, docs/schemas/error.json), there was no answer to the mutation
+// itself.
+func redirectError(method, path string, status int) *clierr.Error {
+	return &clierr.Error{
+		Code:    clierr.CodeOutcomeUnknown,
+		Message: fmt.Sprintf("%s %s mit einer Weiterleitung beantwortet (HTTP %d), ihr wurde nicht gefolgt", method, path, status),
+		Hint:    hintOutcomeUnknown,
+	}
+}
+
 // transportError classifies a failed exchange. sent reports whether the
 // request may have reached the server (fully written or a response
 // started). Then a mutation's outcome is unknown; otherwise, and always

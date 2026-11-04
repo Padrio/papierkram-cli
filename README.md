@@ -338,7 +338,7 @@ completion_lookup = false
 | 9 | `read_only` | Schreibschutz (`PAPIERKRAM_READ_ONLY` oder `read_only` im Kontext) |
 | 10 | `network` | Zeitüberschreitung, DNS, TLS bei einem Lesezugriff oder bevor eine Änderung gesendet wurde; Abbruch einer Rückfrage mit Strg+C |
 | 11 | `partial` | mehrstufiger Befehl teilweise ausgeführt; Ausgabe nennt, was fehlt, und den Befehl zum Nachholen |
-| 12 | `outcome_unknown` | Verbindung brach ab, **nachdem** eine Änderung gesendet wurde: vor einer Wiederholung mit `describe`/`list` prüfen |
+| 12 | `outcome_unknown` | Verbindung brach ab, **nachdem** eine Änderung gesendet wurde, oder die API beantwortete die Änderung mit einer Weiterleitung (3xx), der das CLI nicht folgt: vor einer Wiederholung mit `describe`/`list` prüfen |
 
 Fehler stehen auf stderr als `Fehler: …` mit `Hinweis: …` und ggf. `Correlation-ID: …`; mit `-o json` oder `--jq` folgt als letzte Zeile eine kompakte JSON-Zeile, mit `-o yaml` ein YAML-Block (`error:` …) am Ende (Schema: [docs/schemas/error.json](docs/schemas/error.json); Auswertung siehe [AGENTS.md](AGENTS.md#fehler)). Lesende Anfragen (GET) wiederholt das CLI bei Netzwerk- und Serverfehlern bis zu zweimal, Änderungen und 429 nie.
 

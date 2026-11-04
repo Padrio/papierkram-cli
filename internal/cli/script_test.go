@@ -129,6 +129,7 @@ func TestScripts(t *testing.T) {
 			"papierkram": cmdPapierkram,
 			"pkexit":     cmdPKExit,
 			"mock":       cmdMock,
+			"mockredir":  cmdMockRedirect,
 			"mockreq":    cmdMockReq,
 			"mockbody":   cmdMockBody,
 			"jsonschema": cmdJSONSchema,
@@ -227,6 +228,18 @@ func cmdMock(ts *testscript.TestScript, neg bool, args []string) {
 		body = []byte(ts.ReadFile(args[3]))
 	}
 	stateOf(ts).srv.On(args[0], args[1], status, body)
+}
+
+// cmdMockRedirect lets the mock answer with a redirect to another path of
+// the mock API: mockredir METHOD PATH STATUS TARGET (both without /api/v1).
+func cmdMockRedirect(ts *testscript.TestScript, neg bool, args []string) {
+	if neg || len(args) != 4 {
+		ts.Fatalf("Verwendung: mockredir METHOD PATH STATUS TARGET")
+	}
+	status, err := strconv.Atoi(args[2])
+	ts.Check(err)
+	srv := stateOf(ts).srv
+	srv.On(args[0], args[1], status, nil, "Location", srv.URL()+args[3])
 }
 
 // cmdMockReq checks the number of requests the mock received: mockreq

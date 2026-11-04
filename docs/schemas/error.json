@@ -65,7 +65,7 @@
           "properties": {"code": {"type": "string", "enum": ["partial"]}, "exit_code": {"type": "integer", "enum": [11]}}
         },
         {
-          "description": "Exit 12: Ergebnis unbekannt, die Verbindung brach ab, nachdem POST, PUT oder DELETE gesendet wurde; vor einer Wiederholung per describe oder list prüfen. Keine vollständige Antwort, daher kein http_status.",
+          "description": "Exit 12: Ergebnis unbekannt, die Verbindung brach ab, nachdem POST, PUT oder DELETE gesendet wurde, oder die API beantwortete die Änderung mit einer Weiterleitung (3xx), der das CLI nicht folgt (der Status steht dann nur in message); vor einer Wiederholung per describe oder list prüfen. Keine vollständige Antwort auf die Änderung, daher kein http_status.",
           "not": {"required": ["http_status"]},
           "properties": {"code": {"type": "string", "enum": ["outcome_unknown"]}, "exit_code": {"type": "integer", "enum": [12]}}
         }

@@ -418,7 +418,7 @@ read_only = true
 | 9 | `read_only` | Schreibversuch im `read_only`-Kontext | „anderen Kontext wählen“ |
 | 10 | `network` | Timeout, DNS, TLS **bevor** eine Mutation gesendet wurde, oder bei GET | „Subdomain und Verbindung prüfen“ |
 | 11 | `partial` | mehrstufiges Command teilweise erfolgreich (9.3) | Ausgabe nennt erledigte/fehlgeschlagene Schritte und den Befehl zum Nachholen; **nicht** das ganze Command wiederholen |
-| 12 | `outcome_unknown` | Timeout/Verbindungsabbruch, **nachdem** POST/PUT/DELETE gesendet wurde | „Ergebnis unbekannt – vor Wiederholung per `describe`/`list` prüfen“ |
+| 12 | `outcome_unknown` | Timeout/Verbindungsabbruch, **nachdem** POST/PUT/DELETE gesendet wurde, oder Weiterleitung (3xx) auf POST/PUT/DELETE (wird nicht verfolgt) | „Ergebnis unbekannt – vor Wiederholung per `describe`/`list` prüfen“ |
 
 **Ergebnis unbekannt bei `deliver`** **[Call]**: Bricht die Verbindung nach dem Senden ab, liest das CLI den Beleg einmal nach. Ist `sent_on` bzw. die Belegnummer gesetzt → Exit 0 mit Warnung; sonst Exit 12. Bei `create` wird nicht automatisch gesucht (kein eindeutiges Merkmal); Exit 12.
 

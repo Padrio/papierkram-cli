@@ -1,0 +1,65 @@
+# A redirect (3xx) answer to a mutation is not followed: net/http would
+# send it again as a GET (301-303) or repeat it elsewhere (307, 308) and
+# report that answer as success. The server may have acted, so it is
+# outcome_unknown (exit 12) after exactly one request. GET still follows.
+
+# 302 on DELETE: not turned into a GET, no false {"deleted":true}
+mockredir DELETE /projects/7 302 /projects/7
+! papierkram project delete 7 --yes -o json --no-input
+pkexit 12
+! stdout .
+jsonschema -last stderr error
+stderr '"code":"outcome_unknown"'
+stderr 'mit einer Weiterleitung beantwortet \(HTTP 302\)'
+! stderr http_status
+stderr '^Hinweis: Ergebnis unbekannt – vor Wiederholung per describe/list prüfen$'
+mockreq 1
+mockreq 1 DELETE /projects/7
+
+# 302 on PUT: the unchanged object of the GET is not reported as updated
+mockredir PUT /projects/8 302 /projects/8
+! papierkram project update 8 --name Neu -o json --no-input
+pkexit 12
+! stdout .
+stderr 'mit einer Weiterleitung beantwortet \(HTTP 302\)'
+! stderr http_status
+mockreq 2
+mockreq 1 PUT /projects/8
+mockreq 0 GET
+
+# 307 on POST: not sent a second time to the new location
+mockredir POST /contact/companies 307 /contact/companies/9
+! papierkram company create --name 'Muster GmbH' --contact-type customer -o json --no-input
+pkexit 12
+jsonschema -last stderr error
+stderr 'mit einer Weiterleitung beantwortet \(HTTP 307\)'
+! stderr http_status
+mockreq 3
+mockreq 1 POST /contact/companies
+
+# 307 on papierkram api POST
+mockredir POST /projects 307 /projects/10
+! papierkram api POST /projects --input project.json -o json --no-input
+pkexit 12
+stderr '"code":"outcome_unknown"'
+mockreq 4
+mockreq 0 GET
+
+# 302 on deliver: the readback decides (not sent today) and keeps its
+# describe hint
+mockredir POST /income/invoices/1/deliver 302 /income/invoices/1
+! papierkram invoice deliver 1 --via pdf --yes -o json --no-input
+pkexit 12
+stderr '"code":"outcome_unknown"'
+stderr 'papierkram invoice describe 1'
+mockreq 1 POST /income/invoices/1/deliver
+mockreq 1 GET /income/invoices/1
+
+# GET follows the redirect
+mockredir GET /projects/11 302 /projects/12
+papierkram project describe 11 -o json --no-input
+mockreq 1 GET /projects/11
+mockreq 1 GET /projects/12
+
+-- project.json --
+{"name": "Neu", "customer": {"id": 3}}

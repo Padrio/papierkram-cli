@@ -87,6 +87,9 @@ func (c *Client) send(ctx context.Context, req *http.Request, attempt int) (*Res
 	data, err := io.ReadAll(hr.Body)
 	c.debugResponse(hr, data, quota, time.Since(start), err)
 	resp := &Response{Status: hr.StatusCode, Header: hr.Header, Body: data, Quota: quota}
+	if isRedirect(hr.StatusCode) && !safeMethod(req.Method) {
+		return resp, redirectError(req.Method, req.URL.Path, hr.StatusCode)
+	}
 	if hr.StatusCode < 200 || hr.StatusCode > 299 {
 		// The status decides, even if the body was cut off: a truncated
 		// 429 must not turn into a retryable network error.

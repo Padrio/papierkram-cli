@@ -40,6 +40,8 @@ type Options struct {
 	// Timeout is the deadline per attempt; zero means DefaultTimeout.
 	Timeout time.Duration
 	// HTTP is the client used to send requests; nil means a new http.Client.
+	// New copies it and sets its own redirect policy on the copy (see
+	// redirectPolicy); the given client is never changed.
 	HTTP *http.Client
 	// Debug receives the redacted request log (--debug); nil disables it.
 	Debug io.Writer
@@ -84,12 +86,37 @@ func New(o Options) *Client {
 	if o.Sleep == nil {
 		o.Sleep = time.Sleep
 	}
-	hc := o.HTTP
-	if hc == nil {
-		hc = &http.Client{}
+	hc := &http.Client{}
+	if o.HTTP != nil {
+		*hc = *o.HTTP // a copy: the caller's client may be http.DefaultClient
 	}
+	hc.CheckRedirect = redirectPolicy(hc.CheckRedirect)
 	base, _ := url.Parse(o.BaseURL) // nil on error, reported by CallRaw
 	return &Client{opts: o, base: base, http: hc}
+}
+
+// maxRedirects is the limit of net/http's default policy.
+const maxRedirects = 10
+
+// redirectPolicy follows redirects only for GET and HEAD, with the policy
+// of the caller's client (next) or the default one. A redirect of any
+// other method is not followed: net/http would send POST, PUT and DELETE
+// again as a body-less GET (301-303) or repeat them elsewhere (307, 308)
+// and report that answer as the mutation's. The 3xx itself comes back and
+// send maps it to outcome_unknown.
+func redirectPolicy(next func(*http.Request, []*http.Request) error) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if m := via[0].Method; m != http.MethodGet && m != http.MethodHead {
+			return http.ErrUseLastResponse
+		}
+		if next != nil {
+			return next(req, via)
+		}
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("nach %d Weiterleitungen abgebrochen", maxRedirects)
+		}
+		return nil
+	}
 }
 
 // Call sends operation opID. A non-nil body is sent as JSON; a nil body
