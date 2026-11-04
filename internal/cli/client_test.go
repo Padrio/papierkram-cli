@@ -243,7 +243,7 @@ func TestQuotaWarningOncePerInvocation(t *testing.T) {
 	if n := strings.Count(errs, "Warnung: Restkontingent niedrig: 50 Credits"); n != 1 {
 		t.Errorf("Warnung %d-mal, erwartet 1: %q", n, errs)
 	}
-	if app.quota != (api.Quota{Remaining: 50, Consumed: 1, Known: true}) {
+	if app.quota != (api.Quota{Remaining: 50, RequestCost: 1, Known: true, CostKnown: true}) {
 		t.Errorf("quota = %+v", app.quota)
 	}
 }

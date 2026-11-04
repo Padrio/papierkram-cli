@@ -6,11 +6,16 @@ import (
 	"strings"
 )
 
-// Quota is the monthly credit state reported by the API (spec 4.3).
+// Quota is the credit state reported with a response (spec 4.3):
+// Remaining is the monthly credit left (X-Remaining-Quota); RequestCost
+// is what the answered request cost (X-Consumed-Quota, measured live
+// 2026-11-04: the cost of that one request, not a monthly consumption).
 type Quota struct {
-	Remaining, Consumed int
+	Remaining, RequestCost int
 	// Known is true when X-Remaining-Quota was present and valid.
 	Known bool
+	// CostKnown is true when X-Consumed-Quota was present and valid.
+	CostKnown bool
 }
 
 // parseQuota reads X-Remaining-Quota and X-Consumed-Quota. X-RateLimit-Remaining
@@ -21,7 +26,7 @@ func parseQuota(h http.Header) Quota {
 		q.Remaining, q.Known = n, true
 	}
 	if n, ok := headerInt(h, "X-Consumed-Quota"); ok {
-		q.Consumed = n
+		q.RequestCost, q.CostKnown = n, true
 	}
 	return q
 }

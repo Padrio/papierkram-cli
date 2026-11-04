@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
@@ -370,10 +371,14 @@ type loginJSON struct {
 	TokenSource string `json:"token_source"`
 }
 
+// quotaJSON is the quota of auth status: the credits left and what the
+// status call itself cost (X-Consumed-Quota is the cost of one request,
+// not a monthly consumption; null when the header is missing). The
+// consumption of the month is not reported by the API.
 type quotaJSON struct {
-	Remaining int  `json:"remaining"`
-	Consumed  int  `json:"consumed"`
-	Known     bool `json:"known"`
+	Remaining   int  `json:"remaining"`
+	RequestCost *int `json:"request_cost"`
+	Known       bool `json:"known"`
 }
 
 type statusJSON struct {
@@ -385,6 +390,16 @@ type statusJSON struct {
 	ReadOnly       bool      `json:"read_only"`
 	ReadOnlySource string    `json:"read_only_source"`
 	Quota          quotaJSON `json:"quota"`
+}
+
+// quotaOf is the quota of auth status from the last quota of a response.
+func quotaOf(q api.Quota) quotaJSON {
+	out := quotaJSON{Remaining: q.Remaining, Known: q.Known}
+	if q.CostKnown {
+		cost := q.RequestCost
+		out.RequestCost = &cost
+	}
+	return out
 }
 
 func newAuthStatusCmd(app *App) *cobra.Command {
@@ -411,7 +426,7 @@ func newAuthStatusCmd(app *App) *cobra.Command {
 				Context: r.Context, ContextSource: r.ContextSource,
 				Subdomain: r.Subdomain, BaseURL: printable(redact.URL(r.BaseURL)), TokenSource: r.TokenSource,
 				ReadOnly: r.ReadOnly, ReadOnlySource: r.ReadOnlySource,
-				Quota: quotaJSON{app.quota.Remaining, app.quota.Consumed, app.quota.Known},
+				Quota: quotaOf(app.quota),
 			}
 			if o := app.outputOptions(c.Context(), app.outputFormat(r)); !ownText(o) {
 				if err := output.RenderValue(o, st, output.Columns{}); err != nil {
@@ -459,7 +474,10 @@ func (a *App) writeStatusText(st statusJSON) error {
 	}
 	quota := "unbekannt"
 	if st.Quota.Known {
-		quota = fmt.Sprintf("%d Credits übrig (verbraucht: %d)", st.Quota.Remaining, st.Quota.Consumed)
+		quota = fmt.Sprintf("%d Credits übrig", st.Quota.Remaining)
+		if st.Quota.RequestCost != nil {
+			quota += fmt.Sprintf(" (Kosten dieser Abfrage: %s)", creditsText(*st.Quota.RequestCost))
+		}
 	}
 	tw := tabwriter.NewWriter(a.Out, 0, 4, 2, ' ', 0)
 	for _, row := range [][2]string{

@@ -103,7 +103,7 @@ func TestAuthStatusWithoutTokenYAML(t *testing.T) {
 		t.Errorf("exit = %d, want 3", code)
 	}
 	out, errs := bufs(app)
-	if !strings.HasPrefix(out, "context: a\ncontext_source: config\nsubdomain: firma-a\n") || !strings.Contains(out, "quota:\n  remaining: 0\n  consumed: 0\n  known: false\n") {
+	if !strings.HasPrefix(out, "context: a\ncontext_source: config\nsubdomain: firma-a\n") || !strings.Contains(out, "quota:\n  remaining: 0\n  request_cost: null\n  known: false\n") {
 		t.Errorf("stdout:\n%s", out)
 	}
 	if !strings.HasSuffix(errs, "error:\n  code: auth\n  message: Kein Token für Kontext \"a\" gespeichert\n  hint: \"Anmelden: papierkram auth login --context a (oder PAPIERKRAM_TOKEN setzen)\"\n  exit_code: 3\n") {

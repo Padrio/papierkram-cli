@@ -197,7 +197,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** `X-Remaining-Quota` und `X-Consumed-Quota` fehlen in der Spec.
 - **Annahme:** Beide kommen mit jeder Antwort als ganze Zahl; `X-RateLimit-Remaining` wird bewusst ignoriert.
 - **E2E:** `TestE2E_QuotaHeadersPresent` (hart).
-- **Gemessen 2026-11-04 (erster Live-Lauf):** Beide Header kommen. `X-Consumed-Quota` nennt die Kosten **der einen beantworteten Anfrage** (z. B. 1 für eine Liste oder `GET /info`), keinen laufenden Monatszähler; `X-Remaining-Quota` ist das Restkontingent. Auch eine abgelehnte Anfrage kostet: drei mit 422 abgelehnte Anlagen (2 Angebote, 1 Beleg) kosteten je 50 Credits. `auth status` zeigt den Header weiterhin als „verbraucht: N“; N ist damit nur der Preis der Statusabfrage selbst.
+- **Gemessen 2026-11-04 (erster Live-Lauf):** Beide Header kommen. `X-Consumed-Quota` nennt die Kosten **der einen beantworteten Anfrage** (z. B. 1 für eine Liste oder `GET /info`), keinen laufenden Monatszähler; `X-Remaining-Quota` ist das Restkontingent. Auch eine abgelehnte Anfrage kostet: drei mit 422 abgelehnte Anlagen (2 Angebote, 1 Beleg) kosteten je 50 Credits. `auth status` nennt ihn deshalb „Kosten dieser Abfrage“ (JSON `quota.request_cost`, früher `consumed`/„verbraucht“), `--debug` ergänzt „(Kosten dieser Anfrage)“; einen Monatsverbrauch meldet die API nicht.
 
 ### 26. Person `default` als String
 

@@ -148,7 +148,7 @@ func TestClientEndToEnd(t *testing.T) {
 	if env, _ := got.(map[string]any); env["type"] != "list" {
 		t.Errorf("want list envelope, got %v", env["type"])
 	}
-	if resp.Quota != (api.Quota{Remaining: 9000, Consumed: 1, Known: true}) {
+	if resp.Quota != (api.Quota{Remaining: 9000, RequestCost: 1, Known: true, CostKnown: true}) {
 		t.Errorf("quota = %+v", resp.Quota)
 	}
 

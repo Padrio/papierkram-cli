@@ -19,7 +19,7 @@ func TestR21_QuotaFromRemainingHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Call: %v", err)
 	}
-	want := Quota{Remaining: 42, Consumed: 7, Known: true}
+	want := Quota{Remaining: 42, RequestCost: 7, Known: true, CostKnown: true}
 	if resp.Quota != want {
 		t.Errorf("Quota = %+v, want %+v", resp.Quota, want)
 	}
@@ -52,10 +52,10 @@ func TestParseQuota(t *testing.T) {
 		want      Quota
 	}{
 		{"none", "", "", Quota{}},
-		{"both", "10000", "0", Quota{Remaining: 10000, Consumed: 0, Known: true}},
+		{"both", "10000", "0", Quota{Remaining: 10000, RequestCost: 0, Known: true, CostKnown: true}},
 		{"remaining only", "5", "", Quota{Remaining: 5, Known: true}},
-		{"consumed only", "", "3", Quota{Consumed: 3}},
-		{"invalid remaining", "abc", "3", Quota{Consumed: 3}},
+		{"consumed only", "", "3", Quota{RequestCost: 3, CostKnown: true}},
+		{"invalid remaining", "abc", "3", Quota{RequestCost: 3, CostKnown: true}},
 		{"invalid consumed", "5", "x", Quota{Remaining: 5, Known: true}},
 		{"whitespace", " 12 ", "", Quota{Remaining: 12, Known: true}},
 	}
@@ -80,7 +80,7 @@ func TestQuotaOnErrorResponse(t *testing.T) {
 	var seen Quota
 	c := newTestClient(t, rec, func(o *Options) { o.OnQuota = func(q Quota) { seen = q } })
 	resp, _ := c.Call(context.Background(), "ListInvoices", nil, nil, nil)
-	want := Quota{Remaining: 0, Consumed: 10000, Known: true}
+	want := Quota{Remaining: 0, RequestCost: 10000, Known: true, CostKnown: true}
 	if resp == nil || resp.Quota != want || seen != want {
 		t.Errorf("resp quota %+v, OnQuota %+v, want %+v", resp, seen, want)
 	}

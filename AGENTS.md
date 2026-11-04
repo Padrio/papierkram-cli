@@ -191,7 +191,7 @@ Fehler auswerten: Exit-Code lesen; mit `-o json` (wie in allen Beispielen hier) 
 
 ## Credits
 
-Papierkram berechnet Monats-Credits; danach 429 (Exit 6). `credits` in `commands --json` und in der `--dry-run`-Ausgabe nennt die Kosten. Faustregeln: Rechnung, Angebot, Beleg anlegen 50; anderes Anlegen und Beleg-Upload 10; alles andere 1 je Anfrage (Listen je Seite). `deliver` kostet 2 (Versand und Nachlesen), `voucher create --file` 60, `invoice create --from-estimate` 51, `auth status` 1. `--all` kostet 1 je Seite; immer mit `--max-pages` begrenzen. Lokale Befehle (`commands`, `schema`, `context`, `local`, `version`) kosten nichts. Fällt das Restkontingent unter 100, steht eine Warnung auf stderr. `papierkram auth status -o json` zeigt das Restkontingent unter `quota` (1 Credit).
+Papierkram berechnet Monats-Credits; danach 429 (Exit 6). `credits` in `commands --json` und in der `--dry-run`-Ausgabe nennt die Kosten. Faustregeln: Rechnung, Angebot, Beleg anlegen 50; anderes Anlegen und Beleg-Upload 10; alles andere 1 je Anfrage (Listen je Seite). `deliver` kostet 2 (Versand und Nachlesen), `voucher create --file` 60, `invoice create --from-estimate` 51, `auth status` 1. `--all` kostet 1 je Seite; immer mit `--max-pages` begrenzen. Lokale Befehle (`commands`, `schema`, `context`, `local`, `version`) kosten nichts. Fällt das Restkontingent unter 100, steht eine Warnung auf stderr. `papierkram auth status -o json` zeigt das Restkontingent unter `quota.remaining` (1 Credit); `quota.request_cost` sind die Kosten genau dieser Statusabfrage (Header `X-Consumed-Quota`), kein Monatsverbrauch, und `null`, wenn die API den Header nicht sendet.
 
 ## Weitere Hinweise
 

@@ -85,7 +85,7 @@ func TestDebugRequestAndResponse(t *testing.T) {
 		"> User-Agent: papierkram-cli/",
 		"> {\"name\":\"Ä\"}\n",
 		"< X-Remaining-Quota: 9000\n",
-		"< X-Consumed-Quota: 1000\n",
+		"< X-Consumed-Quota: 1000 (Kosten dieser Anfrage)\n",
 		"< {\"type\":\"list\",\n< \"page\":1}\n",
 	} {
 		if !strings.Contains(out, want) {

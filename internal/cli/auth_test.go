@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -391,9 +392,9 @@ func TestAuthStatusTokenSources(t *testing.T) {
 			}
 			want := statusJSON{
 				Context: "a", ContextSource: "config", Subdomain: "firma-a", BaseURL: srv.URL(),
-				TokenSource: tt.want, Quota: quotaJSON{Remaining: 8000, Consumed: 2000, Known: true},
+				TokenSource: tt.want, Quota: quotaJSON{Remaining: 8000, RequestCost: intPtr(2000), Known: true},
 			}
-			if got != want {
+			if !reflect.DeepEqual(got, want) {
 				t.Errorf("status = %+v\nwant     %+v", got, want)
 			}
 			assertNoToken(t, app)
@@ -417,12 +418,20 @@ func TestAuthStatusJSONKeys(t *testing.T) {
 		}
 	}
 	q, _ := got["quota"].(map[string]any)
-	for _, k := range []string{"remaining", "consumed", "known"} {
+	// X-Consumed-Quota is the cost of the one request (the GET /info of
+	// auth status), not a monthly consumption (measured 2026-11-04): the
+	// key says so
+	for _, k := range []string{"remaining", "request_cost", "known"} {
 		if _, ok := q[k]; !ok {
 			t.Errorf("quota.%s fehlt: %v", k, q)
 		}
 	}
+	if _, ok := q["consumed"]; ok {
+		t.Errorf("quota.consumed gibt es nicht mehr: %v", q)
+	}
 }
+
+func intPtr(n int) *int { return &n }
 
 func TestAuthStatusText(t *testing.T) {
 	app, srv := mockApp(t, map[string]string{"PAPIERKRAM_READ_ONLY": "1"})
@@ -436,7 +445,10 @@ func TestAuthStatusText(t *testing.T) {
 		t.Fatalf("exit = %d, stderr = %s", code, errs)
 	}
 	out, errs := bufs(app)
-	for _, want := range []string{"b (--context)", "firma-b", "keychain", "an (env: PAPIERKRAM_READ_ONLY)", "50 Credits", "verbraucht: 1)"} {
+	if strings.Contains(out, "verbraucht") {
+		t.Errorf("stdout nennt einen Verbrauch, die API meldet nur die Kosten der Abfrage:\n%s", out)
+	}
+	for _, want := range []string{"b (--context)", "firma-b", "keychain", "an (env: PAPIERKRAM_READ_ONLY)", "50 Credits übrig (Kosten dieser Abfrage: 1 Credit)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stdout ohne %q:\n%s", want, out)
 		}

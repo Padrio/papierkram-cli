@@ -89,8 +89,8 @@ func (c *Client) debugResponse(hr *http.Response, data []byte, q Quota, d time.D
 	}
 	if q.Known {
 		fmt.Fprintf(&b, "< X-Remaining-Quota: %d\n", q.Remaining)
-		if hr.Header.Get("X-Consumed-Quota") != "" {
-			fmt.Fprintf(&b, "< X-Consumed-Quota: %d\n", q.Consumed)
+		if q.CostKnown {
+			fmt.Fprintf(&b, "< X-Consumed-Quota: %d (Kosten dieser Anfrage)\n", q.RequestCost)
 		}
 	}
 	c.writeBody(&b, "< ", hr.Header.Get("Content-Type"), data)
