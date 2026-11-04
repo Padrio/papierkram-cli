@@ -708,18 +708,14 @@ func TestTimeEntryTimesHHMM(t *testing.T) {
 
 // billable_duration in a time entry body is in seconds like duration in
 // the responses (examples: 10:00–12:00 = 7200); the description says so
-// in the flag help. On create the API stores duration instead (measured
-// E2E 2026-11-04), the create help warns about it; update is not
-// measured.
+// in the flag help, and that the API ignores the value on create and on
+// update (measured E2E 2026-11-04, runs 1 and 2).
 func TestTimeEntryBillableDurationInSeconds(t *testing.T) {
 	doc := loadDoc(t, generatedPath)
-	want := map[string]string{
-		"CreateTimeEntry": "Abrechenbare Dauer in Sekunden; Achtung: Beim Anlegen übernimmt die API die Dauer statt dieses Werts (gemessen 2026-11-04)",
-		"UpdateTimeEntry": "Abrechenbare Dauer in Sekunden",
-	}
-	for id, w := range want {
-		if d := property(t, requestSchema(t, doc, id), "billable_duration").Description; d != w {
-			t.Errorf("%s: billable_duration description %q, want %q", id, d, w)
+	const want = "Abrechenbare Dauer in Sekunden; wirkungslos: Die API setzt beim Anlegen und Ändern die Dauer aus Beginn und Ende ein (gemessen 2026-11-04)"
+	for _, id := range []string{"CreateTimeEntry", "UpdateTimeEntry"} {
+		if d := property(t, requestSchema(t, doc, id), "billable_duration").Description; d != want {
+			t.Errorf("%s: billable_duration description %q, want %q", id, d, want)
 		}
 	}
 }

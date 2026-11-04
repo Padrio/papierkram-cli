@@ -16,7 +16,7 @@ Beispiele:
   papierkram time update 272 --input zeit.json
 
 Optionen:
-      --billable-duration Zahl   Abrechenbare Dauer in Sekunden
+      --billable-duration Zahl   Abrechenbare Dauer in Sekunden; wirkungslos: Die API setzt beim Anlegen und Ändern die Dauer aus Beginn und Ende ein (gemessen 2026-11-04)
       --comments Text            Wert für comments
       --ended-at-time Text       Wert für ended_at_time (HH:MM)
       --entry-date Datum         Wert für entry_date (YYYY-MM-DD, heute, gestern)

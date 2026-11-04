@@ -382,9 +382,9 @@ func TestFieldsPatternFormatHelp(t *testing.T) {
 				t.Errorf("--%s: help %q", f.Flag, f.Help)
 			}
 		case "billable-duration":
-			// the unit of duration in the responses, and what the API did
-			// with it on create (measured 2026-11-04)
-			if !strings.HasPrefix(f.Help, "Abrechenbare Dauer in Sekunden; Achtung: Beim Anlegen") {
+			// the unit of duration in the responses, and that the API
+			// ignores it (measured 2026-11-04)
+			if !strings.HasPrefix(f.Help, "Abrechenbare Dauer in Sekunden; wirkungslos:") {
 				t.Errorf("--%s: help %q", f.Flag, f.Help)
 			}
 		case "entry-date":

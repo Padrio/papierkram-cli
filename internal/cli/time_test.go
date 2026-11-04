@@ -135,12 +135,11 @@ func TestTimeCreateSendsDateAndHHMM(t *testing.T) {
 
 // --started-at-time 9:00 and other forms than HH:MM are validation errors
 // (exit 5) before any request; the hint names HH:MM.
-// The help of time create --billable-duration names the measured
-// behaviour of the API (2026-11-04): it stores duration instead of the
-// billable_duration sent with the create. time update keeps the plain
-// help: not measured there.
-func TestTimeCreateBillableDurationHelpNamesMeasurement(t *testing.T) {
-	line := func(action string) string {
+// The help of --billable-duration says that the flag has no effect: the
+// API stored duration instead of the sent billable_duration on create and
+// on update (measured live 2026-11-04, runs 1 and 2).
+func TestTimeBillableDurationHelpSaysNoEffect(t *testing.T) {
+	for _, action := range []string{"create", "update"} {
 		app, srv := apiApp(t)
 		wantExit(t, app, Run(app, []string{"time", action, "--help"}), 0)
 		wantRequests(t, srv, 0)
@@ -150,13 +149,9 @@ func TestTimeCreateBillableDurationHelpNamesMeasurement(t *testing.T) {
 			t.Fatalf("time %s --help ohne --billable-duration:\n%s", action, out)
 		}
 		l, _, _ := strings.Cut(out[i:], "\n")
-		return l
-	}
-	if l := line("create"); !strings.Contains(l, "in Sekunden") || !strings.Contains(l, "Beim Anlegen übernimmt die API die Dauer statt dieses Werts") {
-		t.Errorf("time create: %q", l)
-	}
-	if l := line("update"); !strings.HasSuffix(strings.TrimSpace(l), "Abrechenbare Dauer in Sekunden") {
-		t.Errorf("time update: %q", l)
+		if !strings.Contains(l, "in Sekunden") || !strings.Contains(l, "wirkungslos") || !strings.Contains(l, "Anlegen und Ändern") {
+			t.Errorf("time %s: %q", action, l)
+		}
 	}
 }
 
