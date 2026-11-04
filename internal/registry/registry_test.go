@@ -357,6 +357,78 @@ func TestInvoiceEstimateEntriesRegistered(t *testing.T) {
 	}
 }
 
+func TestVoucherEntriesRegistered(t *testing.T) {
+	// Spec 15 no. 17–29. upload, document delete (Task 33), pay (Task 35)
+	// and pdf (Task 32) have their own handlers: registered as Custom, not
+	// built generically.
+	want := []struct {
+		resource, action, opID string
+		class                  Class
+		credits                int
+		custom                 bool
+	}{
+		{"voucher", "upload", "UploadVoucherDocument", ClassCreate, 10, true},
+		{"voucher", "document delete", "DeleteVoucherDocument", ClassDestructive, 1, true},
+		{"voucher", "list", "ListVouchers", ClassReadOnly, 1, false},
+		{"voucher", "create", "CreateVoucher", ClassCreate, 50, false},
+		{"voucher", "describe", "GetVoucher", ClassReadOnly, 1, false},
+		{"voucher", "update", "UpdateVoucher", ClassUpdate, 1, false},
+		{"voucher", "delete", "DeleteVoucher", ClassDestructive, 1, false},
+		{"voucher", "archive", "ArchiveVoucher", ClassArchive, 1, false},
+		{"voucher", "unarchive", "UnarchiveVoucher", ClassArchive, 1, false},
+		{"voucher", "cancel", "CancelVoucher", ClassDestructive, 1, false},
+		{"voucher", "reverse", "CancelVoucherWithReverseEntry", ClassDestructive, 1, false},
+		{"voucher", "pay", "PayVoucher", ClassDestructive, 1, true},
+		{"voucher", "pdf", "GetVoucherPdf", ClassReadOnly, 1, true},
+	}
+	for _, w := range want {
+		e, ok := Lookup(w.resource, w.action)
+		if !ok || e.OperationID != w.opID || e.Class != w.class || e.Credits != w.credits || e.Custom != w.custom {
+			t.Errorf("Lookup(%q, %q) = %+v, %v; want %s %s %d credits, custom %v", w.resource, w.action, e, ok, w.opID, w.class, w.credits, w.custom)
+		}
+	}
+}
+
+// Spec 4.2, 7.1: voucher list filters by creditor, project and document
+// date.
+func TestVoucherListFilters(t *testing.T) {
+	want := []struct{ flag, param, kind string }{
+		{"creditor", "creditor_id", "id"},
+		{"project", "project_id", "id"},
+		{"from", "document_date_range_start", "date"},
+		{"to", "document_date_range_end", "date"},
+	}
+	e, _ := Lookup("voucher", "list")
+	if len(e.Filters) != len(want) {
+		t.Fatalf("voucher list: filters = %+v, want %d", e.Filters, len(want))
+	}
+	for i, w := range want {
+		if f := e.Filters[i]; f.Flag != w.flag || f.Param != w.param || f.Kind != w.kind || f.Help == "" {
+			t.Errorf("voucher list: filter %d = %+v, want --%s → %s (%s)", i, f, w.flag, w.param, w.kind)
+		}
+	}
+}
+
+// Spec 10.3: the default columns of voucher; wide adds the supplier where
+// the response has it (not in list entries).
+func TestVoucherColumns(t *testing.T) {
+	want := []string{"id", "voucher_no", "name", "state", "document_date", "due_date", "amount"}
+	for _, action := range []string{"list", "describe", "create", "update", "archive", "unarchive", "cancel", "reverse"} {
+		e, _ := Lookup("voucher", action)
+		var got []string
+		for _, c := range e.Columns.Table {
+			got = append(got, c.Path)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("voucher %s: table columns %v, want %v", action, got, want)
+		}
+		hasCreditor := slices.ContainsFunc(e.Columns.Wide, func(c output.Column) bool { return c.Path == "creditor.name" })
+		if hasCreditor == (action == "list") {
+			t.Errorf("voucher %s: wide columns %v, creditor.name only outside list", action, e.Columns.Wide)
+		}
+	}
+}
+
 // Spec 4.2, 7.1: invoice and estimate list filter by company, project and
 // document date.
 func TestInvoiceEstimateListFilters(t *testing.T) {

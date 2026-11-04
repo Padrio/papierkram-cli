@@ -1,0 +1,44 @@
+{
+  "entries": [
+    {
+      "amount": 238.0,
+      "description": "Notes for the voucher",
+      "document_date": "2020-05-01",
+      "due_date": "2020-05-31",
+      "entertainment_persons": [],
+      "entertainment_reason": null,
+      "flagged": true,
+      "id": 287,
+      "invoice_amount": 0.0,
+      "name": "My voucher",
+      "provenance": "domestic",
+      "record_state": "active",
+      "state": "unpaid",
+      "type": "expense_voucher",
+      "voucher_no": "B-00012"
+    },
+    {
+      "amount": 119.0,
+      "description": null,
+      "document_date": "2026-08-28",
+      "due_date": null,
+      "entertainment_persons": [],
+      "entertainment_reason": null,
+      "flagged": null,
+      "id": 288,
+      "invoice_amount": 0.0,
+      "name": "FactoryBot Ausgabebeleg B-EXP-0001",
+      "provenance": "domestic",
+      "record_state": "active",
+      "state": "unpaid",
+      "type": "expense_voucher",
+      "voucher_no": "B-00013"
+    }
+  ],
+  "has_more": false,
+  "page": 1,
+  "page_size": 100,
+  "total_entries": 2,
+  "total_pages": 1,
+  "type": "list"
+}

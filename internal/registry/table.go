@@ -69,6 +69,29 @@ var (
 			{Header: "VERSENDET", Path: "sent_on", Fmt: output.FmtDate},
 		},
 	}
+	// voucher (spec 10.3); list entries have no creditor, so only the
+	// object responses show the supplier in wide.
+	voucherColumns = output.Columns{
+		Table: []output.Column{
+			{Header: "ID", Path: "id"},
+			{Header: "NR.", Path: "voucher_no"},
+			{Header: "NAME", Path: "name"},
+			{Header: "STATUS", Path: "state"},
+			{Header: "DATUM", Path: "document_date", Fmt: output.FmtDate},
+			{Header: "FÄLLIG", Path: "due_date", Fmt: output.FmtDate},
+			{Header: "BETRAG", Path: "amount", Fmt: output.FmtMoney},
+		},
+		Wide: []output.Column{
+			{Header: "HERKUNFT", Path: "provenance"},
+			{Header: "BESCHREIBUNG", Path: "description"},
+		},
+	}
+	voucherDetailColumns = output.Columns{
+		Table: voucherColumns.Table,
+		Wide: append([]output.Column{
+			{Header: "LIEFERANT", Path: "creditor.name"},
+		}, voucherColumns.Wide...),
+	}
 	bankConnectionColumns = output.Columns{
 		Table: []output.Column{
 			{Header: "ID", Path: "id"},
@@ -298,6 +321,149 @@ var table = []Entry{
 			"papierkram person delete 1063 --company 2862",
 			"papierkram person delete 1063 --company 2862 --yes",
 		},
+	},
+	// 17–29
+	{
+		// own handler (Task 33, spec 9.3)
+		Resource: "voucher", Action: "upload", OperationID: "UploadVoucherDocument",
+		Method: "POST", Path: "/expense/vouchers/{voucher_id}/documents", Class: ClassCreate, Credits: 10,
+		Short: "Datei (Belegbild) an einen Beleg anhängen",
+		Examples: []string{
+			"papierkram voucher upload 295 beleg.pdf",
+			"papierkram voucher upload 295 quittung.jpg --dry-run",
+		},
+		Custom: true,
+	},
+	{
+		// own handler (Task 33)
+		Resource: "voucher", Action: "document delete", OperationID: "DeleteVoucherDocument",
+		Method: "DELETE", Path: "/expense/vouchers/{voucher_id}/documents/{id}", Class: ClassDestructive, Credits: 1,
+		Short: "Datei eines Belegs löschen",
+		Examples: []string{
+			"papierkram voucher document delete 295 32",
+			"papierkram voucher document delete 295 32 --yes",
+		},
+		Custom: true,
+	},
+	{
+		Resource: "voucher", Action: "list", OperationID: "ListVouchers",
+		Method: "GET", Path: "/expense/vouchers", Class: ClassReadOnly, Credits: 1,
+		Filters: []Filter{
+			{Flag: "creditor", Param: "creditor_id", Kind: "id", Help: "Nur Belege dieses Lieferanten (Firmen-ID)"},
+			{Flag: "project", Param: "project_id", Kind: "id", Help: "Nur Belege dieses Projekts (ID)"},
+			{Flag: "from", Param: "document_date_range_start", Kind: "date", Help: "Nur Belege mit Belegdatum ab diesem Tag (YYYY-MM-DD, heute, gestern)"},
+			{Flag: "to", Param: "document_date_range_end", Kind: "date", Help: "Nur Belege mit Belegdatum bis zu diesem Tag (YYYY-MM-DD, heute, gestern)"},
+		},
+		Columns: voucherColumns,
+		Short:   "Belege auflisten",
+		Examples: []string{
+			"papierkram voucher list",
+			"papierkram voucher list --creditor 2904 --from 2026-01-01 --to 2026-03-31",
+			"papierkram voucher list --project 4316 --all -o json",
+		},
+	},
+	{
+		Resource: "voucher", Action: "create", OperationID: "CreateVoucher",
+		Method: "POST", Path: "/expense/vouchers", Class: ClassCreate, Credits: 50,
+		Columns: voucherDetailColumns,
+		Short:   "Beleg anlegen",
+		Examples: []string{
+			`papierkram voucher create --name "Büromaterial Oktober" --provenance domestic --creditor 2904 --item "name=Papier,amount=11.90,vat=19,category=Bürobedarf"`,
+			`papierkram voucher create --name "Geschäftsessen" --provenance domestic --entertainment-reason "Projektbesprechung" --entertainment-person "Anna Muster" --item "name=Restaurant,amount=150.80,vat=19,category=Bewirtungskosten" --dry-run`,
+			"papierkram voucher create --input beleg.json",
+		},
+	},
+	{
+		Resource: "voucher", Action: "describe", OperationID: "GetVoucher",
+		Method: "GET", Path: "/expense/vouchers/{id}", Class: ClassReadOnly, Credits: 1,
+		Columns: voucherDetailColumns,
+		Short:   "Beleg anzeigen",
+		Examples: []string{
+			"papierkram voucher describe 295",
+			"papierkram voucher describe 295 -o json",
+		},
+	},
+	{
+		Resource: "voucher", Action: "update", OperationID: "UpdateVoucher",
+		Method: "PUT", Path: "/expense/vouchers/{id}", Class: ClassUpdate, Credits: 1,
+		Columns: voucherDetailColumns,
+		Short:   "Beleg ändern",
+		Examples: []string{
+			"papierkram voucher update 295 --due-date 2026-12-15",
+			`papierkram voucher update 295 --item "name=Papier,amount=23.80,vat=19,category=Bürobedarf" --replace-items`,
+			"papierkram voucher update 295 --input beleg.json",
+		},
+	},
+	{
+		Resource: "voucher", Action: "delete", OperationID: "DeleteVoucher",
+		Method: "DELETE", Path: "/expense/vouchers/{id}", Class: ClassDestructive, Credits: 1,
+		Short: "Beleg löschen",
+		Examples: []string{
+			"papierkram voucher delete 295",
+			"papierkram voucher delete 295 --yes",
+		},
+	},
+	{
+		Resource: "voucher", Action: "archive", OperationID: "ArchiveVoucher",
+		Method: "POST", Path: "/expense/vouchers/{id}/archive", Class: ClassArchive, Credits: 1,
+		Columns: voucherDetailColumns,
+		Short:   "Beleg archivieren",
+		Examples: []string{
+			"papierkram voucher archive 295",
+			"papierkram voucher archive 295 -o json",
+		},
+	},
+	{
+		Resource: "voucher", Action: "unarchive", OperationID: "UnarchiveVoucher",
+		Method: "POST", Path: "/expense/vouchers/{id}/unarchive", Class: ClassArchive, Credits: 1,
+		Columns: voucherDetailColumns,
+		Short:   "Beleg aus dem Archiv holen",
+		Examples: []string{
+			"papierkram voucher unarchive 295",
+			"papierkram voucher unarchive 295 -o json",
+		},
+	},
+	{
+		Resource: "voucher", Action: "cancel", OperationID: "CancelVoucher",
+		Method: "POST", Path: "/expense/vouchers/{id}/cancel", Class: ClassDestructive, Credits: 1,
+		Columns: voucherDetailColumns,
+		Short:   "Beleg stornieren",
+		Examples: []string{
+			"papierkram voucher cancel 295",
+			"papierkram voucher cancel 295 --yes",
+		},
+	},
+	{
+		Resource: "voucher", Action: "reverse", OperationID: "CancelVoucherWithReverseEntry",
+		Method: "POST", Path: "/expense/vouchers/{id}/cancel_with_reverse_entry", Class: ClassDestructive, Credits: 1,
+		Columns: voucherDetailColumns,
+		Short:   "Beleg mit Gegenbuchung stornieren (Generalumkehr)",
+		Examples: []string{
+			"papierkram voucher reverse 295",
+			"papierkram voucher reverse 295 --yes -o json",
+		},
+	},
+	{
+		// own handler (Task 35, spec 9.5)
+		Resource: "voucher", Action: "pay", OperationID: "PayVoucher",
+		Method: "POST", Path: "/expense/vouchers/{id}/pay", Class: ClassDestructive, Credits: 1,
+		Short: "Zahlung zu einem Beleg erfassen",
+		Examples: []string{
+			"papierkram voucher pay 295 --transaction 457",
+			"papierkram voucher pay 295 --amount 165.80 --date 2026-11-04 --yes",
+		},
+		Custom: true,
+	},
+	{
+		// own handler (Task 32, spec 9.2)
+		Resource: "voucher", Action: "pdf", OperationID: "GetVoucherPdf",
+		Method: "GET", Path: "/expense/vouchers/{id}/pdf", Class: ClassReadOnly, Credits: 1,
+		Short: "Beleg als PDF herunterladen",
+		Examples: []string{
+			"papierkram voucher pdf 295 -O beleg.pdf",
+			"papierkram voucher pdf 295 -O - > beleg.pdf",
+		},
+		Custom: true,
 	},
 	// 30–39
 	{
