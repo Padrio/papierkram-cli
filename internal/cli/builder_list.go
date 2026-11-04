@@ -344,11 +344,22 @@ type mergedList struct {
 	Entries      []json.RawMessage `json:"entries"`
 }
 
-// fetchAll loads page 1, decides from total_pages how many pages to load
-// (capped by --max-pages), warns from warnPages on and asks in a terminal,
-// then loads the remaining pages.
+// pageFunc sends one list request with query (page included).
+type pageFunc func(query url.Values) (*api.Response, error)
+
+// fetchAll is fetchPages for the list operation of e.
 func (a *App) fetchAll(c *cobra.Command, e registry.Entry, client *api.Client, params []int64, lr *listRequest) (*mergedList, error) {
-	first, err := a.fetchPage(c, e, client, params, lr.query, 1)
+	return a.fetchPages(c, e.Credits, lr, func(q url.Values) (*api.Response, error) {
+		return client.Call(c.Context(), e.OperationID, params, q, nil)
+	})
+}
+
+// fetchPages loads page 1, decides from total_pages how many pages to load
+// (capped by --max-pages), warns from warnPages on (credits per page) and
+// asks in a terminal, then loads the remaining pages with fetch. list
+// --all and papierkram api --paginate share it.
+func (a *App) fetchPages(c *cobra.Command, credits int, lr *listRequest, fetch pageFunc) (*mergedList, error) {
+	first, err := fetchPage(fetch, lr.query, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +375,7 @@ func (a *App) fetchAll(c *cobra.Command, e registry.Entry, client *api.Client, p
 		pages = int64(lr.maxPages)
 	}
 	if pages >= warnPages {
-		output.Warn(a.Err, fmt.Sprintf("%s lädt %d Seiten (%d Credits); mit --max-pages begrenzen", lr.via, pages, pages*int64(e.Credits)))
+		output.Warn(a.Err, fmt.Sprintf("%s lädt %d Seiten (%d Credits); mit --max-pages begrenzen", lr.via, pages, pages*int64(credits)))
 		if err := a.confirmAll(c.Context(), lr.via); err != nil {
 			return nil, err
 		}
@@ -375,7 +386,7 @@ func (a *App) fetchAll(c *cobra.Command, e registry.Entry, client *api.Client, p
 		Entries: append([]json.RawMessage{}, first.Entries...),
 	}
 	for p := int64(2); p <= pages; p++ {
-		page, err := a.fetchPage(c, e, client, params, lr.query, p)
+		page, err := fetchPage(fetch, lr.query, p)
 		if err != nil {
 			return nil, err
 		}
@@ -397,13 +408,13 @@ func (a *App) fetchAll(c *cobra.Command, e registry.Entry, client *api.Client, p
 }
 
 // fetchPage loads one page of the list.
-func (a *App) fetchPage(c *cobra.Command, e registry.Entry, client *api.Client, params []int64, query url.Values, page int64) (*listPage, error) {
+func fetchPage(fetch pageFunc, query url.Values, page int64) (*listPage, error) {
 	q := url.Values{}
 	for k, v := range query {
 		q[k] = v
 	}
 	q.Set("page", strconv.FormatInt(page, 10))
-	resp, err := client.Call(c.Context(), e.OperationID, params, q, nil)
+	resp, err := fetch(q)
 	if err != nil {
 		return nil, err
 	}
