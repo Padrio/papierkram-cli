@@ -571,3 +571,34 @@ func TestConfirmationEOFIsNo(t *testing.T) {
 		t.Errorf("not sent: %+v", reqs)
 	}
 }
+
+// Review M7: (a) a project embedded in the task without company_id is not
+// cached as known, so the project is loaded for the company; (b) an
+// answer that is no JSON object is a warning like a failed request.
+func TestTimeLogNameLookupRobust(t *testing.T) {
+	args := []string{"time", "log", "--task", "492", "--user", "1", "--from", "09:00", "--to", "10:00", "-o", "json"}
+	app, srv := logApp(t, morning(t))
+	srv.On("GET", "/tracker/tasks/{id}", http.StatusOK, []byte(`{"id":492,"name":"Aufgabe X","project":{"id":4835,"name":"Projekt Y"}}`))
+	app.StdinTTY = true
+	app.In = strings.NewReader("\n")
+	wantExit(t, app, Run(app, args), 0)
+	var got []string
+	for _, r := range srv.Requests() {
+		got = append(got, r.Method+" "+r.Path)
+	}
+	if len(got) != 5 || got[1] != "GET /projects/4835" || !strings.HasPrefix(got[2], "GET /contact/companies/") || got[4] != "POST /tracker/time_entries" {
+		t.Errorf("requests = %v", got)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Firma:") || !strings.Contains(errs, "Aufgabe X (492)") {
+		t.Errorf("stderr = %s", errs)
+	}
+
+	app, srv = logApp(t, morning(t))
+	srv.On("GET", "/users/{id}", http.StatusOK, []byte(`kein JSON`))
+	app.StdinTTY = true
+	app.In = strings.NewReader("\n")
+	wantExit(t, app, Run(app, args), 0)
+	if _, errs := bufs(app); !strings.Contains(errs, "Warnung: Name von Benutzer 1 nicht geladen") {
+		t.Errorf("stderr = %s", errs)
+	}
+}

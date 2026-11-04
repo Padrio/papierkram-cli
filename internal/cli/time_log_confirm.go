@@ -94,7 +94,9 @@ func (l *nameLookup) name(ctx context.Context, resource string, id int64) (cache
 	var obj map[string]any
 	dec := json.NewDecoder(bytes.NewReader(resp.Body))
 	dec.UseNumber()
-	if dec.Decode(&obj) != nil {
+	if dec.Decode(&obj) != nil || obj == nil {
+		// like a failed request: the summary shows the ID (review M7)
+		output.Warn(l.a.Err, fmt.Sprintf("Name von %s %d nicht geladen (unerwartete Antwort); Zusammenfassung mit ID", resourceNoun(resource), id))
 		return n, false, nil
 	}
 	n.Name = objectName(obj)
@@ -102,8 +104,10 @@ func (l *nameLookup) name(ctx context.Context, resource string, id int64) (cache
 	case "task":
 		if p, ok := obj["project"].(map[string]any); ok {
 			n.Project = jsonInt(p["id"])
-			if pn := objectName(p); n.Project != 0 && pn != "" {
-				l.put("project", n.Project, cachedName{Name: pn, Company: jsonInt(p["company_id"])})
+			// only a complete embed saves the project request: without
+			// company_id the project is loaded for its company (review M7)
+			if pn, co := objectName(p), jsonInt(p["company_id"]); n.Project != 0 && pn != "" && co != 0 {
+				l.put("project", n.Project, cachedName{Name: pn, Company: co})
 			}
 		}
 	case "project":
