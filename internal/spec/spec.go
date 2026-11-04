@@ -21,9 +21,6 @@ var raw []byte
 // without it.
 const apiPrefix = "/api/v1"
 
-// Raw returns the embedded patched spec. The slice is shared; do not modify it.
-func Raw() []byte { return raw }
-
 var (
 	docOnce sync.Once
 	doc     *openapi3.T

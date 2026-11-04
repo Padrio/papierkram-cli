@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -607,20 +608,22 @@ func TestWriteMultipartEntryNotGeneric(t *testing.T) {
 	}
 }
 
-// TestReservedFlagsCoverRootFlags keeps spec.ReservedFlags in sync with the
-// global flags and the builder flags (Task 19 carry).
+// TestReservedFlagsCoverRootFlags keeps the reserved flags of spec.Fields
+// in sync with the global flags and the builder flags (Task 19 carry): a
+// top-level request field named like one of them has no longer name to
+// fall back to, so Fields must report the collision. Only --item and
+// --attr belong to their own field kinds.
 func TestReservedFlagsCoverRootFlags(t *testing.T) {
 	app, _, _ := newTestApp(t)
 	root := NewRootCmd(app)
-	reserved := spec.ReservedFlags()
-	root.PersistentFlags().VisitAll(func(f *pflag.Flag) {
-		if !slices.Contains(reserved, f.Name) {
-			t.Errorf("globales Flag --%s fehlt in spec.ReservedFlags()", f.Name)
-		}
-	})
-	for _, name := range builderFlags {
-		if !slices.Contains(reserved, name) {
-			t.Errorf("Builder-Flag --%s fehlt in spec.ReservedFlags()", name)
+	var names []string
+	root.PersistentFlags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
+	names = append(names, builderFlags...)
+	for _, name := range names {
+		prop := strings.ReplaceAll(name, "-", "_")
+		req := openapi3.NewObjectSchema().WithProperty(prop, openapi3.NewStringSchema())
+		if _, err := spec.Fields(req, nil); err == nil {
+			t.Errorf("--%s fehlt in den reservierten Flags von spec.Fields (Feld %q kollidiert unbemerkt)", name, prop)
 		}
 	}
 }

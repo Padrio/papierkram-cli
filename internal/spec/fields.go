@@ -55,15 +55,13 @@ func (f Field) IsBool() bool { return f.Type == "boolean" || f.BoolString }
 func (f Field) name() string { return f.Path[len(f.Path)-1] }
 
 // reservedFlags are the global flags and the flags the builder adds to
-// create/update commands; no schema field may take them.
+// create/update commands; no schema field may take them, except --item
+// (the KindItems field) and --attr (the KindAttrs field). The CLI tests
+// keep the list in sync with its flags (TestReservedFlagsCoverRootFlags).
 var reservedFlags = []string{
 	"attr", "context", "debug", "dry-run", "fields", "help", "input", "item", "items",
 	"jq", "no-color", "no-input", "output", "replace-items", "timeout", "yes",
 }
-
-// ReservedFlags returns the flag names no schema-derived field may use.
-// --item belongs to the KindItems field and --attr to the KindAttrs field.
-func ReservedFlags() []string { return slices.Clone(reservedFlags) }
 
 // ownFlag is the reserved flag a field kind itself stands for.
 func ownFlag(k FieldKind) string {

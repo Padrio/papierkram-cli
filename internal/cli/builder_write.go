@@ -18,7 +18,7 @@ import (
 )
 
 // builderFlags are the flags create/update commands get besides the field
-// flags of the request schema; all are in spec.ReservedFlags. --item and
+// flags of the request schema; spec.Fields reserves all of them. --item and
 // --attr are the flags of the line item and custom attribute fields.
 var builderFlags = []string{"input", "item", "items", "replace-items", "attr"}
 
@@ -174,7 +174,7 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 
 // runWrite sends create or update (spec 6, 6.3a). Order (plan): arguments
 // and flag combinations (exit 2), configuration and read-only gate
-// (mutationClient, exit 9, before anything is read), body (buildBody:
+// (mutationClient, exit 9, before anything is read), body (buildBodyFrom:
 // exit 2/5), --dry-run and confirmation (beforeMutation), then the request. Output is the API object; an empty
 // response prints {"id":N,"ok":true} on update and {"ok":true} with a
 // warning on create.
@@ -346,7 +346,7 @@ func errUnavailable(err error) error {
 	return clierr.New(clierr.CodeError, "Befehl nicht verfügbar: "+err.Error(), "")
 }
 
-// buildBody builds the request body of create/update (spec 6.1–6.4, 6.3a):
+// buildBodyFrom builds the request body of create/update (spec 6.1–6.4, 6.3a):
 // --input (pruned against the request schema, hints on stderr) → the
 // changed field flags at their path (references as {id}, nested objects
 // created as needed, maps merged) → --attr into custom_attributes → line
@@ -363,16 +363,12 @@ func errUnavailable(err error) error {
 // --input - renames without replacing the positions; with it they are sent
 // as given, and --replace-items without positions sends line_items: []
 // (R18). On create line_items from --input are always sent.
-func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[string]any, []string, error) {
-	return a.buildBodyFrom(c, e, isUpdate, nil)
-}
-
-// buildBodyFrom is buildBody on a base body that load returns instead of
-// --input (invoice create --from-estimate, spec 9.4); nil load is
-// buildBody. load runs after the field flags and line items are checked
-// (their errors cost no read), then the flags and positions override the
-// base like they override --input, and the base goes through the same
-// coercion and validation.
+//
+// load, when not nil, returns a base body used instead of --input
+// (invoice create --from-estimate, spec 9.4). It runs after the field
+// flags and line items are checked (their errors cost no read), then the
+// flags and positions override the base like they override --input, and
+// the base goes through the same coercion and validation.
 func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, load func() (map[string]any, error)) (map[string]any, []string, error) {
 	ws := newWriteSpec(e)
 	if ws.err != nil {

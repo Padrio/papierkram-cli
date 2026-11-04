@@ -450,7 +450,7 @@ func missingMail(mail any) []mailField {
 	return missing
 }
 
-// deliverBody builds the request body like buildBody does for create:
+// deliverBody builds the request body like buildBodyFrom does for create:
 // --input (pruned against the request schema; deliver has no response
 // schema, so every field outside the request is unknown, exit 5), then the
 // flags, which win, with the text of --body-file; coerced like create,
@@ -484,7 +484,7 @@ func (a *App) deliverBody(c *cobra.Command, e registry.Entry) (map[string]any, e
 		}
 	}
 	applyDeliverFlags(c, body, text)
-	// like create/update (buildBody): coerce, then check and validate
+	// like create/update (buildBodyFrom): coerce, then check and validate
 	v, err := spec.CoerceValue(req, body, "")
 	if err != nil {
 		return nil, err

@@ -280,15 +280,6 @@ func unknownFieldsError(us []unknownField) *clierr.Error {
 	return clierr.New(clierr.CodeValidation, strings.Join(lines, "\n"), unknownHint(us))
 }
 
-// lastKey is the last element of a dotted path without array markers.
-func lastKey(path string) string {
-	k := path[strings.LastIndex(path, ".")+1:]
-	if i := strings.IndexByte(k, '['); i >= 0 {
-		k = k[:i]
-	}
-	return k
-}
-
 // cloneValue deep-copies JSON values (maps and slices); scalars are shared.
 func cloneValue(v any) any {
 	switch x := v.(type) {

@@ -9,6 +9,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -16,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/Padrio/papierkram-cli/internal/api"
-	"github.com/Padrio/papierkram-cli/internal/spec"
 	"github.com/Padrio/papierkram-cli/internal/testutil/mockapi"
 )
 
@@ -64,11 +65,16 @@ func client(s *mockapi.Server) *api.Client {
 }
 
 // rawExample digs the first example (by key) of a response out of the raw
-// spec bytes, independently of the kin-openapi model the mock uses.
+// spec bytes (the file the spec package embeds; tests run in the package
+// directory), independently of the kin-openapi model the mock uses.
 func rawExample(t *testing.T, path, method, status string) any {
 	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "spec", "openapi.gen.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	var doc map[string]any
-	if err := json.Unmarshal(spec.Raw(), &doc); err != nil {
+	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
 	get := func(m any, k string) any {

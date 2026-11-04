@@ -25,6 +25,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -369,7 +372,11 @@ var loadDefaults = sync.OnceValues(func() (map[string]cannedResponse, error) {
 	var raw struct {
 		Paths map[string]map[string]json.RawMessage `json:"paths"`
 	}
-	if err := json.Unmarshal(spec.Raw(), &raw); err != nil {
+	data, err := rawSpec()
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("spec does not parse: %w", err)
 	}
 	type rawOperation struct {
@@ -410,6 +417,28 @@ var loadDefaults = sync.OnceValues(func() (map[string]cannedResponse, error) {
 	}
 	return defaults, nil
 })
+
+// specFile is the patched spec the spec package embeds, relative to this
+// source file.
+const specFile = "../../spec/openapi.gen.json"
+
+// rawSpec reads the patched spec the binary embeds, byte for byte. The
+// spec package exports no accessor for its embedded bytes (no production
+// code needs them), so the file is located next to this source file; the
+// working directory does not matter (tests may t.Chdir). A test binary
+// built with -trimpath has no source path and fails here with a clear
+// error.
+func rawSpec() ([]byte, error) {
+	_, self, _, ok := runtime.Caller(0)
+	if !ok || !filepath.IsAbs(self) {
+		return nil, fmt.Errorf("mockapi: source path unknown (%q), spec not found; tests must not use -trimpath", self)
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(self), filepath.FromSlash(specFile)))
+	if err != nil {
+		return nil, fmt.Errorf("mockapi: spec not readable: %w", err)
+	}
+	return data, nil
+}
 
 // rawMediaType is a response media type of the raw spec.
 type rawMediaType struct {

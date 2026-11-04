@@ -175,7 +175,7 @@ func checkPayFlags(c *cobra.Command) error {
 	return nil
 }
 
-// payBody builds the request body like buildBody does for create:
+// payBody builds the request body like buildBodyFrom does for create:
 // --input pruned against the request schema with the resource response
 // schema (spec.ResourceResponseSchema, nil for this action, so every field
 // outside the request is unknown, exit 5), then the changed flags at their
