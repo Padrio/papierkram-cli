@@ -1,3 +1,3 @@
-ID    NAME             ZIEL (TAGE)  EINHEIT  SKONTO  SKONTOFRIST
-1234  My payment_term  0            day
-1235  PAYMENT TERM     0            day
+ID    NAME             ZIEL  EINHEIT  SKONTO  SKONTOFRIST  SKONTO-EINHEIT
+1234  My payment_term  0     day
+1235  PAYMENT TERM     0     day

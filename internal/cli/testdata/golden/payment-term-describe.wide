@@ -1,7 +1,8 @@
-FELD         WERT
-ID           1236
-NAME         My payment_term
-ZIEL (TAGE)  0
-EINHEIT      day
+FELD            WERT
+ID              1236
+NAME            My payment_term
+ZIEL            0
+EINHEIT         day
 SKONTO
 SKONTOFRIST
+SKONTO-EINHEIT

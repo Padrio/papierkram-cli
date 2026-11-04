@@ -432,8 +432,10 @@ func TestPropositionColumns(t *testing.T) {
 	}
 }
 
-// Spec 10.3 [Builder]: payment-term shows the due period in days from
-// due_time (due_time_unit "day").
+// Spec 10.3 [Builder]: payment-term shows the due period due_time with its
+// unit due_time_unit (a free string, "day" in the spec examples), so the
+// period is never shown in a wrong unit; wide shows the cash discount
+// period with its unit.
 func TestPaymentTermColumns(t *testing.T) {
 	for _, action := range []string{"list", "describe"} {
 		e, _ := Lookup("payment-term", action)
@@ -441,8 +443,15 @@ func TestPaymentTermColumns(t *testing.T) {
 		for _, c := range e.Columns.Table {
 			got = append(got, c.Header+" "+c.Path)
 		}
-		if want := []string{"ID id", "NAME name", "ZIEL (TAGE) due_time"}; !slices.Equal(got, want) {
+		if want := []string{"ID id", "NAME name", "ZIEL due_time", "EINHEIT due_time_unit"}; !slices.Equal(got, want) {
 			t.Errorf("payment-term %s: table columns %v, want %v", action, got, want)
+		}
+		var wide []string
+		for _, c := range e.Columns.Wide {
+			wide = append(wide, c.Header+" "+c.Path)
+		}
+		if want := []string{"SKONTO cash_discount", "SKONTOFRIST cash_discount_time", "SKONTO-EINHEIT cash_discount_unit"}; !slices.Equal(wide, want) {
+			t.Errorf("payment-term %s: wide columns %v, want %v", action, wide, want)
 		}
 	}
 }

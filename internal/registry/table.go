@@ -146,18 +146,20 @@ var (
 	}
 	// payment-term [Builder] (spec 10.3: due period in days): due_time of
 	// PaymentTerm{Flat,WithDetailedEmbeds} is that period, counted in
-	// due_time_unit, which is "day" in every spec example; wide shows the
-	// unit so a different one is visible.
+	// due_time_unit. The unit is a free string without enum ("day" in
+	// every spec example), so the table shows it next to the period instead
+	// of assuming days; wide does the same for the cash discount period.
 	paymentTermColumns = output.Columns{
 		Table: []output.Column{
 			{Header: "ID", Path: "id"},
 			{Header: "NAME", Path: "name"},
-			{Header: "ZIEL (TAGE)", Path: "due_time"},
+			{Header: "ZIEL", Path: "due_time"},
+			{Header: "EINHEIT", Path: "due_time_unit"},
 		},
 		Wide: []output.Column{
-			{Header: "EINHEIT", Path: "due_time_unit"},
 			{Header: "SKONTO", Path: "cash_discount"},
 			{Header: "SKONTOFRIST", Path: "cash_discount_time"},
+			{Header: "SKONTO-EINHEIT", Path: "cash_discount_unit"},
 		},
 	}
 	infoColumns = output.Columns{
