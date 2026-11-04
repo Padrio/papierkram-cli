@@ -136,11 +136,13 @@ func (s *liveSuite) proposition(t *testing.T) map[string]any {
 }
 
 // estimateArgs creates a net estimate (gross=false) for the customer with
-// its contact person and project and two line items: 19 % and 7 %.
+// its contact person and project, dated today (the API requires
+// document_date, measured 2026-11-04), and two line items: 19 % and 7 %.
 func (s *liveSuite) estimateArgs(t *testing.T, name string) []string {
 	c, pers, p := s.customer(t), idOf(s.person(t)), s.project(t)
 	return []string{"estimate", "create", "--name", name, "--customer", ids(c),
 		"--contact-person", ids(pers), "--customer-project", ids(p),
+		"--document-date", "today",
 		"--item", "name=" + pos19 + ",qty=2,price=100,vat=19",
 		"--item", "name=pk-e2e-pos-7,qty=1,price=50,vat=7"}
 }
@@ -158,14 +160,16 @@ func (s *liveSuite) estimate(t *testing.T) map[string]any {
 // its request body).
 var invoiceResult result
 
-// invoice is a draft invoice created with --from-estimate (spec 9.4).
+// invoice is a draft invoice created with --from-estimate (spec 9.4),
+// dated today: the invoice date never comes from the estimate, and whether
+// the API requires it is not measured (docs/offene-punkte.md, point 28).
 func (s *liveSuite) invoice(t *testing.T) map[string]any {
 	e := idOf(s.estimate(t))
 	pt := idOf(s.paymentTerms(t)[0])
 	return s.fixture(t, "invoice", func() map[string]any {
 		s.need(t, 51)
 		name := s.prefix + "rechnung"
-		args := []string{"invoice", "create", "--from-estimate", ids(e), "--payment-term", ids(pt), "--name", name, "-o", "json"}
+		args := []string{"invoice", "create", "--from-estimate", ids(e), "--payment-term", ids(pt), "--name", name, "--document-date", "today", "-o", "json"}
 		invoiceResult = s.run(t, "", args...)
 		if invoiceResult.code != 0 {
 			s.fatalf(t, "invoice create --from-estimate: Exit %d\n%s", invoiceResult.code, invoiceResult.stderr)
