@@ -2,7 +2,6 @@ package registry
 
 import (
 	"bufio"
-	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Padrio/papierkram-cli/internal/spec"
+	"github.com/Padrio/papierkram-cli/internal/testutil/modroot"
 )
 
 // designSpec is the design spec, relative to the module root.
@@ -50,7 +50,7 @@ var matrixClasses = map[string]Class{
 func TestCoverageAllOperations(t *testing.T) {
 	ops := spec.Operations()
 	entries := Entries()
-	rows := parseMatrix(t, filepath.Join(moduleRoot(t), designSpec))
+	rows := parseMatrix(t, filepath.Join(modroot.Find(t), designSpec))
 	if len(ops) != operationCount || len(entries) != operationCount || len(rows) != operationCount {
 		t.Errorf("spec operations %d, registry entries %d, matrix rows %d, want %d each",
 			len(ops), len(entries), len(rows), operationCount)
@@ -195,26 +195,4 @@ func matrixRowOf(t *testing.T, cells []string, wantNo int) matrixRow {
 		t.Fatalf("spec 15 no. %d: credits %q: %v", no, cells[5], err)
 	}
 	return matrixRow{no: no, method: cells[1], path: cells[2], command: cells[3], class: class, credits: credits}
-}
-
-// moduleRoot walks up from the package directory to the directory with
-// go.mod.
-func moduleRoot(t *testing.T) string {
-	t.Helper()
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		} else if !errors.Is(err, os.ErrNotExist) {
-			t.Fatal(err)
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("go.mod not found")
-		}
-		dir = parent
-	}
 }

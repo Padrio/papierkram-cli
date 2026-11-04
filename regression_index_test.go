@@ -3,7 +3,6 @@
 package papierkram_test
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Padrio/papierkram-cli/internal/testutil/modroot"
 )
 
 // regressionCount is the number of rows of the regression list (spec 16).
@@ -30,7 +31,7 @@ var skipDirs = map[string]bool{".git": true, ".superpowers": true, "vendor": tru
 // named TestRNN_<Kurzname>, each exactly once across all test files of the
 // module, and there are no others.
 func TestRegressionIndex(t *testing.T) {
-	root := moduleRoot(t)
+	root := modroot.Find(t)
 	found := map[int][]string{}
 	var badName []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -90,27 +91,5 @@ func TestRegressionIndex(t *testing.T) {
 	for _, n := range extra {
 		t.Errorf("R%02d: not in the regression list of spec 16 (R01–R%02d): %s",
 			n, regressionCount, strings.Join(found[n], ", "))
-	}
-}
-
-// moduleRoot walks up from the package directory to the directory with
-// go.mod.
-func moduleRoot(t *testing.T) string {
-	t.Helper()
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		} else if !errors.Is(err, os.ErrNotExist) {
-			t.Fatal(err)
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("go.mod not found")
-		}
-		dir = parent
 	}
 }
