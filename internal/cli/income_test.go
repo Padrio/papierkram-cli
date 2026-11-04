@@ -320,8 +320,6 @@ func TestIncomeCancelNeedsConfirmation(t *testing.T) {
 	}
 }
 
-// deliver and pdf are Custom entries: deliver is built by its own handler
-// (Task 31), pdf is registered but has no command until Task 32.
 // All invoice and estimate actions are built, the Custom ones (deliver,
 // pdf) by their handlers.
 func TestIncomeCustomActionsBuilt(t *testing.T) {
