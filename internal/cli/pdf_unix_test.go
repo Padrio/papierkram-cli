@@ -3,6 +3,8 @@
 package cli
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -225,5 +227,54 @@ func TestOwnedByEUID(t *testing.T) {
 	}
 	if !ownedByEUID(fi) {
 		t.Error("eigenes Verzeichnis gilt als fremd")
+	}
+}
+
+// A FIFO is written directly; with a reader it gets the exact bytes.
+// Without a reader the open blocks, and Ctrl+C ends the wait: exit 10.
+func TestPdfFIFORespectsInterrupt(t *testing.T) {
+	fifo := filepath.Join(t.TempDir(), "rohr")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("kein FIFO: %v", err)
+	}
+
+	// with a reader: the bytes arrive unchanged
+	got := make(chan []byte, 1)
+	go func() {
+		f, err := os.Open(fifo)
+		if err != nil {
+			got <- nil
+			return
+		}
+		b, _ := io.ReadAll(f)
+		_ = f.Close()
+		got <- b
+	}()
+	app, srv := apiApp(t)
+	onPDF(srv, binaryPDF)
+	wantExit(t, app, Run(app, []string{"invoice", "pdf", "459", "-O", fifo}), 0)
+	if b := <-got; string(b) != binaryPDF {
+		t.Errorf("FIFO las %q", b)
+	}
+
+	// no reader: the interrupt arrives while the open waits
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	orig := pdfDeviceOpening
+	pdfDeviceOpening = cancel
+	t.Cleanup(func() {
+		pdfDeviceOpening = orig
+		// release the writer that still waits for a reader
+		if f, err := os.Open(fifo); err == nil {
+			_, _ = io.Copy(io.Discard, f)
+			_ = f.Close()
+		}
+	})
+	app, srv = apiApp(t)
+	onPDF(srv, binaryPDF)
+	wantExit(t, app, executeContext(ctx, app, NewRootCmd(app), []string{"invoice", "pdf", "459", "-O", fifo}), 10)
+	wantRequests(t, srv, 1)
+	if _, errs := bufs(app); !strings.Contains(errs, "Abgebrochen") {
+		t.Errorf("stderr = %q", errs)
 	}
 }

@@ -100,7 +100,10 @@ func (a *App) runPDF(c *cobra.Command, e registry.Entry, args []string) error {
 			return clierr.New(clierr.CodeError, "Befehl ausgeführt, Ausgabe fehlgeschlagen: PDF nicht nach stdout geschrieben: "+err.Error(), "")
 		}
 	case file == nil:
-		if err := writeDevice(dest.path, resp.Body); err != nil {
+		if err := writeDevice(c.Context(), dest.path, resp.Body); err != nil {
+			if ce := (*clierr.Error)(nil); errors.As(err, &ce) {
+				return ce // interrupted
+			}
 			return pdfSaveFailed(err, e)
 		}
 	default:
@@ -391,18 +394,42 @@ func writeAll(f *os.File, data []byte) error {
 	return err
 }
 
+// pdfDeviceOpening runs before a device target is opened; tests use it to
+// interrupt the wait for a FIFO reader.
+var pdfDeviceOpening = func() {}
+
 // writeDevice writes data to an existing file that is no regular file
-// (/dev/null, a FIFO).
-func writeDevice(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY, 0)
-	if err != nil {
+// (/dev/null, a FIFO). Opening a FIFO waits for a reader and writing may
+// wait for it to read, so both run in a goroutine and an interrupt (ctx)
+// ends the wait: exit 10 like any interrupted command. The goroutine stays
+// blocked until a reader comes or the process ends, which follows right
+// after.
+func writeDevice(ctx context.Context, path string, data []byte) error {
+	pdfDeviceOpening()
+	done := make(chan error, 1)
+	go func() {
+		f, err := os.OpenFile(path, os.O_WRONLY, 0)
+		if err != nil {
+			done <- err
+			return
+		}
+		_, err = f.Write(data)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
 		return err
+	case <-ctx.Done():
+		select {
+		case err := <-done: // finished at the same moment: the write counts
+			return err
+		default:
+		}
+		return &clierr.Error{Code: clierr.CodeNetwork, Message: "Abgebrochen: PDF nicht geschrieben", Cause: ctx.Err()}
 	}
-	_, err = f.Write(data)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	return err
 }
 
 // pdfSaveFailed is the error of a write after the download (exit 1).
