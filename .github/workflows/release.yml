@@ -23,11 +23,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           # GoReleaser reads tags and the commit date from the history
           fetch-depth: 0
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: '1.27.x'
       # the notes live outside the work tree: GoReleaser refuses a dirty tree
@@ -41,7 +41,7 @@ jobs:
             echo "Secret PACKAGES_GITHUB_TOKEN fehlt (docs/release.md, Voraussetzungen)" >&2
             exit 1
           fi
-      - uses: goreleaser/goreleaser-action@v7
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: v2.19.0
