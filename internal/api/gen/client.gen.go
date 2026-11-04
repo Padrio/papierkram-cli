@@ -4854,12 +4854,12 @@ type CreateEstimateJSONBody struct {
 			Id *int `json:"id,omitempty"`
 		} `json:"project,omitempty"`
 	} `json:"customer,omitempty"`
-	Description    *string             `json:"description,omitempty"`
-	DocumentDate   *openapi_types.Date `json:"document_date,omitempty"`
-	Flagged        *bool               `json:"flagged,omitempty"`
-	GreetingsText  *string             `json:"greetings_text,omitempty"`
-	Gross          *bool               `json:"gross,omitempty"`
-	InboundAddress *string             `json:"inbound_address,omitempty"`
+	Description    *string            `json:"description,omitempty"`
+	DocumentDate   openapi_types.Date `json:"document_date"`
+	Flagged        *bool              `json:"flagged,omitempty"`
+	GreetingsText  *string            `json:"greetings_text,omitempty"`
+	Gross          *bool              `json:"gross,omitempty"`
+	InboundAddress *string            `json:"inbound_address,omitempty"`
 	LineItems      *[]struct {
 		Description             *string  `json:"description,omitempty"`
 		DiscountCalculated      *float32 `json:"discount_calculated,omitempty"`

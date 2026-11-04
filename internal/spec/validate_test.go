@@ -51,7 +51,7 @@ func TestR12_ProvenanceNonEuSuggestsForeign(t *testing.T) {
 func TestR17_LineItemsRequired(t *testing.T) {
 	bodies := map[string]map[string]any{
 		"CreateInvoice":  {"name": "R", "payment_term": map[string]any{"id": json.Number("1")}},
-		"CreateEstimate": {"name": "A"},
+		"CreateEstimate": {"name": "A", "document_date": "2026-11-04"},
 		"CreateVoucher":  {"name": "B", "provenance": "domestic"},
 	}
 	for op, body := range bodies {
@@ -210,7 +210,7 @@ func TestValidateCustomAttributeKeyPattern(t *testing.T) {
 }
 
 func TestValidateKeepsNumbers(t *testing.T) {
-	body := map[string]any{"name": "A", "line_items": []any{map[string]any{"name": "x", "quantity": json.Number("1"), "price": json.Number("19.99"), "vat_rate": json.Number("0.19"), "proposition": map[string]any{"id": json.Number("9007199254740993")}}}}
+	body := map[string]any{"name": "A", "document_date": "2026-11-04", "line_items": []any{map[string]any{"name": "x", "quantity": json.Number("1"), "price": json.Number("19.99"), "vat_rate": json.Number("0.19"), "proposition": map[string]any{"id": json.Number("9007199254740993")}}}}
 	before := marshal(t, body)
 	if err := Validate(body, RequestSchema("CreateEstimate")); err != nil {
 		t.Fatalf("Validate: %v", err)

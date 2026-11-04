@@ -40,6 +40,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 25 | Quota-Header `X-Remaining-Quota`, `X-Consumed-Quota` | vorhanden und ganzzahlig | `TestE2E_QuotaHeadersPresent` | hart |
 | 26 | Person `default` als String | `"true"`/`"false"` | `TestE2E_PersonDefaultIsString` | hart |
 | 27 | **Entscheidung offen (Pascal):** `PAPIERKRAM_COMPANY`/`company` aus der Projektdatei als Default für `person … --company`? | keine Voreinstellung; nur Anzeige in `local show` | – | keine API-Frage, nicht gemessen |
+| 28 | `document_date` Pflicht beim Anlegen | Angebot: Pflicht (gemessen); Rechnung: nicht Pflicht | `TestE2E_DeliverPdfEmptyBody` (Angebot, indirekt) | Angebot erledigt; Rechnung **offen**, nicht gemessen |
 
 ## Punkte im Einzelnen
 
@@ -203,3 +204,9 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Soll `PAPIERKRAM_COMPANY` bzw. `company` aus der Projektdatei künftig `--company` der `person`-Befehle (`person list|describe|create|update|delete`, dort Pflicht) vorbelegen? Spec 9.8 nennt den Schlüssel im Beispiel, aber keinen Befehl, der ihn nutzt.
 - **Stand des CLI:** Keine Voreinstellung. `local init --company` schreibt den Wert, `local show` zeigt ihn mit Herkunft an; kein Befehl verwendet ihn als Standardwert. Das README sagt das ausdrücklich.
 - **E2E:** Keine API-Frage, daher kein Test. Entscheidet Pascal für die Voreinstellung, braucht es eine eigene Task (Spec 9.8, `default_from` in `commands --json`, Tests).
+
+### 28. `document_date` Pflicht beim Anlegen
+
+- **Gemessen 2026-11-04 (erster Live-Lauf):** `POST /income/estimates` ohne `document_date` lehnt die API mit 422 „Datum muss ausgefüllt werden“ ab und berechnet trotzdem die 50 Credits des Anlegens. Die Spec nennt nur `name` und `line_items` als Pflicht.
+- **Stand des CLI:** Das Overlay ([api/overlay.yaml](../api/overlay.yaml), Abschnitt 16) macht `document_date` im Anlege-Body des Angebots zur Pflicht (auch `null` gilt als fehlend). `estimate create` ohne `--document-date` (bzw. ohne `document_date` in `--input`) endet mit Exit 5, bevor eine Anfrage gesendet wird. `invoice create --from-estimate` ist nicht betroffen: Das Rechnungsdatum kommt nie aus dem Angebot, sondern aus `--document-date`.
+- **Offen:** Ob auch `POST /income/invoices` ohne `document_date` scheitert, ist nicht gemessen. Das CLI behandelt das Feld bei Rechnungen deshalb weiter als optional; die E2E-Suite sendet es vorsichtshalber immer mit. Bei einer Messung (422 wie beim Angebot) das Overlay entsprechend ergänzen.

@@ -11,8 +11,8 @@ Verwendung:
   papierkram estimate create [Optionen]
 
 Beispiele:
-  papierkram estimate create --name "Angebot Website" --customer 3052 --item "name=Konzeption,qty=3,unit=Tag,price=800,vat=19"
-  papierkram estimate create --name Wartung --customer 3052 --items positionen.json --dry-run
+  papierkram estimate create --name "Angebot Website" --customer 3052 --document-date heute --item "name=Konzeption,qty=3,unit=Tag,price=800,vat=19"
+  papierkram estimate create --name Wartung --customer 3052 --document-date 2026-11-04 --items positionen.json --dry-run
   papierkram estimate create --input angebot.json
 
 Optionen:
@@ -30,7 +30,7 @@ Optionen:
       --customer ID                   ID für customer
       --customer-project ID           ID für customer.project
       --description Text              Wert für description
-      --document-date Datum           Wert für document_date (YYYY-MM-DD, heute, gestern)
+      --document-date Datum           Wert für document_date (YYYY-MM-DD, heute, gestern) (Pflicht)
       --flagged                       Wert für flagged (true/false)
       --greetings-text Text           Wert für greetings_text
       --gross                         Wert für gross (true/false)

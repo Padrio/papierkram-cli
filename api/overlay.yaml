@@ -703,3 +703,22 @@ actions:
   - target: $.paths['/tracker/time_entries/{id}'].put.requestBody.content['application/json'].schema.properties.billable_duration
     update:
       description: Abrechenbare Dauer in Sekunden
+
+  # ---------------------------------------------------------------------------
+  # 16. document_date of a new estimate is required (gemessen E2E 2026-11-04)
+  # Why: the request schema marks only name and line_items as required, but
+  # the live API rejects an estimate without document_date with 422 "Datum
+  # muss ausgefüllt werden" and still charges the 50 credits of the create
+  # (E2E run 1, 2026-11-04). null is no date either, so the field is not
+  # nullable in the create. The CLI now refuses such a body before the
+  # request (exit 5). Invoices are not marked: not measured (open point).
+  # ---------------------------------------------------------------------------
+  - target: $.paths['/income/estimates'].post.requestBody.content['application/json'].schema
+    update:
+      # arrays are appended to: the snapshot already requires name and
+      # line_items
+      required:
+        - document_date
+  - target: $.paths['/income/estimates'].post.requestBody.content['application/json'].schema.properties.document_date
+    update:
+      nullable: false

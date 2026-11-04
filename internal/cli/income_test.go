@@ -109,6 +109,39 @@ func TestIncomeCreateWithoutLineItems(t *testing.T) {
 	}
 }
 
+// The API rejects an estimate without document_date with 422 "Datum muss
+// ausgefüllt werden" (measured live 2026-11-04) and still charges the 50
+// credits of the create. The CLI checks it before the request (exit 5),
+// with flags as with --input, and null counts as missing.
+func TestEstimateCreateRequiresDocumentDate(t *testing.T) {
+	for _, tc := range []struct {
+		args  []string
+		stdin string
+	}{
+		{[]string{"estimate", "create", "--name", "A", "--item", "name=A,qty=1,price=5,vat=19"}, ""},
+		{[]string{"estimate", "create", "--name", "A", "--item", "name=A,qty=1,price=5,vat=19", "--dry-run"}, ""},
+		{[]string{"estimate", "create", "--input", "-"}, `{"name":"A","line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`},
+		{[]string{"estimate", "create", "--input", "-"}, `{"name":"A","document_date":null,"line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`},
+	} {
+		app, srv := apiApp(t)
+		app.In = strings.NewReader(tc.stdin)
+		wantExit(t, app, Run(app, append(tc.args, "-o", "json")), 5)
+		wantRequests(t, srv, 0)
+		if out, errs := bufs(app); out != "" || !strings.Contains(errs, "document_date") {
+			t.Errorf("%v %s: stdout = %q, stderr = %q", tc.args, tc.stdin, out, errs)
+		}
+	}
+
+	app, srv := apiApp(t)
+	wantExit(t, app, Run(app, []string{"estimate", "create", "--help"}), 0)
+	wantRequests(t, srv, 0)
+	out, _ := bufs(app)
+	i := strings.Index(out, "--document-date Datum")
+	if line, _, _ := strings.Cut(out[max(i, 0):], "\n"); i < 0 || !strings.Contains(line, "(Pflicht)") {
+		t.Errorf("Hilfe nennt --document-date nicht als Pflicht:\n%s", out)
+	}
+}
+
 func TestInvoiceCreate(t *testing.T) {
 	app, srv := apiApp(t)
 	wantExit(t, app, Run(app, []string{"invoice", "create", "--name", "Beratung Oktober", "--customer", "3214",
@@ -125,8 +158,8 @@ func TestInvoiceCreate(t *testing.T) {
 func TestEstimateCreate(t *testing.T) {
 	app, srv := apiApp(t)
 	wantExit(t, app, Run(app, []string{"estimate", "create", "--name", "Angebot Website", "--customer", "3052",
-		"--customer-project", "4316", "--item", "name=Konzeption,qty=3,unit=Tag,price=800,vat=19", "-o", "json"}), 0)
-	wantBody(t, srv, "POST", "/income/estimates", `{"name":"Angebot Website","customer":{"id":3052,"project":{"id":4316}},`+
+		"--customer-project", "4316", "--document-date", "2026-11-04", "--item", "name=Konzeption,qty=3,unit=Tag,price=800,vat=19", "-o", "json"}), 0)
+	wantBody(t, srv, "POST", "/income/estimates", `{"name":"Angebot Website","customer":{"id":3052,"project":{"id":4316}},"document_date":"2026-11-04",`+
 		`"line_items":[{"name":"Konzeption","quantity":3,"unit":"Tag","price":800,"vat_rate":0.19}]}`)
 	if out, errs := bufs(app); !strings.Contains(out, `"type": "estimate"`) || errs != "" {
 		t.Errorf("stdout = %s, stderr = %q", out, errs)
@@ -348,7 +381,7 @@ func TestIncomeMutationsDryRun(t *testing.T) {
 	}{
 		{[]string{"invoice", "create", "--name", "R", "--payment-term", "1130", "--item", "name=A,qty=1,price=5,vat=19"},
 			"POST", "/income/invoices", `"credits": 50`, `"vat_rate": 0.19`},
-		{[]string{"estimate", "create", "--name", "A", "--item", "name=A,qty=1,price=5,vat=19"},
+		{[]string{"estimate", "create", "--name", "A", "--document-date", "2026-11-04", "--item", "name=A,qty=1,price=5,vat=19"},
 			"POST", "/income/estimates", `"credits": 50`, `"name": "A"`},
 		{[]string{"invoice", "update", "459", "--name", "Neu"},
 			"PUT", "/income/invoices/459", `"credits": 1`, `"name": "Neu"`},

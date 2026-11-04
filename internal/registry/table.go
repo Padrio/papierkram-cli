@@ -612,8 +612,8 @@ var table = []Entry{
 		Columns: estimateColumns,
 		Short:   "Angebot anlegen",
 		Examples: []string{
-			`papierkram estimate create --name "Angebot Website" --customer 3052 --item "name=Konzeption,qty=3,unit=Tag,price=800,vat=19"`,
-			"papierkram estimate create --name Wartung --customer 3052 --items positionen.json --dry-run",
+			`papierkram estimate create --name "Angebot Website" --customer 3052 --document-date heute --item "name=Konzeption,qty=3,unit=Tag,price=800,vat=19"`,
+			"papierkram estimate create --name Wartung --customer 3052 --document-date 2026-11-04 --items positionen.json --dry-run",
 			"papierkram estimate create --input angebot.json",
 		},
 	},

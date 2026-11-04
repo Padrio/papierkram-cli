@@ -10769,7 +10769,7 @@
                   },
                   "document_date": {
                     "format": "date",
-                    "nullable": true,
+                    "nullable": false,
                     "type": "string"
                   },
                   "flagged": {
@@ -10892,7 +10892,8 @@
                 },
                 "required": [
                   "name",
-                  "line_items"
+                  "line_items",
+                  "document_date"
                 ],
                 "type": "object"
               }
