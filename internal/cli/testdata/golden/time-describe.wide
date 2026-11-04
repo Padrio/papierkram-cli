@@ -1,0 +1,16 @@
+FELD               WERT
+ID                 272
+START              2020-05-11 10:00
+ENDE               2020-05-11 12:00
+DAUER              2:00
+AUFGABEN-ID        545
+PROJEKT-ID         4963
+KOMMENTAR
+PROJEKT            Some important project
+AUFGABE            Some Task
+BENUTZER           Will E Coyote
+ABRECHENBAR        2:00
+NICHT ABRECHENBAR  nein
+BENUTZER-ID        2473
+RECHNUNGS-ID       494
+STATUS             active

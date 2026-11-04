@@ -1,0 +1,90 @@
+billable_duration: 7200
+comments: ""
+created_at: "2026-08-28T13:44:46.000+02:00"
+duration: 7200
+ended_at: "2020-05-11T12:00:00.000+02:00"
+fingerprint: "20260828114446899"
+id: 272
+invoice:
+  billing:
+    city: Wiesbaden
+    company: Mustermann Automobile GmbH
+    contact_person: John Doe
+    country: Deutschland
+    department: Purchasing
+    email: null
+    street: Dotzheimer Str. 36
+    ust_idnr: "11/234/34567"
+    zip: "65185"
+  custom_template:
+    id: 255
+  customer_no: null
+  description: Notes for the invoice
+  document_date: "2020-05-01"
+  down_payment_total_gross: 0
+  due_date: "2020-05-31"
+  gross: false
+  id: 494
+  invoice_no: null
+  name: Time entries invoice
+  outstanding_amount: "226.0"
+  paid_at_date: null
+  record_state: active
+  sent_on: null
+  sent_to: null
+  sent_via: null
+  state: draft
+  supply_date: "2026-08-28 13:44:45 +0200"
+  total_gross: 226.0
+  total_net: 200.0
+  total_vat: 26.0
+  type: invoice
+  type_of: ""
+invoice_id: 494
+project:
+  budget_money: null
+  budget_time: null
+  budget_time_unit: null
+  budget_type: null
+  color: null
+  company_id: 3418
+  created_at: "2026-08-28T13:44:45.000+02:00"
+  customer_default: false
+  description: null
+  end_date: "9999-12-31"
+  flagged: null
+  id: 4963
+  name: Some important project
+  record_state: active
+  start_date: "9999-01-01"
+  type: project
+  updated_at: "2026-08-28T13:44:46.000+02:00"
+project_id: 4963
+record_state: active
+started_at: "2020-05-11T10:00:00.000+02:00"
+task:
+  complete: null
+  created_at: "2026-08-28T13:44:45.000+02:00"
+  deadline: null
+  flagged: null
+  id: 545
+  name: Some Task
+  project_id: 4963
+  record_state: active
+  relative_costs: null
+  type: task
+  updated_at: "2026-08-28T13:44:46.000+02:00"
+task_id: 545
+type: time_entry
+unbillable: false
+updated_at: "2026-08-28T13:44:46.000+02:00"
+user:
+  email: user-12d472fc00a4937ee5fd@example.org
+  first_name: Will E
+  full_name: Will E Coyote
+  id: 2473
+  last_name: Coyote
+  role: tracker
+  role_f: Zeiterfasser
+  type: user
+user_id: 2473

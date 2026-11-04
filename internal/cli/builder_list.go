@@ -74,6 +74,11 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 	f.Bool("desc", false, "absteigend sortieren (nur mit --sort)")
 	for _, flt := range e.Filters {
 		help := flt.Help
+		if flt.Kind == "enum" {
+			if values := queryEnum(e, flt); len(values) > 0 {
+				help += " (erlaubt: " + strings.Join(values, ", ") + ")"
+			}
+		}
 		if flt.Flag == e.Preset {
 			help += "; ohne Angabe " + presetNote(e.Preset)
 		}
@@ -83,6 +88,22 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 			f.String(flt.Flag, "", help)
 		}
 	}
+}
+
+// queryEnum returns the values of the query parameter of an "enum" filter
+// from the spec (time list --state: billing_state), without null.
+func queryEnum(e registry.Entry, flt registry.Filter) []string {
+	p := spec.QueryParams(e.OperationID)[flt.Param]
+	if p == nil || p.Schema == nil || p.Schema.Value == nil {
+		return nil
+	}
+	var out []string
+	for _, v := range p.Schema.Value.Enum {
+		if v != nil {
+			out = append(out, fmt.Sprint(v))
+		}
+	}
+	return out
 }
 
 // listRequest is a validated list invocation.

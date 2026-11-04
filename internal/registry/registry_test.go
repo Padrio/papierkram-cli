@@ -828,10 +828,11 @@ func TestProjectTaskCustomAttributeColumns(t *testing.T) {
 	}
 }
 
-// Spec 9.8: project describe without ID, task list and task create take
-// the project from the project file; no other command has a preset.
+// Spec 9.8: project describe without ID, task list, task create and time
+// list take the project from the project file; no other command has a
+// preset (time log/start/stop are custom commands of a later task).
 func TestProjectFilePresets(t *testing.T) {
-	want := map[string]string{"project describe": "project", "task list": "project", "task create": "project"}
+	want := map[string]string{"project describe": "project", "task list": "project", "task create": "project", "time list": "project"}
 	for _, e := range Entries() {
 		name := strings.TrimSpace(e.Resource + " " + e.Action)
 		if e.Preset != want[name] {
@@ -865,6 +866,71 @@ func TestPresetsAreApplicable(t *testing.T) {
 		case "create":
 		default:
 			t.Errorf("%s: Preset on action %q", name, e.Action)
+		}
+	}
+}
+
+// Spec 15 no. 81–87: time entries, all built generically.
+func TestTimeEntriesRegistered(t *testing.T) {
+	for _, w := range []struct {
+		action, opID string
+		class        Class
+		credits      int
+	}{
+		{"list", "ListTimeEntries", ClassReadOnly, 1},
+		{"create", "CreateTimeEntry", ClassCreate, 10},
+		{"describe", "GetTimeEntry", ClassReadOnly, 1},
+		{"update", "UpdateTimeEntry", ClassUpdate, 1},
+		{"delete", "DeleteTimeEntry", ClassDestructive, 1},
+		{"archive", "ArchiveTimeEntry", ClassArchive, 1},
+		{"unarchive", "UnarchiveTimeEntry", ClassArchive, 1},
+	} {
+		e, ok := Lookup("time", w.action)
+		if !ok || e.OperationID != w.opID || e.Class != w.class || e.Credits != w.credits || e.Custom {
+			t.Errorf("Lookup(time, %q) = %+v, %v; want %s %s %d credits, generic", w.action, e, ok, w.opID, w.class, w.credits)
+		}
+	}
+}
+
+// Spec 4.2, 7.1: time list filters by project, task, invoice, user,
+// billing state and start time (RFC 3339 range).
+func TestTimeListFilters(t *testing.T) {
+	type filter struct{ flag, param, kind string }
+	want := []filter{
+		{"project", "project_id", "id"},
+		{"task", "task_id", "id"},
+		{"invoice", "invoice_id", "id"},
+		{"user", "user_id", "id"},
+		{"state", "billing_state", "enum"},
+		{"since", "start_time_range_start", "datetime_from"},
+		{"until", "start_time_range_end", "datetime_to"},
+	}
+	e, _ := Lookup("time", "list")
+	if len(e.Filters) != len(want) {
+		t.Fatalf("time list: filters = %+v, want %d", e.Filters, len(want))
+	}
+	for i, w := range want {
+		if f := e.Filters[i]; f.Flag != w.flag || f.Param != w.param || f.Kind != w.kind || f.Help == "" {
+			t.Errorf("time list: filter %d = %+v, want --%s → %s (%s)", i, f, w.flag, w.param, w.kind)
+		}
+	}
+}
+
+// Spec 10.3: the default columns of time; duration (seconds in the API)
+// is shown as h:mm.
+func TestTimeColumns(t *testing.T) {
+	paths := []string{"id", "started_at", "ended_at", "duration", "task_id", "project_id", "comments"}
+	for _, action := range []string{"list", "describe", "create", "update", "archive", "unarchive"} {
+		e, _ := Lookup("time", action)
+		var got []string
+		for _, c := range e.Columns.Table {
+			got = append(got, c.Path)
+			if c.Path == "duration" && (c.Fmt == nil || c.Fmt(json.Number("5400")) != "1:30") {
+				t.Errorf("time %s: duration is not formatted as h:mm", action)
+			}
+		}
+		if !slices.Equal(got, paths) {
+			t.Errorf("time %s: table columns %v, want %v", action, got, paths)
 		}
 	}
 }

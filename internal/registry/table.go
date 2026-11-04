@@ -227,6 +227,35 @@ var (
 			{Header: "STATUS", Path: "record_state"},
 		},
 	}
+	// time (spec 10.3); duration and billable_duration are seconds in the
+	// API, shown as h:mm. The object responses embed project, task and
+	// user, list entries only have their IDs.
+	timeColumns = output.Columns{
+		Table: []output.Column{
+			{Header: "ID", Path: "id"},
+			{Header: "START", Path: "started_at", Fmt: output.FmtDate},
+			{Header: "ENDE", Path: "ended_at", Fmt: output.FmtDate},
+			{Header: "DAUER", Path: "duration", Fmt: output.FmtDurationHM},
+			{Header: "AUFGABEN-ID", Path: "task_id"},
+			{Header: "PROJEKT-ID", Path: "project_id"},
+			{Header: "KOMMENTAR", Path: "comments"},
+		},
+		Wide: []output.Column{
+			{Header: "ABRECHENBAR", Path: "billable_duration", Fmt: output.FmtDurationHM},
+			{Header: "NICHT ABRECHENBAR", Path: "unbillable"},
+			{Header: "BENUTZER-ID", Path: "user_id"},
+			{Header: "RECHNUNGS-ID", Path: "invoice_id"},
+			{Header: "STATUS", Path: "record_state"},
+		},
+	}
+	timeDetailColumns = output.Columns{
+		Table: timeColumns.Table,
+		Wide: append([]output.Column{
+			{Header: "PROJEKT", Path: "project.name"},
+			{Header: "AUFGABE", Path: "task.name"},
+			{Header: "BENUTZER", Path: "user.full_name"},
+		}, timeColumns.Wide...),
+	}
 	userColumns = output.Columns{
 		Table: []output.Column{
 			{Header: "ID", Path: "id"},
@@ -1113,6 +1142,93 @@ var table = []Entry{
 		Examples: []string{
 			"papierkram task unarchive 488",
 			"papierkram task unarchive 488 -o json",
+		},
+	},
+	// 81–87; time log, start, stop, status and discard are custom commands
+	// (spec 9.6) of a later task
+	{
+		// spec 9.8: without --project the project of the project file
+		Resource: "time", Action: "list", OperationID: "ListTimeEntries",
+		Method: "GET", Path: "/tracker/time_entries", Class: ClassReadOnly, Credits: 1,
+		Filters: []Filter{
+			{Flag: "project", Param: "project_id", Kind: "id", Help: "Nur Zeiteinträge dieses Projekts (ID)"},
+			{Flag: "task", Param: "task_id", Kind: "id", Help: "Nur Zeiteinträge dieser Aufgabe (ID)"},
+			{Flag: "invoice", Param: "invoice_id", Kind: "id", Help: "Nur Zeiteinträge dieser Rechnung (ID)"},
+			{Flag: "user", Param: "user_id", Kind: "id", Help: "Nur Zeiteinträge dieses Benutzers (ID)"},
+			{Flag: "state", Param: "billing_state", Kind: "enum", Help: "Nur Zeiteinträge mit diesem Abrechnungsstatus"},
+			{Flag: "since", Param: "start_time_range_start", Kind: "datetime_from",
+				Help: "Nur Zeiteinträge mit Beginn ab diesem Zeitpunkt (RFC 3339; YYYY-MM-DD, heute, gestern: ab 00:00:00 Uhr lokaler Zeit)"},
+			{Flag: "until", Param: "start_time_range_end", Kind: "datetime_to",
+				Help: "Nur Zeiteinträge mit Beginn bis zu diesem Zeitpunkt (RFC 3339; YYYY-MM-DD, heute, gestern: bis 23:59:59 Uhr lokaler Zeit)"},
+		},
+		Columns: timeColumns,
+		Short:   "Zeiteinträge auflisten",
+		Examples: []string{
+			"papierkram time list --since 2026-10-01 --until 2026-10-31",
+			"papierkram time list --project 4963 --state unbilled -o wide",
+			"papierkram time list --user 1 --since heute --all -o json",
+		},
+		Preset: "project",
+	},
+	{
+		Resource: "time", Action: "create", OperationID: "CreateTimeEntry",
+		Method: "POST", Path: "/tracker/time_entries", Class: ClassCreate, Credits: 10,
+		Columns: timeDetailColumns,
+		Short:   "Zeiteintrag anlegen",
+		Examples: []string{
+			"papierkram time create --entry-date 2026-11-04 --started-at-time 09:00 --ended-at-time 10:30 --task 545 --user 1",
+			`papierkram time create --entry-date heute --started-at-time 13:00 --ended-at-time 14:15 --task 545 --user 1 --comments "Abstimmung mit Kunde" --dry-run`,
+			"papierkram time create --input zeit.json",
+		},
+	},
+	{
+		Resource: "time", Action: "describe", OperationID: "GetTimeEntry",
+		Method: "GET", Path: "/tracker/time_entries/{id}", Class: ClassReadOnly, Credits: 1,
+		Columns: timeDetailColumns,
+		Short:   "Zeiteintrag anzeigen",
+		Examples: []string{
+			"papierkram time describe 272",
+			"papierkram time describe 272 -o wide",
+		},
+	},
+	{
+		Resource: "time", Action: "update", OperationID: "UpdateTimeEntry",
+		Method: "PUT", Path: "/tracker/time_entries/{id}", Class: ClassUpdate, Credits: 1,
+		Columns: timeDetailColumns,
+		Short:   "Zeiteintrag ändern",
+		Examples: []string{
+			"papierkram time update 272 --ended-at-time 12:30",
+			`papierkram time update 272 --unbillable --comments "Interne Abstimmung"`,
+			"papierkram time update 272 --input zeit.json",
+		},
+	},
+	{
+		Resource: "time", Action: "delete", OperationID: "DeleteTimeEntry",
+		Method: "DELETE", Path: "/tracker/time_entries/{id}", Class: ClassDestructive, Credits: 1,
+		Short: "Zeiteintrag löschen",
+		Examples: []string{
+			"papierkram time delete 272",
+			"papierkram time delete 272 --yes",
+		},
+	},
+	{
+		Resource: "time", Action: "archive", OperationID: "ArchiveTimeEntry",
+		Method: "POST", Path: "/tracker/time_entries/{id}/archive", Class: ClassArchive, Credits: 1,
+		Columns: timeDetailColumns,
+		Short:   "Zeiteintrag archivieren",
+		Examples: []string{
+			"papierkram time archive 272",
+			"papierkram time archive 272 -o json",
+		},
+	},
+	{
+		Resource: "time", Action: "unarchive", OperationID: "UnarchiveTimeEntry",
+		Method: "POST", Path: "/tracker/time_entries/{id}/unarchive", Class: ClassArchive, Credits: 1,
+		Columns: timeDetailColumns,
+		Short:   "Zeiteintrag aus dem Archiv holen",
+		Examples: []string{
+			"papierkram time unarchive 272",
+			"papierkram time unarchive 272 -o json",
 		},
 	},
 	// 88–89
