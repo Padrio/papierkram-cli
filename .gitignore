@@ -1,8 +1,9 @@
-# Build and release (GoReleaser; completions/ and man/ come from the
-# before hooks scripts/completions.sh and scripts/manpages.sh)
+# Build and release (GoReleaser; completions/, man/ and man-gz/ come from
+# the before hooks scripts/completions.sh and scripts/manpages.sh)
 /dist/
 /completions/
 /man/
+/man-gz/
 /bin/
 /papierkram
 /papierkram.exe

@@ -156,7 +156,9 @@ jobs:
           test "$(grep -c . dist/checksums.txt)" -eq 10
           # pk link, man pages and completions in the package
           dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/bin/pk -> papierkram'
-          dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/man/man1/papierkram.1'
+          dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/man/man1/papierkram.1.gz'
+          # Debian/Ubuntu zsh searches vendor-completions, not site-functions
+          dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/zsh/vendor-completions/_papierkram'
           dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/bash-completion/completions/papierkram'
           dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/bash-completion/completions/pk -> papierkram'
           tar -tzf dist/papierkram_*_linux_amd64.tar.gz | grep -Fx 'completions/_papierkram'
