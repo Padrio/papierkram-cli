@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
@@ -47,7 +48,7 @@ const deliverLong = `
 
 --via email versendet eine E-Mail mit Empfänger (--to), Betreff (--subject) und Text (--body oder --body-file, - für die Standardeingabe); Betreff und Text dürfen Platzhalter wie {{rechnung.rechnungsnummer}} oder {{angebot.angebotsnummer}} enthalten. --via pdf finalisiert den Beleg und vergibt die Nummer, ohne E-Mail. Ohne Terminal ist --yes nötig.
 
-Danach liest das CLI den Beleg nach (1 weiterer Credit) und zeigt id, Nummer, state, sent_on, sent_via und sent_to. Scheitert nur das Nachlesen, endet der Befehl mit Exit 0 und einer Warnung – dann NICHT erneut ausführen. Bricht die Verbindung nach dem Senden ab, entscheidet das Nachlesen: sent_on gesetzt → Exit 0 mit Warnung, sonst Exit 12 (vor Wiederholung per describe prüfen).`
+Danach liest das CLI den Beleg nach (1 weiterer Credit) und zeigt id, Nummer, state, sent_on, sent_via und sent_to. Scheitert nur das Nachlesen, endet der Befehl mit Exit 0 und einer Warnung – dann NICHT erneut ausführen. Bricht die Verbindung nach dem Senden ab, entscheidet das Nachlesen: sent_on von heute → Exit 0 mit Warnung, sonst Exit 12 (vor Wiederholung per describe prüfen).`
 
 // newDeliverCmd builds the deliver command of an invoice or estimate entry.
 func (a *App) newDeliverCmd(e registry.Entry) *cobra.Command {
@@ -95,7 +96,8 @@ func deliverModes(e registry.Entry) []string {
 // is read back and id, number, state, sent_on, sent_via and sent_to are
 // printed. A failed readback is exit 0 with a warning (R02). When the
 // connection breaks after the request was sent (outcome_unknown), the
-// readback decides: sent_on set → exit 0 with a warning, else exit 12 (R37).
+// readback decides: sent_on today → exit 0 with a warning, else exit 12 (R37,
+// see deliverUnknown).
 func (a *App) runDeliver(c *cobra.Command, e registry.Entry, args []string) error {
 	params, err := pathValues(c, e, args)
 	if err != nil {
@@ -147,26 +149,68 @@ type deliveredJSON struct {
 }
 
 // deliverUnknown decides a deliver whose answer was lost after sending
-// (spec 10.4): the readback shows sent_on → exit 0 with a warning; no
-// sent_on or no readback → exit 12 with the describe command to check.
+// (spec 10.4). Only a sent_on of today (in App.Location) counts as this
+// delivery: exit 0 with a warning. sent_on is set by every delivery, so an
+// earlier date only shows a previous one (a re-delivery of an already sent
+// document); that, no sent_on or no readback is exit 12 with the describe
+// command to check, and the hint names the earlier date.
 func (a *App) deliverUnknown(o output.Options, e registry.Entry, id int64, doc readback, sendErr, readErr error) error {
 	ce := clierr.From(sendErr)
-	if on := doc.sentOn(); readErr == nil && on != "" {
-		warning := fmt.Sprintf("keine Antwort auf den Versand (%s), laut Nachlesen am %s versendet: sehr wahrscheinlich versendet – NICHT erneut ausführen", ce.Message, on)
+	on := doc.sentOn()
+	day := a.sentDay(on)
+	if readErr == nil && day != "" && day == a.today() {
+		warning := fmt.Sprintf("keine Antwort auf den Versand (%s), laut Nachlesen heute (%s) versendet: sehr wahrscheinlich versendet – NICHT erneut ausführen", ce.Message, on)
 		output.Warn(a.Err, warning)
 		cols := deliverColumns(e)
 		return afterRequest(output.Render(o, doc.result(cols, []string{warning}), cols))
 	}
+	hint := fmt.Sprintf("Ergebnis unbekannt – vor Wiederholung per describe prüfen: papierkram %s describe %d", e.Resource, id)
 	why := "Nachlesen: nicht als versendet markiert (sent_on leer)"
-	if readErr != nil {
+	switch {
+	case readErr != nil:
 		why = "Nachlesen fehlgeschlagen: " + clierr.From(readErr).Message
+	case on != "":
+		why = "Nachlesen: sent_on " + on + " ist nicht heute"
+		if day != "" {
+			on = day
+		}
+		hint += " (zuletzt versendet am " + on + ", dieser Versand ist nicht bestätigt)"
 	}
 	return &clierr.Error{
 		Code:    clierr.CodeOutcomeUnknown,
 		Message: ce.Message + "; " + why,
-		Hint:    fmt.Sprintf("Ergebnis unbekannt – vor Wiederholung per describe prüfen: papierkram %s describe %d", e.Resource, id),
+		Hint:    hint,
 		Cause:   sendErr,
 	}
+}
+
+// sentOnLayouts are the forms of sent_on: a date (spec: format date) or a
+// date-time with offset as the API writes them elsewhere (supply_date
+// "2026-08-28 13:41:23 +0200", RFC 3339).
+var sentOnLayouts = []string{"2006-01-02 15:04:05 -0700", time.RFC3339}
+
+// sentDay is the calendar day (YYYY-MM-DD) of sent_on in App.Location; a
+// date-time is converted first. "" when empty or not readable.
+func (a *App) sentDay(on string) string {
+	if _, err := time.Parse(time.DateOnly, on); err == nil {
+		return on
+	}
+	for _, layout := range sentOnLayouts {
+		if t, err := time.Parse(layout, on); err == nil {
+			return t.In(a.loc()).Format(time.DateOnly)
+		}
+	}
+	return ""
+}
+
+// today is the current day (YYYY-MM-DD) in App.Location.
+func (a *App) today() string { return a.Now().In(a.loc()).Format(time.DateOnly) }
+
+func (a *App) loc() *time.Location {
+	if a.Location == nil {
+		return time.Local
+	}
+	return a.Location
 }
 
 // deliverColumns are the output fields of deliver (spec 9.1) and their

@@ -139,19 +139,27 @@ func TestR06_DeliverInputAddressInsteadOfRecipient(t *testing.T) {
 	}
 }
 
+// The readback counts as "sent" only with a sent_on of today in
+// App.Location (berlinApp: 2026-10-26 00:30, the day after the end of
+// DST); an older sent_on is an earlier delivery, not this one.
 func TestR37_DeliverTimeoutReadbackShowsSent(t *testing.T) {
 	cases := []struct {
 		name, sentOn string
 		readback     int
 		exit         int
+		hint         string
 	}{
-		{"versendet", `"2026-11-04"`, http.StatusOK, 0},
-		{"nicht versendet", "null", http.StatusOK, 12},
-		{"Nachlesen scheitert", "", http.StatusNotFound, 12},
+		{"heute versendet", `"2026-10-26"`, http.StatusOK, 0, ""},
+		{"heute, Datum mit Uhrzeit UTC", `"2026-10-25 23:45:00 +0000"`, http.StatusOK, 0, ""},
+		{"heute, RFC 3339", `"2026-10-26T00:10:00+01:00"`, http.StatusOK, 0, ""},
+		{"früher versendet", `"2026-10-25"`, http.StatusOK, 12, "zuletzt versendet am 2026-10-25"},
+		{"gestern, Datum mit Uhrzeit UTC", `"2026-10-25 22:00:00 +0000"`, http.StatusOK, 12, "zuletzt versendet am 2026-10-25"},
+		{"nicht versendet", "null", http.StatusOK, 12, "sent_on leer"},
+		{"Nachlesen scheitert", "", http.StatusNotFound, 12, "Nachlesen fehlgeschlagen"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			app, srv := apiApp(t)
+			app, srv := berlinApp(t)
 			srv.OnFunc("POST", "/income/invoices/459/deliver", func(_ http.ResponseWriter, r *http.Request) {
 				<-r.Context().Done() // request fully read, no answer until the client gives up
 			})
@@ -171,13 +179,13 @@ func TestR37_DeliverTimeoutReadbackShowsSent(t *testing.T) {
 			}
 			out, errs := bufs(app)
 			if tc.exit == 0 {
-				if !strings.Contains(out, `"sent_on": "2026-11-04"`) || !strings.Contains(out, `"warnings": [`) ||
+				if !strings.Contains(out, `"sent_on": `+tc.sentOn) || !strings.Contains(out, `"warnings": [`) ||
 					!strings.Contains(errs, "Warnung: ") || !strings.Contains(errs, "NICHT erneut ausführen") {
 					t.Errorf("stdout = %s\nstderr = %s", out, errs)
 				}
 				return
 			}
-			if out != "" || !strings.Contains(errs, "vor Wiederholung per describe prüfen") ||
+			if out != "" || !strings.Contains(errs, "vor Wiederholung per describe prüfen") || !strings.Contains(errs, tc.hint) ||
 				!strings.Contains(errs, "papierkram invoice describe 459") || !strings.Contains(errs, `"exit_code":12`) {
 				t.Errorf("stdout = %q\nstderr = %s", out, errs)
 			}
