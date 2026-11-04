@@ -11,7 +11,8 @@ import (
 )
 
 // invoice and estimate commands (spec 7.1, 15 no. 30–37, 40–47). deliver
-// and pdf are registered as Custom (Tasks 31, 32) and not built yet.
+// has its own handler (deliver.go, Task 31); pdf is registered as Custom
+// (Task 32) and not built yet.
 
 // TestIncomeCommandsGolden renders list and describe of invoice and
 // estimate from the spec examples of the mock in every output format.
@@ -319,25 +320,24 @@ func TestIncomeCancelNeedsConfirmation(t *testing.T) {
 	}
 }
 
-// deliver and pdf are Custom entries: registered, but no generic command
-// until their handlers exist (Tasks 31, 32).
+// deliver and pdf are Custom entries: deliver is built by its own handler
+// (Task 31), pdf is registered but has no command until Task 32.
 func TestIncomeCustomActionsNotBuilt(t *testing.T) {
 	for _, resource := range []string{"invoice", "estimate"} {
-		for _, action := range []string{"deliver", "pdf"} {
-			app, srv := apiApp(t)
-			wantExit(t, app, Run(app, []string{resource, action, "7", "--yes"}), 2)
-			wantRequests(t, srv, 0)
-		}
-		app, _ := apiApp(t)
+		app, srv := apiApp(t)
+		wantExit(t, app, Run(app, []string{resource, "pdf", "7", "--yes"}), 2)
+		wantRequests(t, srv, 0)
+
+		app, _ = apiApp(t)
 		wantExit(t, app, Run(app, []string{resource}), 0)
 		help := mustOut(app)
 		var actions []string
-		for _, a := range []string{"list", "describe", "create", "update", "delete", "archive", "unarchive", "cancel"} {
+		for _, a := range []string{"list", "describe", "create", "update", "delete", "archive", "unarchive", "cancel", "deliver"} {
 			if strings.Contains(help, "  "+a+" ") {
 				actions = append(actions, a)
 			}
 		}
-		if len(actions) != 8 || strings.Contains(help, "deliver") || strings.Contains(help, "  pdf ") {
+		if len(actions) != 9 || strings.Contains(help, "  pdf ") {
 			t.Errorf("%s: Gruppenhilfe %v:\n%s", resource, actions, help)
 		}
 	}

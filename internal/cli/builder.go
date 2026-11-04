@@ -18,8 +18,8 @@ import (
 // root (spec 7.1), with the German aliases, and below it one command per
 // registry entry. A resource whose entry has no action (info) becomes that
 // command itself. Entries the generic builder does not make (see generic)
-// are skipped: their handlers add themselves to the group. Resources without
-// any entry get no command yet.
+// get the command of their handler (customCmds) or, without one yet, none.
+// Resources without any entry get no command yet.
 func BuildResourceCommands(app *App, root *cobra.Command) {
 	buildResourceCommands(app, root, registry.Resources(), registry.Entries())
 }
@@ -38,8 +38,7 @@ func buildResourceCommands(app *App, root *cobra.Command, resources []registry.R
 			continue
 		}
 		if len(own) == 1 && own[0].Action == "" {
-			if generic(own[0]) {
-				cmd := app.newEntryCmd(own[0])
+			if cmd := app.entryCmd(own[0]); cmd != nil {
 				cmd.Aliases = r.Aliases
 				root.AddCommand(cmd)
 			}
@@ -58,12 +57,32 @@ func buildResourceCommands(app *App, root *cobra.Command, resources []registry.R
 			RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 		}
 		for _, e := range own {
-			if generic(e) {
-				group.AddCommand(app.newEntryCmd(e))
+			if cmd := app.entryCmd(e); cmd != nil {
+				group.AddCommand(cmd)
 			}
 		}
 		root.AddCommand(group)
 	}
+}
+
+// customCmds build the commands of Custom entries by action (their own
+// handlers, Phase 8). Each handler runs the protection layer itself:
+// mutationClient, then the body, then beforeMutation, and its command
+// carries the pk:class annotation.
+var customCmds = map[string]func(*App, registry.Entry) *cobra.Command{
+	"deliver": (*App).newDeliverCmd,
+}
+
+// entryCmd builds the command of e: the generic one, the one of its Custom
+// handler, or nil for a Custom entry whose handler does not exist yet.
+func (a *App) entryCmd(e registry.Entry) *cobra.Command {
+	if generic(e) {
+		return a.newEntryCmd(e)
+	}
+	if build := customCmds[e.Action]; e.Custom && build != nil {
+		return build(a, e)
+	}
+	return nil
 }
 
 // simpleActions are the actions handled by runSimpleAction, with the German
@@ -303,7 +322,8 @@ func afterRequest(err error) error {
 // mutationClient before the body was read) so no path sends without it.
 // With --dry-run it prints the request and returns false: nothing is sent,
 // exit 0, no confirmation. Destructive and send classes then need the
-// confirmation (exit 8); the summary GET runs only when a prompt follows.
+// confirmation (exit 8); the summary GET runs only when a prompt follows,
+// and for the send class the summary adds how and to whom (from body).
 // body is the request body, nil for actions without one. proceed reports
 // whether the caller sends the request.
 func (a *App) beforeMutation(c *cobra.Command, e registry.Entry, client *api.Client, params []int64, body map[string]any) (proceed bool, err error) {
@@ -334,6 +354,9 @@ func (a *App) beforeMutation(c *cobra.Command, e registry.Entry, client *api.Cli
 	s, err := a.fetchSummary(c.Context(), client, e, params)
 	if err != nil {
 		return false, err
+	}
+	if e.Class == registry.ClassSend {
+		s.Via, s.Recipient, s.Subject = sendSummary(body)
 	}
 	if err := a.confirm(c.Context(), e, s); err != nil {
 		return false, err

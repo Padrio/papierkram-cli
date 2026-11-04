@@ -18,11 +18,12 @@ import (
 
 // Summary is what a confirmation shows (spec 8.2): the German resource
 // noun, the ID, and when known the name and the gross amount; for the send
-// class also recipient and subject (set by the caller).
+// class also the way of sending, recipient and subject (see sendSummary).
 type Summary struct {
 	Resource           string
 	ID                 int64
 	Name, Amount       string
+	Via                string
 	Recipient, Subject string
 }
 
@@ -79,6 +80,9 @@ func (a *App) confirm(ctx context.Context, e registry.Entry, s Summary) error {
 	}
 	if s.Amount != "" {
 		head += " (" + s.Amount + ")"
+	}
+	if s.Via != "" {
+		_, _ = fmt.Fprintf(a.Err, "Versand:   %s\n", s.Via)
 	}
 	if s.Recipient != "" {
 		_, _ = fmt.Fprintf(a.Err, "Empfänger: %s\n", s.Recipient)
