@@ -1,0 +1,371 @@
+//go:build e2e
+
+package e2e
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Padrio/papierkram-cli/internal/auth"
+	"github.com/Padrio/papierkram-cli/internal/cli"
+	"github.com/Padrio/papierkram-cli/internal/config"
+	"github.com/Padrio/papierkram-cli/internal/e2eguard"
+)
+
+// liveSuite is the state of one live run against the sandbox.
+type liveSuite struct {
+	sub, token string
+	runID      string
+	prefix     string // pk-e2e-<runid>-
+	red        e2eguard.Redactor
+	meter      *e2eguard.Meter
+	tr         *e2eguard.Transport
+	loc        *time.Location
+	// mainDir holds config and cache of the CLI runs of TestMain
+	// (cleanup); tests use t.TempDir().
+	mainDir string
+
+	// created lists every object of this run for the cleanup at the end,
+	// in creation order.
+	created []object
+	// fixtures memoizes shared objects by key; failed records fixtures
+	// whose creation failed, so later tests fail fast instead of retrying.
+	fixtures map[string]map[string]any
+	failed   map[string]bool
+	// exhausted is set once the budget stopped a test; all later tests
+	// skip.
+	exhausted bool
+}
+
+// object is something the run created. name is what Owned checks: name,
+// first_name of a person, comments of a time entry.
+type object struct {
+	resource string // CLI resource: company, person, invoice, …
+	id       int64
+	company  int64 // person: its company
+	name     string
+}
+
+// newLiveSuite prepares a run. It sends nothing.
+func newLiveSuite(getenv func(string) string, red e2eguard.Redactor) (*liveSuite, error) {
+	sub := getenv(e2eguard.EnvSubdomain)
+	norm, err := config.NormalizeSubdomain(sub, e2eguard.EnvSubdomain)
+	if err != nil {
+		return nil, err
+	}
+	runID, err := e2eguard.RunID(getenv, nil)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := os.MkdirTemp("", "pk-e2e-")
+	if err != nil {
+		return nil, err
+	}
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		loc = time.Local
+	}
+	meter := e2eguard.NewMeter(creditBudget)
+	return &liveSuite{
+		sub:      sub,
+		token:    getenv(e2eguard.EnvToken),
+		runID:    runID,
+		prefix:   e2eguard.Prefix(runID),
+		red:      red,
+		meter:    meter,
+		tr:       &e2eguard.Transport{Base: http.DefaultTransport, Scheme: "https", Host: norm + ".papierkram.de", Meter: meter},
+		loc:      loc,
+		mainDir:  dir,
+		fixtures: map[string]map[string]any{},
+		failed:   map[string]bool{},
+	}, nil
+}
+
+// result is one CLI run.
+type result struct {
+	code           int
+	stdout, stderr string
+	// exchanges are the HTTP requests of this run.
+	exchanges []e2eguard.Exchange
+}
+
+// exec runs the real CLI (cli.Run) with config and cache below dir. The
+// environment of the CLI holds only the subdomain and token of the
+// sandbox and these directories: no user config, no keychain (in-memory
+// store), no PAPIERKRAM_BASE_URL or other variable of the caller.
+func (s *liveSuite) exec(dir, stdin string, args ...string) result {
+	cfg, cache := filepath.Join(dir, "config"), filepath.Join(dir, "cache")
+	env := map[string]string{
+		"PAPIERKRAM_SUBDOMAIN":  s.sub,
+		"PAPIERKRAM_TOKEN":      s.token,
+		"PAPIERKRAM_CONFIG_DIR": cfg,
+		"PAPIERKRAM_CACHE_DIR":  cache,
+	}
+	var out, errb bytes.Buffer
+	app := &cli.App{
+		In: strings.NewReader(stdin), Out: &out, Err: &errb,
+		Env:          func(k string) string { return env[k] },
+		Now:          time.Now,
+		Location:     s.loc,
+		ConfigDir:    cfg,
+		CacheDir:     cache,
+		HTTPClient:   &http.Client{Transport: s.tr},
+		Keyring:      auth.NewMemory(),
+		Getwd:        func() (string, error) { return dir, nil },
+		ReadPassword: func() ([]byte, error) { return nil, errors.New("kein Terminal in der E2E-Suite") },
+		Sleep:        time.Sleep,
+	}
+	n := s.tr.Len()
+	code := cli.Run(app, append([]string{"--no-input"}, args...))
+	return result{code: code, stdout: out.String(), stderr: errb.String(), exchanges: s.tr.Since(n)}
+}
+
+// run is exec in a test: own directories, and the CLI output must never
+// contain the token (hard: the CLI promises that).
+func (s *liveSuite) run(t *testing.T, stdin string, args ...string) result {
+	t.Helper()
+	r := s.exec(t.TempDir(), stdin, args...)
+	if s.red.Contains(r.stdout) || s.red.Contains(r.stderr) {
+		s.errorf(t, "CLI-Ausgabe von %q enthält das Token", strings.Join(args, " "))
+	}
+	return r
+}
+
+// ok runs args with -o json, requires exit 0 and decodes stdout.
+func (s *liveSuite) ok(t *testing.T, stdin string, args ...string) map[string]any {
+	t.Helper()
+	r := s.run(t, stdin, append(args, "-o", "json")...)
+	if r.code != 0 {
+		s.fatalf(t, "papierkram %s: Exit %d\n%s", strings.Join(args, " "), r.code, r.stderr)
+	}
+	return s.decode(t, r.stdout)
+}
+
+func (s *liveSuite) decode(t *testing.T, raw string) map[string]any {
+	t.Helper()
+	var m map[string]any
+	d := json.NewDecoder(strings.NewReader(raw))
+	d.UseNumber()
+	if err := d.Decode(&m); err != nil {
+		s.fatalf(t, "keine JSON-Ausgabe: %v\n%s", err, raw)
+	}
+	return m
+}
+
+// need skips the test when n more credits plus the reserve for the
+// cleanup of all objects created so far do not fit the budget; all later
+// tests skip too.
+func (s *liveSuite) need(t *testing.T, n int) {
+	t.Helper()
+	if s.exhausted {
+		s.skipf(t, "Credit-Budget erschöpft (%d von %d); Test übersprungen", s.meter.Spent(), s.meter.Budget())
+	}
+	if reserve := s.cleanupReserve(); !s.meter.Fits(n + reserve) {
+		s.exhausted = true
+		s.skipf(t, "Credit-Budget: %d nötig plus %d für das Aufräumen, verbraucht %d von %d; dieser und alle folgenden Tests übersprungen",
+			n, reserve, s.meter.Spent(), s.meter.Budget())
+	}
+}
+
+// cleanupReserve is the worst case of the final cleanup: per document
+// delete, cancel, delete, archive; per other object delete, archive.
+func (s *liveSuite) cleanupReserve() int {
+	n := 0
+	for _, o := range s.created {
+		if cleanupDocs[o.resource] {
+			n += 4
+		} else {
+			n += 2
+		}
+	}
+	return n
+}
+
+// track registers an object of this run for the cleanup.
+func (s *liveSuite) track(o object) { s.created = append(s.created, o) }
+
+// fixture returns the shared object key, creating it with mk on first use.
+func (s *liveSuite) fixture(t *testing.T, key string, mk func() map[string]any) map[string]any {
+	t.Helper()
+	if v, ok := s.fixtures[key]; ok {
+		return v
+	}
+	if s.failed[key] {
+		s.fatalf(t, "Vorbedingung %s ist bereits gescheitert", key)
+	}
+	done := false
+	defer func() {
+		if !done {
+			s.failed[key] = true
+		}
+	}()
+	v := mk()
+	s.fixtures[key] = v
+	done = true
+	return v
+}
+
+// --- JSON helpers -----------------------------------------------------------
+
+// get walks m along keys (objects only); nil when a step is missing.
+func get(v any, keys ...string) any {
+	for _, k := range keys {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return nil
+		}
+		v = m[k]
+	}
+	return v
+}
+
+func str(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	default:
+		return fmt.Sprint(x)
+	}
+}
+
+func idOf(v any) int64 {
+	n, _ := strconv.ParseInt(str(get(v, "id")), 10, 64)
+	return n
+}
+
+func num(v any) (float64, bool) {
+	f, err := strconv.ParseFloat(str(v), 64)
+	return f, err == nil && v != nil
+}
+
+func ids(id int64) string { return strconv.FormatInt(id, 10) }
+
+// entries are the list entries of a list output.
+func entries(m map[string]any) []map[string]any {
+	raw, _ := m["entries"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, e := range raw {
+		if em, ok := e.(map[string]any); ok {
+			out = append(out, em)
+		}
+	}
+	return out
+}
+
+// jsonType is the JSON type name of a decoded value.
+func jsonType(v any) string {
+	switch v.(type) {
+	case nil:
+		return "null"
+	case string:
+		return "string"
+	case json.Number:
+		return "number"
+	case bool:
+		return "boolean"
+	case []any:
+		return "array"
+	case map[string]any:
+		return "object"
+	}
+	return fmt.Sprintf("%T", v)
+}
+
+// lastExchange is the last exchange of r with method and a path ending in
+// suffix; nil when there is none.
+func lastExchange(r result, method, suffix string) *e2eguard.Exchange {
+	for i := len(r.exchanges) - 1; i >= 0; i-- {
+		e := r.exchanges[i]
+		if e.Method == method && strings.HasSuffix(strings.TrimRight(e.Path, "/"), suffix) {
+			return &e
+		}
+	}
+	return nil
+}
+
+// apiMessage is the message of an API error body, or the body itself.
+func apiMessage(body []byte) string {
+	var e struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &e) == nil && e.Message != "" {
+		return e.Message
+	}
+	if len(body) > 300 {
+		body = body[:300]
+	}
+	return string(body)
+}
+
+// --- cleanup ----------------------------------------------------------------
+
+// cleanupDocs are the resources whose objects may be final (numbered):
+// they cannot always be deleted, then they are cancelled and archived.
+var cleanupDocs = map[string]bool{"invoice": true, "estimate": true, "voucher": true}
+
+// noArchive are the resources without archive.
+var noArchive = map[string]bool{"person": true}
+
+// remove deletes o; where that is not possible it cancels (documents) and
+// archives it (spec 11.1). It touches o only when its name is owned by the
+// suite. It returns what happened and false when o is still active.
+func (s *liveSuite) remove(dir string, o object) (string, bool) {
+	if !e2eguard.Owned(o.name) {
+		return fmt.Sprintf("nicht angefasst: Name %q ohne Präfix %s", o.name, e2eguard.NamePrefix), false
+	}
+	id := ids(o.id)
+	extra := []string{"--yes", "-o", "json"}
+	if o.resource == "person" {
+		extra = append(extra, "--company", ids(o.company))
+	}
+	do := func(action string) result {
+		return s.exec(dir, "", append([]string{o.resource, action, id}, extra...)...)
+	}
+	r := do("delete")
+	if r.code == 0 {
+		return "gelöscht", true
+	}
+	steps := []string{fmt.Sprintf("delete Exit %d", r.code)}
+	if cleanupDocs[o.resource] {
+		if c := do("cancel"); c.code == 0 {
+			steps = append(steps, "storniert")
+			if d := do("delete"); d.code == 0 {
+				return strings.Join(append(steps, "gelöscht"), ", "), true
+			}
+		} else {
+			steps = append(steps, fmt.Sprintf("cancel Exit %d", c.code))
+		}
+	}
+	if noArchive[o.resource] {
+		return strings.Join(append(steps, "kein archive verfügbar"), ", ") + ": " + strings.TrimSpace(r.stderr), false
+	}
+	a := s.exec(dir, "", o.resource, "archive", id, "-o", "json")
+	if a.code == 0 {
+		return strings.Join(append(steps, "archiviert"), ", "), true
+	}
+	return strings.Join(append(steps, fmt.Sprintf("archive Exit %d", a.code)), ", ") + ": " + strings.TrimSpace(a.stderr), false
+}
+
+// cleanup removes all objects of this run, newest first (children before
+// their parents). It reports whether every object is gone or archived.
+func (s *liveSuite) cleanup() bool {
+	all := true
+	for i := len(s.created) - 1; i >= 0; i-- {
+		o := s.created[i]
+		what, ok := s.remove(s.mainDir, o)
+		s.stderrf("Aufräumen %s %d (%s): %s", o.resource, o.id, o.name, what)
+		all = all && ok
+	}
+	return all
+}

@@ -1,0 +1,47 @@
+name: E2E (Sandbox)
+
+# Live suite against a Papierkram SANDBOX account (spec 11.1), started by
+# hand only. Subdomain and token come from the repository secrets
+# PAPIERKRAM_E2E_SUBDOMAIN and PAPIERKRAM_E2E_TOKEN; the input repeats the
+# subdomain as confirmation (PAPIERKRAM_E2E_SANDBOX_CONFIRM). See e2e/README.md.
+on:
+  workflow_dispatch:
+    inputs:
+      sandbox_confirm:
+        description: 'Subdomain des Sandbox-Accounts zur Bestätigung (genau wie das Secret PAPIERKRAM_E2E_SUBDOMAIN)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# one live run at a time: runs share the sandbox and its credits
+concurrency:
+  group: e2e-sandbox
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.x'
+      # A mistyped confirmation would only skip every test; fail visibly instead.
+      - name: confirmation matches the sandbox
+        env:
+          PAPIERKRAM_E2E_SUBDOMAIN: ${{ secrets.PAPIERKRAM_E2E_SUBDOMAIN }}
+          PAPIERKRAM_E2E_SANDBOX_CONFIRM: ${{ inputs.sandbox_confirm }}
+        run: |
+          if [ -z "$PAPIERKRAM_E2E_SUBDOMAIN" ] || [ "$PAPIERKRAM_E2E_SANDBOX_CONFIRM" != "$PAPIERKRAM_E2E_SUBDOMAIN" ]; then
+            echo "Bestätigung stimmt nicht mit dem Secret PAPIERKRAM_E2E_SUBDOMAIN überein (oder Secret fehlt)." >&2
+            exit 1
+          fi
+      - name: live suite
+        env:
+          PAPIERKRAM_E2E_SUBDOMAIN: ${{ secrets.PAPIERKRAM_E2E_SUBDOMAIN }}
+          PAPIERKRAM_E2E_TOKEN: ${{ secrets.PAPIERKRAM_E2E_TOKEN }}
+          PAPIERKRAM_E2E_SANDBOX_CONFIRM: ${{ inputs.sandbox_confirm }}
+        run: go test -count=1 -timeout 25m -tags e2e -v ./e2e/...
