@@ -60,8 +60,14 @@ func loadAllFlags(e registry.Entry) string {
 // runList parses.
 func addListFlags(cmd *cobra.Command, e registry.Entry) {
 	f := cmd.Flags()
-	f.Int("page", 0, "nur diese Seite laden (ab 1)")
-	f.Int("limit", defaultLimit, "Einträge pro Seite, 1–100 (--all ohne --limit: 100)")
+	page, limit := "nur diese Seite laden (ab 1)", "Einträge pro Seite, 1–100 (--all ohne --limit: 100)"
+	if local := strings.Join(localFlags(e), "/"); local != "" {
+		// with a local filter all pages are loaded; both apply to the result
+		page += "; mit " + local + ": diese Seite des gefilterten Ergebnisses ausgeben"
+		limit += "; mit " + local + ": Seitengröße des gefilterten Ergebnisses"
+	}
+	f.Int("page", 0, page)
+	f.Int("limit", defaultLimit, limit)
 	f.Bool("all", false, "alle Seiten laden und zusammenführen (1 Anfrage je Seite)")
 	f.Int("max-pages", 0, "mit "+loadAllFlags(e)+" höchstens so viele Seiten laden")
 	f.String("sort", "", "nach diesem Feld sortieren (setzt order_by und order_direction)")
@@ -82,10 +88,13 @@ type listRequest struct {
 	pageSize int        // --limit: the API page size, with local filters the page size of the filtered result
 	all      bool
 	maxPages int // 0: no cap
-	// local are the values of the local filters by entry property; with
-	// any, all pages are loaded (via names the flag in warnings).
-	local map[string]string
-	via   string
+	// local are the values of the local filters by entry property;
+	// hasLocal is set when one is given: then all pages are loaded. via
+	// names the flag that loads all pages in warnings and prompts (--all
+	// or the local filter), it is display text only.
+	local    map[string]string
+	hasLocal bool
+	via      string
 }
 
 // parseListFlags validates every list flag and builds the query, before
@@ -96,10 +105,9 @@ func (a *App) parseListFlags(c *cobra.Command, e registry.Entry) (*listRequest, 
 	lr := &listRequest{query: url.Values{}, local: map[string]string{}, via: "--all"}
 	for _, flt := range e.Filters {
 		if flt.Kind == localKind && f.Changed(flt.Flag) {
-			lr.via = "--" + flt.Flag
+			lr.hasLocal, lr.via = true, "--"+flt.Flag
 		}
 	}
-	loadsAll := func() bool { return lr.all || lr.via != "--all" }
 	lr.page, _ = f.GetInt("page")
 	lr.pageSize, _ = f.GetInt("limit")
 	lr.all, _ = f.GetBool("all")
@@ -113,7 +121,7 @@ func (a *App) parseListFlags(c *cobra.Command, e registry.Entry) (*listRequest, 
 		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --page: Seiten beginnen bei 1", lr.page))
 	case f.Changed("page") && lr.all:
 		return nil, listUsage(c, "--page und --all schließen sich aus")
-	case f.Changed("max-pages") && !loadsAll():
+	case f.Changed("max-pages") && !lr.all && !lr.hasLocal:
 		return nil, listUsage(c, "--max-pages gilt nur zusammen mit "+loadAllFlags(e))
 	case f.Changed("max-pages") && lr.maxPages < 1:
 		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --max-pages: mindestens 1", lr.maxPages))
@@ -149,7 +157,7 @@ func (a *App) parseListFlags(c *cobra.Command, e registry.Entry) (*listRequest, 
 		lr.query.Set(flt.Param, v)
 	}
 	apiSize := lr.pageSize
-	if len(lr.local) > 0 {
+	if lr.hasLocal {
 		apiSize = allPageSize // as few pages (credits) as possible
 	}
 	lr.query.Set("page_size", strconv.Itoa(apiSize))
@@ -258,7 +266,7 @@ func (a *App) runList(c *cobra.Command, e registry.Entry) error {
 	if err != nil {
 		return err
 	}
-	if len(lr.local) > 0 {
+	if lr.hasLocal {
 		return a.runLocalFilter(c, e, client, params, lr)
 	}
 	if !lr.all {
@@ -343,7 +351,12 @@ func (a *App) fetchAll(c *cobra.Command, e registry.Entry, client *api.Client, p
 	}
 	if capped {
 		merged.HasMore = true
-		output.Warn(a.Err, fmt.Sprintf("--max-pages %d: %d von %d Seiten geladen, weitere Einträge vorhanden", lr.maxPages, pages, total))
+		more := "weitere Einträge vorhanden"
+		if lr.hasLocal {
+			// the pages not loaded may or may not hold matches
+			more = "Ergebnis unvollständig, möglicherweise weitere Treffer"
+		}
+		output.Warn(a.Err, fmt.Sprintf("--max-pages %d: %d von %d Seiten geladen; %s", lr.maxPages, pages, total, more))
 	}
 	return merged, nil
 }

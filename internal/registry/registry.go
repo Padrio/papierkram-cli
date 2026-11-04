@@ -30,8 +30,11 @@ const (
 
 // Filter maps a list flag (Flag, without dashes) to a query parameter
 // (Param, spec 4.2). Kind tells the builder how to parse the value: "id",
-// "date", "datetime_from", "datetime_to" or "enum". Help is the German flag
-// description.
+// "date", "datetime_from", "datetime_to" or "enum". Kind "local_enum" is a
+// filter the API ignores (company list --type, spec 9.7): Param is then a
+// property of the list entries, never sent; the CLI loads all pages and
+// keeps the entries whose Param has the given value of its enum. Help is
+// the German flag description.
 type Filter struct {
 	Flag, Param, Kind, Help string
 }

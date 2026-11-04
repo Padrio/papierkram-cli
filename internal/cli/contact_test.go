@@ -209,7 +209,9 @@ func TestCompanyListTypeMaxPages(t *testing.T) {
 	if canonJSON(t, []byte(out)) != canonJSON(t, []byte(want)) {
 		t.Errorf("stdout = %s", out)
 	}
-	if !strings.Contains(errs, "Warnung: --max-pages 2: 2 von 3 Seiten geladen") {
+	// unloaded pages may or may not hold matches: no claim of more entries
+	if !strings.Contains(errs, "Warnung: --max-pages 2: 2 von 3 Seiten geladen; Ergebnis unvollständig, möglicherweise weitere Treffer") ||
+		strings.Contains(errs, "weitere Einträge vorhanden") {
 		t.Errorf("stderr = %q", errs)
 	}
 }
@@ -239,6 +241,7 @@ func TestCompanyListTypeWarnsFromTenPages(t *testing.T) {
 	if out != "" || !strings.Contains(errs, "Fortfahren? [j/N] ") || !strings.Contains(errs, "Abgebrochen: --type nicht fortgesetzt") {
 		t.Errorf("stdout = %q, stderr = %q", out, errs)
 	}
+
 }
 
 func TestCompanyListTypeHelp(t *testing.T) {
@@ -246,11 +249,34 @@ func TestCompanyListTypeHelp(t *testing.T) {
 	wantExit(t, app, Run(app, []string{"company", "list", "--help"}), 0)
 	out := mustOut(app)
 	for _, want := range []string{"--type Text", "customer", "supplier", "lädt alle Seiten", "lokal",
-		"--page und --limit gelten für das gefilterte Ergebnis", "papierkram company list --type customer"} {
+		"--page und --limit gelten für das gefilterte Ergebnis", "papierkram company list --type customer",
+		"Mit --max-pages zählen total_entries und total_pages nur die Treffer der geladenen Seiten"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("Hilfe enthält %q nicht:\n%s", want, out)
 		}
 	}
+	// the flag lines say what --page and --limit mean with --type
+	for _, flag := range []string{"--page Zahl", "--limit Zahl"} {
+		if line := helpLine(out, flag); !strings.Contains(line, "mit --type: ") || !strings.Contains(line, "gefilterten Ergebnisses") {
+			t.Errorf("Hilfezeile %s = %q", flag, line)
+		}
+	}
+	// lists without a local filter keep the plain text
+	app, _ = apiApp(t)
+	wantExit(t, app, Run(app, []string{"user", "list", "--help"}), 0)
+	if line := helpLine(mustOut(app), "--page Zahl"); !strings.Contains(line, "nur diese Seite laden (ab 1)") || strings.Contains(line, "--type") {
+		t.Errorf("user list --page = %q", line)
+	}
+}
+
+// helpLine returns the help line of a flag ("--page Zahl").
+func helpLine(help, flag string) string {
+	for line := range strings.SplitSeq(help, "\n") {
+		if strings.Contains(line, flag) {
+			return line
+		}
+	}
+	return ""
 }
 
 func TestCompanyCreate(t *testing.T) {
@@ -345,3 +371,4 @@ func TestPersonCommandsRequireCompany(t *testing.T) {
 		}
 	}
 }
+

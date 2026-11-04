@@ -169,7 +169,9 @@ func entryLong(e registry.Entry) string {
 		long += fmt.Sprintf("\n\nDie API ignoriert diesen Filter: Mit %[1]s lädt das CLI alle Seiten wie --all "+
 			"(je Seite %[2]d %[3]s, Warnung ab 10 Seiten, im Terminal mit Rückfrage; --max-pages begrenzt) und filtert lokal. "+
 			"--page und --limit gelten für das gefilterte Ergebnis: page, page_size, total_entries, total_pages und has_more "+
-			"beziehen sich auf die gefilterten Einträge; mit --all kommen alle gefilterten Einträge.", flag, e.Credits, unit)
+			"beziehen sich auf die gefilterten Einträge; mit --all kommen alle gefilterten Einträge. "+
+			"Mit --max-pages zählen total_entries und total_pages nur die Treffer der geladenen Seiten; "+
+			"has_more ist dann true, weil weitere Seiten Treffer enthalten können.", flag, e.Credits, unit)
 	}
 	return long
 }

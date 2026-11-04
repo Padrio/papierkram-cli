@@ -15,7 +15,9 @@ import (
 // page_size are --page and --limit, total_entries the number of matching
 // entries, total_pages the pages of page_size they fill, has_more whether
 // a later page or, with --max-pages, a page not loaded may hold more. With
-// --all, entries are all matching entries (page 1).
+// --max-pages the totals count the matches of the loaded pages only (the
+// help and the warning say so). With --all, entries are all matching
+// entries (page 1).
 type filteredList struct {
 	Type         json.RawMessage   `json:"type"`
 	Page         int               `json:"page"`
