@@ -50,6 +50,17 @@ func exactArgs(n int) cobra.PositionalArgs {
 	}
 }
 
+// minArgs requires at least n positional arguments with a German usage
+// error.
+func minArgs(n int) cobra.PositionalArgs {
+	return func(c *cobra.Command, args []string) error {
+		if len(args) < n {
+			return clierr.New(clierr.CodeUsage, fmt.Sprintf("zu wenige Argumente für %q (erwartet: mindestens %d, erhalten: %d)", c.CommandPath(), n, len(args)), "Verwendung: "+useLine(c))
+		}
+		return nil
+	}
+}
+
 var (
 	invalidValueRe = regexp.MustCompile(`^invalid argument (".*?") for "(-[^"]+)" flag: (.*)$`)
 	strconvPrefix  = regexp.MustCompile(`strconv\.\w+: parsing "[^"]*": `)

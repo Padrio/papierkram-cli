@@ -55,17 +55,6 @@ func newSchemaCmd(app *App) *cobra.Command {
 	}
 }
 
-// minArgs requires at least n positional arguments with a German usage
-// error.
-func minArgs(n int) cobra.PositionalArgs {
-	return func(c *cobra.Command, args []string) error {
-		if len(args) < n {
-			return clierr.New(clierr.CodeUsage, fmt.Sprintf("zu wenige Argumente für %q (erwartet: mindestens %d, erhalten: %d)", c.CommandPath(), n, len(args)), "Verwendung: "+useLine(c))
-		}
-		return nil
-	}
-}
-
 // schemaPair is the request and response schema of one operation.
 type schemaPair struct {
 	Request  any `json:"request"`
