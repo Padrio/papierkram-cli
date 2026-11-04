@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
@@ -47,7 +48,7 @@ func (a *App) loadProjectFile() (*projectfile.File, error) {
 	if err != nil {
 		var ce *clierr.Error
 		if !errors.As(err, &ce) {
-			ce = clierr.New(clierr.CodeError, err.Error(), "Projektdatei prüfen: "+path)
+			ce = clierr.New(clierr.CodeError, err.Error(), "Projektdatei prüfen: "+printable(path))
 			ce.Cause = err
 		}
 		return nil, ce
@@ -55,8 +56,14 @@ func (a *App) loadProjectFile() (*projectfile.File, error) {
 	if len(f.Unknown) > 0 {
 		// spec 9.8: a warning, no error; once per invocation, since the
 		// file is loaded once
+		// file content and path are shown printable: the file may come from
+		// a cloned repository (terminal escapes in keys or directory names)
+		keys := make([]string, len(f.Unknown))
+		for i, k := range f.Unknown {
+			keys[i] = strconv.Quote(k)
+		}
 		output.Warn(a.Err, fmt.Sprintf("Projektdatei %s: unbekannte Schlüssel werden ignoriert: %s (bekannt: context, company, project, task, user, [tasks])",
-			path, strings.Join(f.Unknown, ", ")))
+			printable(path), strings.Join(keys, ", ")))
 	}
 	return f, nil
 }

@@ -156,7 +156,7 @@ func (a *App) presetFile() (*projectfile.File, error) {
 			active = fmt.Sprintf("aktiv ist Kontext %q (%s)", ctx, contextSourceName(source))
 		}
 		output.Warn(a.Err, fmt.Sprintf("Projektdatei %s gilt für Kontext %q, %s: "+
-			"ihre Voreinstellungen (company, project, task, user) werden ignoriert", f.Path, f.Context, active))
+			"ihre Voreinstellungen (company, project, task, user) werden ignoriert", printable(f.Path), f.Context, active))
 	}
 	return nil, nil
 }
@@ -217,7 +217,7 @@ func (a *App) presetHint(key string, p preset) {
 	from := p.Origin
 	switch p.Source {
 	case config.SourceProjectFile:
-		from = "Projektdatei " + p.Origin
+		from = "Projektdatei " + printable(p.Origin)
 	case config.SourceContext:
 		from = fmt.Sprintf("Kontext %q", p.Origin)
 	}
@@ -259,7 +259,7 @@ func (a *App) presetArgs(c *cobra.Command, e registry.Entry, args []string) ([]s
 	if p.Source == "" {
 		where := projectfile.FileName
 		if f, _ := a.projectFile(); f != nil {
-			where = f.Path
+			where = printable(f.Path)
 		}
 		return nil, clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("keine ID angegeben und keine Voreinstellung gefunden (%s oder %s in %s)", presetEnv(e.Preset), e.Preset, where),

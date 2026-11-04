@@ -172,15 +172,16 @@ func (a *App) runLocalInit(c *cobra.Command, in localInit) error {
 		output.Warn(a.Err, "Kommentare und Formatierung der Projektdatei sind beim Schreiben verloren gegangen")
 	}
 	var b strings.Builder
+	shown := printable(path)
 	switch {
 	case res.Created:
-		fmt.Fprintf(&b, "Projektdatei %s angelegt:\n", path)
+		fmt.Fprintf(&b, "Projektdatei %s angelegt:\n", shown)
 	case res.Changed:
-		fmt.Fprintf(&b, "Projektdatei %s aktualisiert:\n", path)
+		fmt.Fprintf(&b, "Projektdatei %s aktualisiert:\n", shown)
 	case in.empty():
-		fmt.Fprintf(&b, "Keine Werte angegeben, Projektdatei %s nicht geschrieben.\n", path)
+		fmt.Fprintf(&b, "Keine Werte angegeben, Projektdatei %s nicht geschrieben.\n", shown)
 	default:
-		fmt.Fprintf(&b, "Projektdatei %s unverändert.\n", path)
+		fmt.Fprintf(&b, "Projektdatei %s unverändert.\n", shown)
 	}
 	if res.Changed {
 		if ch.Context != nil {
@@ -232,7 +233,7 @@ func (a *App) askLocalInit(ctx context.Context, f *projectfile.File, path string
 	if f != nil {
 		state = "vorhanden"
 	}
-	_, _ = fmt.Fprintf(a.Err, "Projektdatei %s (%s); Enter behält den bisherigen Wert.\n", path, state)
+	_, _ = fmt.Fprintf(a.Err, "Projektdatei %s (%s); Enter behält den bisherigen Wert.\n", printable(path), state)
 	for _, k := range localKeys {
 		q := k.prompt
 		if cur := fileValue(f, k.key); cur != 0 {
@@ -262,7 +263,7 @@ func (a *App) askLocalInit(ctx context.Context, f *projectfile.File, path string
 	}
 	q := "Kontext"
 	if f != nil && f.Context != "" {
-		q += " [" + f.Context + "]"
+		q += " [" + printable(f.Context) + "]"
 	}
 	for {
 		answer, err := a.prompt(ctx, q+": ")
@@ -380,7 +381,17 @@ func (a *App) runLocalShow(c *cobra.Command) error {
 	if !ownText(o) {
 		return output.RenderValue(o, v, output.Columns{})
 	}
-	if err := output.RenderValue(o, v.Values, localColumns); err != nil {
+	// the table shows the file path and context printable; JSON and YAML
+	// escape control characters themselves
+	rows := make([]localRow, len(v.Values))
+	for i, row := range v.Values {
+		row.Origin = printable(row.Origin)
+		if s, ok := row.Value.(string); ok {
+			row.Value = printable(s)
+		}
+		rows[i] = row
+	}
+	if err := output.RenderValue(o, rows, localColumns); err != nil {
 		return err
 	}
 	var b strings.Builder
@@ -392,9 +403,9 @@ func (a *App) runLocalShow(c *cobra.Command) error {
 		if r.Context != "" {
 			active = fmt.Sprintf("aktiv ist Kontext %q (%s)", r.Context, contextSourceName(r.ContextSource))
 		}
-		fmt.Fprintf(&b, "\nProjektdatei: %s\nSie gilt für Kontext %q, %s: ihre Werte werden ignoriert.\n", f.Path, f.Context, active)
+		fmt.Fprintf(&b, "\nProjektdatei: %s\nSie gilt für Kontext %q, %s: ihre Werte werden ignoriert.\n", printable(f.Path), f.Context, active)
 	default:
-		fmt.Fprintf(&b, "\nProjektdatei: %s\n", f.Path)
+		fmt.Fprintf(&b, "\nProjektdatei: %s\n", printable(f.Path))
 	}
 	_, err = fmt.Fprint(a.Out, b.String())
 	return err

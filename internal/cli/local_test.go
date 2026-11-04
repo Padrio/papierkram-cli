@@ -333,7 +333,7 @@ func TestProjectFileUnknownKeysWarnOnce(t *testing.T) {
 	if n := strings.Count(errs, "unbekannte Schlüssel"); n != 1 {
 		t.Errorf("%d warnings: %s", n, errs)
 	}
-	if !strings.Contains(errs, "foo, projekt") {
+	if !strings.Contains(errs, `"foo", "projekt"`) {
 		t.Errorf("stderr = %s", errs)
 	}
 }
@@ -344,4 +344,74 @@ func jsonText(v any) string {
 	}
 	b, _ := json.Marshal(v)
 	return strings.Trim(string(b), `"`)
+}
+
+// Security review: local init never writes through a symbolic link; the
+// target outside the directory stays unchanged (exit 2).
+func TestLocalInitRefusesSymlink(t *testing.T) {
+	app, dir := localApp(t)
+	outside := filepath.Join(t.TempDir(), ".bashrc")
+	if err := os.WriteFile(outside, []byte("export PATH=/usr/bin\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, projectfile.FileName)); err != nil {
+		t.Skipf("no symlinks: %v", err)
+	}
+	// the target is no valid project file: point at a valid one too
+	for _, content := range []string{"export PATH=/usr/bin\n", "project = 1\n"} {
+		if err := os.WriteFile(outside, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		app.Err.(interface{ Reset() }).Reset()
+		code := Run(app, []string{"local", "init", "--project", "34"})
+		if data, _ := os.ReadFile(outside); string(data) != content {
+			t.Errorf("target changed: %q", data)
+		}
+		if code != 2 {
+			t.Errorf("content %q: exit = %d, want 2", content, code)
+		}
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "symbolischer Link") {
+		t.Errorf("stderr = %s", errs)
+	}
+}
+
+// Security review: content of the project file (keys, aliases, context)
+// and its path never reach the terminal with control characters.
+func TestProjectFileContentIsPrintable(t *testing.T) {
+	app, srv := apiApp(t)
+	dir := filepath.Join(t.TempDir(), "repo\x1b[2J")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, projectfile.FileName),
+		[]byte("project = 34\n\"x\\u001b]0;pwned\\u0007\" = 1\n\n[tasks]\n\"t\\u001b[31m\" = 5\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app.Getwd = func() (string, error) { return dir, nil }
+	for _, args := range [][]string{
+		{"task", "list", "-o", "json"}, // unknown keys warning, preset hint
+		{"time", "log", "--task", "nix", "--user", "1", "--from", "09:00", "--to", "10:00"}, // alias hint
+		{"local", "show"},                    // table with path
+		{"local", "init", "--project", "35"}, // written path
+	} {
+		app.Out.(interface{ Reset() }).Reset()
+		app.Err.(interface{ Reset() }).Reset()
+		Run(app, args)
+		out, errs := bufs(app)
+		if strings.ContainsAny(out+errs, "\x1b\x07") {
+			t.Errorf("%v: control characters in output:\nstdout %q\nstderr %q", args, out, errs)
+		}
+	}
+	_ = srv
+
+	// the defaults of the prompts too
+	app, _ = localApp(t)
+	writeProjectFile(t, app, "context = \"a\"\nproject = 34\n")
+	app.Getwd = func() (string, error) { return dir, nil }
+	app.StdinTTY = true
+	Run(app, []string{"local", "init"})
+	if _, errs := bufs(app); strings.ContainsAny(errs, "\x1b\x07") {
+		t.Errorf("prompts: %q", errs)
+	}
 }
