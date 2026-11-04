@@ -125,6 +125,7 @@ func newContextCreateCmd(app *App) *cobra.Command {
 	markRequired(f, "subdomain")
 	f.BoolVar(&readOnly, "read-only", false, "Kontext gegen Schreibzugriffe sperren")
 	f.StringVar(&user, "user", "", "Standard-User-ID für Zeiteinträge")
+	annotate(f, "user", flagValueType, "id") // parsed as an ID in Args
 	return cmd
 }
 

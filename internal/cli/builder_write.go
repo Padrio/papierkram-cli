@@ -109,7 +109,7 @@ func flagType(f spec.Field) string {
 	switch {
 	case f.IsBool():
 		return "bool"
-	case f.Kind == spec.KindRef || f.Kind == spec.KindNestedRef:
+	case f.Kind == spec.KindRef || f.Kind == spec.KindNestedRef || f.Kind == spec.KindRefList:
 		return "id"
 	case f.Format == "date":
 		return "date"
@@ -142,7 +142,10 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 			usage += " (Pflicht)"
 		}
 		if f.Repeatable {
+			// a text list; its elements are values of the field type
+			// (--team-member: IDs), checked by spec.CoerceFlag
 			fs.StringArray(f.Flag, nil, usage)
+			annotate(fs, f.Flag, flagValueType, flagType(f))
 		} else if fl := fs.VarPF(&rawValue{typ: flagType(f)}, f.Flag, "", usage); f.IsBool() {
 			fl.NoOptDefVal = "true"
 		}

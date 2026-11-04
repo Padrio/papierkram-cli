@@ -462,6 +462,14 @@ func TestCommandsJSONFlags(t *testing.T) {
 	if f := d.find(t, "context create").flag(t, "subdomain"); !f.Required {
 		t.Errorf("context create --subdomain = %+v", f)
 	}
+	for _, name := range []string{"project create", "project update"} {
+		if f := d.find(t, name).flag(t, "team-member"); f.Type != "id" || !f.Repeatable {
+			t.Errorf("%s --team-member = %+v", name, f)
+		}
+	}
+	if f := d.find(t, "voucher create").flag(t, "entertainment-person"); f.Type != "string" || !f.Repeatable {
+		t.Errorf("voucher create --entertainment-person = %+v", f)
+	}
 	if f := d.find(t, "api").flag(t, "raw-field"); !f.Repeatable {
 		t.Errorf("api --raw-field = %+v", f)
 	}
