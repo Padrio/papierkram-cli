@@ -146,11 +146,11 @@ func (a *App) parseListFlags(c *cobra.Command, e registry.Entry) (*listRequest, 
 		lr.query.Set("order_by", sort)
 		lr.query.Set("order_direction", dir)
 	}
+	var preset *registry.Filter // the unset filter of e's preset
 	for _, flt := range e.Filters {
 		if !f.Changed(flt.Flag) {
-			// spec 9.8: the preset filter (task list --project)
-			if err := a.presetQuery(e, flt, lr); err != nil {
-				return nil, err
+			if flt.Flag == e.Preset {
+				preset = &flt
 			}
 			continue
 		}
@@ -163,6 +163,14 @@ func (a *App) parseListFlags(c *cobra.Command, e registry.Entry) (*listRequest, 
 			continue
 		}
 		lr.query.Set(flt.Param, v)
+	}
+	// spec 9.8: the preset filter (task list --project), only once every
+	// flag is valid: resolving it reads environment, project file and
+	// configuration, whose errors must not hide a flag error (exit 2)
+	if preset != nil {
+		if err := a.presetQuery(e, *preset, lr); err != nil {
+			return nil, err
+		}
 	}
 	apiSize := lr.pageSize
 	if lr.hasLocal {

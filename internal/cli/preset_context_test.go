@@ -102,6 +102,47 @@ func TestPresetIgnoresProjectFileOfOtherContext(t *testing.T) {
 	}
 }
 
+// Review N1: flag errors come before the configuration is resolved for a
+// preset (plan order): exit 2, no request, no context warning, whatever
+// the configuration or project file say.
+func TestPresetResolvedAfterFlagChecks(t *testing.T) {
+	for _, tc := range []struct {
+		name, cfg, file string
+		args            []string
+	}{
+		{"context missing from config", twoWritableCtx, "context = \"c\"\nproject = 34\n", nil},
+		{"broken config", "active_context = \n", "context = \"a\"\nproject = 34\n", nil},
+		{"other context", twoWritableCtx, "context = \"a\"\nproject = 34\n", []string{"--context", "b"}},
+	} {
+		for _, flags := range [][]string{
+			{"--proposition", "-1"},
+			{"--proposition", "abc"},
+			{"--limit", "0"},
+		} {
+			app, srv := mockApp(t, nil)
+			writeCfg(t, app, tc.cfg)
+			writeProjectFile(t, app, tc.file)
+			args := append(append([]string{"task", "list"}, flags...), tc.args...)
+			wantExit(t, app, Run(app, args), 2)
+			wantRequests(t, srv, 0)
+			if _, errs := bufs(app); strings.Contains(errs, "Warnung") || strings.Contains(errs, "Kontext") {
+				t.Errorf("%s %v: stderr = %q", tc.name, flags, errs)
+			}
+		}
+	}
+
+	// create: a body that fails coercion is reported without the context
+	// warning (the preset is applied right before validation)
+	app, srv := contextApp(t, nil)
+	writeProjectFile(t, app, "context = \"a\"\nproject = 34\n")
+	app.In = strings.NewReader(`{"name":"Support","complete":"vielleicht"}`)
+	wantExit(t, app, Run(app, []string{"task", "create", "--input", "-", "--context", "b"}), 5)
+	wantRequests(t, srv, 0)
+	if _, errs := bufs(app); strings.Contains(errs, "Projektdatei") {
+		t.Errorf("create: stderr = %q", errs)
+	}
+}
+
 // Controller ruling (open case of M1): project file presets apply only
 // when the effective context equals the file's context. In direct mode
 // (environment token, the file's context missing from the config) no

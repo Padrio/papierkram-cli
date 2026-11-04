@@ -265,9 +265,9 @@ func errUnavailable(err error) error {
 // buildBody builds the request body of create/update (spec 6.1–6.4, 6.3a):
 // --input (pruned against the request schema, hints on stderr) → the
 // changed field flags at their path (references as {id}, nested objects
-// created as needed, maps merged) → --attr into custom_attributes → the
-// preset field of create when still unset (spec 9.8) → line
-// items (--items pruned like --input, or --item) → CoerceValue → Validate.
+// created as needed, maps merged) → --attr into custom_attributes → line
+// items (--items pruned like --input, or --item) → CoerceValue → the
+// preset field of create when still unset (spec 9.8) → Validate.
 // It returns the body and the response-only fields removed from --input and
 // --items.
 //
@@ -349,13 +349,6 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 		}
 	}
 
-	// spec 9.8: the preset field (task create --project), after --input
-	// and the flags, which win
-	presetMissing, err := a.presetBody(c, e, ws, body)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	if ws.items != nil {
 		items, gone, err := a.lineItems(c, ws, resp)
 		if err != nil {
@@ -379,6 +372,13 @@ func (a *App) buildBody(c *cobra.Command, e registry.Entry, isUpdate bool) (map[
 		return nil, nil, err
 	}
 	body, _ = v.(map[string]any)
+	// spec 9.8: the preset field (task create --project) after --input and
+	// the flags, which win, and after their checks, right before the
+	// validation that needs it
+	presetMissing, err := a.presetBody(c, e, ws, body)
+	if err != nil {
+		return nil, nil, err
+	}
 	if err := spec.Validate(body, ws.req); err != nil {
 		if presetMissing {
 			err = withPresetHint(err, e.Preset)
