@@ -56,7 +56,8 @@ func state(t *testing.T) State {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return State{Context: "firma", StartedAt: time.Date(2026, 11, 4, 9, 0, 12, 0, loc), Task: 545, User: 1, Comment: "Abstimmung"}
+	return State{Context: "firma", StartedAt: time.Date(2026, 11, 4, 9, 0, 12, 0, loc), Task: 545, User: 1, Comment: "Abstimmung",
+		BaseURL: "https://firma.papierkram.de/api/v1"}
 }
 
 func TestSaveLoadDelete(t *testing.T) {
@@ -76,7 +77,7 @@ func TestSaveLoadDelete(t *testing.T) {
 		t.Fatalf("Load = %+v, %v", got, err)
 	}
 	if got.Context != want.Context || !got.StartedAt.Equal(want.StartedAt) || got.Task != want.Task ||
-		got.User != want.User || got.Comment != want.Comment {
+		got.User != want.User || got.Comment != want.Comment || got.BaseURL != want.BaseURL {
 		t.Errorf("Load = %+v, want %+v", got, want)
 	}
 

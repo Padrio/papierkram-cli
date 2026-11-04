@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -141,6 +142,7 @@ func (a *App) runTimeStart(c *cobra.Command, e registry.Entry) error {
 		Task:      task.ID,
 		User:      user.ID,
 		Comment:   flagString(c, "comments"),
+		BaseURL:   r.BaseURL,
 	}
 	if err := timer.Save(path, st); err != nil {
 		if errors.Is(err, fs.ErrExist) {
@@ -277,6 +279,9 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 		return clierr.New(clierr.CodeUsage, fmt.Sprintf("Kein Timer läuft (%s)", contextLabel(r.Context)),
 			"Timer starten: papierkram time start --task <id>; ohne Timer buchen: papierkram time log")
 	}
+	if st.BaseURL != r.BaseURL {
+		return errTimerAccount(st.BaseURL, r.BaseURL)
+	}
 	p, err := a.timerPeriod(*st)
 	if err != nil {
 		return err
@@ -289,6 +294,7 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 	} else if comment != "" {
 		te.comments = &comment
 	}
+	// not guarded: two concurrent stops of one timer may both book it
 	resp, err := a.sendTimeEntry(c, e, client, r, fields, te)
 	if err != nil {
 		return a.keepTimer(err, *st, p)
@@ -312,6 +318,30 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 	d := p.end - p.start
 	_, _ = fmt.Fprintf(a.Err, "Timer gestoppt: %s %s–%s (%d:%02d h) gebucht.\n", p.date, hhmm(p.start), hhmm(p.end), d/60, d%60)
 	return nil
+}
+
+// errTimerAccount refuses to book a timer into another account than the
+// one it was started for (controller ruling): its task and user IDs
+// belong there. A state without base URL (first format) is a mismatch
+// too. Exit 2 before any request; the timer stays.
+func errTimerAccount(started, now string) error {
+	from := "einem unbekannten Account (Timer-Datei ohne Angabe, ältere Version)"
+	if started != "" {
+		from = printable(urlHost(started))
+	}
+	return clierr.New(clierr.CodeUsage,
+		fmt.Sprintf("Timer wurde für %s gestartet, wirksam ist %s", from, printable(urlHost(now))),
+		"Der Timer läuft weiter. Zum Account des Starts zurückwechseln (Subdomain bzw. PAPIERKRAM_BASE_URL) und erneut papierkram time stop, "+
+			"oder den Timer mit papierkram time discard verwerfen")
+}
+
+// urlHost is the host (with port) of a base URL, the URL itself when it
+// has none.
+func urlHost(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return raw
 }
 
 // timerPeriod is the period of st that time stop books: the date and the

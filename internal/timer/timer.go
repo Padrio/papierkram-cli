@@ -39,13 +39,17 @@ const MaxSize = 64 << 10
 const DirectName = ".direct"
 
 // State is a running timer: its context ("" in direct mode), start, task,
-// user and comment ("" without one).
+// user and comment ("" without one). BaseURL is the API base URL of the
+// account the timer was started for (controller ruling, beyond the
+// brief's fields): task and user IDs belong to that account. A state of
+// the first format has none ("").
 type State struct {
 	Context   string    `json:"context"`
 	StartedAt time.Time `json:"started_at"`
 	Task      int64     `json:"task"`
 	User      int64     `json:"user"`
 	Comment   string    `json:"comment,omitempty"`
+	BaseURL   string    `json:"base_url,omitempty"`
 }
 
 // Path is the state file of the context ctx below cacheDir (os.UserCacheDir()

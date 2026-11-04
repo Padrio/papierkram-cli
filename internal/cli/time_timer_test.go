@@ -508,3 +508,37 @@ func TestTimerStopDeleteFailureIsPartial(t *testing.T) {
 	}
 	wantStderr(t, app, "Zeiteintrag angelegt", "NICHT erneut", "papierkram time discard")
 }
+
+// Controller ruling (concern 1): the timer remembers the account (base
+// URL) it was started for; time stop against another account, or with a
+// state of the old format without it, is exit 2 before any request, the
+// state stays and the hint names both hosts and time discard.
+func TestTimerStopOtherAccountRefused(t *testing.T) {
+	app, srv := logApp(t, nine(t))
+	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 0)
+	before := timerFile(t, app, "")
+	if !strings.Contains(string(before), `"base_url":"`+srv.URL()+`"`) {
+		t.Errorf("state without base URL: %s", before)
+	}
+	other := mockapi.New(t)
+	app.Env = envMap(map[string]string{"PAPIERKRAM_BASE_URL": other.URL(), "PAPIERKRAM_TOKEN": "test-token-log"})
+	wantExit(t, app, at(app, morning(t), "time", "stop", "--yes"), 2)
+	wantRequests(t, srv, 0)
+	wantRequests(t, other, 0)
+	if !bytes.Equal(timerFile(t, app, ""), before) {
+		t.Error("state changed")
+	}
+	host := func(u string) string { return strings.TrimPrefix(strings.SplitN(u, "/api", 2)[0], "http://") }
+	wantStderr(t, app, host(srv.URL()), host(other.URL()), "papierkram time discard")
+
+	// the old format without base_url is a mismatch too (fail-safe)
+	app, srv = logApp(t, nine(t))
+	old := `{"context":"","started_at":"2026-11-04T09:00:12+01:00","task":545,"user":1}`
+	writeTimerFile(t, app, "", old)
+	wantExit(t, app, at(app, morning(t), "time", "stop", "--yes"), 2)
+	wantRequests(t, srv, 0)
+	if string(timerFile(t, app, "")) != old {
+		t.Error("old state changed")
+	}
+	wantStderr(t, app, host(srv.URL()), "papierkram time discard")
+}
