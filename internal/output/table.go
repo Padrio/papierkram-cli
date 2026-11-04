@@ -192,13 +192,14 @@ func plain(v any) string {
 		if err != nil {
 			return ""
 		}
-		return truncate(string(b), maxNestedRunes)
+		return Truncate(string(b), maxNestedRunes)
 	}
 	return fmt.Sprint(v)
 }
 
-// truncate cuts s to n runes, the last one being "…".
-func truncate(s string, n int) string {
+// Truncate cuts s to n runes, the last one being "…" (nested values in
+// tables, names in the shell completion).
+func Truncate(s string, n int) string {
 	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
