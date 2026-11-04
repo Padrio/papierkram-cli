@@ -369,9 +369,17 @@ func TestFromEstimateMappingMatchesSchemas(t *testing.T) {
 	if est == nil || req == nil {
 		t.Fatal("Schemas fehlen")
 	}
-	reqItem := schemaAt(req, "line_items")
-	estItem := schemaAt(est, "line_items")
-	check := func(level string, from, to *openapi3.Schema, fields []estimateField, invoiceOnly []string) {
+	// the schemas of one position (schemaAt ends at the array)
+	reqItem := schemaAt(req, "line_items").Items.Value
+	estItem := schemaAt(est, "line_items").Items.Value
+	if l := leaves(reqItem, ""); !slices.Contains(l, "vat_rate") || !slices.Contains(l, "start_new_item_group") {
+		t.Fatalf("Positionsfelder des Rechnungs-Requests nicht gefunden: %v", l)
+	}
+	if l := leaves(estItem, ""); !slices.Contains(l, "vat_rate") || !slices.Contains(l, "position_in_group") {
+		t.Fatalf("Positionsfelder des Angebots nicht gefunden: %v", l)
+	}
+	// prefix is the path of the level in estimateOnlyFields
+	check := func(level, prefix string, from, to *openapi3.Schema, fields []estimateField, invoiceOnly []string) {
 		var targets []string
 		for _, f := range fields {
 			if schemaAt(from, f.from) == nil {
@@ -394,6 +402,10 @@ func TestFromEstimateMappingMatchesSchemas(t *testing.T) {
 			if schemaAt(to, f) == nil {
 				t.Errorf("%s: nicht übertragbares Feld %s fehlt im Rechnungs-Request", level, f)
 			}
+			// the help says the estimate does not have it
+			if !slices.Contains(estimateOnlyFields, prefix+f) && schemaAt(from, f) != nil {
+				t.Errorf("%s: Angebot hat jetzt %s – übernehmen oder Hilfe korrigieren", level, f)
+			}
 		}
 		for _, leaf := range leaves(to, "") {
 			if leaf == "line_items" && level == "Rechnung" {
@@ -404,8 +416,8 @@ func TestFromEstimateMappingMatchesSchemas(t *testing.T) {
 			}
 		}
 	}
-	check("Rechnung", est, req, fromEstimateFields, invoiceOnlyFields)
-	check("Position", estItem, reqItem, fromEstimateItemFields, invoiceOnlyItemFields)
+	check("Rechnung", "", est, req, fromEstimateFields, invoiceOnlyFields)
+	check("Position", "line_items.", estItem, reqItem, fromEstimateItemFields, invoiceOnlyItemFields)
 	// the help names every field that is not taken over
 	help := fromEstimateLong
 	for _, f := range slices.Concat(invoiceOnlyFields, invoiceOnlyItemFields, estimateOnlyFields) {
