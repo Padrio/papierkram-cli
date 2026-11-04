@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -15,15 +17,21 @@ import (
 // voucher pay <id> (spec 9.5, 8.1: class destructive, a payment cannot be
 // taken back through the API).
 
-// payOneOf is the condition checkPayFlags enforces, named in the help.
-const payOneOf = "--amount oder --transaction Pflicht, außer mit --input"
+// payOneOf are the flags of which pay needs one unless --input gives the
+// body (checkPayFlags); help and commands --json name the same flags.
+var payOneOf = []string{"amount", "transaction"}
+
+// payOneOfNote is the help suffix of the flags of payOneOf.
+func payOneOfNote() string {
+	return fmt.Sprintf(" (Pflicht; eines von --%s oder --input)", strings.Join(payOneOf, " und --"))
+}
 
 // payFlags map the flags of pay to the fields of its request body
 // (spec 9.5). Type, format, enum and the conversion of each value come
 // from the field of the request schema (spec.Fields, spec.CoerceFlag).
 var payFlags = []struct{ flag, field, help string }{
-	{"amount", "value", "gezahlter Betrag mit Dezimalpunkt, z. B. 165.80 (" + payOneOf + ")"},
-	{"transaction", "banking_transaction", "ID des Bankumsatzes, mit dem der Beleg bezahlt wurde (papierkram transaction list; " + payOneOf + ")"},
+	{"amount", "value", "gezahlter Betrag mit Dezimalpunkt, z. B. 165.80"},
+	{"transaction", "banking_transaction", "ID des Bankumsatzes, mit dem der Beleg bezahlt wurde (papierkram transaction list)"},
 	{"date", "payment_date", "Zahlungsdatum"},
 	{"reason", "difference_reason", "Grund, wenn der Betrag vom offenen Betrag abweicht"},
 }
@@ -72,15 +80,30 @@ func (a *App) newPayCmd(e registry.Entry) *cobra.Command {
 	fields, _ := payFields(e) // runPay reports the error
 	fs := cmd.Flags()
 	for _, pf := range payFlags {
+		note := ""
+		if slices.Contains(payOneOf, pf.flag) {
+			note = payOneOfNote()
+		}
 		f, ok := fields[pf.flag]
 		if !ok {
-			fs.String(pf.flag, "", pf.help)
+			fs.String(pf.flag, "", pf.help+note)
 			continue
 		}
-		fs.Var(&rawValue{typ: flagType(f)}, pf.flag, pf.help+spec.HelpSuffix(f))
+		fs.Var(&rawValue{typ: flagType(f)}, pf.flag, pf.help+spec.HelpSuffix(f)+note)
 		markEnum(fs, pf.flag, f.Enum)
 	}
 	fs.String("input", "", "Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder")
+	// either one of payOneOf: each is required with the others and --input
+	// as alternatives
+	for _, flag := range payOneOf {
+		markRequired(fs, flag)
+		for _, other := range payOneOf {
+			if other != flag {
+				addAlternatives(fs, flag, "--"+other)
+			}
+		}
+		addAlternatives(fs, flag, "--input")
+	}
 	return cmd
 }
 
@@ -145,7 +168,7 @@ func checkPayFlags(c *cobra.Command) error {
 	if fs.Changed("input") && flagString(c, "input") == "" {
 		return errMissingPath("--input")
 	}
-	if !fs.Changed("input") && !fs.Changed("amount") && !fs.Changed("transaction") {
+	if !fs.Changed("input") && !slices.ContainsFunc(payOneOf, fs.Changed) {
 		return clierr.New(clierr.CodeUsage, payMissing,
 			"--amount bucht einen Betrag, --transaction verknüpft einen Bankumsatz. Verwendung: "+useLine(c)+" --amount <betrag> | --transaction <id>")
 	}

@@ -474,7 +474,8 @@ func TestCommandsJSONFlags(t *testing.T) {
 		t.Errorf("voucher pay --reason = %+v", f)
 	}
 	for _, name := range []string{"amount", "transaction"} {
-		if f := d.find(t, "voucher pay").flag(t, name); f.Required || !strings.Contains(f.Description, "--amount oder --transaction Pflicht, außer mit --input") {
+		// either one is required: alternatives name the other and --input
+		if f := d.find(t, "voucher pay").flag(t, name); !f.Required || !strings.Contains(f.Description, "(Pflicht; eines von --amount und --transaction oder --input)") {
 			t.Errorf("voucher pay --%s = %+v", name, f)
 		}
 	}
@@ -715,6 +716,8 @@ func TestCommandsJSONAlternatives(t *testing.T) {
 		{"company create", "name", []string{"--input"}},
 		{"task create", "project", []string{"--input"}},
 		{"invoice deliver", "via", []string{"--input"}},
+		{"voucher pay", "amount", []string{"--input", "--transaction"}},
+		{"voucher pay", "transaction", []string{"--amount", "--input"}},
 		{"person describe", "company", nil},
 		{"time log", "task", nil},
 		{"context create", "subdomain", nil},
