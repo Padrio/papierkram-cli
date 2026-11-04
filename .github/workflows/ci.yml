@@ -84,9 +84,9 @@ jobs:
           git diff --exit-code
           git status --porcelain
           test -z "$(git status --porcelain)"
-      # Threshold is 0 for now; Task 43 raises it to 80.
+      # total over all packages except internal/api/gen, tools/ and e2e
       - name: coverage
-        run: scripts/coverage.sh 0
+        run: scripts/coverage.sh 80
       # no test may leave files in the repository (untracked included)
       - name: tests leave the tree clean
         run: |
