@@ -352,10 +352,16 @@ func TestDebugLatin1ErrorBodyAsText(t *testing.T) {
 
 func TestDebugBodyClassification(t *testing.T) {
 	tests := []struct{ contentType, data, want string }{
-		{"", "abc\xff", "< abc\uFFFD\n"},
-		{"application/x-unknown", "abc", "< abc\n"},
+		// text: JSON (also +json) and text/*; everything else only as size
 		{"application/json; charset=utf-8", `{"a":1}`, "< {\"a\":1}\n"},
+		{"application/problem+json", `{"a":1}`, "< {\"a\":1}\n"},
 		{"text/plain", "hallo", "< hallo\n"},
+		{"text/html; charset=iso-8859-1", "abc\xff", "< abc\uFFFD\n"},
+		{"", "%PDF-1.4\x00\x1b[31m", "< <binär, 14 Bytes>\n"},
+		{"application/x-unknown", "abc", "< <binär, 3 Bytes>\n"},
+		{"binary/octet-stream", "%PDF", "< <binär, 4 Bytes>\n"},
+		{"application/x-pdf", "%PDF", "< <binär, 4 Bytes>\n"},
+		{"kein; gültiger=", "abc", "< <binär, 3 Bytes>\n"},
 		{"application/pdf", "%PDF", "< <binär, 4 Bytes>\n"},
 		{"multipart/mixed; boundary=x", "abcd", "< <binär, 4 Bytes>\n"},
 		{"image/png", "abcd", "< <binär, 4 Bytes>\n"},

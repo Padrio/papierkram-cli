@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime"
 	"net/http"
 	"net/url"
 	"slices"
@@ -51,7 +52,7 @@ func (c *Client) debugRequest(req *http.Request, attempt int) {
 	}
 	if req.Body != nil && req.Body != http.NoBody {
 		switch {
-		case isBinaryType(req.Header.Get("Content-Type")):
+		case !isTextType(req.Header.Get("Content-Type")):
 			fmt.Fprintf(&b, "> <binär, %s>\n", sizeText(req.ContentLength))
 		case req.GetBody == nil:
 			fmt.Fprintf(&b, "> <nicht protokolliert, %s>\n", sizeText(req.ContentLength))
@@ -109,14 +110,15 @@ func (c *Client) debugError(err error, d time.Duration) {
 // status and quota; the rest is left out to keep the log compact.
 var debugResponseHeaders = []string{"Content-Type", "Retry-After"}
 
-// writeBody appends data line by line: binary content types only as their
-// size, everything else as text cut to debugBodyLimit bytes. Invalid UTF-8
-// (e.g. a Latin-1 proxy error page) is shown with replacement characters.
+// writeBody appends data line by line: bodies that are not text (see
+// isTextType) only as their size, text cut to debugBodyLimit bytes.
+// Invalid UTF-8 (e.g. a Latin-1 proxy error page) is shown with
+// replacement characters.
 func (c *Client) writeBody(b *strings.Builder, prefix, contentType string, data []byte) {
 	if len(data) == 0 {
 		return
 	}
-	if isBinaryType(contentType) {
+	if !isTextType(contentType) {
 		fmt.Fprintf(b, "%s<binär, %d Bytes>\n", prefix, len(data))
 		return
 	}
@@ -167,14 +169,17 @@ func readCopy(req *http.Request) ([]byte, error) {
 	return io.ReadAll(rc)
 }
 
-// isBinaryType reports whether a body of this Content-Type is only logged
-// by size: uploads (multipart/*), PDFs, images and octet streams. Text,
-// JSON and missing or unknown types are logged as text.
-func isBinaryType(contentType string) bool {
-	mt, _, _ := strings.Cut(contentType, ";")
-	mt = strings.ToLower(strings.TrimSpace(mt))
-	return strings.HasPrefix(mt, "multipart/") || strings.HasPrefix(mt, "image/") ||
-		mt == "application/pdf" || mt == "application/octet-stream"
+// isTextType reports whether a body of this Content-Type is logged as text:
+// JSON (application/json, *+json) and text/* (e.g. an HTML proxy page).
+// Every other body, also one without or with an unreadable Content-Type
+// (PDF, uploads, images, octet streams), is logged only by its size, so
+// binary bytes never reach the terminal (spec 5.5).
+func isTextType(contentType string) bool {
+	mt, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	return mt == "application/json" || strings.HasSuffix(mt, "+json") || strings.HasPrefix(mt, "text/")
 }
 
 func sizeText(n int64) string {
