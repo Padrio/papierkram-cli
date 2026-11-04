@@ -138,6 +138,20 @@ var errorRuns = []contractRun{
 		srv.On("GET", "/income/invoices/1", http.StatusInternalServerError, apiError("kaputt"))
 		return nil
 	}, args: []string{"invoice", "describe", "1", "-o", "json"}},
+	// Go accepts every three-digit status; outside 2xx it is an error
+	// (proxies and gateways in front of the API send odd ones)
+	{name: "error 101", exit: 1, setup: func(_ *testing.T, srv *mockapi.Server) []string {
+		srv.On("GET", "/income/invoices/1", http.StatusSwitchingProtocols, nil)
+		return nil
+	}, args: []string{"invoice", "describe", "1", "-o", "json"}},
+	{name: "server_error 600", exit: 1, setup: func(_ *testing.T, srv *mockapi.Server) []string {
+		srv.On("GET", "/income/invoices/1", 600, nil)
+		return nil
+	}, args: []string{"invoice", "describe", "1", "-o", "json"}},
+	{name: "server_error 999", exit: 1, setup: func(_ *testing.T, srv *mockapi.Server) []string {
+		srv.On("GET", "/income/invoices/1", 999, nil)
+		return nil
+	}, args: []string{"invoice", "describe", "1", "-o", "json"}},
 	{name: "usage", exit: 2, args: []string{"invoice", "describe", "-o", "json"}},
 	{name: "auth", exit: 3, setup: func(_ *testing.T, srv *mockapi.Server) []string {
 		srv.On("GET", "/income/invoices/1", http.StatusUnauthorized, nil)
@@ -296,6 +310,10 @@ func TestPartialContract(t *testing.T) {
 			srv.On("POST", "/expense/vouchers/{voucher_id}/documents", http.StatusUnprocessableEntity, apiError("Dateityp nicht erlaubt"))
 			return []string{"--file", writeFile(t, "beleg.pdf", pdfContent)}
 		}, args: append(slices.Clone(voucherCreateArgs), "-o", "json")},
+		{name: "Upload mit 600", exit: 11, setup: func(t *testing.T, srv *mockapi.Server) []string {
+			srv.On("POST", "/expense/vouchers/{voucher_id}/documents", 600, nil)
+			return []string{"--file", writeFile(t, "beleg.pdf", pdfContent)}
+		}, args: append(slices.Clone(voucherCreateArgs), "-o", "json")},
 		{name: "ohne ID", exit: 11, setup: func(t *testing.T, srv *mockapi.Server) []string {
 			srv.On("POST", "/expense/vouchers", http.StatusCreated, []byte(`{"name":"Papier"}`))
 			return []string{"--file", writeFile(t, "beleg.pdf", pdfContent)}
@@ -372,12 +390,17 @@ func TestContractSchemasStrict(t *testing.T) {
 				"http_status 2xx": {func(d map[string]any) {
 					e := errOf(d)
 					e["code"], e["exit_code"], e["http_status"] = "error", 1.0, 200.0
-				}, "number must be at least 300"},
+				}, `Error at "/error/http_status": Doesn't match schema "not"`},
 				"server_error mit 404":       {withCode("server_error", 1, 404), `Error at "/http_status": number must be at least 500`},
 				"server_error ohne Status":   {withCode("server_error", 1, 0), `property "http_status" is missing`},
 				"server_error mit 503":       {withCode("server_error", 1, 503), ""},
 				"error mit 500":              {withCode("error", 1, 500), `Error at "/http_status": number must be at most 499`},
 				"error mit 418":              {withCode("error", 1, 418), ""},
+				"error mit 101":              {withCode("error", 1, 101), ""},
+				"error mit 99":               {withCode("error", 1, 99), "number must be at least 100"},
+				"server_error mit 999":       {withCode("server_error", 1, 999), ""},
+				"server_error mit 1000":      {withCode("server_error", 1, 1000), "number must be at most 999"},
+				"partial mit 600":            {withCode("partial", 11, 600), ""},
 				"error ohne Status":          {withCode("error", 1, 0), ""},
 				"usage mit Status":           {withCode("usage", 2, 400), `Doesn't match schema "not"`},
 				"confirmation mit Status":    {withCode("confirmation_required", 8, 409), `Doesn't match schema "not"`},

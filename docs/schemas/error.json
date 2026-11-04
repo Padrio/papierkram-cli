@@ -87,10 +87,11 @@
           "minLength": 1
         },
         "http_status": {
-          "description": "HTTP-Status der API-Antwort, die den Fehler auslöste; fehlt bei lokalen Fehlern und ohne Antwort.",
+          "description": "HTTP-Status der API-Antwort, die den Fehler auslöste; fehlt bei lokalen Fehlern und ohne Antwort. Jeder dreistellige Status außer 2xx ist möglich, auch nicht standardisierte wie 101 oder 600 (z. B. von einem Proxy vor der API): ab 500 server_error, darunter error, sofern kein eigener Code passt.",
           "type": "integer",
-          "minimum": 300,
-          "maximum": 599
+          "minimum": 100,
+          "maximum": 999,
+          "not": {"type": "integer", "minimum": 200, "maximum": 299}
         },
         "correlation_id": {
           "description": "Correlation-ID aus der Fehlerantwort der API, für Rückfragen beim Papierkram-Support.",
