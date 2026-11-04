@@ -404,7 +404,7 @@ func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, l
 		body, removed = pr.Body, pr.Removed
 	}
 
-	sets, err := a.flagSets(c, ws)
+	sets, err := a.flagSets(c, e.Resource, ws)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -468,9 +468,10 @@ type fieldSet struct {
 // values buildBodyFrom sets: references as {id}, repeatable flags as
 // lists, each --attr as its own set (setPath merges them into
 // custom_attributes). Invalid values are German validation errors naming
-// the flag (exit 5).
-func (a *App) flagSets(c *cobra.Command, ws writeSpec) ([]fieldSet, error) {
-	cc := a.dateContext()
+// the flag (exit 5). Relative dates follow the rule of resource
+// (dayContext).
+func (a *App) flagSets(c *cobra.Command, resource string, ws writeSpec) ([]fieldSet, error) {
+	cc := a.dayContext(resource)
 	var sets []fieldSet
 	for _, f := range ws.fields {
 		if f.Flag == "" || f.Kind == spec.KindItems || !c.Flags().Changed(f.Flag) {

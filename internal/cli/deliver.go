@@ -267,8 +267,8 @@ var berlin = sync.OnceValue(func() *time.Location {
 // dayZone is the zone of the calendar days of Papierkram (Europe/Berlin),
 // not of the host, which may be a UTC container or lie hours behind: a
 // date-only sent_on is such a day (both sides are compared there), and so
-// are today/heute and yesterday/gestern of document and payment dates and
-// list filters (dateContext). Without zone data for Berlin it falls back
+// are today/heute and yesterday/gestern of every resource but time
+// (dayContext). Without zone data for Berlin it falls back
 // to App.Location.
 func (a *App) dayZone() *time.Location {
 	if loc := berlin(); loc != nil {
@@ -280,24 +280,28 @@ func (a *App) dayZone() *time.Location {
 	return a.Location
 }
 
-// dateContext is the clock of the relative dates (today/heute,
-// yesterday/gestern) in document and payment dates and date-only list
-// filters: the day of Papierkram (dayZone). Every caller of
-// spec.CoerceFlag uses it, except time log and the datetime filters of
-// time list (wallClockContext).
-func (a *App) dateContext() spec.CoerceContext {
-	return spec.CoerceContext{Now: a.Now, Loc: a.dayZone()}
-}
+// hostDayResource is the resource whose relative dates are days of the
+// host clock (dayContext).
+const hostDayResource = "time"
 
-// wallClockContext is the clock of time log: its date goes with wall-clock
-// times of the host clock (--duration without --from ends now on today's
-// date; time stop books the timer's start in the host zone), so a
-// keyword there is the host's day. A Berlin date with host times would
-// book 23:30 on the following day. The datetime filters of time list
-// (--since/--until) use it too: their bounds are host-zone times, and the
-// check after time stop (time list --since heute) must find that entry.
-func (a *App) wallClockContext() spec.CoerceContext {
-	return spec.CoerceContext{Now: a.Now, Loc: a.loc()}
+// dayContext is the clock of the relative dates (today/heute,
+// yesterday/gestern) of the entry's resource. One rule, per resource and
+// not per command: Zeiterfassung (time …): Tag der Rechneruhr; Belege,
+// Zahlungen, Datumsfilter: Berliner Tag.
+//
+// Time entries (create, update, log, stop, list --since/--until) take the
+// host's day: their date goes with wall-clock times of the host clock
+// (--duration without --from ends now; time stop books the timer's start
+// in the host zone; --since/--until bounds are host-zone times), so a
+// Berlin date with host times would book 23:30 on the following day, and
+// the check after time stop (time list --since heute) would miss the
+// entry. Every other resource takes the day of Papierkram (dayZone).
+// Every caller of spec.CoerceFlag goes through it.
+func (a *App) dayContext(resource string) spec.CoerceContext {
+	if resource == hostDayResource {
+		return spec.CoerceContext{Now: a.Now, Loc: a.loc()}
+	}
+	return spec.CoerceContext{Now: a.Now, Loc: a.dayZone()}
 }
 
 // deliverColumns are the output fields of deliver (spec 9.1) and their

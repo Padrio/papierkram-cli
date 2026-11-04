@@ -198,6 +198,6 @@ Papierkram berechnet Monats-Credits; danach 429 (Exit 6). `credits` in `commands
 - Kontexte: `--context <name>` wählt einen Kontext; `papierkram auth status -o json` zeigt den wirksamen Kontext, Token-Quelle und Schreibschutz (`read_only`, `read_only_source`).
 - IDs statt Namen: Flags nehmen IDs (`--customer 3214`), keine Namen. IDs liefert `list`.
 - Steuersätze: `vat=19`, `19%`, `0.19` und `0,19` ergeben 0.19.
-- Relative Daten: `heute`/`today` und `gestern`/`yesterday` sind in Beleg- und Zahlungsdaten und in Datumsfiltern (`--from`/`--to` der Listen) Tage nach deutscher Zeit (Europe/Berlin), auch in einem UTC-Container. `time log` (`--date`), `time stop` und `time list --since`/`--until` rechnen dagegen mit Tag und Uhr des Rechners, weil Datum und Uhrzeiten des Eintrags zusammenpassen müssen; so findet `time list --since heute` den gerade gebuchten Eintrag.
+- Relative Daten (`heute`/`today`, `gestern`/`yesterday`), eine Regel: Zeiterfassung (`time …`): Tag der Rechneruhr; Belege, Zahlungen, Datumsfilter: Berliner Tag (Europe/Berlin, auch in einem UTC-Container). Zur Zeiterfassung gehören `time create`, `time update`, `time log`, `time stop` und `time list --since`/`--until`; so passen Datum und Uhrzeiten eines Eintrags zusammen, und `time list --since heute` findet den gerade gebuchten Eintrag.
 - Positionen ändern: `update` mit `--item`/`--items` verlangt `--replace-items` und ersetzt **alle** Positionen.
 - Befehlsreferenz: [docs/reference/](docs/reference/); offene Fragen zur API: [docs/offene-punkte.md](docs/offene-punkte.md).

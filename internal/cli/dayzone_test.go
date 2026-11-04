@@ -86,3 +86,47 @@ func TestTimeLogDateStaysOnHostDay(t *testing.T) {
 	wantBody(t, srv, "POST", timeEntries,
 		`{"entry_date":"2026-11-04","started_at_time":"09:00","ended_at_time":"10:00","task":{"id":545},"user":{"id":1}}`)
 }
+
+// F-N6: the rule is per resource. Everything under time (create, update,
+// log, stop, list --since/--until) takes the host's day; documents,
+// payments and date-only filters the Berlin day.
+func TestTimeResourceUsesHostDayDocumentsBerlinDay(t *testing.T) {
+	app, srv := lateUTCApp(t)
+	wantExit(t, app, Run(app, []string{"time", "log", "--task", "545", "--user", "1", "--from", "9:00", "--to", "10:00", "-o", "json"}), 0)
+	var logged struct {
+		EntryDate string `json:"entry_date"`
+	}
+	if err := json.Unmarshal(wantRequests(t, srv, 1)[0].Body, &logged); err != nil {
+		t.Fatal(err)
+	}
+
+	app, srv = lateUTCApp(t)
+	wantExit(t, app, Run(app, []string{"time", "create", "--entry-date", "heute", "--started-at-time", "09:00",
+		"--ended-at-time", "10:00", "--task", "545", "--user", "1", "-o", "json"}), 0)
+	var created struct {
+		EntryDate string `json:"entry_date"`
+	}
+	if err := json.Unmarshal(wantRequests(t, srv, 1)[0].Body, &created); err != nil {
+		t.Fatal(err)
+	}
+	if logged.EntryDate != "2026-11-04" || created.EntryDate != logged.EntryDate {
+		t.Errorf("time log entry_date %s, time create --entry-date heute %s", logged.EntryDate, created.EntryDate)
+	}
+
+	app, srv = lateUTCApp(t)
+	wantExit(t, app, Run(app, []string{"time", "update", "7", "--entry-date", "gestern", "-o", "json"}), 0)
+	wantBody(t, srv, "PUT", "/tracker/time_entries/7", `{"entry_date":"2026-11-03"}`)
+
+	app, srv = lateUTCApp(t)
+	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "Rechnung", "--payment-term", "4", "--customer", "12",
+		"--document-date", "heute", "--item", item1, "-o", "json"), 0)
+	var invoice struct {
+		DocumentDate string `json:"document_date"`
+	}
+	if err := json.Unmarshal(wantRequests(t, srv, 1)[0].Body, &invoice); err != nil {
+		t.Fatal(err)
+	}
+	if invoice.DocumentDate != "2026-11-05" {
+		t.Errorf("invoice create --document-date heute = %s, want the Berlin day 2026-11-05", invoice.DocumentDate)
+	}
+}

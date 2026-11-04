@@ -198,7 +198,7 @@ func (a *App) payBody(c *cobra.Command, e registry.Entry, fields map[string]spec
 		a.pruneHints(pr)
 		body = pr.Body
 	}
-	cc := a.dateContext()
+	cc := a.dayContext(e.Resource)
 	for _, pf := range payFlags {
 		if !c.Flags().Changed(pf.flag) {
 			continue
