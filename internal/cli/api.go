@@ -73,6 +73,8 @@ func newAPICmd(app *App) *cobra.Command {
 		Annotations: map[string]string{annotClass: string(registry.ClassDestructive), annotPerRequest: "true"},
 		Args:        apiArgs,
 		RunE:        func(c *cobra.Command, args []string) error { return app.runAPI(c, args) },
+		// METHOD completes, the path does not (no file names)
+		ValidArgsFunction: apiArgCompletion,
 	}
 	fs := cmd.Flags()
 	fs.StringArrayP("raw-field", "f", nil, "Feld als Text: key=value (Punkte verschachteln; bei GET und DELETE ohne --input Query-Parameter)")

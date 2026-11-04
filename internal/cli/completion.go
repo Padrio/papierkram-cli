@@ -35,7 +35,7 @@ func completionLong() string {
 
 Vervollständigt werden Befehle, Flags, erlaubte Werte (z. B. -o, --state, die %d Ausgabekategorien bei --item category=), Kontextnamen aus der config.toml und IDs.
 
-IDs (z. B. papierkram invoice describe <Tab>, --company <Tab>) lädt die Vervollständigung per Listenabfrage aus der API: erste Seite, %d Einträge, angezeigt als ID mit Name. Jede Abfrage kostet %d Credit. Das Ergebnis wird je Kontext und Ressource %d Sekunden im Cache-Verzeichnis gehalten. Ohne Token, bei Fehlern oder nach %d Sekunden gibt es keine IDs, aber nie eine Meldung. Abschalten je Kontext in der config.toml:
+IDs (z. B. papierkram invoice describe <Tab>, --company <Tab>) lädt die Vervollständigung per Listenabfrage aus der API: erste Seite, bis zu %d Einträge, angezeigt als ID mit Name. Jede Abfrage kostet %d Credit. Das Ergebnis wird je Kontext und Ressource %d Sekunden im Cache-Verzeichnis gehalten. Ohne Token, bei Fehlern oder nach %d Sekunden gibt es keine IDs, aber nie eine Meldung. Abschalten je Kontext in der config.toml:
 
   [contexts.<name>]
   completion_lookup = false
@@ -160,14 +160,37 @@ func (a *App) flagCompletion(c *cobra.Command, f *pflag.Flag) cobra.CompletionFu
 		}
 		return nil
 	}
-	if resource, ok := idFlagResource(f); ok {
-		// an ID without a listable resource (--custom-template) completes
-		// nothing, never file names
+	resource, isID := idFlagResource(f)
+	switch {
+	case isID && resource != "" && !newAccount(c):
 		return func(c *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return a.completeIDs(c, resource, toComplete), cobra.ShellCompDirectiveNoFileComp
 		}
+	case isID || takesNoFile(f):
+		// an ID without a listable resource or account (--custom-template,
+		// context create --user), a number, date or duration: nothing,
+		// never file names
+		return noCompletion
 	}
 	return nil
+}
+
+// noCompletion offers nothing and no file names.
+func noCompletion(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return nil, cobra.ShellCompDirectiveNoFileComp
+}
+
+// newAccount reports a command that sets up a context: the account its
+// ID flags refer to is not known yet (context create --user).
+func newAccount(c *cobra.Command) bool {
+	return strings.Join(commandWords(c), " ") == "context create"
+}
+
+// takesNoFile reports a flag whose value is never a file name: every
+// type but text (numbers, IDs, dates, durations). Switches take no value.
+func takesNoFile(f *pflag.Flag) bool {
+	typ := f.Value.Type()
+	return f.NoOptDefVal == "" && typ != "string" && typ != "stringArray"
 }
 
 // argsCompletion completes the positional arguments of a registry command:
@@ -321,9 +344,13 @@ func itemCompletion(item *openapi3.Schema) cobra.CompletionFunc {
 			}
 			return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 		}
+		// the typed value matches with or without its opening quote; the
+		// candidate is the form the grammar needs (review M4)
+		_, typedValue, _ := strings.Cut(pair, "=")
+		typedValue = strings.TrimPrefix(strings.TrimLeft(typedValue, " "), `"`)
 		for _, v := range enums[strings.TrimSpace(key)] {
-			if cand := prefix + key + "=" + itemQuote(v); strings.HasPrefix(cand, toComplete) {
-				out = append(out, cand)
+			if strings.HasPrefix(v, typedValue) {
+				out = append(out, prefix+key+"="+itemQuote(v))
 			}
 		}
 		return out, cobra.ShellCompDirectiveNoFileComp
@@ -356,4 +383,44 @@ func itemQuote(v string) string {
 		return v
 	}
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(v) + `"`
+}
+
+// schemaArgCompletion completes schema <ressource> [<aktion>]: the
+// resource names, then the words of its actions (schemaActions, the
+// actions schema accepts; "voucher document delete" word by word).
+func schemaArgCompletion(c *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) == 0 {
+		var names []string
+		for _, r := range registry.Resources() {
+			names = append(names, r.Name)
+		}
+		return withPrefix(names, toComplete), cobra.ShellCompDirectiveNoFileComp
+	}
+	res, ok := findResource(args[0])
+	if !ok {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	group, _, err := c.Root().Find([]string{res.Name})
+	if err != nil || group == c.Root() {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	typed := args[1:]
+	var out []string
+	for _, name := range actionNames(group, schemaActions(group)) {
+		words := strings.Fields(name)
+		if len(words) > len(typed) && slices.Equal(words[:len(typed)], typed) &&
+			strings.HasPrefix(words[len(typed)], toComplete) && !slices.Contains(out, words[len(typed)]) {
+			out = append(out, words[len(typed)])
+		}
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
+}
+
+// apiArgCompletion completes the method of papierkram api; the path gets
+// nothing (no file names either).
+func apiArgCompletion(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) == 0 {
+		return withPrefix(apiMethods, strings.ToUpper(toComplete)), cobra.ShellCompDirectiveNoFileComp
+	}
+	return nil, cobra.ShellCompDirectiveNoFileComp
 }

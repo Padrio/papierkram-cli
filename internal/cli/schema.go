@@ -38,8 +38,9 @@ func newSchemaCmd(app *App) *cobra.Command {
 		Example: "  papierkram schema invoice create\n" +
 			"  papierkram schema rechnung send -o yaml\n" +
 			"  papierkram schema voucher --jq '.actions | keys'",
-		Annotations: readsOnly(),
-		Args:        minArgs(1),
+		Annotations:       readsOnly(),
+		Args:              minArgs(1),
+		ValidArgsFunction: schemaArgCompletion,
 		RunE: func(c *cobra.Command, args []string) error {
 			v, err := schemaOf(c.Root(), args)
 			if err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Padrio/papierkram-cli/internal/api"
+	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/namecache"
 	"github.com/Padrio/papierkram-cli/internal/output"
@@ -68,25 +69,42 @@ func completionCachePath(cacheDir, ctx, resource string) string {
 
 // completeIDs returns the "id<TAB>name" candidates of resource whose ID
 // starts with toComplete. The configuration is resolved like for every
-// API command (resolveConfig, requireCredentials); a lookup that is off,
-// fails or has no list without parent (person) gives none. Warnings of
-// the resolution are silenced.
+// API command (resolveWith, requireCredentials), in two steps so that the
+// keychain is read only for a request (review I1): first without it –
+// a lookup that is off or has no base URL ends here, a cache hit returns
+// –, then on a miss with it, under the deadline of the request. A lookup
+// that fails or has no list without parent (person) gives none. A local
+// --context of the command (local init) chooses the account. Warnings are
+// silenced.
 func (a *App) completeIDs(c *cobra.Command, resource, toComplete string) []string {
 	e, ok := registry.Lookup(resource, "list")
 	if resource == "" || !ok || strings.Contains(e.Path, "{") {
 		return nil
 	}
 	defer a.silence()()
-	r, err := a.resolveConfig()
-	if err != nil || !r.CompletionLookup || requireCredentials(r) != nil {
+	flagContext := a.Flags.Context
+	if f := c.LocalNonPersistentFlags().Lookup("context"); f != nil && f.Changed {
+		flagContext = f.Value.String()
+	}
+	r, err := a.resolveWith(flagContext, nil)
+	if err != nil || !r.CompletionLookup || r.BaseURL == "" {
 		return nil
 	}
 	path, scope := completionCachePath(a.cacheDir(), r.Context, resource), cacheScope(r)
 	ids, ok := readCompletionCache(path, scope, resource, a.Now())
 	if !ok {
-		ctx := c.Context()
-		if ctx == nil {
-			ctx = context.Background()
+		parent := c.Context()
+		if parent == nil {
+			parent = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(parent, completionTimeout)
+		defer cancel()
+		var store auth.Store
+		if a.Keyring != nil {
+			store = deadlineStore{Store: a.Keyring, ctx: ctx}
+		}
+		if r, err = a.resolveWith(flagContext, store); err != nil || requireCredentials(r) != nil {
+			return nil
 		}
 		if ids, ok = a.lookupIDs(ctx, r, e); !ok {
 			return nil
@@ -107,14 +125,38 @@ func (a *App) completeIDs(c *cobra.Command, resource, toComplete string) []strin
 	return out
 }
 
-// lookupIDs sends the list request of e: the client of the API commands
-// (clientOptions) with the completion's own timeout and without --debug
-// output. Objects without a positive ID are left out.
+// deadlineStore reads the keychain until ctx ends: a keychain that waits
+// (a locked Secret Service collection showing its unlock dialog) is given
+// up, its answer is dropped. Resolve then fails and there are no IDs.
+type deadlineStore struct {
+	auth.Store
+	ctx context.Context
+}
+
+func (s deadlineStore) Get(name string) (string, error) {
+	type result struct {
+		token string
+		err   error
+	}
+	done := make(chan result, 1)
+	go func() {
+		t, err := s.Store.Get(name)
+		done <- result{t, err}
+	}()
+	select {
+	case r := <-done:
+		return r.token, r.err
+	case <-s.ctx.Done():
+		return "", s.ctx.Err()
+	}
+}
+
+// lookupIDs sends the list request of e within ctx: the client of the API
+// commands (clientOptions) with the completion's own timeout and without
+// --debug output. Objects without a positive ID are left out.
 func (a *App) lookupIDs(ctx context.Context, r *config.Resolved, e registry.Entry) ([]completionID, bool) {
 	o := a.clientOptions(r)
 	o.Timeout, o.Debug, o.DebugInfo = completionTimeout, nil, ""
-	ctx, cancel := context.WithTimeout(ctx, completionTimeout)
-	defer cancel()
 	query := url.Values{"page_size": {strconv.Itoa(completionPageSize)}}
 	resp, err := api.New(o).Call(ctx, e.OperationID, nil, query, nil)
 	if err != nil {

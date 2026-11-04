@@ -9,13 +9,16 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/config"
+	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/spec"
 	"github.com/Padrio/papierkram-cli/internal/testutil/mockapi"
 )
@@ -215,11 +218,18 @@ func TestCompletionLookupOff(t *testing.T) {
 // writeCompletionCacheFile writes a fresh cache file of ctx for invoices.
 func writeCompletionCacheFile(t *testing.T, app *App, ctx, baseURL, entries string) string {
 	t.Helper()
+	return writeCompletionCacheAt(t, app, ctx, baseURL, entries, app.Now())
+}
+
+// writeCompletionCacheAt writes a cache file of ctx for invoices stored at
+// the given time.
+func writeCompletionCacheAt(t *testing.T, app *App, ctx, baseURL, entries string, at time.Time) string {
+	t.Helper()
 	path := completionCachePath(app.CacheDir, ctx, "invoice")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	stored, _ := json.Marshal(app.Now())
+	stored, _ := json.Marshal(at)
 	content := fmt.Sprintf(`{"scope":%q,"resource":"invoice","stored":%s,"entries":%s}`, ctx+" "+baseURL, stored, entries)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -484,7 +494,8 @@ func TestCompletionCoversEnumFlagsAndIDs(t *testing.T) {
 	var ids int
 	walk(root, func(c *cobra.Command) {
 		c.LocalFlags().VisitAll(func(f *pflag.Flag) {
-			if len(f.Annotations[flagEnum]) == 0 {
+			// switches take no value; text flags may name files
+			if f.NoOptDefVal != "" || len(f.Annotations[flagEnum]) == 0 && (f.Value.Type() == "string" || f.Value.Type() == "stringArray") {
 				return
 			}
 			if _, ok := c.GetFlagCompletionFunc(f.Name); !ok {
@@ -530,4 +541,143 @@ func TestCompletionCommand(t *testing.T) {
 	}
 	// the shell names complete
 	complete(t, app, "completion", "").want(t, []string{"bash", "zsh", "fish", "powershell"}, noFile)
+}
+
+// keychainProbe counts the keychain reads; block makes Get wait until the
+// channel is closed (a locked keychain waiting for its unlock dialog).
+type keychainProbe struct {
+	auth.Store
+	gets  atomic.Int32
+	block chan struct{}
+}
+
+func (s *keychainProbe) Get(ctx string) (string, error) {
+	s.gets.Add(1)
+	if s.block != nil {
+		<-s.block
+	}
+	return s.Store.Get(ctx)
+}
+
+// keychainApp is a context "a" whose token is in the (counting) keychain;
+// the base URL points to the mock.
+func keychainApp(t *testing.T, cfg string) (*App, *mockapi.Server, *keychainProbe) {
+	t.Helper()
+	app, srv := apiApp(t)
+	app.Env = envMap(map[string]string{"PAPIERKRAM_BASE_URL": srv.URL()})
+	store := &keychainProbe{Store: auth.NewMemory()}
+	if err := store.Set("a", "test-token-keychain"); err != nil {
+		t.Fatal(err)
+	}
+	app.Keyring = store
+	writeCfg(t, app, "active_context = \"a\"\n\n[contexts.a]\nsubdomain = \"firma\"\n"+cfg)
+	return app, srv, store
+}
+
+// The keychain is read only for a request: never with completion_lookup
+// = false, never on a cache hit, once on a miss (review I1).
+func TestCompletionKeychainOnlyOnMiss(t *testing.T) {
+	app, srv, store := keychainApp(t, "completion_lookup = false\n")
+	complete(t, app, "invoice", "describe", "").want(t, nil, noFile)
+	complete(t, app, "invoice", "list", "--company", "").want(t, nil, noFile)
+	if n := store.gets.Load(); n != 0 {
+		t.Errorf("abgeschaltet: %d Schlüsselbund-Zugriffe", n)
+	}
+	wantRequests(t, srv, 0)
+
+	app, srv, store = keychainApp(t, "")
+	srv.On("GET", "/income/invoices", http.StatusOK, invoiceEntries(t))
+	complete(t, app, "invoice", "describe", "")
+	if n := store.gets.Load(); n != 1 {
+		t.Errorf("Miss: %d Schlüsselbund-Zugriffe, erwartet 1", n)
+	}
+	wantRequests(t, srv, 1)
+	if r := complete(t, app, "invoice", "describe", ""); len(r.lines) != 3 {
+		t.Errorf("Treffer: %q", r.lines)
+	}
+	if n := store.gets.Load(); n != 1 {
+		t.Errorf("Treffer: %d Schlüsselbund-Zugriffe, erwartet weiterhin 1", n)
+	}
+	if req := wantRequests(t, srv, 1); req[0].Header.Get("Authorization") != "Bearer test-token-keychain" {
+		t.Errorf("Token aus dem Schlüsselbund nicht benutzt")
+	}
+}
+
+// A keychain that does not answer (locked, waiting for a dialog) is given
+// up after the deadline of the lookup: no IDs, no request.
+func TestCompletionBlockingKeychain(t *testing.T) {
+	defer func(d time.Duration) { completionTimeout = d }(completionTimeout)
+	completionTimeout = 100 * time.Millisecond
+	app, srv, store := keychainApp(t, "")
+	store.block = make(chan struct{})
+	defer close(store.block)
+	start := time.Now()
+	complete(t, app, "invoice", "describe", "").want(t, nil, noFile)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("wartete %v auf den Schlüsselbund", d)
+	}
+	wantRequests(t, srv, 0)
+}
+
+// A cache entry from the future is a miss, also with a token (review M2).
+func TestCompletionFutureCacheIsMiss(t *testing.T) {
+	app, srv := apiApp(t)
+	srv.On("GET", "/income/invoices", http.StatusOK, invoiceEntries(t))
+	writeCompletionCacheAt(t, app, "", srv.URL(), `[{"id":1,"name":"Zukunft"}]`, app.Now().Add(time.Hour))
+	if r := complete(t, app, "invoice", "describe", ""); len(r.lines) != 3 {
+		t.Errorf("Kandidaten %q", r.lines)
+	}
+	wantRequests(t, srv, 1)
+}
+
+// local init --context X completes the IDs of X; context create --user
+// completes none: the account of the new context is unknown (review M3).
+func TestCompletionTargetContext(t *testing.T) {
+	app, srv := apiApp(t)
+	app.Env = envMap(map[string]string{"PAPIERKRAM_BASE_URL": srv.URL()})
+	writeCfg(t, app, twoCtx)
+	if err := app.Keyring.Set("b", "test-token-b"); err != nil {
+		t.Fatal(err)
+	}
+	srv.On("GET", "/contact/companies", http.StatusOK, listBody(t, map[string]any{"id": 2843, "name": "Muster GmbH"}))
+	// the active context a has no token: without --context nothing
+	complete(t, app, "local", "init", "--company", "").want(t, nil, noFile)
+	complete(t, app, "local", "init", "--context", "b", "--company", "").want(t, []string{"2843\tMuster GmbH"}, noFile)
+	if _, err := os.Stat(completionCachePath(app.CacheDir, "b", "company")); err != nil {
+		t.Errorf("Cache von b: %v", err)
+	}
+	// even with a usable --context: the new context's account is unknown
+	complete(t, app, "context", "create", "neu", "--context", "b", "--user", "").want(t, nil, noFile)
+	wantRequests(t, srv, 1)
+}
+
+// A category with a comma matches while its first word is typed; the
+// candidate is quoted (review M4).
+func TestCompletionItemCategoryWithComma(t *testing.T) {
+	app, _ := apiApp(t)
+	want := []string{`category="Gas, Strom, Wasser"`}
+	complete(t, app, "voucher", "create", "--item", "category=Gas").want(t, want, noFile)
+	complete(t, app, "voucher", "create", "--item", `category="Gas`).want(t, want, noFile)
+	complete(t, app, "voucher", "create", "--item", "qty=1,category=Zuwendungen").
+		want(t, []string{`qty=1,category="Zuwendungen,Spenden steuerl. n. abziehb."`}, noFile)
+}
+
+// Number, ID, date and duration flags never offer file names; schema
+// completes resources and their actions, api the methods (review M6).
+func TestCompletionMetaArgsAndNumbers(t *testing.T) {
+	app, srv := apiApp(t)
+	complete(t, app, "invoice", "list", "--page", "").want(t, nil, noFile)
+	complete(t, app, "invoice", "list", "--limit", "").want(t, nil, noFile)
+	complete(t, app, "invoice", "list", "--timeout", "").want(t, nil, noFile)
+	complete(t, app, "schema", "inv").want(t, []string{"invoice"}, noFile)
+	if r := complete(t, app, "schema", ""); len(r.lines) != len(registry.Resources()) {
+		t.Errorf("Ressourcen %q", r.lines)
+	}
+	complete(t, app, "schema", "invoice", "de").want(t, []string{"delete", "deliver", "describe"}, noFile)
+	complete(t, app, "schema", "beleg", "doc").want(t, []string{"document"}, noFile)
+	complete(t, app, "schema", "voucher", "document", "").want(t, []string{"delete"}, noFile)
+	complete(t, app, "schema", "info", "").want(t, nil, noFile)
+	complete(t, app, "api", "").want(t, apiMethods, noFile)
+	complete(t, app, "api", "GET", "").want(t, nil, noFile)
+	wantRequests(t, srv, 0)
 }
