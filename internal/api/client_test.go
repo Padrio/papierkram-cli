@@ -293,7 +293,7 @@ func TestUploadMultipart(t *testing.T) {
 	rec := &recorder{status: http.StatusCreated}
 	c := newTestClient(t, rec, nil)
 
-	_, err := c.Upload(context.Background(), "UploadVoucherDocument", []int64{3}, "file", "beleg.pdf", strings.NewReader("%PDF-1.4"))
+	_, err := c.Upload(context.Background(), "UploadVoucherDocument", []int64{3}, "file", "beleg.pdf", strings.NewReader("%PDF-1.4"), 8)
 	if err != nil {
 		t.Fatalf("Upload: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestUploadMultipart(t *testing.T) {
 func TestUploadUnknownExtension(t *testing.T) {
 	rec := &recorder{}
 	c := newTestClient(t, rec, nil)
-	if _, err := c.Upload(context.Background(), "UploadVoucherDocument", []int64{3}, "file", "beleg.zzunknown", strings.NewReader("x")); err != nil {
+	if _, err := c.Upload(context.Background(), "UploadVoucherDocument", []int64{3}, "file", "beleg.zzunknown", strings.NewReader("x"), 1); err != nil {
 		t.Fatalf("Upload: %v", err)
 	}
 	_, params, _ := mime.ParseMediaType(rec.last(t).Header.Get("Content-Type"))
@@ -429,5 +429,140 @@ func TestDownloadMapsErrors(t *testing.T) {
 	_, err := c.Download(context.Background(), "GetInvoicePdf", []int64{1}, "application/pdf")
 	if ce := clierr.From(err); ce.Code != clierr.CodeNotFound || !strings.Contains(ce.Message, "Rechnung nicht gefunden") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// The upload body is streamed with a known length: the request carries
+// Content-Length (no chunked encoding), and the file is still being read
+// while the server already handles the request, so it is never read into
+// memory first.
+func TestUploadStreamsFileWithContentLength(t *testing.T) {
+	started := make(chan struct{})
+	var (
+		length   int64
+		encoding []string
+		body     []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		length, encoding = r.ContentLength, r.TransferEncoding
+		body, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(srv.Close)
+	c := New(Options{BaseURL: srv.URL + "/api/v1", Token: testToken})
+
+	first := strings.Repeat("a", 64<<10) // fills the write buffer: the headers go out
+	file := io.MultiReader(strings.NewReader(first), &gatedReader{gate: started, data: "%%EOF"})
+	size := int64(len(first) + len("%%EOF"))
+	if _, err := c.Upload(context.Background(), "UploadVoucherDocument", []int64{3}, "file", "beleg.pdf", file, size); err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	if length != int64(len(body)) || len(encoding) != 0 {
+		t.Errorf("Content-Length = %d, Body %d Bytes, Transfer-Encoding %v", length, len(body), encoding)
+	}
+	if !strings.Contains(string(body), first+"%%EOF\r\n--") {
+		t.Errorf("file content not sent completely")
+	}
+}
+
+// gatedReader returns data only once gate is closed (the server handles
+// the request), or fails after a timeout.
+type gatedReader struct {
+	gate <-chan struct{}
+	data string
+	done bool
+}
+
+func (g *gatedReader) Read(p []byte) (int, error) {
+	if g.done {
+		return 0, io.EOF
+	}
+	select {
+	case <-g.gate:
+	case <-time.After(5 * time.Second):
+		return 0, errors.New("file read before the request was sent: upload is buffered")
+	}
+	g.done = true
+	return copy(p, g.data), nil
+}
+
+// The file name is quoted like mime/multipart does: quotes and
+// backslashes are escaped, line breaks cannot start a header of their own.
+func TestUploadFilenameQuoted(t *testing.T) {
+	rec := &recorder{status: http.StatusCreated}
+	c := newTestClient(t, rec, nil)
+	name := "a\"b\\c\r\nX-Evil: 1.pdf"
+	if _, err := c.Upload(context.Background(), "UploadVoucherDocument", []int64{3}, "file", name, strings.NewReader("x"), 1); err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	_, params, _ := mime.ParseMediaType(rec.last(t).Header.Get("Content-Type"))
+	part, err := multipart.NewReader(strings.NewReader(string(rec.last(t).Body)), params["boundary"]).NextPart()
+	if err != nil {
+		t.Fatalf("NextPart: %v", err)
+	}
+	if part.Header.Get("X-Evil") != "" || part.FormName() != "file" {
+		t.Errorf("part header = %v", part.Header)
+	}
+	if want := multipart.FileContentDisposition("file", name); part.Header.Get("Content-Disposition") != want {
+		t.Errorf("Content-Disposition = %q, want %q", part.Header.Get("Content-Disposition"), want)
+	}
+}
+
+// A file that cannot be read completely is an error of the file (exit 1),
+// not a network error: the request was never completely sent.
+func TestUploadFileErrors(t *testing.T) {
+	for name, tc := range map[string]struct {
+		r    io.Reader
+		size int64
+		want string
+	}{
+		"read error": {io.MultiReader(strings.NewReader("abc"), iotestErrReader{}), 10, "Datei beleg.pdf nicht lesbar: Lesefehler"},
+		"shrunk":     {strings.NewReader("abc"), 10, "Datei beleg.pdf hat sich beim Hochladen verändert (3 statt 10 Bytes)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := &recorder{status: http.StatusCreated}
+			c := newTestClient(t, rec, nil)
+			_, err := c.Upload(context.Background(), "UploadVoucherDocument", []int64{3}, "file", "beleg.pdf", tc.r, tc.size)
+			if err == nil {
+				t.Fatalf("no error, want %q", tc.want)
+			}
+			if ce := clierr.From(err); ce.Code != clierr.CodeError || ce.Message != tc.want {
+				t.Errorf("err = %v (%s), want %q", err, ce.Code, tc.want)
+			}
+		})
+	}
+}
+
+type iotestErrReader struct{}
+
+func (iotestErrReader) Read([]byte) (int, error) { return 0, errors.New("Lesefehler") }
+
+// A file that grew after its size was taken is sent with that size only.
+func TestUploadSendsGivenSize(t *testing.T) {
+	rec := &recorder{status: http.StatusCreated}
+	c := newTestClient(t, rec, nil)
+	if _, err := c.Upload(context.Background(), "UploadVoucherDocument", []int64{3}, "file", "beleg.pdf", strings.NewReader("abcdef"), 3); err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	_, params, _ := mime.ParseMediaType(rec.last(t).Header.Get("Content-Type"))
+	part, _ := multipart.NewReader(strings.NewReader(string(rec.last(t).Body)), params["boundary"]).NextPart()
+	if data, _ := io.ReadAll(part); string(data) != "abc" {
+		t.Errorf("part data = %q", data)
+	}
+}
+
+func TestMediaType(t *testing.T) {
+	for name, want := range map[string]string{
+		"beleg.pdf":       "application/pdf",
+		"Quittung.PNG":    "image/png",
+		"foto.jpg":        "image/jpeg",
+		"beleg.zzunknown": "application/octet-stream",
+		"ohne-endung":     "application/octet-stream",
+		"punkt.am.ende.":  "application/octet-stream",
+	} {
+		if got := MediaType(name); got != want {
+			t.Errorf("MediaType(%q) = %q, want %q", name, got, want)
+		}
 	}
 }

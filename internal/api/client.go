@@ -22,6 +22,7 @@ import (
 
 	"github.com/Padrio/papierkram-cli/internal/api/gen"
 	"github.com/Padrio/papierkram-cli/internal/buildinfo"
+	"github.com/Padrio/papierkram-cli/internal/clierr"
 )
 
 // DefaultTimeout applies when Options.Timeout is zero.
@@ -144,34 +145,96 @@ func (c *Client) CallRaw(ctx context.Context, method, path string, query url.Val
 	return c.do(ctx, req)
 }
 
-// Upload sends r as multipart/form-data with one file part named field.
-// The part's Content-Type is derived from the extension of filename.
-func (c *Client) Upload(ctx context.Context, opID string, pathParams []int64, field, filename string, r io.Reader) (*Response, error) {
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	ct := mime.TypeByExtension(filepath.Ext(filename))
-	if ct == "" {
-		ct = "application/octet-stream"
+// Upload sends size bytes of the file r as multipart/form-data with one
+// part named field, carrying filename (quoted like mime/multipart does) and
+// its media type (MediaType). The body is streamed: only the part header
+// and the closing boundary are held in memory, Content-Length is set, and
+// exactly size bytes of r are sent. When r fails or ends before size
+// bytes, the request was never completely sent: that is an error of the
+// file (exit 1), not of the network. Otherwise the request goes the way of
+// Call (headers, --debug with the body only as its size, no retry for POST,
+// error mapping).
+func (c *Client) Upload(ctx context.Context, opID string, pathParams []int64, field, filename string, r io.Reader, size int64) (*Response, error) {
+	if size < 0 {
+		return nil, fmt.Errorf("api: Größe der Datei %s unbekannt", filename)
 	}
+	var head, tail bytes.Buffer
+	to := &switchWriter{w: &head}
+	mw := multipart.NewWriter(to)
 	h := make(textproto.MIMEHeader)
-	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`,
-		quoteEscaper.Replace(field), quoteEscaper.Replace(filename)))
-	h.Set("Content-Type", ct)
-	part, err := mw.CreatePart(h)
+	h.Set("Content-Disposition", multipart.FileContentDisposition(field, filename))
+	h.Set("Content-Type", MediaType(filename))
+	if _, err := mw.CreatePart(h); err != nil {
+		return nil, err
+	}
+	to.w = &tail
+	if err := mw.Close(); err != nil { // writes the closing boundary only
+		return nil, err
+	}
+	length := int64(head.Len()) + size + int64(tail.Len())
+	file := &fileReader{r: io.LimitReader(r, size)}
+	req, err := c.buildOp(opID, pathParams, nil, mw.FormDataContentType(), io.MultiReader(&head, file, &tail))
 	if err != nil {
 		return nil, err
 	}
-	if _, err := io.Copy(part, r); err != nil {
-		return nil, fmt.Errorf("api: Datei %s nicht lesbar: %w", filename, err)
+	req.ContentLength = length
+	resp, err := c.do(ctx, req)
+	if err != nil && clierr.From(err).HTTPStatus == 0 {
+		if ferr := file.failure(filename, size); ferr != nil {
+			return nil, ferr
+		}
 	}
-	if err := mw.Close(); err != nil {
-		return nil, err
-	}
-	return c.callOp(ctx, opID, pathParams, nil, mw.FormDataContentType(), &buf)
+	return resp, err
 }
 
-// quoteEscaper escapes multipart header parameters like mime/multipart does.
-var quoteEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+// MediaType is the media type of a file by the extension of name
+// (mime.TypeByExtension), application/octet-stream when it is unknown.
+func MediaType(name string) string {
+	if ct := mime.TypeByExtension(filepath.Ext(name)); ct != "" {
+		return ct
+	}
+	return "application/octet-stream"
+}
+
+// switchWriter writes to w, which can be swapped between writes.
+type switchWriter struct{ w io.Writer }
+
+func (s *switchWriter) Write(p []byte) (int, error) { return s.w.Write(p) }
+
+// fileReader counts the bytes read from the file of an upload and keeps
+// a read error or an early end.
+type fileReader struct {
+	r     io.Reader
+	n     int64
+	err   error // read error other than io.EOF
+	ended bool  // io.EOF seen
+}
+
+func (f *fileReader) Read(p []byte) (int, error) {
+	n, err := f.r.Read(p)
+	f.n += int64(n)
+	switch {
+	case err == io.EOF:
+		f.ended = true
+	case err != nil:
+		f.err = err
+	}
+	return n, err
+}
+
+// failure is the error of a file that could not be sent completely, nil
+// when the file is not the cause.
+func (f *fileReader) failure(filename string, size int64) error {
+	switch {
+	case f.err != nil:
+		return &clierr.Error{Code: clierr.CodeError, Message: fmt.Sprintf("Datei %s nicht lesbar: %v", filename, f.err),
+			Hint: "Nichts hochgeladen; Datei prüfen und erneut hochladen", Cause: f.err}
+	case f.ended && f.n < size:
+		return clierr.New(clierr.CodeError, fmt.Sprintf("Datei %s hat sich beim Hochladen verändert (%d statt %d Bytes)", filename, f.n, size),
+			"Nichts hochgeladen; erneut hochladen, wenn die Datei fertig geschrieben ist")
+	}
+	return nil
+}
 
 // Preview returns the method and the full URL (query included) that Call
 // would send for opID, built with the same generated builder and base URL

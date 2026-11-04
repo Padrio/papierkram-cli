@@ -165,7 +165,7 @@ func TestDebugMultipartUploadSizeOnly(t *testing.T) {
 	rec := &recorder{status: http.StatusCreated}
 	c, buf := debugClient(t, rec, nil)
 
-	if _, err := c.Upload(context.Background(), "UploadVoucherDocument", []int64{3}, "file", "beleg.pdf", strings.NewReader("%PDF-1.4 geheim")); err != nil {
+	if _, err := c.Upload(context.Background(), "UploadVoucherDocument", []int64{3}, "file", "beleg.pdf", strings.NewReader("%PDF-1.4 geheim"), 15); err != nil {
 		t.Fatalf("Upload: %v", err)
 	}
 	sent := len(rec.last(t).Body)

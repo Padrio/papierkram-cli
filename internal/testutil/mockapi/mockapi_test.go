@@ -146,7 +146,7 @@ func TestClientEndToEnd(t *testing.T) {
 		t.Errorf("quota = %+v", resp.Quota)
 	}
 
-	up, err := c.Upload(ctx, "UploadVoucherDocument", []int64{7}, "file", "beleg.pdf", bytes.NewReader([]byte("%PDF-1.4\x00\xff binary")))
+	up, err := c.Upload(ctx, "UploadVoucherDocument", []int64{7}, "file", "beleg.pdf", bytes.NewReader([]byte("%PDF-1.4\x00\xff binary")), 17)
 	if err != nil {
 		t.Fatalf("UploadVoucherDocument: %v", err)
 	}
