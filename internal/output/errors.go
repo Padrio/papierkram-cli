@@ -29,6 +29,11 @@ func WriteError(o Options, e *clierr.Error) {
 	if e == nil {
 		return
 	}
+	// message, hint and correlation ID can carry outside text (API, project
+	// file): no terminal escapes, line breaks stay; e itself is unchanged
+	clean := *e
+	clean.Message, clean.Hint, clean.CorrelationID = Message(e.Message), Message(e.Hint), Printable(e.CorrelationID)
+	e = &clean
 	_, _ = io.WriteString(o.Err, e.Format())
 	doc := errorDoc{errorBody{
 		Code: e.Code, Message: e.Message, Hint: e.Hint,

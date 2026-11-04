@@ -81,9 +81,9 @@ func UseColor(stdoutTTY bool, env func(string) string, noColorFlag bool) bool {
 	return env == nil || env("NO_COLOR") == ""
 }
 
-// Warn writes a warning line to w (stderr).
+// Warn writes a warning line to w (stderr); msg goes through Message.
 func Warn(w io.Writer, msg string) {
-	_, _ = fmt.Fprintf(w, "Warnung: %s\n", msg)
+	_, _ = fmt.Fprintf(w, "Warnung: %s\n", Message(msg))
 }
 
 // Render writes the API response raw (JSON) to o.Out in the format of o.

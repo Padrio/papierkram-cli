@@ -2,6 +2,8 @@ package output
 
 import (
 	"bytes"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
@@ -74,5 +76,55 @@ func TestWriteErrorYAML(t *testing.T) {
 func TestWriteErrorNil(t *testing.T) {
 	if got := writeErr(Options{Format: FormatJSON}, nil); got != "" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// Security review: message, hint and correlation ID of an error and the
+// text of a warning reach the terminal without control characters (ESC of
+// ANSI sequences) or invisible format characters (bidi override U+202E);
+// only line breaks of multi-line messages stay. The JSON stays valid.
+func TestWriteErrorAndWarnSanitize(t *testing.T) {
+	e := &clierr.Error{Code: clierr.CodeValidation,
+		Message:       "Feld \x1b[31mrot\x1b[0m\nzweite Zeile\u202eevil\r",
+		Hint:          "Hinweis\x07 mit \u200bBreite\nund Zeile",
+		CorrelationID: "id\x1b]0;x\x07"}
+	for _, format := range []Format{FormatTable, FormatJSON, FormatYAML} {
+		var errb bytes.Buffer
+		WriteError(Options{Format: format, Err: &errb}, e)
+		got := errb.String()
+		if strings.ContainsAny(got, "\x1b\x07\r\u202e\u200b") {
+			t.Errorf("%s: control characters in %q", format, got)
+		}
+		if format == FormatTable && (!strings.Contains(got, "rot [0m\nzweite Zeile evil") || !strings.Contains(got, "\nund Zeile")) {
+			t.Errorf("%s: line breaks lost: %q", format, got)
+		}
+		if format == FormatJSON {
+			line := got[strings.LastIndex(strings.TrimRight(got, "\n"), "\n")+1:]
+			var doc map[string]map[string]any
+			if err := json.Unmarshal([]byte(line), &doc); err != nil {
+				t.Fatalf("invalid JSON %q: %v", line, err)
+			}
+			if msg, _ := doc["error"]["message"].(string); !strings.Contains(msg, "\nzweite Zeile") || strings.ContainsAny(msg, "\x1b\u202e") {
+				t.Errorf("JSON message = %q", msg)
+			}
+		}
+	}
+	// the error itself is not changed
+	if !strings.Contains(e.Message, "\x1b") {
+		t.Error("WriteError modified the error")
+	}
+
+	var w bytes.Buffer
+	Warn(&w, "Datei \x1b[2J\u202eweg\nzweite")
+	if got := w.String(); got != "Warnung: Datei  [2J weg\nzweite\n" {
+		t.Errorf("Warn = %q", got)
+	}
+}
+
+// Printable (one line) and the message filter share one implementation:
+// Printable also replaces line breaks.
+func TestPrintable(t *testing.T) {
+	if got := Printable("a\nb\x1b\u202ec\td"); got != "a b  c d" {
+		t.Errorf("Printable = %q", got)
 	}
 }
