@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -93,24 +94,170 @@ func docCommandLines(t *testing.T, path string) []docLine {
 // envAssignment matches a leading NAME=value of a command.
 var envAssignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 
-// cliCommands returns the commands of a line that call the CLI (papierkram
-// or its alias pk), without leading environment assignments and with the
-// binary named papierkram.
-func cliCommands(text string) ([][]string, error) {
-	cmds, err := shellCommands(text)
+// docCmd is one CLI call of a documented line: the environment assignments
+// in front of it and its words, the binary named papierkram.
+type docCmd struct {
+	env   map[string]string
+	words []string
+}
+
+// docShellCommands are the commands besides the CLI that a checked code
+// block may run (installation, completion setup, jq); every other command
+// is an error, so a misspelled papierkram is never skipped silently.
+var docShellCommands = []string{"brew", "scoop", "go", "source", "jq"}
+
+// substPlaceholder replaces a $(…) or <(…) in the enclosing line.
+const substPlaceholder = "SUBST"
+
+// docLineCommands returns the CLI calls (papierkram or its alias pk) of a
+// documented line, with the binary named papierkram. Command and process
+// substitutions ($(…), <(…)) are unwrapped: their content is checked as a
+// line of its own. Every command must parse and be the CLI or one of
+// docShellCommands.
+func docLineCommands(text string) ([]docCmd, error) {
+	outer, inner, err := unwrapSubstitutions(text)
 	if err != nil {
 		return nil, err
 	}
-	var out [][]string
+	cmds, err := shellCommands(outer)
+	if err != nil {
+		return nil, err
+	}
+	var out []docCmd
 	for _, words := range cmds {
+		env := map[string]string{}
 		for len(words) > 0 && envAssignment.MatchString(words[0]) {
+			k, v, _ := strings.Cut(words[0], "=")
+			env[k] = v
 			words = words[1:]
 		}
-		if len(words) > 0 && (words[0] == "papierkram" || words[0] == "pk") {
-			out = append(out, append([]string{"papierkram"}, words[1:]...))
+		switch {
+		case len(words) == 0:
+			return nil, fmt.Errorf("kein Befehl nach den Zuweisungen %v", env)
+		case words[0] == "papierkram" || words[0] == "pk":
+			out = append(out, docCmd{env, append([]string{"papierkram"}, words[1:]...)})
+		case !slices.Contains(docShellCommands, words[0]):
+			return nil, fmt.Errorf("unbekannter Befehl %q (Tippfehler? sonst in docShellCommands aufnehmen)", words[0])
 		}
 	}
+	for _, in := range inner {
+		cmds, err := docLineCommands(in)
+		if err != nil {
+			return nil, fmt.Errorf("in $(…)/<(…): %w", err)
+		}
+		out = append(out, cmds...)
+	}
 	return out, nil
+}
+
+// unwrapSubstitutions replaces every $(…) and <(…) outside single quotes
+// by substPlaceholder and returns their contents (nested ones stay in the
+// content and are unwrapped when it is checked). An unclosed substitution
+// is an error.
+func unwrapSubstitutions(text string) (string, []string, error) {
+	var outer strings.Builder
+	var inner []string
+	rs := []rune(text)
+	var quote rune
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
+		switch {
+		case quote == '\'':
+			if r == quote {
+				quote = 0
+			}
+		case r == '\'' && quote == 0:
+			quote = r
+		case r == '"':
+			if quote == '"' {
+				quote = 0
+			} else {
+				quote = r
+			}
+		case (r == '$' || r == '<') && i+1 < len(rs) && rs[i+1] == '(':
+			end, err := closingParen(rs, i+2)
+			if err != nil {
+				return "", nil, err
+			}
+			inner = append(inner, string(rs[i+2:end]))
+			outer.WriteString(substPlaceholder)
+			i = end
+			continue
+		}
+		outer.WriteRune(r)
+	}
+	return outer.String(), inner, nil
+}
+
+// closingParen returns the index of the ) that closes the substitution
+// whose content starts at start, skipping quoted text and nested
+// parentheses.
+func closingParen(rs []rune, start int) (int, error) {
+	depth := 0
+	var quote rune
+	for i := start; i < len(rs); i++ {
+		r := rs[i]
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			}
+		case r == '\'' || r == '"':
+			quote = r
+		case r == '(':
+			depth++
+		case r == ')':
+			if depth == 0 {
+				return i, nil
+			}
+			depth--
+		}
+	}
+	return 0, errors.New("$(…) bzw. <(…) nicht geschlossen")
+}
+
+func TestDocLineCommandsUnwrapAndReject(t *testing.T) {
+	// want: the CLI calls joined by "/" ("" none); "-" an error
+	for line, want := range map[string]string{
+		"source <(papierkram completion bash)":                              "papierkram completion bash",
+		`brew install x && echo "$(pk version -o json)"`:                    "-",
+		"PAPIERKRAM_READ_ONLY=1 papierkram info | jq .":                     "PAPIERKRAM_READ_ONLY=1 papierkram info",
+		"go install github.com/Padrio/papierkram-cli/cmd/papierkram@latest": "",
+		`papierkram completion zsh > "${fpath[1]}/_papierkram"`:             "papierkram completion zsh",
+		"source <(papierkram completion $(echo bash))":                      "-",
+		"jq . <(papierkram invoice list -o json)":                           "papierkram invoice list -o json",
+		`papierkram invoice list --jq '.entries[] | "$(x)"'`:                "papierkram invoice list --jq .entries[] | \"$(x)\"",
+	} {
+		cmds, err := docLineCommands(line)
+		var got []string
+		for _, c := range cmds {
+			var env []string
+			for k, v := range c.env {
+				env = append(env, k+"="+v)
+			}
+			got = append(got, strings.Join(append(env, c.words...), " "))
+		}
+		if want == "-" {
+			if err == nil {
+				t.Errorf("docLineCommands(%q) = %q: kein Fehler", line, got)
+			}
+			continue
+		}
+		if err != nil || strings.Join(got, "/") != want {
+			t.Errorf("docLineCommands(%q) = %q, %v, want %q", line, got, err, want)
+		}
+	}
+	for _, bad := range []string{
+		"papierkam invoice list",           // typo: unknown command
+		`papierkram invoice list --jq ".a`, // does not parse
+		"echo $(papierkram invoice list",   // unclosed substitution
+		"source <(papierkram x | )",        // inner does not parse
+		"ls -l",                            // not allowed
+	} {
+		if cmds, err := docLineCommands(bad); err == nil {
+			t.Errorf("docLineCommands(%q) = %v: kein Fehler", bad, cmds)
+		}
+	}
 }
 
 func TestDocCommandsAreValid(t *testing.T) {
@@ -123,19 +270,23 @@ func TestDocCommandsAreValid(t *testing.T) {
 			if strings.Contains(l.text, placeholderMark) {
 				continue
 			}
-			cmds, err := cliCommands(l.text)
+			cmds, err := docLineCommands(l.text)
 			if err != nil {
 				t.Errorf("%s:%d: %q: %v", l.file, l.line, l.text, err)
 				continue
 			}
-			for _, words := range cmds {
+			for _, c := range cmds {
 				found++
-				if err := docCommandProblem(t, words); err != nil {
-					t.Errorf("%s:%d: %q: %v", l.file, l.line, strings.Join(words, " "), err)
-				} else if run, ok := docDryRun(t, d, words); ok {
+				if err := docCommandProblem(t, c.words); err != nil {
+					t.Errorf("%s:%d: %q: %v", l.file, l.line, strings.Join(c.words, " "), err)
+				} else if run, ok := docDryRun(t, d, c.words); ok {
 					dryRuns++
-					if code, errs := runLine(t, nil, run); code != 0 {
+					code, errs, srv := runLineServer(t, c.env, run)
+					if code != 0 {
 						t.Errorf("%s:%d: %q: exit %d, stderr %q", l.file, l.line, strings.Join(run, " "), code, errs)
+					}
+					if err := dryRunRequests(srv, run); err != nil {
+						t.Errorf("%s:%d: %q: %v", l.file, l.line, strings.Join(run, " "), err)
 					}
 				}
 			}
@@ -160,12 +311,13 @@ func docCommandProblem(t *testing.T, words []string) error {
 // --dry-run against the mock (task 28 M2, like the registry examples) and
 // whether it runs. Mutations are the commands whose class in commands
 // --json is a mutation class (dryRunnable); commands that read stdin (an
-// argument "-") and time stop (needs a running timer) are only parsed.
+// argument "-"), help calls (--help, -h: nothing would run) and time stop
+// (needs a running timer) are only parsed.
 func docDryRun(t *testing.T, d cmdDoc, words []string) ([]string, bool) {
 	t.Helper()
 	app, _ := apiApp(t)
 	cmd, _, err := NewRootCmd(app).Find(words[1:])
-	if err != nil || slices.Contains(words, "-") {
+	if err != nil || slices.Contains(words, "-") || slices.Contains(words, "--help") || slices.Contains(words, "-h") {
 		return nil, false
 	}
 	name := strings.TrimPrefix(cmd.CommandPath(), "papierkram ")
@@ -188,6 +340,7 @@ func TestDocDryRun(t *testing.T) {
 		"papierkram invoice list":                       "",
 		"papierkram invoice update 459 --input -":       "",
 		"papierkram time stop":                          "",
+		"papierkram invoice create --help":              "",
 		"papierkram context create x --subdomain x":     "",
 		"papierkram api DELETE /tracker/time_entries/7": "",
 	} {
@@ -223,12 +376,12 @@ func TestDocCommandLines(t *testing.T) {
 	}
 	var got []string
 	for _, l := range docCommandLines(t, path) {
-		cmds, err := cliCommands(l.text)
+		cmds, err := docLineCommands(l.text)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, c := range cmds {
-			got = append(got, fmt.Sprintf("%d:%s", l.line, strings.Join(c, " ")))
+			got = append(got, fmt.Sprintf("%d:%s", l.line, strings.Join(c.words, " ")))
 		}
 	}
 	want := "3:papierkram user list --limit 5|7:papierkram info|13:papierkram version"
