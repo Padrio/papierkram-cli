@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +38,9 @@ type Exchange struct {
 // request is sent it checks, in this order:
 //   - scheme and host are exactly Scheme and Host (the sandbox), so
 //     nothing else is ever contacted;
+//   - a request whose path names pay or deliver in any form is only sent
+//     in the canonical form of the operation (checkCanonical: POST, exact
+//     path, no query, application/json, no Content-Encoding);
 //   - a deliver request carries a strict JSON body with send_via "pdf"
 //     and no email (the suite never sends mail);
 //   - a pay request carries exactly {"value": null, "banking_transaction":
@@ -77,11 +83,16 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return nil, err
 		}
 	}
-	if isAction(req.URL.Path, "deliver") && !deliversPDF(body) {
-		return nil, fmt.Errorf("%w: deliver nur mit send_via \"pdf\"", ErrRefused)
-	}
-	if isAction(req.URL.Path, "pay") && !paysNothing(body) {
-		return nil, fmt.Errorf("%w: pay nur mit value null und der Bankumsatz-ID %d, die es nicht gibt (die Suite bezahlt nie)", ErrRefused, NoTransactionID)
+	if act := guardedAction(req.URL); act != "" {
+		if err := checkCanonical(req, act); err != nil {
+			return nil, err
+		}
+		if act == "deliver" && !deliversPDF(body) {
+			return nil, fmt.Errorf("%w: deliver nur mit send_via \"pdf\"", ErrRefused)
+		}
+		if act == "pay" && !paysNothing(body) {
+			return nil, fmt.Errorf("%w: pay nur mit value null und der Bankumsatz-ID %d, die es nicht gibt (die Suite bezahlt nie)", ErrRefused, NoTransactionID)
+		}
 	}
 	if err := t.Meter.Reserve(req.Method, req.URL.Path); err != nil {
 		return nil, err
@@ -141,9 +152,73 @@ func closeBody(req *http.Request) {
 	}
 }
 
-// isAction reports whether path ends with the action segment /action.
-func isAction(path, action string) bool {
-	return strings.HasSuffix(strings.TrimRight(path, "/"), "/"+action)
+// guardedPath is the one canonical path of each guarded operation:
+// voucher pay, invoice and estimate deliver.
+var guardedPath = regexp.MustCompile(`^/api/v1/(?:expense/vouchers/[0-9]+/(pay)|income/(?:invoices|estimates)/[0-9]+/(deliver))$`)
+
+// guardedAction reports "pay" or "deliver" when any segment of the path
+// of u, decoded or not, in any case, with a ";…" parameter or a ".…"
+// suffix cut off and blanks trimmed, names one of them; "" otherwise.
+// It is deliberately broad (fail closed): such a request must then pass
+// checkCanonical.
+func guardedAction(u *url.URL) string {
+	for _, p := range []string{u.Path, u.EscapedPath(), u.RawPath, u.Opaque} {
+		for _, seg := range strings.Split(p, "/") {
+			if dec, err := url.PathUnescape(seg); err == nil {
+				seg = dec
+			}
+			seg = strings.ToLower(seg)
+			if i := strings.IndexAny(seg, ";.,"); i >= 0 {
+				seg = seg[:i]
+			}
+			switch seg = strings.TrimSpace(seg); seg {
+			case "pay", "deliver":
+				return seg
+			}
+		}
+	}
+	return ""
+}
+
+// checkCanonical lets a guarded request (act from guardedAction) pass
+// only in its canonical form: POST to the exact path of the operation
+// (no encoded variant, suffix, parameter, other case or trailing slash),
+// no query (not even an empty "?"), exactly one Content-Type with media
+// type application/json and at most charset utf-8, no Content-Encoding.
+// Rails merges query parameters into the body parameters, honours format
+// suffixes and does not parse JSON sent as another type (review round 2).
+func checkCanonical(req *http.Request, act string) error {
+	refuse := func(why string) error {
+		return fmt.Errorf("%w: %s nur als POST auf den genauen Pfad mit JSON-Body: %s", ErrRefused, act, why)
+	}
+	u := req.URL
+	if req.Method != http.MethodPost {
+		return refuse("Methode " + req.Method)
+	}
+	m := guardedPath.FindStringSubmatch(u.Path)
+	if m == nil || u.RawPath != "" || u.Opaque != "" || m[1]+m[2] != act {
+		return refuse("Pfad weicht ab")
+	}
+	if u.RawQuery != "" || u.ForceQuery {
+		return refuse("Query-Parameter")
+	}
+	ct := req.Header.Values("Content-Type")
+	if len(ct) != 1 {
+		return refuse("Content-Type fehlt oder mehrfach")
+	}
+	mt, params, err := mime.ParseMediaType(ct[0])
+	if err != nil || mt != "application/json" {
+		return refuse("Content-Type ist nicht application/json")
+	}
+	for k, v := range params {
+		if k != "charset" || !strings.EqualFold(v, "utf-8") {
+			return refuse("Content-Type-Parameter " + k)
+		}
+	}
+	if len(req.Header.Values("Content-Encoding")) > 0 {
+		return refuse("Content-Encoding")
+	}
+	return nil
 }
 
 // deliversPDF reports whether body is a strict JSON object (see

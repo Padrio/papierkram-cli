@@ -81,6 +81,14 @@ go test -tags e2e -v ./e2e/...
 - Für `deliver` und `pay` lehnt der Transport außerdem jeden Body ab, in dem
   ein Schlüssel doppelt vorkommt oder sich nur in Groß-/Kleinschreibung von
   einem anderen unterscheidet, auf jeder Ebene.
+- Nennt ein Pfadsegment in irgendeiner Form `pay` oder `deliver` (groß/klein,
+  kodiert, mit `.json` oder `;…`), geht die Anfrage nur in genau einer Form
+  hinaus: `POST` auf `/api/v1/expense/vouchers/<id>/pay` bzw.
+  `/api/v1/income/{invoices,estimates}/<id>/deliver`, ohne Query (auch kein
+  leeres `?`), mit genau `Content-Type: application/json` (höchstens
+  `; charset=utf-8`) und ohne `Content-Encoding`. Sonst wird sie vor dem
+  Senden abgelehnt, z. B.
+  `papierkram api POST '/expense/vouchers/<id>/pay?value=5' --input -`.
 - Das Token erscheint nie in der Testausgabe: Jede Logzeile wird vorher
   geschwärzt und danach auf Reste geprüft; die CLI-Ausgaben werden auf das
   Token geprüft.
