@@ -52,18 +52,20 @@ func Save(path string, ch Changes) (SaveResult, error) {
 	case err != nil && !errors.Is(err, fs.ErrNotExist):
 		return res, fileErr(path, "prüfen", err)
 	case exists && st.Mode()&fs.ModeSymlink != 0:
-		return res, clierr.New(clierr.CodeUsage,
-			fmt.Sprintf("Projektdatei %s ist ein symbolischer Link – nicht überschrieben", shown),
-			"Der Link kann aus einem fremden Repository stammen und auf eine andere Datei zeigen. "+
-				"Link prüfen und durch eine echte Datei ersetzen oder die Werte von Hand eintragen")
+		return res, symlinkErr(shown)
 	case exists && !st.Mode().IsRegular():
 		return res, clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("Projektdatei %s ist keine reguläre Datei – nicht überschrieben", shown), "")
 	}
 	var data []byte
 	if exists {
-		if data, err = os.ReadFile(path); err != nil {
-			return res, fileErr(path, "lesen", err)
+		// read through the checked handle, without following a link swapped
+		// in after the Lstat (O_NOFOLLOW on Unix), and bounded (review M4, I1)
+		if data, err = readRegular(path, false); err != nil {
+			if errors.Is(err, errSymlink) {
+				return res, symlinkErr(shown)
+			}
+			return res, err
 		}
 	}
 	m := map[string]any{}
@@ -173,4 +175,13 @@ func commentIn(n *unstable.Node) bool {
 		}
 	}
 	return false
+}
+
+// symlinkErr is the usage error for a project file that is a symbolic
+// link; shown is the printable path.
+func symlinkErr(shown string) error {
+	return clierr.New(clierr.CodeUsage,
+		fmt.Sprintf("Projektdatei %s ist ein symbolischer Link – nicht überschrieben", shown),
+		"Der Link kann aus einem fremden Repository stammen und auf eine andere Datei zeigen. "+
+			"Link prüfen und durch eine echte Datei ersetzen oder die Werte von Hand eintragen")
 }

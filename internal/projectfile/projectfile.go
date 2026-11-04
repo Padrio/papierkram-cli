@@ -21,6 +21,10 @@ import (
 // FileName is the name of the project file.
 const FileName = ".papierkram.toml"
 
+// MaxSize is the largest project file that is read, in bytes. The file
+// may come from a cloned repository; a few IDs and aliases need far less.
+const MaxSize = 64 << 10
+
 var knownKeys = map[string]bool{
 	"context": true, "company": true, "project": true,
 	"task": true, "user": true, "tasks": true,
@@ -78,9 +82,9 @@ func gitRoot(dir string) (string, bool) {
 
 // Load reads and validates the project file at path.
 func Load(path string) (*File, error) {
-	data, err := os.ReadFile(path)
+	data, err := readRegular(path, true)
 	if err != nil {
-		return nil, fileErr(path, "lesen", err)
+		return nil, err
 	}
 	m, err := decode(path, data)
 	if err != nil {

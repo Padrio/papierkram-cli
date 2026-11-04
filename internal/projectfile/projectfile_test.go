@@ -483,8 +483,7 @@ func TestLoad_AliasWithControlCharacters(t *testing.T) {
 // underlying error, never the raw path of the wrapped *fs.PathError.
 func TestLoad_ReadErrorPathPrintable(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "evil\x1b[2J")
-	p := filepath.Join(mkdir(t, dir), FileName)
-	mkdir(t, p) // a directory: reading fails
+	p := filepath.Join(mkdir(t, dir), FileName) // missing: reading fails
 	_, err := Load(p)
 	if err == nil || strings.Contains(err.Error(), "\x1b") || !strings.Contains(err.Error(), "evil [2J") {
 		t.Errorf("err = %q", err)
@@ -494,5 +493,44 @@ func TestLoad_ReadErrorPathPrintable(t *testing.T) {
 	mkdir(t, link)
 	if _, err := Save(link, Changes{Project: i64(1)}); err == nil || strings.Contains(err.Error(), "\x1b") {
 		t.Errorf("Save err = %q", err)
+	}
+}
+
+// Review I1: the project file of a cloned repository is read only when it
+// is a regular file (a symbolic link to one is fine) of at most MaxSize
+// bytes; anything else is a usage error naming the cleaned path, before
+// more than MaxSize+1 bytes are read.
+func TestLoad_OnlyRegularFilesOfLimitedSize(t *testing.T) {
+	wantUsage := func(t *testing.T, p, want string) {
+		t.Helper()
+		_, err := Load(p)
+		var ce *clierr.Error
+		if !errors.As(err, &ce) || ce.Code != clierr.CodeUsage || !strings.Contains(ce.Message, want) || strings.Contains(ce.Message, "\x1b") {
+			t.Errorf("Load(%s) = %v, want usage error with %q", p, err, want)
+		}
+	}
+	dir := mkdir(t, filepath.Join(t.TempDir(), "evil\x1b[2J"))
+	wantUsage(t, mkdir(t, filepath.Join(dir, FileName)), "keine reguläre Datei")
+
+	big := filepath.Join(t.TempDir(), FileName)
+	if err := os.WriteFile(big, []byte("# "+strings.Repeat("x", MaxSize-3)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(big); err != nil {
+		t.Errorf("file of exactly MaxSize: %v", err)
+	}
+	if err := os.WriteFile(big, []byte("# "+strings.Repeat("x", MaxSize-2)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wantUsage(t, big, "zu groß")
+
+	// a link to a regular file is still read (shared file in a monorepo)
+	target := write(t, t.TempDir(), "shared.toml", "project = 34\n")
+	link := filepath.Join(t.TempDir(), FileName)
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("no symlinks: %v", err)
+	}
+	if f, err := Load(link); err != nil || f.Project != 34 {
+		t.Errorf("link to a regular file: %+v, %v", f, err)
 	}
 }
