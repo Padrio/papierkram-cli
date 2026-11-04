@@ -107,13 +107,25 @@ func TestGenDocsWritesEveryVisibleCommand(t *testing.T) {
 	}
 
 	mp := readDoc(t, filepath.Join(man, "papierkram-invoice-create.1"))
-	for _, want := range []string{`.TH "PAPIERKRAM-INVOICE-CREATE" "1"`, "BEZEICHNUNG", "BESCHREIBUNG", "SIEHE AUCH", "Rechnung anlegen", "Globale Optionen:", "papierkram-invoice(1)"} {
+	for _, want := range []string{`.TH "PAPIERKRAM-INVOICE-CREATE" "1"`, ".SH NAME\npapierkram-invoice-create - Rechnung anlegen\n",
+		".SH ÜBERSICHT", ".SH BESCHREIBUNG", ".SH OPTIONEN", ".SH GLOBALE OPTIONEN", ".SH BEISPIELE", ".SH SIEHE AUCH",
+		".TP\n\\fB-o, --output Text\\fP\nAusgabeformat: table|wide|json|yaml (Standard: \"table\")", "papierkram-invoice(1)"} {
 		if !strings.Contains(mp, want) {
 			t.Errorf("Man-Page ohne %q:\n%s", want, mp)
 		}
 	}
 	if strings.Contains(mp, "Auto generated") || strings.Contains(mp, "SYNOPSIS") {
 		t.Errorf("Man-Page mit englischen Teilen:\n%s", mp)
+	}
+	// the description and the flags are filled text, only examples (and
+	// indented blocks) are preformatted (review M5)
+	probe := "Die Datei wird vor jeder Anfrage geprüft"
+	vc := readDoc(t, filepath.Join(man, "papierkram-voucher-create.1"))
+	if !strings.Contains(vc, probe) {
+		t.Errorf("Beschreibung fehlt:\n%s", vc)
+	}
+	if pre := preformatted(vc); strings.Contains(pre, probe) || strings.Contains(pre, "(Standard:") || !strings.Contains(pre, "papierkram voucher create --name") {
+		t.Errorf("vorformatiert:\n%s", pre)
 	}
 	out, _ := bufs(app)
 	if !strings.Contains(out, "Markdown") {
@@ -171,7 +183,8 @@ func TestGenDocsRefusesSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	md := filepath.Join(t.TempDir(), "md")
-	for _, args := range [][]string{{"--dir", link}, {"--dir", md, "--man", link}} {
+	// also with a trailing / or /. (lstat would follow the link, review M1)
+	for _, args := range [][]string{{"--dir", link}, {"--dir", link + "/"}, {"--dir", link + "/."}, {"--dir", md, "--man", link}} {
 		code, app := genDocs(t, args...)
 		wantExit(t, app, code, 1)
 		if _, errs := bufs(app); !strings.Contains(errs, "symbolischer Link") {
@@ -207,5 +220,68 @@ func TestGenDocsRefusesSymlinks(t *testing.T) {
 	}
 	if st, err := os.Lstat(filepath.Join(dir, "papierkram.md")); err != nil || !st.Mode().IsRegular() {
 		t.Errorf("papierkram.md: %v, %v", st, err)
+	}
+}
+
+// preformatted is the text inside the .EX/.EE blocks of a man page.
+func preformatted(roff string) string {
+	var b strings.Builder
+	in := false
+	for _, line := range strings.Split(roff, "\n") {
+		switch {
+		case line == ".EX":
+			in = true
+		case line == ".EE":
+			in = false
+		case in:
+			b.WriteString(line + "\n")
+		}
+	}
+	return b.String()
+}
+
+// gen-docs removes its own pages of commands that no longer exist
+// (papierkram*.md, papierkram*.1 not written in this run), nothing else
+// (review M8).
+func TestGenDocsRemovesStalePages(t *testing.T) {
+	md, man, both := t.TempDir(), t.TempDir(), t.TempDir()
+	files := map[string]bool{ // name -> survives
+		"papierkram_alt_befehl.md": false, "papierkram-alt.1": false,
+		"README.md": true, "notizen.txt": true, "papierkram_notiz.txt": true, "anders.1": true,
+	}
+	for _, dir := range []string{md, man, both} {
+		for name := range files {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("fremd"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Mkdir(filepath.Join(dir, "papierkram_ordner.md"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, app := genDocs(t, "--dir", md, "--man", man)
+	wantExit(t, app, code, 0)
+	code, app = genDocs(t, "--dir", both, "--man", both)
+	wantExit(t, app, code, 0)
+	wantMD, wantMan := docNames(t)
+	for _, dir := range []string{md, man, both} {
+		got := dirNames(t, dir)
+		for name, survives := range files {
+			// a foreign .md in the man directory and a foreign .1 in the
+			// Markdown directory are not gen-docs' files there
+			keep := survives || dir == md && strings.HasSuffix(name, ".1") || dir == man && strings.HasSuffix(name, ".md")
+			if slices.Contains(got, name) != keep {
+				t.Errorf("%s/%s: vorhanden %v, erwartet %v", filepath.Base(dir), name, !keep, keep)
+			}
+		}
+		if !slices.Contains(got, "papierkram_ordner.md") {
+			t.Errorf("%s: Verzeichnis entfernt", dir)
+		}
+	}
+	got := dirNames(t, both)
+	for _, n := range append(wantMD, wantMan...) {
+		if !slices.Contains(got, n) {
+			t.Errorf("gemeinsames Verzeichnis ohne %s", n)
+		}
 	}
 }

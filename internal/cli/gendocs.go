@@ -67,9 +67,16 @@ type docPage struct{ name, content string }
 // targets are checked before anything is written.
 func (a *App) genDocs(root *cobra.Command, mdDir, manDir string) error {
 	targets := []struct {
-		dir, kind string
-		page      func(*cobra.Command, string) docPage
-	}{{mdDir, "Markdown-Dateien", markdownPage}, {manDir, "Man-Pages", manPage}}
+		dir, kind, suffix string
+		page              func(*cobra.Command, string) docPage
+	}{{mdDir, "Markdown-Dateien", ".md", markdownPage}, {manDir, "Man-Pages", ".1", manPage}}
+	for i := range targets {
+		// "dir/" and "dir/." name the same directory; lstat would follow a
+		// link there (review M1)
+		if targets[i].dir != "" {
+			targets[i].dir = filepath.Clean(targets[i].dir)
+		}
+	}
 	for _, t := range targets {
 		if t.dir != "" {
 			if err := checkDocDir(t.dir); err != nil {
@@ -97,17 +104,50 @@ func (a *App) genDocs(root *cobra.Command, mdDir, manDir string) error {
 		if err := checkDocDir(t.dir); err != nil { // swapped while creating
 			return err
 		}
+		written := map[string]bool{}
 		for i, c := range cmds {
 			p := t.page(c, helps[i])
 			path := filepath.Join(t.dir, p.name)
 			if err := safefile.WriteAtomic(path, []byte(p.content), 0o644, safefile.WriteOptions{NoSync: true}); err != nil {
 				return docErr(path, err)
 			}
+			written[p.name] = true
 		}
-		done = append(done, fmt.Sprintf("%d %s nach %s", len(cmds), t.kind, t.dir))
+		removed, err := removeStalePages(t.dir, t.suffix, written)
+		if err != nil {
+			return err
+		}
+		line := fmt.Sprintf("%d %s nach %s", len(cmds), t.kind, t.dir)
+		if removed > 0 {
+			line += fmt.Sprintf(" (%d veraltete entfernt)", removed)
+		}
+		done = append(done, line)
 	}
 	_, err := fmt.Fprintln(a.Out, strings.Join(done, ", ")+" geschrieben")
 	return err
+}
+
+// removeStalePages removes the pages of commands that no longer exist:
+// files in dir named like gen-docs' own (papierkram*<suffix>) that this
+// run did not write. Directories and every other file stay (review M8).
+func removeStalePages(dir, suffix string, written map[string]bool) (int, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, docErr(dir, err)
+	}
+	n := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || written[name] || !strings.HasPrefix(name, "papierkram") || !strings.HasSuffix(name, suffix) {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		if err := os.Remove(path); err != nil { // a link itself, never its target
+			return n, docErr(path, err)
+		}
+		n++
+	}
+	return n, nil
 }
 
 // checkDocDir accepts a directory or a path that does not exist yet; a
@@ -227,21 +267,93 @@ func markdownPage(c *cobra.Command, help string) docPage {
 	return docPage{markdownName(c), b.String()}
 }
 
-// manPage is the man page (section 1) of c, rendered from Markdown like
-// cobra/doc does, with German section names and without a date.
-func manPage(c *cobra.Command, help string) docPage {
+// manPage is the man page (section 1) of c, rendered from Markdown with
+// go-md2man like cobra/doc does: the standard NAME section (whatis,
+// apropos, makewhatis) with the German short help, then German sections
+// with the parts of the help (templates.go): use line and aliases, the
+// description as filled paragraphs (indented blocks preformatted),
+// subcommands and flags as tagged paragraphs (germanFlagRows, the rows
+// of --help), examples preformatted, related pages. No date.
+func manPage(c *cobra.Command, _ string) docPage {
 	var b strings.Builder
 	name := manName(c)
-	f := fence(help)
 	fmt.Fprintf(&b, "%% %q %q %q %q %q\n", strings.ToUpper(name), "1", "", "papierkram", "Papierkram-CLI")
-	fmt.Fprintf(&b, "# BEZEICHNUNG\n%s \\- %s\n\n", name, c.Short)
-	fmt.Fprintf(&b, "# BESCHREIBUNG\n%stext\n%s%s\n", f, help, f)
+	fmt.Fprintf(&b, "# NAME\n%s \\- %s\n\n", mdEscape(name), mdEscape(c.Short))
+	fmt.Fprintf(&b, "# ÜBERSICHT\n**%s**\n", mdEscape(useLine(c)))
+	if len(c.Aliases) > 0 {
+		fmt.Fprintf(&b, "\nAliase: %s\n", mdEscape(c.NameAndAliases()))
+	}
+	desc := c.Long
+	if desc == "" {
+		desc = c.Short
+	}
+	fmt.Fprintf(&b, "\n# BESCHREIBUNG\n%s", manParagraphs(desc))
+	if subs := docChildren(c); len(subs) > 0 {
+		b.WriteString("\n# BEFEHLE\n")
+		for _, sub := range subs {
+			fmt.Fprintf(&b, "**%s**\n: %s\n\n", mdEscape(sub.Name()), mdEscape(sub.Short))
+		}
+	}
+	for _, sec := range []struct {
+		title string
+		rows  []flagRow
+	}{{"OPTIONEN", germanFlagRows(c.LocalFlags())}, {"GLOBALE OPTIONEN", germanFlagRows(c.InheritedFlags())}} {
+		if len(sec.rows) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "\n# %s\n", sec.title)
+		for _, r := range sec.rows {
+			fmt.Fprintf(&b, "**%s**\n: %s\n\n", mdEscape(r.flag), mdEscape(strings.ReplaceAll(r.usage, "\n", " ")))
+		}
+	}
+	if c.Example != "" {
+		f := fence(c.Example)
+		fmt.Fprintf(&b, "\n# BEISPIELE\n%s\n%s\n%s\n", f, c.Example, f)
+	}
 	if rel := related(c); len(rel) > 0 {
 		var refs []string
 		for _, r := range rel {
-			refs = append(refs, fmt.Sprintf("**%s(1)**", manName(r)))
+			refs = append(refs, fmt.Sprintf("**%s(1)**", mdEscape(manName(r))))
 		}
 		fmt.Fprintf(&b, "\n# SIEHE AUCH\n%s\n", strings.Join(refs, ", "))
 	}
 	return docPage{name + ".1", string(md2man.Render([]byte(b.String())))}
+}
+
+// manParagraphs renders a help text for the man page: paragraphs (split
+// at blank lines) are filled text whose line breaks are kept; a paragraph
+// with an indented line (a config example, a list of commands) is
+// preformatted.
+func manParagraphs(text string) string {
+	var b strings.Builder
+	for _, para := range strings.Split(strings.TrimSpace(text), "\n\n") {
+		lines := strings.Split(para, "\n")
+		indented := slices.ContainsFunc(lines, func(l string) bool {
+			return strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t")
+		})
+		if indented {
+			f := fence(para)
+			fmt.Fprintf(&b, "%s\n%s\n%s\n\n", f, para, f)
+			continue
+		}
+		for i := range lines {
+			lines[i] = mdEscape(lines[i])
+		}
+		// two trailing spaces: a line break, the lines are filled
+		b.WriteString(strings.Join(lines, "  \n") + "\n\n")
+	}
+	return b.String()
+}
+
+// mdEscape escapes the characters Markdown (blackfriday) would read as
+// markup, so help texts with <pfad>, * or _ arrive as written.
+func mdEscape(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if strings.ContainsRune("\\`*_{}[]()#+-.!:|&<>~", r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
