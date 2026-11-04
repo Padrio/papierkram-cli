@@ -57,7 +57,7 @@ func loadAllFlags(e registry.Entry) string {
 
 // addListFlags adds the common list flags (spec 7.1) and the filter flags
 // of e: "id" filters are integer flags, all others text flags that
-// runList parses.
+// runList parses. The filter of e's preset names the preset sources.
 func addListFlags(cmd *cobra.Command, e registry.Entry) {
 	f := cmd.Flags()
 	page, limit := "nur diese Seite laden (ab 1)", "Einträge pro Seite, 1–100 (--all ohne --limit: 100)"
@@ -73,10 +73,14 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 	f.String("sort", "", "nach diesem Feld sortieren (setzt order_by und order_direction)")
 	f.Bool("desc", false, "absteigend sortieren (nur mit --sort)")
 	for _, flt := range e.Filters {
+		help := flt.Help
+		if flt.Flag == e.Preset {
+			help += "; ohne Angabe " + presetNote(e.Preset)
+		}
 		if flt.Kind == "id" {
-			f.Int64(flt.Flag, 0, flt.Help)
+			f.Int64(flt.Flag, 0, help)
 		} else {
-			f.String(flt.Flag, "", flt.Help)
+			f.String(flt.Flag, "", help)
 		}
 	}
 }

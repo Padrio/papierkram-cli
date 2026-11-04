@@ -1040,7 +1040,7 @@ var table = []Entry{
 		Resource: "task", Action: "list", OperationID: "ListTasks",
 		Method: "GET", Path: "/tracker/tasks", Class: ClassReadOnly, Credits: 1,
 		Filters: []Filter{
-			{Flag: "project", Param: "project_id", Kind: "id", Help: "Nur Aufgaben dieses Projekts (ID); ohne Angabe PAPIERKRAM_PROJECT oder project aus der Projektdatei .papierkram.toml"},
+			{Flag: "project", Param: "project_id", Kind: "id", Help: "Nur Aufgaben dieses Projekts (ID)"},
 			{Flag: "proposition", Param: "proposition_id", Kind: "id", Help: "Nur Aufgaben mit diesem Artikel (ID)"},
 		},
 		Columns: taskColumns,
@@ -1060,7 +1060,7 @@ var table = []Entry{
 		Short:   "Aufgabe anlegen",
 		Examples: []string{
 			`papierkram task create --name "Konzept erstellen" --project 4823 --deadline 2026-12-15`,
-			"papierkram task create --name Support --proposition 386 --flagged --dry-run",
+			"papierkram task create --name Support --project 4823 --proposition 386 --flagged --dry-run",
 			"papierkram task create --input aufgabe.json",
 		},
 		Preset: "project",
