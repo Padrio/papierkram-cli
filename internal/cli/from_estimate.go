@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/registry"
+	"github.com/Padrio/papierkram-cli/internal/spec"
 )
 
 // invoice create --from-estimate <id> (spec 9.4): read the estimate, build
@@ -82,7 +84,7 @@ const fromEstimateLong = `
 
 Alle anderen Flags überschreiben die Werte des Angebots; --item/--items ersetzen alle Positionen. Nennt --customer einen anderen Kunden als das Angebot, werden contact_person und project des Angebots nicht übernommen (Hinweis auf stderr); sie lassen sich per --contact-person bzw. --customer-project setzen. --input ist zusammen mit --from-estimate nicht möglich.
 
-Nicht übernommen werden: document_date (Rechnungsdatum per --document-date), custom_template (Angebotsvorlagen gelten nicht für Rechnungen; --custom-template), document_charges und je Position document_charge, document_charge_gross und position_in_group. supply_date, flagged und start_new_item_group hat das Angebot nicht. Leere Werte (null) des Angebots werden übernommen, wo die Rechnung sie erlaubt, sonst weggelassen.
+Nicht übernommen werden: document_date (Rechnungsdatum per --document-date), custom_template (Angebotsvorlagen gelten nicht für Rechnungen; --custom-template), document_charges und je Position document_charge, document_charge_gross und position_in_group. supply_date, flagged und start_new_item_group hat das Angebot nicht. Leere Werte (null) des Angebots werden übernommen, wo die Rechnung sie erlaubt, sonst weggelassen und auf stderr genannt.
 
 --dry-run liest das Angebot ebenfalls (1 Credit) und zeigt den Body, ohne die Rechnung anzulegen. Scheitert das Lesen, wird nichts angelegt.`
 
@@ -145,31 +147,34 @@ func (f *fromEstimate) params() []int64 { return []int64{f.id} }
 // is decoded with exact numbers: the generated model has float32 prices
 // and quantities, which would turn 19.99 into 19.989999771118164. A failed
 // read keeps its code (404: exit 4) and says that nothing was created.
-func (f *fromEstimate) load(c *cobra.Command, client *api.Client, req *openapi3.Schema) (map[string]any, error) {
+func (f *fromEstimate) load(c *cobra.Command, client *api.Client, req *openapi3.Schema) (map[string]any, []string, error) {
 	resp, err := client.Call(c.Context(), f.read.OperationID, f.params(), nil, nil)
 	if err != nil {
 		ce := *clierr.From(err)
 		ce.Message = fmt.Sprintf("Angebot %d nicht gelesen, keine Rechnung angelegt: %s", f.id, ce.Message)
 		ce.Cause = err
-		return nil, &ce
+		return nil, nil, &ce
 	}
 	var est map[string]any
 	dec := json.NewDecoder(bytes.NewReader(resp.Body))
 	dec.UseNumber()
 	if dec.Decode(&est) != nil || est == nil {
-		return nil, clierr.New(clierr.CodeError, fmt.Sprintf("Angebot %d: Antwort ist kein JSON-Objekt, keine Rechnung angelegt", f.id), "")
+		return nil, nil, clierr.New(clierr.CodeError, fmt.Sprintf("Angebot %d: Antwort ist kein JSON-Objekt, keine Rechnung angelegt", f.id), "")
 	}
-	return estimateBody(est, req), nil
+	body, nulls := estimateBody(est, req)
+	return body, nulls, nil
 }
 
 // estimateBase is the base body of the invoice: the estimate read by
 // load, without the references of its customer when --customer names
-// another one (dropForeignRefs).
+// another one (dropForeignRefs). The nulls left out are named with the
+// hint of the --input path (pruneHints).
 func (a *App) estimateBase(c *cobra.Command, client *api.Client, ws writeSpec, f *fromEstimate) (map[string]any, error) {
-	base, err := f.load(c, client, ws.req)
+	base, nulls, err := f.load(c, client, ws.req)
 	if err != nil {
 		return nil, err
 	}
+	a.pruneHints(spec.PruneResult{DroppedNulls: nulls})
 	a.dropForeignRefs(c, ws, base)
 	return base, nil
 }
@@ -235,18 +240,21 @@ func (f *fromEstimate) readInfo(client *api.Client) (*ReadInfo, error) {
 
 // estimateBody maps the estimate est to the invoice body by
 // fromEstimateFields and fromEstimateItemFields. Positions that are no
-// object are passed on as they are, for the validation to report.
-func estimateBody(est map[string]any, req *openapi3.Schema) map[string]any {
+// object are passed on as they are, for the validation to report. nulls
+// are the paths of the nulls left out (see copyFields), sorted, positions
+// as line_items[] like Prune names them.
+func estimateBody(est map[string]any, req *openapi3.Schema) (body map[string]any, nulls []string) {
 	fields := fromEstimateFields
 	if id, ok := lookupPath(est, "customer.id"); !ok || id == nil {
 		// contact person and project are references below the customer
 		fields = slices.DeleteFunc(slices.Clone(fields), func(f estimateField) bool { return strings.HasPrefix(f.to, "customer.") })
 	}
-	body := map[string]any{}
-	copyFields(body, est, fields, req)
+	body = map[string]any{}
+	dropped := map[string]bool{}
+	copyFields(body, est, fields, req, "", dropped)
 	items, ok := est["line_items"].([]any)
 	if !ok {
-		return body
+		return body, slices.Sorted(maps.Keys(dropped))
 	}
 	itemReq := itemsSchema(req)
 	list := make([]any, len(items))
@@ -257,11 +265,11 @@ func estimateBody(est map[string]any, req *openapi3.Schema) map[string]any {
 			continue
 		}
 		out := map[string]any{}
-		copyFields(out, m, fromEstimateItemFields, itemReq)
+		copyFields(out, m, fromEstimateItemFields, itemReq, "line_items[].", dropped)
 		list[i] = out
 	}
 	body["line_items"] = list
-	return body
+	return body, slices.Sorted(maps.Keys(dropped))
 }
 
 // itemsSchema is the schema of one line item of req, nil without one.
@@ -277,9 +285,10 @@ func itemsSchema(req *openapi3.Schema) *openapi3.Schema {
 // field by field into the fields of its target in req. A missing value is
 // not sent; a null is sent where the request allows null (an empty
 // billing field stays empty, like --input after Prune) and left out
-// otherwise (the request cannot express it, e.g. a null description of a
-// position).
-func copyFields(dst, src map[string]any, fields []estimateField, req *openapi3.Schema) {
+// otherwise (the request cannot express it, e.g. a null vat_rate), its
+// target path (after prefix) added to dropped. A missing reference
+// (proposition: null) has no value to lose and is not added.
+func copyFields(dst, src map[string]any, fields []estimateField, req *openapi3.Schema, prefix string, dropped map[string]bool) {
 	for _, f := range fields {
 		v, ok := lookupPath(src, f.from)
 		if !ok {
@@ -290,10 +299,11 @@ func copyFields(dst, src map[string]any, fields []estimateField, req *openapi3.S
 		switch obj, isObj := v.(map[string]any); {
 		case v == nil:
 			if ts == nil || !ts.Nullable {
+				dropped[prefix+f.to] = true
 				continue
 			}
 		case isObj:
-			if obj = objectFields(obj, ts); len(obj) == 0 {
+			if obj = objectFields(obj, ts, prefix+f.to+".", dropped); len(obj) == 0 {
 				continue
 			}
 			v = obj
@@ -303,15 +313,19 @@ func copyFields(dst, src map[string]any, fields []estimateField, req *openapi3.S
 }
 
 // objectFields are the fields of obj that s has, nulls only where s
-// allows them.
-func objectFields(obj map[string]any, s *openapi3.Schema) map[string]any {
+// allows them; the others are added to dropped (after prefix).
+func objectFields(obj map[string]any, s *openapi3.Schema, prefix string, dropped map[string]bool) map[string]any {
 	out := map[string]any{}
 	if s == nil {
 		return out
 	}
 	for k, v := range obj {
 		p := s.Properties[k]
-		if p == nil || p.Value == nil || (v == nil && !p.Value.Nullable) {
+		if p == nil || p.Value == nil {
+			continue
+		}
+		if v == nil && !p.Value.Nullable {
+			dropped[prefix+k] = true
 			continue
 		}
 		out[k] = v

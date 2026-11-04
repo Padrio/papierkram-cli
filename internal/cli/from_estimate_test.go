@@ -490,3 +490,32 @@ func TestInvoiceFromEstimateOtherCustomer(t *testing.T) {
 		t.Errorf("stdout = %s", out)
 	}
 }
+
+// A null the invoice request cannot take is left out with the hint of the
+// --input path (pruneHints): vat_rate, price or name of the estimate never
+// disappear silently. A missing reference (proposition: null) is no
+// value and needs no hint; nullable fields keep their null.
+func TestInvoiceFromEstimateDroppedNullsHint(t *testing.T) {
+	app, srv := apiApp(t)
+	estimateJSON(srv, `{"name":null,"gross":null,"billing":{"email":null},"customer":{"id":1},
+		"line_items":[{"name":"A","quantity":1,"unit":"x","price":null,"vat_rate":null,"proposition":null},
+		              {"name":"B","quantity":null,"unit":"x","vat_rate":"19%","proposition":{"id":null}}]}`)
+	wantExit(t, app, Run(app, fromEstimateCmd("--name", "R", "-o", "json")), 0)
+	want := `{"billing":{"email":null},"customer":{"id":1},"line_items":[{"name":"A","price":null,"unit":"x","quantity":1},` +
+		`{"name":"B","unit":"x","vat_rate":0.19}],"name":"R","payment_term":{"id":1130}}`
+	if got := canonJSON(t, wantRequests(t, srv, 2)[1].Body); got != canonJSON(t, []byte(want)) {
+		t.Errorf("body = %s\nerwartet %s", got, want)
+	}
+	_, errs := bufs(app)
+	if errs != "Hinweis: null ignoriert (Feld bleibt unverändert): gross, line_items[].proposition.id, line_items[].quantity, line_items[].vat_rate, name\n" {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// the spec example has nulls only in nullable fields and references
+	app, srv = apiApp(t)
+	wantExit(t, app, Run(app, fromEstimateCmd("--dry-run")), 0)
+	wantRequests(t, srv, 1)
+	if _, errs := bufs(app); errs != "" {
+		t.Errorf("stderr = %q", errs)
+	}
+}
