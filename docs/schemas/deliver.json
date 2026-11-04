@@ -1,0 +1,74 @@
+{
+  "title": "papierkram invoice|estimate deliver (-o json)",
+  "description": "Ausgabe von invoice deliver und estimate deliver mit -o json auf stdout (Vertrag für Agents, Spezifikation 9.1 und 10.4). Nach dem Versand liest das CLI den Beleg nach und gibt dessen Versandfelder aus; scheitert nur das Nachlesen, steht dort delivered mit einer Warnung. Beides ist Exit 0: NICHT erneut ausführen. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id"],
+  "oneOf": [
+    {
+      "description": "Nachgelesener Beleg: id, Belegnummer (invoice_no oder estimate_no), state, sent_on, sent_via, sent_to, wie die API sie liefert (null, wenn das Feld fehlt). warnings nur, wenn die Antwort auf den Versand verloren ging und das Nachlesen einen Versand von heute zeigt.",
+      "required": ["id", "state", "sent_on", "sent_via", "sent_to"],
+      "not": {"required": ["delivered"]},
+      "oneOf": [
+        {"required": ["invoice_no"], "not": {"required": ["estimate_no"]}},
+        {"required": ["estimate_no"], "not": {"required": ["invoice_no"]}}
+      ]
+    },
+    {
+      "description": "Versand erfolgreich, Nachlesen fehlgeschlagen: nur id, delivered und die Warnung.",
+      "required": ["id", "delivered", "warnings"],
+      "not": {"anyOf": [
+        {"required": ["invoice_no"]}, {"required": ["estimate_no"]}, {"required": ["state"]},
+        {"required": ["sent_on"]}, {"required": ["sent_via"]}, {"required": ["sent_to"]}
+      ]}
+    }
+  ],
+  "properties": {
+    "id": {
+      "description": "ID des Belegs.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "invoice_no": {
+      "description": "Rechnungsnummer (invoice deliver).",
+      "type": "string",
+      "nullable": true
+    },
+    "estimate_no": {
+      "description": "Angebotsnummer (estimate deliver).",
+      "type": "string",
+      "nullable": true
+    },
+    "state": {
+      "description": "Status des Belegs laut API.",
+      "type": "string",
+      "nullable": true
+    },
+    "sent_on": {
+      "description": "Versanddatum laut API.",
+      "type": "string",
+      "nullable": true
+    },
+    "sent_via": {
+      "description": "Versandart laut API.",
+      "type": "string",
+      "nullable": true
+    },
+    "sent_to": {
+      "description": "Empfänger laut API.",
+      "type": "string",
+      "nullable": true
+    },
+    "delivered": {
+      "description": "Immer true: der Versand wurde von der API bestätigt, nur das Nachlesen scheiterte.",
+      "type": "boolean",
+      "enum": [true]
+    },
+    "warnings": {
+      "description": "Warnungen auf Deutsch (auch auf stderr); enthalten „NICHT erneut ausführen“.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

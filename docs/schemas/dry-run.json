@@ -1,0 +1,105 @@
+{
+  "title": "papierkram --dry-run (-o json)",
+  "description": "Ausgabe einer Änderung mit --dry-run und -o json auf stdout (Vertrag für Agents, Spezifikation 8.4): die Anfrage, die gesendet würde. Es wurde nichts geändert und nichts gesendet außer einer Leseanfrage, die read nennt; Exit 0. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dry_run", "method", "url", "body", "credits"],
+  "properties": {
+    "dry_run": {
+      "description": "Immer true: Probelauf, nichts gesendet.",
+      "type": "boolean",
+      "enum": [true]
+    },
+    "method": {
+      "description": "HTTP-Methode der Änderung; GET kennt kein --dry-run.",
+      "type": "string",
+      "enum": ["POST", "PUT", "PATCH", "DELETE"]
+    },
+    "url": {
+      "description": "Vollständige URL der Anfrage einschließlich Query.",
+      "type": "string",
+      "pattern": "^https?://[^ ]+$"
+    },
+    "body": {
+      "description": "JSON-Body, wie er gesendet würde (bereinigt und lokal geprüft); null ohne Body (z. B. delete, Upload).",
+      "type": "object",
+      "nullable": true
+    },
+    "upload": {
+      "description": "Datei eines Uploads (Name, Größe, MIME-Typ). Ist das Hochladen eine eigene zweite Anfrage (voucher create --file), nennen method, url (Vorlage mit Platzhalter, die ID entsteht erst) und credits diese Anfrage.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "size", "mime_type"],
+      "oneOf": [
+        {
+          "description": "Upload ist die Anfrage selbst (voucher upload).",
+          "not": {"anyOf": [{"required": ["method"]}, {"required": ["url"]}, {"required": ["credits"]}]}
+        },
+        {
+          "description": "Upload ist eine zweite Anfrage nach dem Anlegen.",
+          "required": ["method", "url", "credits"]
+        }
+      ],
+      "properties": {
+        "method": {
+          "description": "HTTP-Methode der zweiten Anfrage.",
+          "type": "string",
+          "enum": ["POST"]
+        },
+        "url": {
+          "description": "URL-Vorlage der zweiten Anfrage; der Platzhalter steht für die ID des neuen Objekts.",
+          "type": "string",
+          "pattern": "^https?://[^ ]+\\{[a-z_]+\\}[^ ]*$"
+        },
+        "credits": {
+          "description": "Credits der zweiten Anfrage (in credits oben schon enthalten).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "description": "Dateiname ohne Verzeichnis.",
+          "type": "string",
+          "minLength": 1
+        },
+        "size": {
+          "description": "Dateigröße in Bytes.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "mime_type": {
+          "description": "MIME-Typ aus der Dateiendung.",
+          "type": "string",
+          "pattern": "^[a-z]+/[^ ]+$"
+        }
+      }
+    },
+    "read": {
+      "description": "Leseanfrage, die für den Body schon gesendet wurde (invoice create --from-estimate); ihre Credits sind verbraucht und nicht in credits enthalten.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "url", "credits"],
+      "properties": {
+        "method": {
+          "description": "Immer GET.",
+          "type": "string",
+          "enum": ["GET"]
+        },
+        "url": {
+          "description": "Vollständige URL der Leseanfrage.",
+          "type": "string",
+          "pattern": "^https?://[^ ]+$"
+        },
+        "credits": {
+          "description": "Verbrauchte Credits der Leseanfrage.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "credits": {
+      "description": "Credits, die der Befehl ohne --dry-run kosten würde (alle Anfragen, z. B. Anlegen und Hochladen oder Versand und Nachlesen).",
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

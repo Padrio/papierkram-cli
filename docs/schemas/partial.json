@@ -1,0 +1,57 @@
+{
+  "title": "papierkram teilweise ausgeführt (-o json, Exit 11)",
+  "description": "Ausgabe eines mehrstufigen Befehls, der nur teilweise ausgeführt wurde, mit -o json auf stdout (Vertrag für Agents, Spezifikation 9.3 und 10.4, Exit 11 partial), z. B. voucher create --file: Beleg angelegt, Hochladen fehlgeschlagen. Der strukturierte Fehler steht zusätzlich auf stderr. NICHT den ganzen Befehl wiederholen, nur retry_command ausführen. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "completed", "failed", "retry_command", "warnings"],
+  "oneOf": [
+    {
+      "description": "ID des angelegten Objekts bekannt: retry_command holt den fehlgeschlagenen Schritt nach.",
+      "properties": {
+        "id": {"type": "integer", "nullable": false},
+        "retry_command": {"type": "string", "nullable": false}
+      }
+    },
+    {
+      "description": "Die API lieferte keine ID: kein Befehl zum Nachholen (ein Platzhalter könnte versehentlich ausgeführt werden); das Objekt per list suchen.",
+      "properties": {
+        "id": {"type": "integer", "nullable": true, "enum": [null]},
+        "retry_command": {"type": "string", "nullable": true, "enum": [null]}
+      }
+    }
+  ],
+  "properties": {
+    "id": {
+      "description": "ID des angelegten Objekts; null, wenn die API keine lieferte.",
+      "type": "integer",
+      "minimum": 0,
+      "nullable": true
+    },
+    "completed": {
+      "description": "Erledigte Schritte.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "enum": ["create"]}
+    },
+    "failed": {
+      "description": "Fehlgeschlagene Schritte.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "enum": ["upload"]}
+    },
+    "retry_command": {
+      "description": "Befehl, der nur den fehlgeschlagenen Schritt nachholt (Dateipfad absolut und für die Shell gequotet); null ohne ID.",
+      "type": "string",
+      "nullable": true,
+      "pattern": "^papierkram [a-z-]+ [a-z-]+ [0-9]+ .+$"
+    },
+    "warnings": {
+      "description": "Warnungen auf Deutsch (auch auf stderr), mit dem nächsten Schritt.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

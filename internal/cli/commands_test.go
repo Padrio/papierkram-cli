@@ -2,9 +2,7 @@ package cli
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"os"
 	"reflect"
 	"slices"
 	"sort"
@@ -19,24 +17,13 @@ import (
 )
 
 // commandsContract is the checked-in contract of commands --json (spec 11).
-const commandsContract = "../../docs/schemas/commands.json"
+const commandsContract = contractDir + "/commands.json"
 
 // loadCommandsContract loads the contract as an OpenAPI 3 Schema Object
 // and checks that it is a valid one.
 func loadCommandsContract(t *testing.T) *openapi3.Schema {
 	t.Helper()
-	raw, err := os.ReadFile(commandsContract)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var s openapi3.Schema
-	if err := json.Unmarshal(raw, &s); err != nil {
-		t.Fatalf("Vertrag ist kein Schema-Objekt: %v", err)
-	}
-	if err := s.Validate(context.Background()); err != nil {
-		t.Fatalf("Vertrag ist kein gültiges OpenAPI-3-Schema: %v", err)
-	}
-	return &s
+	return loadContract(t, "commands")
 }
 
 // runCommandsJSON runs papierkram commands with args and returns stdout

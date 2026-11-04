@@ -1,0 +1,99 @@
+{
+  "title": "papierkram Fehler (-o json)",
+  "description": "Strukturierter Fehler des papierkram-CLI (Vertrag für Agents, Spezifikation 10.4). Bei -o json oder --jq steht er als letzte Zeile auf stderr, als eine kompakte JSON-Zeile nach den Textzeilen „Fehler: …“, „Hinweis: …“ und „Correlation-ID: …“; stdout bleibt Nutzdaten vorbehalten. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "description": "Der Fehler. code und exit_code gehören fest zusammen; hint, http_status und correlation_id fehlen, wenn sie nicht bekannt sind (nie leer oder null).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "exit_code"],
+      "oneOf": [
+        {
+          "description": "Exit 1: unerwarteter Fehler (error) oder Serverfehler 5xx (server_error).",
+          "properties": {"code": {"type": "string", "enum": ["error", "server_error"]}, "exit_code": {"type": "integer", "enum": [1]}}
+        },
+        {
+          "description": "Exit 2: falsche Flags oder Argumente, fehlende Pflichtangabe; nichts wurde gesendet.",
+          "properties": {"code": {"type": "string", "enum": ["usage"]}, "exit_code": {"type": "integer", "enum": [2]}}
+        },
+        {
+          "description": "Exit 3: kein Token, 401 oder 403.",
+          "properties": {"code": {"type": "string", "enum": ["auth"]}, "exit_code": {"type": "integer", "enum": [3]}, "http_status": {"type": "integer", "enum": [401, 403]}}
+        },
+        {
+          "description": "Exit 4: nicht gefunden (404).",
+          "properties": {"code": {"type": "string", "enum": ["not_found"]}, "exit_code": {"type": "integer", "enum": [4]}, "http_status": {"type": "integer", "enum": [404]}}
+        },
+        {
+          "description": "Exit 5: lokale Validierung oder 400/422 der API.",
+          "properties": {"code": {"type": "string", "enum": ["validation"]}, "exit_code": {"type": "integer", "enum": [5]}, "http_status": {"type": "integer", "enum": [400, 422]}}
+        },
+        {
+          "description": "Exit 6: Monatskontingent erschöpft (429).",
+          "properties": {"code": {"type": "string", "enum": ["quota"]}, "exit_code": {"type": "integer", "enum": [6]}, "http_status": {"type": "integer", "enum": [429]}}
+        },
+        {
+          "description": "Exit 7: Konflikt (409) oder laufender Timer.",
+          "properties": {"code": {"type": "string", "enum": ["conflict"]}, "exit_code": {"type": "integer", "enum": [7]}, "http_status": {"type": "integer", "enum": [409]}}
+        },
+        {
+          "description": "Exit 8: Bestätigung fehlt oder wurde abgelehnt; nichts wurde gesendet.",
+          "properties": {"code": {"type": "string", "enum": ["confirmation_required"]}, "exit_code": {"type": "integer", "enum": [8]}}
+        },
+        {
+          "description": "Exit 9: Schreibschutz (PAPIERKRAM_READ_ONLY oder read_only im Kontext); nichts wurde gesendet.",
+          "properties": {"code": {"type": "string", "enum": ["read_only"]}, "exit_code": {"type": "integer", "enum": [9]}}
+        },
+        {
+          "description": "Exit 10: Netzwerkfehler (Timeout, DNS, TLS) bei einem Lesezugriff oder bevor eine Änderung gesendet wurde.",
+          "properties": {"code": {"type": "string", "enum": ["network"]}, "exit_code": {"type": "integer", "enum": [10]}}
+        },
+        {
+          "description": "Exit 11: mehrstufiger Befehl teilweise ausgeführt (z. B. voucher create --file); der Hinweis nennt den Befehl zum Nachholen. NICHT den ganzen Befehl wiederholen.",
+          "properties": {"code": {"type": "string", "enum": ["partial"]}, "exit_code": {"type": "integer", "enum": [11]}}
+        },
+        {
+          "description": "Exit 12: Ergebnis unbekannt, die Verbindung brach ab, nachdem POST, PUT oder DELETE gesendet wurde; vor einer Wiederholung per describe oder list prüfen.",
+          "properties": {"code": {"type": "string", "enum": ["outcome_unknown"]}, "exit_code": {"type": "integer", "enum": [12]}}
+        }
+      ],
+      "properties": {
+        "code": {
+          "description": "Maschinenlesbare Fehlerklasse (englisch, stabil).",
+          "type": "string",
+          "enum": ["error", "server_error", "usage", "auth", "not_found", "validation", "quota", "conflict", "confirmation_required", "read_only", "network", "partial", "outcome_unknown"]
+        },
+        "message": {
+          "description": "Fehlermeldung auf Deutsch bzw. die Meldung der API.",
+          "type": "string",
+          "minLength": 1
+        },
+        "hint": {
+          "description": "Hinweis, was zu tun ist (Deutsch), z. B. die Verwendungszeile oder der Befehl zum Nachholen.",
+          "type": "string",
+          "minLength": 1
+        },
+        "http_status": {
+          "description": "HTTP-Status der API-Antwort, die den Fehler auslöste; fehlt bei lokalen Fehlern und ohne Antwort.",
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 599
+        },
+        "correlation_id": {
+          "description": "Correlation-ID aus der Fehlerantwort der API, für Rückfragen beim Papierkram-Support.",
+          "type": "string",
+          "minLength": 1
+        },
+        "exit_code": {
+          "description": "Exit-Code des Prozesses (1–12), passend zu code.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "title": "papierkram … delete (-o json)",
+  "description": "Ausgabe von delete mit -o json auf stdout (Vertrag für Agents, Spezifikation 10.3): die ID des gelöschten Objekts. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "deleted"],
+  "properties": {
+    "id": {
+      "description": "ID des gelöschten Objekts (bei document delete die ID des Dokuments).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "deleted": {
+      "description": "Immer true.",
+      "type": "boolean",
+      "enum": [true]
+    }
+  }
+}
