@@ -2,8 +2,11 @@ package cli
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/projectfile"
 )
 
@@ -48,6 +51,12 @@ func (a *App) loadProjectFile() (*projectfile.File, error) {
 			ce.Cause = err
 		}
 		return nil, ce
+	}
+	if len(f.Unknown) > 0 {
+		// spec 9.8: a warning, no error; once per invocation, since the
+		// file is loaded once
+		output.Warn(a.Err, fmt.Sprintf("Projektdatei %s: unbekannte Schlüssel werden ignoriert: %s (bekannt: context, company, project, task, user, [tasks])",
+			path, strings.Join(f.Unknown, ", ")))
 	}
 	return f, nil
 }
