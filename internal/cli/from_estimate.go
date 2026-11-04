@@ -98,7 +98,8 @@ func (a *App) addFromEstimate(e registry.Entry, cmd *cobra.Command) {
 		panic(fmt.Sprintf("registry: %s create --from-estimate ohne lesenden Eintrag estimate describe", e.Resource))
 	}
 	cmd.Long += fromEstimateLong
-	cmd.Flags().Var(&rawValue{typ: "id"}, "from-estimate", "Angebot, aus dem die Rechnung entsteht (liest es: 1 weiterer Credit)")
+	cmd.Flags().Var(&rawValue{typ: "id"}, "from-estimate", "Angebot, aus dem die Rechnung entsteht (liest es: "+moreCredits(read.Credits)+")")
+	markCredits(cmd.Flags(), "from-estimate", read.Credits)
 	markFromEstimateAlternatives(cmd, newWriteSpec(e))
 	write := cmd.RunE
 	cmd.RunE = func(c *cobra.Command, args []string) error {

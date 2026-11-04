@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -38,6 +39,10 @@ const (
 // GetInfo). commands --json and schema report it with its registry entry.
 const annotOperation = "pk:operation"
 
+// annotExtraCredits are credits a command spends on top of its operation
+// on every run (deliver: the readback).
+const annotExtraCredits = "pk:extra-credits"
+
 // annotPerRequest marks papierkram api: its pk:class is a fail-closed
 // default, the effective class depends on method and path.
 const annotPerRequest = "pk:per-request"
@@ -53,6 +58,7 @@ const (
 	flagEnv         = "pk:env"          // environment variable that sets the value
 	flagValueType   = "pk:type"         // the contract type when the pflag type says less (date filters are text flags)
 	flagAlternative = "pk:alternatives" // other flags that satisfy the same requirement (--items for --item)
+	flagCredits     = "pk:credits"      // credits of the further request the flag sends (--file: the upload)
 )
 
 // annotate sets a flag annotation; a flag that does not exist is a
@@ -73,6 +79,11 @@ func addAlternatives(fs *pflag.FlagSet, name string, alts ...string) {
 	all := append(slices.Clone(fs.Lookup(name).Annotations[flagAlternative]), alts...)
 	slices.Sort(all)
 	annotate(fs, name, flagAlternative, slices.Compact(all)...)
+}
+
+// markCredits records the credits of the further request a flag sends.
+func markCredits(fs *pflag.FlagSet, name string, credits int) {
+	annotate(fs, name, flagCredits, strconv.Itoa(credits))
 }
 
 // markEnum records the allowed values of a flag (nothing without values).
@@ -133,6 +144,7 @@ type flagInfo struct {
 	DefaultFrom  []string `json:"default_from,omitempty"`
 	Env          string   `json:"env,omitempty"`
 	Alternatives []string `json:"alternatives,omitempty"`
+	Credits      *int     `json:"credits,omitempty"`
 }
 
 // commandMeta is what a command sends: its registry entry (op false
@@ -168,7 +180,11 @@ func metaOf(c *cobra.Command) commandMeta {
 		zero := 0
 		return commandMeta{class: classLocal, credits: &zero}
 	}
-	m := commandMeta{entry: e, op: true, class: string(e.Class), credits: &e.Credits}
+	credits := e.Credits
+	if extra, err := strconv.Atoi(c.Annotations[annotExtraCredits]); err == nil {
+		credits += extra
+	}
+	m := commandMeta{entry: e, op: true, class: string(e.Class), credits: &credits}
 	if c.Annotations[annotWritesConfig] == "true" {
 		m.class = classLocal
 	}
@@ -348,9 +364,23 @@ func flagInfos(fs *pflag.FlagSet) ([]flagInfo, error) {
 			DefaultFrom:  slices.Clone(f.Annotations[flagDefaultFrom]),
 			Env:          strings.Join(f.Annotations[flagEnv], ""),
 			Alternatives: slices.Clone(f.Annotations[flagAlternative]),
+			Credits:      flagCost(f),
 		})
 	})
 	return out, err
+}
+
+// flagCost is the pk:credits annotation of f, nil without one.
+func flagCost(f *pflag.Flag) *int {
+	v := f.Annotations[flagCredits]
+	if len(v) != 1 {
+		return nil
+	}
+	n, err := strconv.Atoi(v[0])
+	if err != nil {
+		panic(err) // set by markCredits
+	}
+	return &n
 }
 
 // commandsColumns are the columns of commands without --json.
@@ -361,7 +391,7 @@ var commandsColumns = output.Columns{Table: []output.Column{
 	{Header: "KURZ", Path: "short"},
 }}
 
-const commandsLong = `Listet alle Befehle mit Klasse (Spec 8.1), Credits je Anfrage und Kurzhilfe.
+const commandsLong = `Listet alle Befehle mit Klasse (Spec 8.1), Credits je Aufruf (bei deliver mit Nachlesen; Flags wie --file und --from-estimate sowie --all kosten zusätzlich) und Kurzhilfe.
 
 Mit --json (oder -o json|yaml, --jq) kommt die maschinenlesbare Liste für Agents: je Befehl Verwendungszeile mit Positionsargumenten, Aliase, Kurzhilfe, Klasse, Credits, Operation (operation_id, method, path), Flags mit Kurzform, Typ, Pflicht (mit gleichwertigen Flags unter alternatives), Wiederholbarkeit, erlaubten Werten und Hilfetext sowie Beispiele; die globalen Flags stehen einmal unter global_flags. Vertrag: docs/schemas/commands.json (Version 1).
 

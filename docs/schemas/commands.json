@@ -75,7 +75,7 @@
             "enum": ["read_only", "create", "update", "archive", "destructive", "send", "local", "per_request"]
           },
           "credits": {
-            "description": "Credits je Anfrage (Spec 4.3); 0 ohne Anfrage; null bei class per_request (Kosten der jeweiligen Operation).",
+            "description": "Credits eines Aufrufs (Spec 4.3, 8.5): die Operation, bei deliver zuzüglich des Nachlesens; 0 ohne Anfrage; null bei class per_request (Kosten der jeweiligen Operation). Zusätzlich kosten Flags mit credits (--file, --from-estimate) sowie --all und lokale Filter (company list --type) je geladener Seite.",
             "type": "integer",
             "minimum": 0,
             "nullable": true
@@ -166,6 +166,11 @@
                   "uniqueItems": true,
                   "items": {"type": "string", "pattern": "^--[a-z][a-z0-9-]*$"}
                 },
+                "credits": {
+                  "description": "Credits der weiteren Anfrage, die das Flag auslöst und die zu credits des Befehls hinzukommt (voucher create --file: Upload; invoice create --from-estimate: Lesen des Angebots).",
+                  "type": "integer",
+                  "minimum": 1
+                },
                 "env": {
                   "description": "Umgebungsvariable, die den Wert setzt, wenn das Flag fehlt.",
                   "type": "string",
@@ -251,6 +256,11 @@
             "minItems": 1,
             "uniqueItems": true,
             "items": {"type": "string", "pattern": "^--[a-z][a-z0-9-]*$"}
+          },
+          "credits": {
+            "description": "Credits der weiteren Anfrage, die das Flag auslöst und die zu credits des Befehls hinzukommt (voucher create --file: Upload; invoice create --from-estimate: Lesen des Angebots).",
+            "type": "integer",
+            "minimum": 1
           },
           "env": {
             "description": "Umgebungsvariable, die den Wert setzt, wenn das Flag fehlt.",

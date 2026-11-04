@@ -87,6 +87,7 @@ type flgInfo struct {
 	DefaultFrom  []string `json:"default_from"`
 	Env          string   `json:"env"`
 	Alternatives []string `json:"alternatives"`
+	Credits      *int     `json:"credits"`
 }
 
 func decodeCommands(t *testing.T, raw []byte) cmdDoc {
@@ -153,6 +154,8 @@ func TestCommandsJSONMatchesContract(t *testing.T) {
 		"blocked fehlt":               func(d map[string]any) { delete(firstCmd(d), "blocked_by_read_only") },
 		"blocked kein bool":           func(d map[string]any) { firstCmd(d)["blocked_by_read_only"] = "ja" },
 		"per_request nicht blockiert": func(d map[string]any) { apiCmd(d, "api")["blocked_by_read_only"] = false },
+		"Flag-Credits 0":              func(d map[string]any) { firstFlag(d)["credits"] = 0.0 },
+		"Flag-Credits Text":           func(d map[string]any) { firstFlag(d)["credits"] = "10" },
 		"globaler shorthand null":     func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["shorthand"] = nil },
 		"unbekannte Klasse":           func(d map[string]any) { firstCmd(d)["class"] = "write" },
 		"Operation ohne Methode":      func(d map[string]any) { delete(apiCmd(d, "invoice create"), "method") },
@@ -300,7 +303,12 @@ func TestCommandsJSONRegistryEntries(t *testing.T) {
 	for _, e := range registry.Entries() {
 		name := strings.TrimSpace(e.Resource + " " + e.Action)
 		c := d.find(t, name)
-		if c.Class != string(e.Class) || c.Credits == nil || *c.Credits != e.Credits ||
+		credits := e.Credits
+		if e.Action == "deliver" { // deliver reads the document back
+			read, _ := registry.Lookup(e.Resource, "describe")
+			credits += read.Credits
+		}
+		if c.Class != string(e.Class) || c.Credits == nil || *c.Credits != credits ||
 			c.OperationID != e.OperationID || c.Method != e.Method || c.Path != e.Path {
 			t.Errorf("%s: %s %v %s %s %s, erwartet %s %d %s %s %s", name, c.Class, c.Credits, c.OperationID, c.Method, c.Path,
 				e.Class, e.Credits, e.OperationID, e.Method, e.Path)
@@ -342,7 +350,7 @@ func TestCommandsJSONMetaClasses(t *testing.T) {
 		"auth logout":     {"local", 0, ""},
 		"auth status":     {"read_only", 1, "GetInfo"},
 		"invoice pdf":     {"read_only", 1, "GetInvoicePdf"},
-		"invoice deliver": {"send", 1, "DeliverInvoice"},
+		"invoice deliver": {"send", 2, "DeliverInvoice"}, // with the readback
 		"voucher pay":     {"destructive", 1, "PayVoucher"},
 	} {
 		c := d.find(t, name)
@@ -719,5 +727,33 @@ func TestCommandsJSONAlternatives(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// Flags that send another request name its cost; deliver includes the
+// readback in the cost of the command.
+func TestCommandsJSONExtraCredits(t *testing.T) {
+	d := decodeCommands(t, runCommandsJSON(t, "--json"))
+	if f := d.find(t, "voucher create").flag(t, "file"); f.Credits == nil || *f.Credits != 10 || !strings.Contains(f.Description, "10 weitere Credits") {
+		t.Errorf("voucher create --file = %+v", f)
+	}
+	if f := d.find(t, "invoice create").flag(t, "from-estimate"); f.Credits == nil || *f.Credits != 1 {
+		t.Errorf("invoice create --from-estimate = %+v", f)
+	}
+	for _, name := range []string{"invoice deliver", "estimate deliver"} {
+		if c := d.find(t, name); c.Credits == nil || *c.Credits != 2 {
+			t.Errorf("%s: credits %v, erwartet 2 (Versand + Nachlesen)", name, c.Credits)
+		}
+	}
+	n := 0
+	for _, c := range d.Commands {
+		for _, f := range c.Flags {
+			if f.Credits != nil {
+				n++
+			}
+		}
+	}
+	if n != 2 {
+		t.Errorf("%d Flags mit credits, erwartet 2", n)
 	}
 }

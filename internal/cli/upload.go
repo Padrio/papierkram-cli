@@ -340,7 +340,8 @@ func (a *App) addCreateFileWith(e, up registry.Entry, cmd *cobra.Command) {
 		panic(err)
 	}
 	cmd.Long += fmt.Sprintf(createFileLong, moreCredits(up.Credits))
-	cmd.Flags().String("file", "", "Datei (Belegbild), die nach dem Anlegen an den Beleg hochgeladen wird")
+	cmd.Flags().String("file", "", "Datei (Belegbild), die nach dem Anlegen an den Beleg hochgeladen wird ("+moreCredits(up.Credits)+")")
+	markCredits(cmd.Flags(), "file", up.Credits)
 	write := cmd.RunE
 	cmd.RunE = func(c *cobra.Command, args []string) error {
 		if !c.Flags().Changed("file") {

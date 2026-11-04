@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,7 +64,7 @@ func (a *App) newDeliverCmd(e registry.Entry) *cobra.Command {
 		Short:       e.Short,
 		Long:        entryLong(e) + fmt.Sprintf(deliverLong, moreCredits(readbackCredits(e))),
 		Example:     entryExample(e),
-		Annotations: map[string]string{annotClass: string(e.Class)},
+		Annotations: map[string]string{annotClass: string(e.Class), annotExtraCredits: strconv.Itoa(readbackCredits(e))},
 		Args:        idArgs,
 		RunE:        func(c *cobra.Command, args []string) error { return a.runDeliver(c, e, args) },
 	}
