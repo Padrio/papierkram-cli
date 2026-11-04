@@ -162,10 +162,34 @@ func TestPruneMovesResponseReferencesIntoRequest(t *testing.T) {
 }
 
 // Moving references is spec-driven; this pins where it applies: only the
-// contact person and project of invoices and estimates (into customer). A
-// new match after a spec update shows up here.
+// contact person and project of invoices and estimates (into customer). It
+// walks every level Prune walks (objects and arrays of objects), since
+// moveReference works on each; a new match after a spec update shows up
+// here, nested ones with their path.
 func TestPruneMovableReferences(t *testing.T) {
 	var got []string
+	visited := map[string]bool{}
+	var walk func(op, prefix string, req *openapi3.Schema, resp []*openapi3.Schema, depth int)
+	walk = func(op, prefix string, req *openapi3.Schema, resp []*openapi3.Schema, depth int) {
+		if req == nil || len(resp) == 0 || depth > 10 {
+			return
+		}
+		visited[op+": "+prefix] = true
+		for _, m := range movableReferences(req, resp) {
+			got = append(got, op+": "+prefix+m)
+		}
+		for k, ps := range req.Properties {
+			if ps == nil || ps.Value == nil {
+				continue
+			}
+			switch {
+			case isObject(ps.Value):
+				walk(op, prefix+k+".", ps.Value, children(resp, k), depth+1)
+			case itemSchema(ps.Value) != nil:
+				walk(op, prefix+k+"[].", itemSchema(ps.Value), items(children(resp, k)), depth+1)
+			}
+		}
+	}
 	for _, o := range Operations() {
 		if o.Method != "POST" && o.Method != "PUT" {
 			continue
@@ -175,8 +199,12 @@ func TestPruneMovableReferences(t *testing.T) {
 		if req == nil || resp == nil {
 			continue
 		}
-		for _, m := range movableReferences(req, flatten([]*openapi3.Schema{resp})) {
-			got = append(got, o.ID+": "+m)
+		walk(o.ID, "", req, flatten([]*openapi3.Schema{resp}), 0)
+	}
+	// the walk reaches nested objects and arrays of objects
+	for _, level := range []string{"UpdateInvoice: customer.", "UpdateInvoice: line_items[].", "CreateCompany: people[]."} {
+		if !visited[level] {
+			t.Errorf("Ebene %q nicht geprüft", level)
 		}
 	}
 	slices.Sort(got)
