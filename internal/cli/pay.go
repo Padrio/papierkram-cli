@@ -190,7 +190,7 @@ func (a *App) payBody(c *cobra.Command, e registry.Entry, fields map[string]spec
 	body, _ = v.(map[string]any)
 	if !hasPayment(body) {
 		return nil, clierr.New(clierr.CodeValidation, "--input: "+payMissing,
-			"oder in --input value bzw. banking_transaction.id setzen")
+			"in --input value oder banking_transaction.id setzen oder --amount bzw. --transaction angeben")
 	}
 	if err := spec.Validate(body, req); err != nil {
 		return nil, err

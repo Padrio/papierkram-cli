@@ -228,7 +228,7 @@ func TestVoucherPayInput(t *testing.T) {
 	for _, tc := range []struct {
 		in, want string
 	}{
-		{`{"payment_date":"2030-05-01"}`, "--amount"},
+		{`{"payment_date":"2030-05-01"}`, "Hinweis: in --input value oder banking_transaction.id setzen oder --amount bzw. --transaction angeben\n"},
 		{`{"value":null}`, "--amount"},
 		{`{"banking_transaction":{}}`, "--transaction"},
 		{`{"amount":5}`, `unbekanntes Feld "amount"`},
