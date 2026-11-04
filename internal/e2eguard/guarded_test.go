@@ -168,3 +168,97 @@ func TestTransportRefusesPayQueryThroughCLI(t *testing.T) {
 		t.Errorf("canonical pay sent a query: %v", q[0].Query)
 	}
 }
+
+// sendMut is sendRaw with Content-Type application/json, then mut may
+// change the request (e.g. write header keys in non-canonical form).
+func sendMut(t *testing.T, tr *Transport, method, rawURL, body string, mut func(*http.Request)) (*http.Response, error) {
+	t.Helper()
+	req, err := http.NewRequest(method, rawURL, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	if mut != nil {
+		mut(req)
+	}
+	return (&http.Client{Transport: tr}).Do(req)
+}
+
+// Review round 3 (R3-1): ambiguous requests count as guarded and are
+// refused: segments decoded until stable (more than the cap: refused),
+// backslash as separator, control characters, header keys in any case,
+// method overrides in headers, query or body.
+func TestTransportRefusesAmbiguousGuardedRequests(t *testing.T) {
+	srv := mockapi.New(t, mockapi.WithoutAutoFail())
+	tr, u := newTestTransport(t, srv, 1000)
+	base := u.String()
+	payAmount := `{"value":5}`
+	nested := "p%" + strings.Repeat("25", 10) + "61y" // 11 decodes to "pay"
+	set := func(k, v string) func(*http.Request) {
+		return func(r *http.Request) { r.Header[k] = append(r.Header[k], v) }
+	}
+	cases := []struct {
+		name, method, url, body string
+		mut                     func(*http.Request)
+	}{
+		{"triple encoded %252570ay", "POST", base + "/expense/vouchers/7/%252570ay", payAmount, nil},
+		{"double encoded d%2565liver", "POST", base + "/income/estimates/7/d%2565liver", `{"send_via":"email"}`, nil},
+		{"decoding beyond the cap", "POST", base + "/expense/vouchers/7/" + nested, payAmount, nil},
+		{"backslash 7%5Cpay", "POST", base + "/expense/vouchers/7%5Cpay", payAmount, nil},
+		{"encoded slash 7%2Fpay", "POST", base + "/expense/vouchers/7%2Fpay", payAmount, nil},
+		{"NUL pay%00", "POST", base + "/expense/vouchers/7/pay%00", payAmount, nil},
+		{"control pay%01", "POST", base + "/expense/vouchers/7/pay%01", payAmount, nil},
+		{"DEL pay%7F", "POST", base + "/expense/vouchers/7/pay%7F", payAmount, nil},
+		{"NUL in another segment", "POST", base + "/expense/vouchers/7%00/pay", payBody, nil},
+		{"lower-case second content-type", "POST", base + payPath, payBody, set("content-type", "text/plain")},
+		{"lower-case content-encoding", "POST", base + payPath, payBody, set("content-encoding", "gzip")},
+		{"X-HTTP-Method-Override", "POST", base + payPath, payBody, set("X-HTTP-Method-Override", "PUT")},
+		{"x-http-method-override lower case", "POST", base + deliverPath, deliverBody, set("x-http-method-override", "PUT")},
+		{"X-HTTP-Method", "POST", base + payPath, payBody, set("X-Http-Method", "PUT")},
+		{"X-Method-Override", "POST", base + deliverPath, deliverBody, set("X-Method-Override", "PATCH")},
+		{"_method in the query", "POST", base + payPath + "?_method=PUT", payBody, nil},
+		{"_method in the deliver body", "POST", base + deliverPath, `{"send_via":"pdf","_method":"PUT"}`, nil},
+		{"_METHOD in the deliver body", "POST", base + deliverPath, `{"send_via":"pdf","_METHOD":"PUT"}`, nil},
+		{"_method in the pay body", "POST", base + payPath, `{"value":null,"banking_transaction":{"id":999999999},"_method":"PUT"}`, nil},
+	}
+	for _, c := range cases {
+		resp, err := sendMut(t, tr, c.method, c.url, c.body, c.mut)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+		if !errors.Is(err, ErrRefused) {
+			t.Errorf("%s: err %v, want ErrRefused", c.name, err)
+		}
+	}
+	if q := srv.Requests(); len(q) != 0 {
+		var got []string
+		for _, r := range q {
+			got = append(got, r.Method+" "+r.Path)
+		}
+		t.Errorf("server got %d requests, want 0: %v", len(q), got)
+	}
+}
+
+// Paths that only contain the letters of pay or deliver stay unguarded:
+// payment_terms is "paymentterms" after keeping a-z.
+func TestTransportLeavesPaymentTermsAlone(t *testing.T) {
+	srv := mockapi.New(t, mockapi.WithoutAutoFail())
+	tr, u := newTestTransport(t, srv, 1000)
+	for _, p := range []string{"/income/payment_terms", "/income/payment_terms/3"} {
+		req, err := http.NewRequest("GET", u.String()+p, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		resp, err := (&http.Client{Transport: tr}).Do(req)
+		if err != nil {
+			t.Errorf("GET %s: %v", p, err)
+			continue
+		}
+		_ = resp.Body.Close()
+	}
+	if n := len(srv.Requests()); n != 2 {
+		t.Errorf("server got %d requests, want 2", n)
+	}
+}

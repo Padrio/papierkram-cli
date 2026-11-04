@@ -156,35 +156,85 @@ func closeBody(req *http.Request) {
 // voucher pay, invoice and estimate deliver.
 var guardedPath = regexp.MustCompile(`^/api/v1/(?:expense/vouchers/[0-9]+/(pay)|income/(?:invoices|estimates)/[0-9]+/(deliver))$`)
 
+// maxDecode caps the repeated decoding of a path segment; a segment that
+// still changes after it counts as guarded (fail closed).
+const maxDecode = 8
+
+// ambiguous is the action of a request that cannot be told apart from
+// pay or deliver; checkCanonical refuses it (no canonical path matches).
+const ambiguous = "?"
+
 // guardedAction reports "pay" or "deliver" when any segment of the path
-// of u, decoded or not, in any case, with a ";…" parameter or a ".…"
-// suffix cut off and blanks trimmed, names one of them; "" otherwise.
-// It is deliberately broad (fail closed): such a request must then pass
-// checkCanonical.
+// of u names one of them, and ambiguous when a segment cannot be judged;
+// "" otherwise. It is deliberately broad (fail closed); such a request
+// must then pass checkCanonical. Every form of the path (decoded,
+// escaped, raw, opaque) is split at "/" and "\"; each segment is decoded
+// until it no longer changes (at most maxDecode times, else ambiguous)
+// and split again. A piece with a control character (NUL included) is
+// ambiguous; otherwise it is lower-cased, cut at ";", "." or "," and
+// reduced to the letters a-z before the comparison (so "payment_terms"
+// stays unguarded).
 func guardedAction(u *url.URL) string {
+	act := ""
 	for _, p := range []string{u.Path, u.EscapedPath(), u.RawPath, u.Opaque} {
-		for _, seg := range strings.Split(p, "/") {
-			if dec, err := url.PathUnescape(seg); err == nil {
-				seg = dec
-			}
-			seg = strings.ToLower(seg)
-			if i := strings.IndexAny(seg, ";.,"); i >= 0 {
-				seg = seg[:i]
-			}
-			switch seg = strings.TrimSpace(seg); seg {
+		for _, seg := range splitPath(p) {
+			switch a := segmentAction(seg); a {
+			case ambiguous:
+				return ambiguous
 			case "pay", "deliver":
-				return seg
+				act = a
 			}
 		}
 	}
-	return ""
+	return act
+}
+
+func splitPath(p string) []string {
+	return strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' })
+}
+
+// segmentAction judges one segment (see guardedAction).
+func segmentAction(seg string) string {
+	for i := 0; ; i++ {
+		dec, err := url.PathUnescape(seg)
+		if err != nil || dec == seg {
+			break
+		}
+		if i == maxDecode {
+			return ambiguous
+		}
+		seg = dec
+	}
+	act := ""
+	for _, piece := range splitPath(seg) {
+		for _, r := range piece {
+			if r < 0x20 || r == 0x7f {
+				return ambiguous
+			}
+		}
+		piece = strings.ToLower(piece)
+		if i := strings.IndexAny(piece, ";.,"); i >= 0 {
+			piece = piece[:i]
+		}
+		letters := strings.Map(func(r rune) rune {
+			if r >= 'a' && r <= 'z' {
+				return r
+			}
+			return -1
+		}, piece)
+		if letters == "pay" || letters == "deliver" {
+			act = letters
+		}
+	}
+	return act
 }
 
 // checkCanonical lets a guarded request (act from guardedAction) pass
 // only in its canonical form: POST to the exact path of the operation
 // (no encoded variant, suffix, parameter, other case or trailing slash),
 // no query (not even an empty "?"), exactly one Content-Type with media
-// type application/json and at most charset utf-8, no Content-Encoding.
+// type application/json and at most charset utf-8, no Content-Encoding
+// and no method override header (header keys compared in any case).
 // Rails merges query parameters into the body parameters, honours format
 // suffixes and does not parse JSON sent as another type (review round 2).
 func checkCanonical(req *http.Request, act string) error {
@@ -202,7 +252,19 @@ func checkCanonical(req *http.Request, act string) error {
 	if u.RawQuery != "" || u.ForceQuery {
 		return refuse("Query-Parameter")
 	}
-	ct := req.Header.Values("Content-Type")
+	// header keys in any spelling (a key written directly into the map
+	// is not canonicalised, Values would miss it)
+	var ct []string
+	for k, vs := range req.Header {
+		switch lk := strings.ToLower(k); {
+		case lk == "content-type":
+			ct = append(ct, vs...)
+		case lk == "content-encoding":
+			return refuse("Content-Encoding")
+		case strings.Contains(lk, "method"):
+			return refuse("Header " + k + " (Methoden-Override)")
+		}
+	}
 	if len(ct) != 1 {
 		return refuse("Content-Type fehlt oder mehrfach")
 	}
@@ -215,22 +277,19 @@ func checkCanonical(req *http.Request, act string) error {
 			return refuse("Content-Type-Parameter " + k)
 		}
 	}
-	if len(req.Header.Values("Content-Encoding")) > 0 {
-		return refuse("Content-Encoding")
-	}
 	return nil
 }
 
 // deliversPDF reports whether body is a strict JSON object (see
 // strictObject) with the key send_via, exactly so spelled, set to "pdf",
-// and no key named email in any spelling.
+// and no key named email or _method (a method override) in any spelling.
 func deliversPDF(body []byte) bool {
 	m, ok := strictObject(body)
 	if !ok {
 		return false
 	}
 	for k := range m {
-		if strings.EqualFold(k, "email") {
+		if strings.EqualFold(k, "email") || strings.EqualFold(k, "_method") {
 			return false
 		}
 	}

@@ -106,11 +106,16 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
   ein Schlüssel doppelt vorkommt oder sich nur in Groß-/Kleinschreibung von
   einem anderen unterscheidet, auf jeder Ebene.
 - Nennt ein Pfadsegment in irgendeiner Form `pay` oder `deliver` (groß/klein,
-  kodiert, mit `.json` oder `;…`), geht die Anfrage nur in genau einer Form
-  hinaus: `POST` auf `/api/v1/expense/vouchers/<id>/pay` bzw.
+  auch mehrfach kodiert, mit `.json` oder `;…`, getrennt durch `/` oder `\`),
+  geht die Anfrage nur in genau einer Form hinaus: `POST` auf
+  `/api/v1/expense/vouchers/<id>/pay` bzw.
   `/api/v1/income/{invoices,estimates}/<id>/deliver`, ohne Query (auch kein
-  leeres `?`), mit genau `Content-Type: application/json` (höchstens
-  `; charset=utf-8`) und ohne `Content-Encoding`. Sonst wird sie vor dem
+  leeres `?`), mit genau einem `Content-Type: application/json` (höchstens
+  `; charset=utf-8`), ohne `Content-Encoding` und ohne Methoden-Override
+  (Header wie `X-HTTP-Method-Override`, `_method` in Query oder Body).
+  Header-Namen zählen in jeder Schreibweise. Ein Pfad, der sich nicht
+  eindeutig beurteilen lässt (Steuerzeichen wie NUL, Kodierung über mehr als
+  acht Stufen), gilt ebenfalls als geschützt. Alles andere wird vor dem
   Senden abgelehnt, z. B.
   `papierkram api POST '/expense/vouchers/<id>/pay?value=5' --input -`.
 - Das Token erscheint nie in der Testausgabe: Jede Logzeile wird vorher
