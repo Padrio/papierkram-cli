@@ -79,6 +79,10 @@ type WriteOptions struct {
 	ExactMode, NoSync bool
 }
 
+// linkFile is os.Link; tests replace it to run the fallback of
+// CreateAtomic for file systems without hard links.
+var linkFile = os.Link
+
 // syncFile flushes f to disk; tests count its calls.
 var syncFile = (*os.File).Sync
 
@@ -99,24 +103,33 @@ func WriteAtomic(path string, data []byte, mode fs.FileMode, o WriteOptions) err
 // complete temporary file is linked to path, which fails with an error
 // matching fs.ErrExist when anything is there (also a symbolic link,
 // which is not followed), so two writers never both succeed and a reader
-// never sees a partial file. Where the file system has no hard links the
-// file is renamed into place after a check of path (not race free).
+// never sees a partial file. Where the file system has no hard links,
+// path is first claimed with O_EXCL and the file renamed over the claim:
+// still exclusive, but a reader may see an empty file for a moment.
 func CreateAtomic(path string, data []byte, mode fs.FileMode) error {
 	tmp, err := writeTemp(path, data, mode, WriteOptions{})
 	if err != nil {
 		return err
 	}
 	defer func() { _ = os.Remove(tmp) }()
-	lerr := os.Link(tmp, path)
+	lerr := linkFile(tmp, path)
 	if lerr == nil || errors.Is(lerr, fs.ErrExist) {
 		return lerr
 	}
-	if _, err := os.Lstat(path); err == nil {
-		return &fs.PathError{Op: "create", Path: path, Err: fs.ErrExist}
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	// no hard links: claim path exclusively (O_EXCL also fails on a
+	// symbolic link), then rename the complete file over the claim. Of
+	// concurrent writers exactly one wins; a reader may briefly see the
+	// empty claim (review M6).
+	claim, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	_ = claim.Close()
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(path) // our empty claim
+		return err
+	}
+	return nil
 }
 
 // writeTemp writes data to a new, exclusively created temporary file in

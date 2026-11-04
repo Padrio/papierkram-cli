@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -132,5 +133,47 @@ func TestWriteAtomicSyncOption(t *testing.T) {
 	}
 	if err := CreateAtomic(filepath.Join(dir, "c"), []byte("x"), 0o600); err != nil || calls != 2 {
 		t.Errorf("CreateAtomic: %v, %d syncs", err, calls)
+	}
+}
+
+// Review M6: of concurrent CreateAtomic calls on one path exactly one
+// succeeds, the others get fs.ErrExist, with hard links and in the
+// fallback for file systems without them; the file is complete.
+func TestCreateAtomicConcurrent(t *testing.T) {
+	for _, noLinks := range []bool{false, true} {
+		if noLinks {
+			orig := linkFile
+			linkFile = func(string, string) error { return errors.New("hard links not supported") }
+			t.Cleanup(func() { linkFile = orig })
+		}
+		path := filepath.Join(t.TempDir(), "state")
+		const n = 16
+		errs := make(chan error, n)
+		var start sync.WaitGroup
+		start.Add(1)
+		for i := range n {
+			go func() {
+				start.Wait()
+				errs <- CreateAtomic(path, []byte(strings.Repeat(string(rune('a'+i)), 1000)), 0o600)
+			}()
+		}
+		start.Done()
+		ok := 0
+		for range n {
+			switch err := <-errs; {
+			case err == nil:
+				ok++
+			case !errors.Is(err, fs.ErrExist):
+				t.Errorf("noLinks=%v: %v", noLinks, err)
+			}
+		}
+		if ok != 1 {
+			t.Errorf("noLinks=%v: %d writers succeeded, want 1", noLinks, ok)
+		}
+		data, _ := os.ReadFile(path)
+		if len(data) != 1000 || strings.Count(string(data), string(data[:1])) != 1000 {
+			t.Errorf("noLinks=%v: content %q…", noLinks, data[:min(len(data), 10)])
+		}
+		assertNoTemp(t, filepath.Dir(path))
 	}
 }
