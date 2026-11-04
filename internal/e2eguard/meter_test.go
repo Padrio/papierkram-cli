@@ -239,3 +239,26 @@ func TestMeterClampsReserve(t *testing.T) {
 		t.Errorf("reserve -5: Fits(10)=%v Reserved=%d", m.Fits(10), m.Reserved())
 	}
 }
+
+// The cost of a request is its own X-Consumed-Quota: three GET /info
+// answering 1, 1, 1 cost 1 each (run 1 read the growth, 0, and reported
+// a false ABWEICHUNG). Only a cost other than the registry's, or
+// differing costs, is a deviation.
+func TestCostDeviation(t *testing.T) {
+	for _, tc := range []struct {
+		consumed   []int
+		documented int
+		want       string // part of the deviation; "" for none
+	}{
+		{[]int{1, 1, 1}, 1, ""},
+		{[]int{0, 0, 0}, 1, "kostet 0 Credits, die Registry sagt 1"},
+		{[]int{2, 2, 2}, 1, "kostet 2 Credits, die Registry sagt 1"},
+		{[]int{1, 2, 1}, 1, "uneinheitlich"},
+		{nil, 1, "keine Messung"},
+	} {
+		got := CostDeviation("GET /info", tc.consumed, tc.documented)
+		if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
+			t.Errorf("CostDeviation(%v, %d) = %q, want %q", tc.consumed, tc.documented, got, tc.want)
+		}
+	}
+}

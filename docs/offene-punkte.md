@@ -72,7 +72,8 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 - **Offen:** Kostet `GET /info` Credits?
 - **Annahme:** 1 Credit (Regel aus Spec 4.3: alles außer Anlegen kostet 1). Betrifft `info`, `auth login` und `auth status`.
-- **E2E:** `TestE2E_InfoCreditCost` (Messung) ruft `info` dreimal auf und vergleicht `X-Consumed-Quota`; eine andere Zahl als in der Registry steht als `ABWEICHUNG` im Log. Dann die Registry anpassen.
+- **E2E:** `TestE2E_InfoCreditCost` (Messung) ruft `info` dreimal auf; die Kosten jedes Aufrufs sind sein eigenes `X-Consumed-Quota` (siehe Punkt 25). Weichen sie von der Registry ab oder voneinander, steht das als `ABWEICHUNG` im Log; dann die Registry anpassen. Die Differenz von `X-Remaining-Quota` wird nur zur Information geloggt.
+- **Gemessen 2026-11-04 (erster Live-Lauf):** `X-Consumed-Quota` war bei allen drei Aufrufen 1, also 1 Credit wie in der Registry. Die damalige `ABWEICHUNG` („kostet 0 Credits“) war ein Messfehler der Suite: Sie las den Header als laufenden Zähler und nahm die Differenz.
 
 ### 6. `PUT` als Teil-Update
 
@@ -192,6 +193,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** `X-Remaining-Quota` und `X-Consumed-Quota` fehlen in der Spec.
 - **Annahme:** Beide kommen mit jeder Antwort als ganze Zahl; `X-RateLimit-Remaining` wird bewusst ignoriert.
 - **E2E:** `TestE2E_QuotaHeadersPresent` (hart).
+- **Gemessen 2026-11-04 (erster Live-Lauf):** Beide Header kommen. `X-Consumed-Quota` nennt die Kosten **der einen beantworteten Anfrage** (z. B. 1 für eine Liste oder `GET /info`), keinen laufenden Monatszähler; `X-Remaining-Quota` ist das Restkontingent. Auch eine abgelehnte Anfrage kostet: drei mit 422 abgelehnte Anlagen (2 Angebote, 1 Beleg) kosteten je 50 Credits. `auth status` zeigt den Header weiterhin als „verbraucht: N“; N ist damit nur der Preis der Statusabfrage selbst.
 
 ### 26. Person `default` als String
 

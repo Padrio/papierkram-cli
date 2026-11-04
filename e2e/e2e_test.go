@@ -245,20 +245,24 @@ func TestE2E_QuotaHeadersPresent(t *testing.T) {
 	s.measuref(t, "Quota-Header", "X-RateLimit-Remaining = %q (wird bewusst ignoriert)", h.Get("X-RateLimit-Remaining"))
 }
 
-// Spec 17: does GET /info cost credits? Three calls in a row: the growth
-// of X-Consumed-Quota between them is the cost of the second and third.
-// A measurement: a cost other than the registry's is an ABWEICHUNG (the
-// registry is then adjusted), not a failure.
+// Spec 17: does GET /info cost credits? Three calls in a row; the cost
+// of each is its own X-Consumed-Quota (the cost of that one request, not a
+// running total: measured 2026-11-04). The difference of
+// X-Remaining-Quota is only logged. A measurement: a cost other than the
+// registry's is an ABWEICHUNG (the registry is then adjusted), not a
+// failure.
 func TestE2E_InfoCreditCost(t *testing.T) {
 	s := live(t)
 	s.need(t, 3)
 	var consumed []int
+	var remaining []string
 	for range 3 {
 		r := s.run(t, "", "info", "-o", "json")
 		x := lastExchange(r, "GET", "/info")
 		if r.code != 0 || x == nil {
 			s.fatalf(t, "info: Exit %d\n%s", r.code, r.stderr)
 		}
+		remaining = append(remaining, strings.TrimSpace(x.RespHeader.Get("X-Remaining-Quota")))
 		n, err := strconv.Atoi(strings.TrimSpace(x.RespHeader.Get("X-Consumed-Quota")))
 		if err != nil {
 			s.deviatef(t, "GET /info: X-Consumed-Quota fehlt, Kosten nicht messbar")
@@ -266,14 +270,11 @@ func TestE2E_InfoCreditCost(t *testing.T) {
 		}
 		consumed = append(consumed, n)
 	}
-	d1, d2 := consumed[1]-consumed[0], consumed[2]-consumed[1]
 	e, _ := registry.Lookup("info", "")
-	s.measuref(t, "GET /info", "Kosten %d und %d Credits (X-Consumed-Quota %v); Registry: %d", d1, d2, consumed, e.Credits)
-	switch {
-	case d1 != d2:
-		s.deviatef(t, "GET /info: uneinheitliche Messung (%d, %d), anderer Verbrauch im Account während des Laufs?", d1, d2)
-	case d1 != e.Credits:
-		s.deviatef(t, "GET /info kostet %d Credits, die Registry sagt %d: Registry anpassen (Spezifikation 17)", d1, e.Credits)
+	s.measuref(t, "GET /info", "Kosten laut X-Consumed-Quota %v; Registry: %d", consumed, e.Credits)
+	s.measuref(t, "GET /info", "X-Remaining-Quota %v (nur zur Information)", remaining)
+	if d := e2eguard.CostDeviation("GET /info", consumed, e.Credits); d != "" {
+		s.deviatef(t, "%s", d)
 	}
 }
 

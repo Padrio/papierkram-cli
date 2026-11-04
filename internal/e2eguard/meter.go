@@ -203,6 +203,26 @@ func (m *Meter) Summary() string {
 		m.spent, m.budget, m.reserve, m.requests, m.unmeasured, m.costlier, rest)
 }
 
+// CostDeviation judges a cost measurement of what (e.g. "GET /info"):
+// consumed are the X-Consumed-Quota values of repeated calls, each the
+// cost of its own call, documented the cost of the registry. It returns
+// the deviation for the log, or "" when every call cost what the registry
+// says.
+func CostDeviation(what string, consumed []int, documented int) string {
+	if len(consumed) == 0 {
+		return what + ": keine Messung (X-Consumed-Quota fehlt)"
+	}
+	for _, c := range consumed[1:] {
+		if c != consumed[0] {
+			return fmt.Sprintf("%s: uneinheitliche Kosten %v laut X-Consumed-Quota", what, consumed)
+		}
+	}
+	if consumed[0] != documented {
+		return fmt.Sprintf("%s kostet %d Credits, die Registry sagt %d: Registry anpassen (Spezifikation 17)", what, consumed[0], documented)
+	}
+	return ""
+}
+
 func headerInt(h http.Header, key string) (int, bool) {
 	v := strings.TrimSpace(h.Get(key))
 	if v == "" {
