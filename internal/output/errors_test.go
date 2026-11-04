@@ -128,3 +128,26 @@ func TestPrintable(t *testing.T) {
 		t.Errorf("Printable = %q", got)
 	}
 }
+
+// Review N2: ZWJ (emoji sequences), soft hyphen and BOM disguise nothing;
+// they are removed instead of becoming a visible space. Bidi controls and
+// zero-width spaces still become spaces.
+func TestPrintableDropsHarmlessFormatCharacters(t *testing.T) {
+	for in, want := range map[string]string{
+		"Team \U0001F468\u200d\U0001F469\u200d\U0001F467": "Team \U0001F468\U0001F469\U0001F467",
+		"Rech\u00adnung":   "Rechnung",
+		"\ufeffACME Corp.": "ACME Corp.",
+		"a\u202eb\u2066c":  "a b c",
+		"a\u200bb":         "a b",
+	} {
+		if got := Printable(in); got != want {
+			t.Errorf("Printable(%q) = %q, want %q", in, got, want)
+		}
+		if got := Message(in); got != want {
+			t.Errorf("Message(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := oneLine("\ufeffRech\u00adnung"); got != "Rechnung" {
+		t.Errorf("oneLine = %q", got)
+	}
+}
