@@ -1,0 +1,187 @@
+# GoReleaser v2 configuration (spec 12.2). Pinned to v2.19.0: locally via
+# "make snapshot" (go run github.com/goreleaser/goreleaser/v2@v2.19.0), in CI
+# via goreleaser-action (job snapshot in .github/workflows/ci.yml).
+# Release steps and prerequisites: docs/release.md.
+version: 2
+
+project_name: papierkram
+
+before:
+  hooks:
+    # completions/ and man/ at the repository root (both in .gitignore)
+    - sh scripts/completions.sh
+    - sh scripts/manpages.sh
+
+builds:
+  - id: papierkram
+    main: ./cmd/papierkram
+    binary: papierkram
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    # Same variables as the Makefile build target (internal/buildinfo).
+    # Commit is the short hash like "make build"; Date is the commit date
+    # instead of the build time so that two builds of a commit are identical.
+    ldflags:
+      - -s -w
+      - -X github.com/Padrio/papierkram-cli/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/Padrio/papierkram-cli/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X github.com/Padrio/papierkram-cli/internal/buildinfo.Date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: papierkram
+    ids: [papierkram]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    builds_info:
+      mtime: "{{ .CommitDate }}"
+    # every archive carries the same extra files (the cask matches the man
+    # pages by glob only then)
+    files:
+      - src: LICENSE
+        info: &fileinfo
+          mtime: "{{ .CommitDate }}"
+      - src: README.md
+        info: *fileinfo
+      - src: CHANGELOG.md
+        info: *fileinfo
+      - src: THIRD_PARTY_NOTICES.md
+        info: *fileinfo
+      - src: completions/*
+        info: *fileinfo
+      - src: man/*
+        info: *fileinfo
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}"
+
+# The release notes come from CHANGELOG.md (Keep a Changelog): the release
+# passes the section of the tag with --release-notes (docs/release.md).
+# The changelog stays enabled because GoReleaser ignores --release-notes
+# when it is disabled; the git log below is only the fallback for a run
+# without notes.
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^docs"
+      - "^test"
+      - "^ci"
+      - "^chore"
+
+nfpms:
+  - id: packages
+    ids: [papierkram]
+    package_name: papierkram
+    formats: [deb, rpm]
+    vendor: Pascal Krason
+    maintainer: Pascal Krason <p.krason@icloud.com>
+    homepage: https://github.com/Padrio/papierkram-cli
+    description: |-
+      Kommandozeile für die Papierkram-API.
+      Rechnungen, Angebote, Belege, Kontakte, Projekte und Zeiten aus dem
+      Terminal verwalten, mit JSON-Ausgabe für Skripte und KI-Agents.
+    license: MIT
+    section: utils
+    bindir: /usr/bin
+    mtime: "{{ .CommitDate }}"
+    contents:
+      # short form pk (README "Kurzform pk")
+      - src: papierkram
+        dst: /usr/bin/pk
+        type: symlink
+      - src: ./man/*.1
+        dst: /usr/share/man/man1/
+        file_info:
+          mode: 0644
+      - src: ./completions/papierkram.bash
+        dst: /usr/share/bash-completion/completions/papierkram
+        file_info:
+          mode: 0644
+      - src: ./completions/_papierkram
+        dst: /usr/share/zsh/site-functions/_papierkram
+        file_info:
+          mode: 0644
+      - src: ./completions/papierkram.fish
+        dst: /usr/share/fish/vendor_completions.d/papierkram.fish
+        file_info:
+          mode: 0644
+      - src: ./LICENSE
+        dst: /usr/share/doc/papierkram/LICENSE
+        file_info:
+          mode: 0644
+      - src: ./THIRD_PARTY_NOTICES.md
+        dst: /usr/share/doc/papierkram/THIRD_PARTY_NOTICES.md
+        file_info:
+          mode: 0644
+
+# Homebrew: a cask in Padrio/homebrew-tap (brew install Padrio/tap/papierkram).
+# homebrew_casks instead of brews: brews (formulae) are deprecated in
+# GoReleaser v2.19. Uploaded only by a real release, never by a snapshot
+# or a prerelease (skip_upload: auto).
+homebrew_casks:
+  - name: papierkram
+    ids: [papierkram]
+    repository:
+      owner: Padrio
+      name: homebrew-tap
+      token: "{{ .Env.PACKAGES_GITHUB_TOKEN }}"
+    commit_author:
+      name: Pascal Krason
+      email: p.krason@icloud.com
+    homepage: https://github.com/Padrio/papierkram-cli
+    description: Kommandozeile für die Papierkram-API
+    skip_upload: auto
+    binaries: [papierkram]
+    # GoReleaser has no target for binaries: the short form pk is a second
+    # binary stanza with a target (Homebrew cask DSL), see docs/release.md.
+    custom_block: |
+      binary "papierkram", target: "pk"
+    manpages:
+      - man/*.1
+    completions:
+      bash: completions/papierkram.bash
+      zsh: completions/_papierkram
+      fish: completions/papierkram.fish
+    # the binaries are not notarized: without this Gatekeeper refuses to
+    # start them on macOS
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/papierkram"]
+          end
+
+# Scoop: Padrio/scoop-bucket (scoop install papierkram). GoReleaser writes
+# "bin": "papierkram.exe" and has no alias field; the pk shim is a manual
+# step after the release, see docs/release.md.
+scoops:
+  - name: papierkram
+    ids: [papierkram]
+    repository:
+      owner: Padrio
+      name: scoop-bucket
+      token: "{{ .Env.PACKAGES_GITHUB_TOKEN }}"
+    commit_author:
+      name: Pascal Krason
+      email: p.krason@icloud.com
+    homepage: https://github.com/Padrio/papierkram-cli
+    description: Kommandozeile für die Papierkram-API
+    license: MIT
+    skip_upload: auto
+
+release:
+  github:
+    owner: Padrio
+    name: papierkram-cli

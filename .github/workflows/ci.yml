@@ -112,3 +112,46 @@ jobs:
         run: |
           git status --porcelain
           test -z "$(git status --porcelain)"
+
+  # GoReleaser dry run (spec 12.1/12.2): builds every target, the archives
+  # and the deb/rpm packages without publishing anything. No token is set:
+  # tap and bucket are written to dist/ only (docs/release.md).
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # GoReleaser reads tags and the commit date from the history
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.x'
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --snapshot --clean
+      - name: dist holds 6 archives, deb and rpm
+        run: |
+          ls -l dist
+          set -- dist/papierkram_*_darwin_amd64.tar.gz dist/papierkram_*_darwin_arm64.tar.gz \
+            dist/papierkram_*_linux_amd64.tar.gz dist/papierkram_*_linux_arm64.tar.gz \
+            dist/papierkram_*_windows_amd64.zip dist/papierkram_*_windows_arm64.zip \
+            dist/papierkram_*_linux_amd64.deb dist/papierkram_*_linux_arm64.deb \
+            dist/papierkram_*_linux_amd64.rpm dist/papierkram_*_linux_arm64.rpm \
+            dist/checksums.txt
+          for f in "$@"; do
+            test -f "$f" || { echo "fehlt: $f" >&2; exit 1; }
+          done
+          test "$(grep -c . dist/checksums.txt)" -eq 10
+          # pk link, man pages and completions in the package
+          dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/bin/pk -> papierkram'
+          dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/man/man1/papierkram.1'
+          dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/bash-completion/completions/papierkram'
+          tar -tzf dist/papierkram_*_linux_amd64.tar.gz | grep -Fx 'completions/_papierkram'
+          tar -tzf dist/papierkram_*_linux_amd64.tar.gz | grep -Fx 'man/papierkram.1'
+      # dist/, completions/ and man/ are in .gitignore
+      - name: snapshot leaves the tree clean
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)"
