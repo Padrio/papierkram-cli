@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"maps"
@@ -42,6 +43,8 @@ IDs (z. B. papierkram invoice describe <Tab>, --company <Tab>) lädt die Vervoll
 
 Dann sendet die Vervollständigung keine Anfrage und liest keinen Cache.
 
+Jedes Skript vervollständigt auch die Kurzform pk, die Homebrew, Scoop, deb und rpm installieren; deren Pakete richten die Vervollständigung selbst ein (Scoop ausgenommen).
+
 Einrichten (danach eine neue Shell starten):
 
 bash (braucht das Paket bash-completion):
@@ -52,8 +55,9 @@ bash (braucht das Paket bash-completion):
 zsh (falls noch nicht aktiv, vorher einmal: echo "autoload -U compinit; compinit" >> ~/.zshrc):
   papierkram completion zsh > "${fpath[1]}/_papierkram"
 
-fish:
+fish (lädt die Datei nach dem Befehlsnamen, daher für pk ein zweiter Name):
   papierkram completion fish > ~/.config/fish/completions/papierkram.fish
+  ln -s papierkram.fish ~/.config/fish/completions/pk.fish
 
 PowerShell:
   aktuelle Sitzung: papierkram completion powershell | Out-String | Invoke-Expression
@@ -98,16 +102,27 @@ func newCompletionCmd(app *App) *cobra.Command {
 		},
 		RunE: func(c *cobra.Command, args []string) error {
 			root := c.Root()
+			var buf bytes.Buffer
+			var err error
 			switch args[0] {
 			case "bash":
-				return root.GenBashCompletionV2(app.Out, true)
+				err = root.GenBashCompletionV2(&buf, true)
 			case "zsh":
-				return root.GenZshCompletion(app.Out)
+				err = root.GenZshCompletion(&buf)
 			case "fish":
-				return root.GenFishCompletion(app.Out, true)
+				err = root.GenFishCompletion(&buf, true)
 			default:
-				return root.GenPowerShellCompletionWithDesc(app.Out)
+				err = root.GenPowerShellCompletionWithDesc(&buf)
 			}
+			if err != nil {
+				return err
+			}
+			script, err := withShortForm(args[0], buf.String())
+			if err != nil {
+				return err
+			}
+			_, err = io.WriteString(app.Out, script)
+			return err
 		},
 	}
 }
@@ -434,4 +449,66 @@ func apiArgCompletion(_ *cobra.Command, args []string, toComplete string) ([]str
 		return out, cobra.ShellCompDirectiveNoFileComp
 	}
 	return nil, cobra.ShellCompDirectiveNoFileComp
+}
+
+// shortForm is the short command name the packages install next to
+// papierkram (deb/rpm link, Homebrew binary target, Scoop shim; README
+// "Kurzform pk").
+const shortForm = "pk"
+
+// withShortForm adds the short form pk to cobra's script for shell: the
+// same registration as papierkram (each script runs the program it
+// completes, "pk __complete", so nothing else is needed). For zsh the two
+// header lines name both commands: compinit binds the #compdef names when
+// the file is found in fpath, the compdef line when it is sourced, and an
+// appended compdef line would only run inside the autoloaded function.
+// Every change first checks the line of cobra's script it builds on; a
+// cobra with other names is an error, never a script without pk.
+func withShortForm(shell, script string) (string, error) {
+	lines := strings.Split(script, "\n")
+	has := func(line string) bool { return slices.Contains(lines, line) }
+	var anchors []string
+	var extra string
+	switch shell {
+	case "bash":
+		anchors = []string{
+			"    complete -o default -F __start_papierkram papierkram",
+			"    complete -o default -o nospace -F __start_papierkram papierkram",
+		}
+		extra = "\n# short form " + shortForm + "\n" +
+			"if [[ $(type -t compopt) = \"builtin\" ]]; then\n" +
+			"    complete -o default -F __start_papierkram " + shortForm + "\n" +
+			"else\n" +
+			"    complete -o default -o nospace -F __start_papierkram " + shortForm + "\n" +
+			"fi\n"
+	case "zsh":
+		head := []string{"#compdef papierkram", "compdef _papierkram papierkram"}
+		if len(lines) < len(head) || !slices.Equal(lines[:len(head)], head) {
+			return "", shortFormErr(shell, head[0])
+		}
+		lines[0] += " " + shortForm
+		lines[1] += " " + shortForm
+		return strings.Join(lines, "\n"), nil
+	case "fish":
+		anchors = []string{"complete -c papierkram -e"}
+		extra = "\n# short form " + shortForm + "\ncomplete -c " + shortForm + " -w papierkram\n"
+	case "powershell":
+		reg := "Register-ArgumentCompleter -CommandName '%s' -ScriptBlock ${__papierkramCompleterBlock}"
+		anchors = []string{fmt.Sprintf(reg, "papierkram")}
+		extra = "\n# short form " + shortForm + "\n" + fmt.Sprintf(reg, shortForm) + "\n"
+	default:
+		return "", shortFormErr(shell, "")
+	}
+	for _, a := range anchors {
+		if !has(a) {
+			return "", shortFormErr(shell, a)
+		}
+	}
+	return script + extra, nil
+}
+
+// shortFormErr is the (internal) error of a cobra script that lacks line.
+func shortFormErr(shell, line string) error {
+	return clierr.New(clierr.CodeError, fmt.Sprintf("Vervollständigung für %s: erwartete Zeile fehlt: %q", shell, line),
+		"Interner Fehler: das Skript von cobra hat sich geändert; bitte melden")
 }

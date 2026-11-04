@@ -755,3 +755,65 @@ func TestCompletionWithoutCacheDir(t *testing.T) {
 		t.Error("Cache im Arbeitsverzeichnis angelegt")
 	}
 }
+
+// The script of every shell also completes the short form pk (deb/rpm
+// link, Homebrew target, Scoop shim): the same registration as papierkram,
+// with zsh's #compdef header naming both. The lines are pinned to the
+// function names cobra generates and to the line that runs the program the
+// shell completes (so "pk __complete" runs this binary); a cobra that
+// renames them fails here.
+func TestCompletionShortForm(t *testing.T) {
+	cases := []struct {
+		shell string
+		// lines holds exact lines of the script; first the first lines
+		lines, first []string
+	}{
+		{"bash", []string{
+			"__start_papierkram()",
+			`    requestComp="${words[0]} __complete ${args[*]}"`,
+			"    complete -o default -F __start_papierkram papierkram",
+			"    complete -o default -o nospace -F __start_papierkram papierkram",
+			"    complete -o default -F __start_papierkram pk",
+			"    complete -o default -o nospace -F __start_papierkram pk",
+		}, nil},
+		{"zsh", []string{
+			"_papierkram()",
+			`    requestComp="${words[1]} __complete ${words[2,-1]}"`,
+		}, []string{"#compdef papierkram pk", "compdef _papierkram papierkram pk"}},
+		{"fish", []string{
+			"function __papierkram_perform_completion",
+			`    set -l requestComp "PAPIERKRAM_ACTIVE_HELP=0 $args[1] __complete $args[2..-1] $lastArg"`,
+			"complete -c papierkram -e",
+			"complete -c pk -w papierkram",
+		}, nil},
+		{"powershell", []string{
+			"[scriptblock]${__papierkramCompleterBlock} = {",
+			`    $RequestComp="$Program __complete $Arguments"`,
+			"Register-ArgumentCompleter -CommandName 'papierkram' -ScriptBlock ${__papierkramCompleterBlock}",
+			"Register-ArgumentCompleter -CommandName 'pk' -ScriptBlock ${__papierkramCompleterBlock}",
+		}, nil},
+	}
+	for _, c := range cases {
+		app, out, _ := newTestApp(t)
+		wantExit(t, app, Run(app, []string{"completion", c.shell}), 0)
+		lines := strings.Split(out.String(), "\n")
+		for _, want := range c.lines {
+			if !slices.Contains(lines, want) {
+				t.Errorf("%s: Zeile fehlt: %q", c.shell, want)
+			}
+		}
+		if len(c.first) > 0 && !slices.Equal(lines[:min(len(lines), len(c.first))], c.first) {
+			t.Errorf("%s: Kopf = %q, want %q", c.shell, lines[:min(len(lines), len(c.first))], c.first)
+		}
+	}
+}
+
+// withShortForm refuses a script without the line it builds on (a cobra
+// with other names) instead of printing a script without pk.
+func TestCompletionShortFormNeedsCobraLines(t *testing.T) {
+	for _, shell := range completionShells {
+		if _, err := withShortForm(shell, "#compdef andere\nfunction x\n"); err == nil {
+			t.Errorf("%s: kein Fehler", shell)
+		}
+	}
+}

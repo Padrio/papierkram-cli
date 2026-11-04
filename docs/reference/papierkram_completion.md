@@ -14,6 +14,8 @@ IDs (z. B. papierkram invoice describe <Tab>, --company <Tab>) lädt die Vervoll
 
 Dann sendet die Vervollständigung keine Anfrage und liest keinen Cache.
 
+Jedes Skript vervollständigt auch die Kurzform pk, die Homebrew, Scoop, deb und rpm installieren; deren Pakete richten die Vervollständigung selbst ein (Scoop ausgenommen).
+
 Einrichten (danach eine neue Shell starten):
 
 bash (braucht das Paket bash-completion):
@@ -24,8 +26,9 @@ bash (braucht das Paket bash-completion):
 zsh (falls noch nicht aktiv, vorher einmal: echo "autoload -U compinit; compinit" >> ~/.zshrc):
   papierkram completion zsh > "${fpath[1]}/_papierkram"
 
-fish:
+fish (lädt die Datei nach dem Befehlsnamen, daher für pk ein zweiter Name):
   papierkram completion fish > ~/.config/fish/completions/papierkram.fish
+  ln -s papierkram.fish ~/.config/fish/completions/pk.fish
 
 PowerShell:
   aktuelle Sitzung: papierkram completion powershell | Out-String | Invoke-Expression
