@@ -48,7 +48,7 @@ const deliverLong = `
 
 --via email versendet eine E-Mail mit Empfänger (--to), Betreff (--subject) und Text (--body oder --body-file, - für die Standardeingabe); Betreff und Text dürfen Platzhalter wie {{rechnung.rechnungsnummer}} oder {{angebot.angebotsnummer}} enthalten. --via pdf finalisiert den Beleg und vergibt die Nummer, ohne E-Mail. Ohne Terminal ist --yes nötig.
 
-Danach liest das CLI den Beleg nach (1 weiterer Credit) und zeigt id, Nummer, state, sent_on, sent_via und sent_to. Scheitert nur das Nachlesen, endet der Befehl mit Exit 0 und einer Warnung – dann NICHT erneut ausführen. Bricht die Verbindung nach dem Senden ab, entscheidet das Nachlesen: sent_on von heute → Exit 0 mit Warnung, sonst Exit 12 (vor Wiederholung per describe prüfen).`
+Danach liest das CLI den Beleg nach (%s; --dry-run zeigt die Summe) und zeigt id, Nummer, state, sent_on, sent_via und sent_to. Scheitert nur das Nachlesen, endet der Befehl mit Exit 0 und einer Warnung – dann NICHT erneut ausführen. Bricht die Verbindung nach dem Senden ab, entscheidet das Nachlesen: sent_on von heute → Exit 0 mit Warnung, sonst Exit 12 (vor Wiederholung per describe prüfen).`
 
 // newDeliverCmd builds the deliver command of an invoice or estimate entry.
 func (a *App) newDeliverCmd(e registry.Entry) *cobra.Command {
@@ -56,7 +56,7 @@ func (a *App) newDeliverCmd(e registry.Entry) *cobra.Command {
 		Use:         e.Action + " <id>",
 		Aliases:     []string{"send"},
 		Short:       e.Short,
-		Long:        entryLong(e) + deliverLong,
+		Long:        entryLong(e) + fmt.Sprintf(deliverLong, moreCredits(readbackCredits(e))),
 		Example:     entryExample(e),
 		Annotations: map[string]string{annotClass: string(e.Class)},
 		Args:        idArgs,
@@ -114,7 +114,10 @@ func (a *App) runDeliver(c *cobra.Command, e registry.Entry, args []string) erro
 	if err != nil {
 		return err
 	}
-	if proceed, err := a.beforeMutation(c, e, client, params, body); !proceed || err != nil {
+	// the run costs the deliver and the readback; --dry-run shows both
+	run := e
+	run.Credits += readbackCredits(e)
+	if proceed, err := a.beforeMutation(c, run, client, params, body); !proceed || err != nil {
 		return err
 	}
 	_, sendErr := client.Call(c.Context(), e.OperationID, params, nil, body)
@@ -138,6 +141,21 @@ func (a *App) runDeliver(c *cobra.Command, e registry.Entry, args []string) erro
 		return afterRequest(output.RenderValue(o, deliveredJSON{ID: id, Delivered: true, Warnings: []string{warning}}, output.Columns{}))
 	}
 	return afterRequest(output.Render(o, doc.result(cols, nil), cols))
+}
+
+// readbackCredits is the cost of reading the document back: that of its
+// describe entry.
+func readbackCredits(e registry.Entry) int {
+	d, _ := registry.Lookup(e.Resource, "describe")
+	return d.Credits
+}
+
+// moreCredits is "1 weiterer Credit" or "N weitere Credits".
+func moreCredits(n int) string {
+	if n == 1 {
+		return "1 weiterer Credit"
+	}
+	return fmt.Sprintf("%d weitere Credits", n)
 }
 
 // deliverFailed is the error of a deliver POST that got an error answer.

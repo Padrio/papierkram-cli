@@ -304,10 +304,18 @@ func TestDeliverDryRun(t *testing.T) {
 		"--subject", "S", "--body", "B", "--dry-run", "-o", "json"}), 0)
 	wantRequests(t, srv, 0)
 	out := mustOut(app)
-	for _, want := range []string{`"dry_run": true`, `"method": "POST"`, `/income/invoices/459/deliver"`, `"credits": 1`, `"recipient": "k@example.org"`} {
+	// credits: the deliver and the readback (spec 8.4: the cost of the run)
+	for _, want := range []string{`"dry_run": true`, `"method": "POST"`, `/income/invoices/459/deliver"`, `"credits": 2`, `"recipient": "k@example.org"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stdout ohne %q:\n%s", want, out)
 		}
+	}
+
+	app, srv = apiApp(t)
+	wantExit(t, app, Run(app, []string{"estimate", "deliver", "349", "--via", "pdf", "--dry-run"}), 0)
+	wantRequests(t, srv, 0)
+	if out := mustOut(app); !strings.Contains(out, "Credits: 2\n") {
+		t.Errorf("stdout = %s", out)
 	}
 }
 
