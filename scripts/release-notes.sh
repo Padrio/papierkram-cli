@@ -34,19 +34,44 @@ fi
 
 # the lines after "## [X.Y.Z]" up to the next "## [" heading, without the
 # link definitions at the end of the file and without leading and trailing
-# blank lines; headings and link definitions inside code fences (``` or
-# ~~~) belong to the notes
+# blank lines; headings and link definitions inside code fences belong to
+# the notes. A fence opened with ``` closes only with ```, one opened with
+# ~~~ only with ~~~ (CommonMark: at least as long, nothing but blanks
+# after it). A fence still open at the end of the file (in the section or
+# before it) is an error: the section has no safe end.
+rc=0
 notes="$(awk -v v="$version" '
-	!on && !fence && index($0, "## [" v "]") == 1 { found = 1; on = 1; next }
-	/^(```|~~~)/ { fence = !fence }
-	on && !fence && /^## \[/ { exit }
-	on && !fence && /^\[[^]]*\]: / { next }
+	!on && fence == "" && index($0, "## [" v "]") == 1 { found = 1; on = 1; next }
+	/^(```|~~~)/ {
+		c = substr($0, 1, 1)
+		n = 0
+		while (substr($0, n + 1, 1) == c) n++
+		if (fence == "") { fence = c; flen = n }
+		else if (c == fence && n >= flen && substr($0, n + 1) ~ /^[ \t]*$/) fence = ""
+	}
+	on && fence == "" && /^## \[/ { exit }
+	on && fence == "" && /^\[[^]]*\]: / { next }
 	on { print }
-	END { if (!found) exit 3 }
-' "$changelog")" || {
+	END {
+		if (fence != "" && (on || !found)) exit 4
+		if (!found) exit 3
+	}
+' "$changelog")" || rc=$?
+case $rc in
+0) ;;
+3)
 	echo "release-notes.sh: Abschnitt \"## [$version]\" fehlt in $changelog" >&2
 	exit 1
-}
+	;;
+4)
+	echo "release-notes.sh: Code-Block (\`\`\` oder ~~~) in $changelog nicht geschlossen (im Abschnitt \"## [$version]\" oder davor)" >&2
+	exit 4
+	;;
+*)
+	echo "release-notes.sh: $changelog nicht auswertbar (awk: Exit $rc)" >&2
+	exit 1
+	;;
+esac
 notes="$(printf '%s\n' "$notes" | sed '/./,$!d')"
 if [ -z "$notes" ]; then
 	echo "release-notes.sh: Abschnitt \"## [$version]\" in $changelog ist leer" >&2
