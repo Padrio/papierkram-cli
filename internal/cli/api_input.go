@@ -79,8 +79,12 @@ func parseAPIPath(c *cobra.Command, raw string) (apiPath, error) {
 			segs = append(segs, d)
 		}
 	}
-	if len(segs) >= 2 && segs[0] == "api" && segs[1] == "v1" {
+	if isBasePrefix(segs) {
 		segs = segs[2:]
+		if isBasePrefix(segs) {
+			// MatchPath would strip it again: classified ≠ sent
+			return bad("die Basis /api/v1 nur einmal angeben")
+		}
 	}
 	esc := make([]string, len(segs))
 	for i, s := range segs {
@@ -98,6 +102,11 @@ func parseAPIPath(c *cobra.Command, raw string) (apiPath, error) {
 // .json, ;params, a leftover %) could be routed by the server to an
 // operation the class lookup did not see.
 var segmentRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// isBasePrefix reports segments that start with the API base api/v1.
+func isBasePrefix(segs []string) bool {
+	return len(segs) >= 2 && segs[0] == "api" && segs[1] == "v1"
+}
 
 // apiField is one -f or -F value: the key split at dots, the raw value
 // and whether it is typed (-F).

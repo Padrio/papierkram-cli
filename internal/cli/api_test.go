@@ -674,3 +674,14 @@ func TestAPITrailingSlashAndEncodedLetters(t *testing.T) {
 		t.Errorf("path = %s", r.Path)
 	}
 }
+
+// Review M2: /api/v1 is the base and may be given once; a second prefix
+// would be classified without it but sent with it.
+func TestAPIRepeatedBasePrefix(t *testing.T) {
+	for _, path := range []string{"/api/v1/api/v1/income/invoices/12/deliver", "/api/v1/api/v1", "/%61pi/v1/api/v1/info"} {
+		app, srv := apiApp(t)
+		wantExit(t, app, runAPI(app, "POST", path, "-F", "send_via=email", "--yes"), 2)
+		wantRequests(t, srv, 0)
+		wantStderrHas(t, app, "/api/v1 nur einmal")
+	}
+}
