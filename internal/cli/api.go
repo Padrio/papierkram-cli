@@ -376,8 +376,9 @@ func checkAPIBody(call *apiCall, body map[string]any) error {
 // renderAPI writes the answer: an empty body as {"ok":true}, JSON through
 // the output package with the columns of the matched command, any other
 // answer unchanged, but only when stdout is no terminal. In a terminal that
-// is a usage error for GET, which changed nothing (exit 2), and exit 1 for
-// a mutation, which was executed (afterRequest).
+// is exit 1 with the hint to redirect (afterRequest): the request was sent,
+// so it is never exit 2, also for GET. A known file answer is refused
+// before the request (checkAPIFile).
 func (a *App) renderAPI(o output.Options, call *apiCall, resp *api.Response) error {
 	if len(bytes.TrimSpace(resp.Body)) == 0 {
 		return afterRequest(output.RenderValue(o, struct {
@@ -394,11 +395,7 @@ func (a *App) renderAPI(o output.Options, call *apiCall, resp *api.Response) err
 	desc := fmt.Sprintf("Antwort ist kein JSON (%s, %d Bytes)", ct, len(resp.Body))
 	switch {
 	case a.StdoutTTY:
-		err := clierr.New(clierr.CodeUsage, desc+": nicht im Terminal ausgegeben", fileHint(call.target))
-		if call.method == "GET" {
-			return err
-		}
-		return afterRequest(err)
+		return afterRequest(clierr.New(clierr.CodeUsage, desc+": nicht im Terminal ausgegeben", fileHint(call.target)))
 	case o.JQ != "" || len(o.Fields) > 0:
 		return afterRequest(clierr.New(clierr.CodeUsage, desc+": --jq und --fields gelten nur für JSON", "ohne --jq und --fields ausführen"))
 	}

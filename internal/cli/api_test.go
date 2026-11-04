@@ -519,16 +519,17 @@ func TestAPIBinaryResponse(t *testing.T) {
 		t.Errorf("stdout = %q", out)
 	}
 
-	// unknown answer in a terminal: GET is exit 2 after the read
+	// unknown answer in a terminal: the request was sent, so even GET is
+	// exit 1, never 2 (global rule), with the hint to redirect
 	app, srv = apiApp(t)
 	app.StdoutTTY = true
 	srv.On("GET", "/x/bild", http.StatusOK, png, "Content-Type", "image/png")
-	wantExit(t, app, runAPI(app, "GET", "/x/bild"), 2)
+	wantExit(t, app, runAPI(app, "GET", "/x/bild"), 1)
 	wantRequests(t, srv, 1)
 	if out := stdoutBytes(app); len(out) != 0 {
 		t.Errorf("stdout = %q", out)
 	}
-	wantStderrHas(t, app, "kein JSON", "umleiten")
+	wantStderrHas(t, app, "Befehl ausgeführt", "kein JSON", "umleiten", "pdf <id> -O")
 
 	// a mutation was executed: exit 1, never 2
 	app, srv = apiApp(t)
@@ -536,7 +537,7 @@ func TestAPIBinaryResponse(t *testing.T) {
 	srv.On("POST", "/x/bild", http.StatusOK, png, "Content-Type", "image/png")
 	wantExit(t, app, runAPI(app, "POST", "/x/bild", "--yes"), 1)
 	wantRequests(t, srv, 1)
-	wantStderrHas(t, app, "Befehl ausgeführt")
+	wantStderrHas(t, app, "Befehl ausgeführt", "umleiten", "pdf <id> -O")
 
 	// --jq cannot apply to a file
 	app, srv = apiApp(t)
