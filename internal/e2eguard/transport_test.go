@@ -20,7 +20,7 @@ func newTestTransport(t *testing.T, srv *mockapi.Server, budget int) (*Transport
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Transport{Base: http.DefaultTransport, Scheme: u.Scheme, Host: u.Host, Meter: NewMeter(budget)}, u
+	return &Transport{Base: http.DefaultTransport, Scheme: u.Scheme, Host: u.Host, Meter: NewMeter(budget, 0)}, u
 }
 
 func send(t *testing.T, tr *Transport, method, rawURL, body string) (*http.Response, error) {

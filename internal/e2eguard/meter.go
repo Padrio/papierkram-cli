@@ -22,35 +22,85 @@ type Quota struct {
 	Known bool
 }
 
+// Documented worst case of removing one object in the final cleanup
+// (spec 4.3: 1 credit per request): a document (invoice, estimate,
+// voucher) may need delete, cancel, delete, archive; any other object
+// delete, archive.
+const (
+	CleanupCostDocument = 4
+	CleanupCostOther    = 2
+)
+
+// CleanupReserve is the share of the budget kept for the final cleanup:
+// the documented worst case for docs documents and others other objects,
+// plus margin.
+func CleanupReserve(docs, others, margin int) int {
+	return docs*CleanupCostDocument + others*CleanupCostOther + margin
+}
+
 // Meter counts the credits of a run from the quota headers (spec 4.3:
 // X-Consumed-Quota, X-Remaining-Quota). The cost of a request is the growth
 // of X-Consumed-Quota since the previous response. Where that cannot be
 // measured (first request, header missing or invalid, counter went down
 // at the start of a month) the documented cost of registry.ExpectedCredits
-// counts instead. It is safe for concurrent use.
+// counts instead.
+//
+// A fixed part of the budget is reserved for the final cleanup: until
+// BeginCleanup, tests (Fits) and requests (Reserve) may only use budget
+// minus reserve, so the cleanup always gets to run. It is safe for
+// concurrent use.
 type Meter struct {
 	mu         sync.Mutex
 	budget     int
+	reserve    int
+	cleanup    bool
 	spent      int
 	requests   int
 	unmeasured int
 	quota      Quota
 }
 
-// NewMeter returns a meter with the given credit budget.
-func NewMeter(budget int) *Meter { return &Meter{budget: budget} }
+// NewMeter returns a meter with the given credit budget, of which reserve
+// (clamped to 0..budget) is kept for the cleanup.
+func NewMeter(budget, reserve int) *Meter {
+	return &Meter{budget: budget, reserve: min(max(reserve, 0), budget)}
+}
 
 // Budget is the credit budget of the run.
 func (m *Meter) Budget() int { return m.budget }
 
+// Reserved is the part of the budget kept for the cleanup.
+func (m *Meter) Reserved() int { return m.reserve }
+
+// BeginCleanup releases the cleanup reserve: from now on requests may use
+// the whole budget.
+func (m *Meter) BeginCleanup() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cleanup = true
+}
+
+// limit is the credit limit of the current phase; m.mu must be held.
+func (m *Meter) limit() int {
+	if m.cleanup {
+		return m.budget
+	}
+	return m.budget - m.reserve
+}
+
 // Reserve checks before a request is sent that its documented cost still
-// fits the budget; ErrBudget otherwise (the request must not be sent).
+// fits the limit of the phase (before the cleanup: budget minus reserve);
+// ErrBudget otherwise (the request must not be sent).
 func (m *Meter) Reserve(method, path string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cost := registry.ExpectedCredits(method, path)
-	if m.spent+cost > m.budget {
-		return fmt.Errorf("%w: %s %s kostet %d, verbraucht %d von %d", ErrBudget, method, path, cost, m.spent, m.budget)
+	if m.spent+cost > m.limit() {
+		if m.cleanup {
+			return fmt.Errorf("%w: %s %s kostet %d, verbraucht %d von %d", ErrBudget, method, path, cost, m.spent, m.budget)
+		}
+		return fmt.Errorf("%w: %s %s kostet %d, verbraucht %d von %d, davon %d für das Aufräumen reserviert",
+			ErrBudget, method, path, cost, m.spent, m.budget, m.reserve)
 	}
 	return nil
 }
@@ -77,11 +127,12 @@ func (m *Meter) Record(method, path string, h http.Header) {
 	}
 }
 
-// Fits reports whether n more credits fit the budget.
+// Fits reports whether n more credits fit the limit of the phase (before
+// the cleanup: budget minus reserve).
 func (m *Meter) Fits(n int) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.spent+n <= m.budget
+	return m.spent+n <= m.limit()
 }
 
 // Spent is the number of credits counted so far.
@@ -120,8 +171,8 @@ func (m *Meter) Summary() string {
 	if m.quota.Known {
 		rest = strconv.Itoa(m.quota.Remaining)
 	}
-	return fmt.Sprintf("Credits: %d von %d verbraucht (%d Anfragen, davon %d nach dokumentierten Kosten gezählt); Restkontingent laut API: %s",
-		m.spent, m.budget, m.requests, m.unmeasured, rest)
+	return fmt.Sprintf("Credits: %d von %d verbraucht (Reserve fürs Aufräumen %d; %d Anfragen, davon %d nach dokumentierten Kosten gezählt); Restkontingent laut API: %s",
+		m.spent, m.budget, m.reserve, m.requests, m.unmeasured, rest)
 }
 
 func headerInt(h http.Header, key string) (int, bool) {

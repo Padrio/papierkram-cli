@@ -74,7 +74,7 @@ func newLiveSuite(getenv func(string) string, red e2eguard.Redactor) (*liveSuite
 	if err != nil {
 		loc = time.Local
 	}
-	meter := e2eguard.NewMeter(creditBudget)
+	meter := e2eguard.NewMeter(creditBudget, cleanupReserve)
 	return &liveSuite{
 		sub:      sub,
 		token:    getenv(e2eguard.EnvToken),
@@ -161,33 +161,20 @@ func (s *liveSuite) decode(t *testing.T, raw string) map[string]any {
 	return m
 }
 
-// need skips the test when n more credits plus the reserve for the
-// cleanup of all objects created so far do not fit the budget; all later
-// tests skip too.
+// need skips the test when n more credits would cut into the cleanup
+// reserve (e2eguard.Meter.Fits); all later tests skip too, so the cleanup
+// at the end always gets to run.
 func (s *liveSuite) need(t *testing.T, n int) {
 	t.Helper()
 	if s.exhausted {
-		s.skipf(t, "Credit-Budget erschöpft (%d von %d); Test übersprungen", s.meter.Spent(), s.meter.Budget())
+		s.skipf(t, "Credit-Budget für Tests erschöpft (%d von %d verbraucht, %d fürs Aufräumen reserviert); Test übersprungen",
+			s.meter.Spent(), s.meter.Budget(), s.meter.Reserved())
 	}
-	if reserve := s.cleanupReserve(); !s.meter.Fits(n + reserve) {
+	if !s.meter.Fits(n) {
 		s.exhausted = true
-		s.skipf(t, "Credit-Budget: %d nötig plus %d für das Aufräumen, verbraucht %d von %d; dieser und alle folgenden Tests übersprungen",
-			n, reserve, s.meter.Spent(), s.meter.Budget())
+		s.skipf(t, "Credit-Budget: %d nötig, verbraucht %d von %d, %d fürs Aufräumen reserviert; dieser und alle folgenden Tests übersprungen",
+			n, s.meter.Spent(), s.meter.Budget(), s.meter.Reserved())
 	}
-}
-
-// cleanupReserve is the worst case of the final cleanup: per document
-// delete, cancel, delete, archive; per other object delete, archive.
-func (s *liveSuite) cleanupReserve() int {
-	n := 0
-	for _, o := range s.created {
-		if cleanupDocs[o.resource] {
-			n += 4
-		} else {
-			n += 2
-		}
-	}
-	return n
 }
 
 // track registers an object of this run for the cleanup.

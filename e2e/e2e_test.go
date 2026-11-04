@@ -30,10 +30,15 @@
 //	  costs up to 3 more (cancel, delete, archive)                 13
 //	                                                     total    426
 //
-// The meter (e2eguard.Meter) counts the real cost from X-Consumed-Quota;
-// the transport refuses every request that would exceed the budget, and
-// need() skips a test (and all later ones) when its cost plus the cleanup
-// reserve no longer fits. TestMain prints the total at the end.
+// Of the budget, cleanupReserve = 46 is kept for the final cleanup: the
+// documented worst case (e2eguard.CleanupReserve) for the 4 documents
+// (2 estimates, invoice, voucher; 4 each) and up to 10 other objects
+// (2 each), plus a margin of 10. Tests may use 490 - 46 = 444 (planned:
+// 413). The meter (e2eguard.Meter) counts the real cost from
+// X-Consumed-Quota; before the cleanup the transport refuses every
+// request that would cut into the reserve, and need() skips a test (and
+// all later ones) when its cost no longer fits. TestMain releases the
+// reserve for the cleanup and prints the total at the end.
 //
 // Measurements (MESSUNG in the log) answer the open points of spec 17 and
 // the carries of task 44. A test fails hard only where the CLI relies on
@@ -81,6 +86,10 @@ const creditBudget = 490
 // The build fails when creditBudget reaches 500 (constant overflow).
 const _ = uint(499 - creditBudget)
 
+// cleanupReserve is the part of the budget kept for the final cleanup
+// (see the header).
+var cleanupReserve = e2eguard.CleanupReserve(4, 10, 10)
+
 // suite is the live run; nil when the suite is skipped (skipReason).
 var (
 	suite      *liveSuite
@@ -103,6 +112,7 @@ func TestMain(m *testing.M) {
 	suite = s
 	s.stderrf("Lauf %s gegen Sandbox %s, Credit-Budget %d", s.runID, s.sub, creditBudget)
 	code := m.Run()
+	s.meter.BeginCleanup()
 	if !s.cleanup() && code == 0 {
 		s.stderrf("Aufräumen unvollständig: Objekte mit Präfix %s prüfen", s.prefix)
 		code = 1

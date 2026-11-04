@@ -75,10 +75,15 @@ go test -tags e2e -v ./e2e/...
 Ein voller Lauf kostet nach den dokumentierten Preisen (Abschnitt 4.3) etwa
 **426 Credits**; das Budget je Lauf ist **490** (Zielwert unter 500, die
 Aufschlüsselung steht im Kopf von `e2e_test.go`). Gezählt wird mit den
-Antwort-Headern `X-Consumed-Quota`/`X-Remaining-Quota`. Eine Anfrage, die das
-Budget überschreiten würde, wird nicht gesendet; reicht das Budget für einen
-Test samt Aufräumen nicht mehr, werden dieser und alle folgenden Tests mit
-Begründung übersprungen. Am Ende steht die Summe im Log.
+Antwort-Headern `X-Consumed-Quota`/`X-Remaining-Quota`.
+
+Vom Budget sind **46 Credits fürs Aufräumen reserviert** (dokumentierter
+Höchstaufwand: je Rechnung/Angebot/Beleg 4, je anderem Objekt 2, plus 10
+Puffer). Die Tests dürfen also höchstens 444 Credits verbrauchen: Eine
+Anfrage, die in die Reserve greifen würde, wird nicht gesendet, und reicht das
+Budget für einen Test nicht mehr, werden dieser und alle folgenden Tests mit
+Begründung übersprungen. Erst das Aufräumen am Ende darf die Reserve nutzen.
+Am Ende steht die Summe im Log.
 
 ## Messungen
 
