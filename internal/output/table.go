@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 	"text/tabwriter"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -207,16 +206,13 @@ func truncate(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-// oneLine replaces line breaks, tabs and other control characters with a
-// space; they would break the table layout.
+// oneLine replaces line breaks, tabs, other control characters and
+// invisible format characters with a space; they would break (or
+// disguise) the table layout.
 func oneLine(s string) string {
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return ' '
-		}
-		return r
-	}, s)
+	// one implementation with Printable: control and invisible format
+	// characters (bidi overrides) become spaces
+	return Printable(strings.ReplaceAll(s, "\r\n", "\n"))
 }
 
 // writeRows aligns rows with two spaces between columns. Trailing spaces
