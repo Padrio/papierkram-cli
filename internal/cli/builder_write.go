@@ -544,13 +544,17 @@ func (a *App) readInput(path string) (map[string]any, error) {
 	return m, nil
 }
 
-// pruneHints prints which fields Prune removed or whose null it dropped.
+// pruneHints prints which fields Prune removed, whose null it dropped and
+// which response references it moved into the request.
 func (a *App) pruneHints(pr spec.PruneResult) {
 	if len(pr.Removed) > 0 {
 		_, _ = fmt.Fprintf(a.Err, "Hinweis: nur lesbare Felder entfernt: %s\n", strings.Join(pr.Removed, ", "))
 	}
 	if len(pr.DroppedNulls) > 0 {
 		_, _ = fmt.Fprintf(a.Err, "Hinweis: null ignoriert (Feld bleibt unverändert): %s\n", strings.Join(pr.DroppedNulls, ", "))
+	}
+	if len(pr.Moved) > 0 {
+		_, _ = fmt.Fprintf(a.Err, "Hinweis: Referenzen übernommen: %s\n", strings.Join(pr.Moved, ", "))
 	}
 }
 

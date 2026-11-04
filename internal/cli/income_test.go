@@ -207,12 +207,14 @@ func describeJSON(t *testing.T, resource, id string) string {
 // describe -o json of invoice or estimate and names in its hint (spec 6.3,
 // R14).
 var roundTripPruned = []string{"id", "type", "state", "record_state", "total_gross", "customer.name",
-	"contact_person", "project", "document_charges"}
+	"document_charges"}
 
 // Spec R14 at the CLI level (TestR14_UpdateInputPrunesReadOnly covers the
 // pruning): describe -o json | update --input - sends a spec-conformant PUT
 // (the mock validates it) without read-only fields and, without
-// --replace-items, without positions.
+// --replace-items, without positions. Contact person and project of the
+// answer go below customer: without them the live API clears both
+// (measured 2026-11-04).
 func TestIncomeDescribeUpdateRoundTrip(t *testing.T) {
 	// the billing block is writable and kept; nulls of nullable fields too
 	const billing = `"billing":{"company":"Mustermann Automobile GmbH","email":null,"ust_idnr":"11/234/34567",` +
@@ -220,9 +222,9 @@ func TestIncomeDescribeUpdateRoundTrip(t *testing.T) {
 	for _, tc := range []struct{ resource, id, path, want string }{
 		{"invoice", "459", "/income/invoices/459", `{"name":"My invoice","description":"Notes for the invoice","document_date":"2020-05-01",` +
 			`"supply_date":"2026-08-28 13:41:34 +0200","gross":false,"custom_template":{"id":220},` + billing +
-			`,"customer":{"id":3214},"payment_term":{"id":1130}}`},
+			`,"customer":{"id":3214,"contact_person":{"id":1205},"project":{"id":4576}},"payment_term":{"id":1130}}`},
 		{"estimate", "349", "/income/estimates/349", `{"name":"My estimate","description":"Notes for the estimate","document_date":"2020-05-01",` +
-			`"sent_on":null,"sent_to":null,"gross":false,` + billing + `,"customer":{"id":3052}}`},
+			`"sent_on":null,"sent_to":null,"gross":false,` + billing + `,"customer":{"id":3052,"contact_person":{"id":1116},"project":{"id":4316}}}`},
 	} {
 		t.Run(tc.resource, func(t *testing.T) {
 			described := describeJSON(t, tc.resource, tc.id)
@@ -232,7 +234,8 @@ func TestIncomeDescribeUpdateRoundTrip(t *testing.T) {
 			// the mock validates the PUT against the spec (auto-fail)
 			wantBody(t, srv, "PUT", tc.path, tc.want)
 			_, errs := bufs(app)
-			if !strings.Contains(errs, itemsDropHint) || !strings.Contains(errs, "nur lesbare Felder entfernt") {
+			if !strings.Contains(errs, itemsDropHint) || !strings.Contains(errs, "nur lesbare Felder entfernt") ||
+				!strings.Contains(errs, "Hinweis: Referenzen übernommen: contact_person → customer.contact_person, project → customer.project\n") {
 				t.Errorf("stderr = %q", errs)
 			}
 			for _, field := range roundTripPruned {

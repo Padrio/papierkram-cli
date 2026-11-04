@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // getExample returns a response example of a GET operation from the embedded
@@ -76,8 +78,10 @@ func TestR14_UpdateInputPrunesReadOnly(t *testing.T) {
 			t.Errorf("request field %q removed", k)
 		}
 	}
-	if got := marshal(t, res.Body["customer"]); got != `{"id":3214}` {
-		t.Errorf("customer = %s, want {\"id\":3214}", got)
+	// the top-level references of the answer go into the customer (see
+	// TestPruneMovesResponseReferencesIntoRequest)
+	if got := marshal(t, res.Body["customer"]); got != `{"contact_person":{"id":1205},"id":3214,"project":{"id":4576}}` {
+		t.Errorf("customer = %s", got)
 	}
 	if got := marshal(t, res.Body["payment_term"]); got != `{"id":1130}` {
 		t.Errorf("payment_term = %s, want {\"id\":1130}", got)
@@ -90,7 +94,7 @@ func TestR14_UpdateInputPrunesReadOnly(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"id", "invoice_no", "customer_no", "contact_person", "project", "customer.name", "customer.type", "payment_term.template_id", "line_items[].total_net", "line_items[].position_in_group"} {
+	for _, want := range []string{"id", "invoice_no", "customer_no", "customer.name", "customer.type", "payment_term.template_id", "line_items[].total_net", "line_items[].position_in_group"} {
 		if !slices.Contains(res.Removed, want) {
 			t.Errorf("Removed %q lacks %q", res.Removed, want)
 		}
@@ -105,6 +109,85 @@ func TestR14_UpdateInputPrunesReadOnly(t *testing.T) {
 	// although the response has a top-level contact_person too.
 	if b := res.Body["billing"].(map[string]any); b["contact_person"] != "John Doe" {
 		t.Errorf("billing.contact_person = %v", b["contact_person"])
+	}
+}
+
+// The answer of an invoice or estimate has its contact person and project
+// on top level; the request takes them only below customer. A describe |
+// update round trip that dropped them made the live API clear both
+// (measured 2026-11-04, run 2), so Prune moves a top-level reference of
+// the answer into the one request object that has a reference of that
+// name, when that object is in the body and does not name it yet. Only
+// the id is taken over.
+func TestPruneMovesResponseReferencesIntoRequest(t *testing.T) {
+	for _, op := range []string{"UpdateInvoice", "CreateInvoice", "UpdateEstimate", "CreateEstimate"} {
+		in := map[string]any{
+			"name":           "A",
+			"customer":       map[string]any{"id": json.Number("7"), "name": "Kunde", "type": "company"},
+			"contact_person": map[string]any{"id": json.Number("4"), "first_name": "Anna", "type": "person"},
+			"project":        map[string]any{"id": json.Number("10"), "name": "P", "type": "project"},
+		}
+		res := prune(t, op, in)
+		if got := marshal(t, res.Body["customer"]); got != `{"contact_person":{"id":4},"id":7,"project":{"id":10}}` {
+			t.Errorf("%s: customer = %s", op, got)
+		}
+		for _, k := range []string{"contact_person", "project"} {
+			if _, ok := res.Body[k]; ok || slices.Contains(res.Removed, k) {
+				t.Errorf("%s: %s kept on top level or named as removed: %v %q", op, k, res.Body, res.Removed)
+			}
+		}
+		if want := []string{"contact_person → customer.contact_person", "project → customer.project"}; !slices.Equal(res.Moved, want) {
+			t.Errorf("%s: Moved = %q, want %q", op, res.Moved, want)
+		}
+	}
+
+	// not moved: no customer in the body, a reference the customer already
+	// names, a null, an object without id
+	for _, tc := range []struct {
+		name string
+		in   map[string]any
+		want string
+	}{
+		{"ohne customer", map[string]any{"contact_person": map[string]any{"id": json.Number("4")}}, `{}`},
+		{"customer nennt sie schon", map[string]any{"customer": map[string]any{"id": json.Number("7"), "contact_person": map[string]any{"id": json.Number("5")}},
+			"contact_person": map[string]any{"id": json.Number("4")}}, `{"customer":{"contact_person":{"id":5},"id":7}}`},
+		{"null", map[string]any{"customer": map[string]any{"id": json.Number("7")}, "project": nil}, `{"customer":{"id":7}}`},
+		{"ohne id", map[string]any{"customer": map[string]any{"id": json.Number("7")}, "project": map[string]any{"name": "P"}}, `{"customer":{"id":7}}`},
+	} {
+		res := prune(t, "UpdateInvoice", tc.in)
+		if got := marshal(t, res.Body); got != tc.want || len(res.Moved) != 0 {
+			t.Errorf("%s: body %s, Moved %q; want %s and nothing moved", tc.name, got, res.Moved, tc.want)
+		}
+	}
+}
+
+// Moving references is spec-driven; this pins where it applies: only the
+// contact person and project of invoices and estimates (into customer). A
+// new match after a spec update shows up here.
+func TestPruneMovableReferences(t *testing.T) {
+	var got []string
+	for _, o := range Operations() {
+		if o.Method != "POST" && o.Method != "PUT" {
+			continue
+		}
+		req := RequestSchema(o.ID)
+		resp := ResourceResponseSchema(o.ID)
+		if req == nil || resp == nil {
+			continue
+		}
+		for _, m := range movableReferences(req, flatten([]*openapi3.Schema{resp})) {
+			got = append(got, o.ID+": "+m)
+		}
+	}
+	slices.Sort(got)
+	want := []string{
+		"CreateEstimate: contact_person → customer.contact_person", "CreateEstimate: project → customer.project",
+		"CreateInvoice: contact_person → customer.contact_person", "CreateInvoice: project → customer.project",
+		"UpdateEstimate: contact_person → customer.contact_person", "UpdateEstimate: project → customer.project",
+		"UpdateInvoice: contact_person → customer.contact_person", "UpdateInvoice: project → customer.project",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("movable references:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
 

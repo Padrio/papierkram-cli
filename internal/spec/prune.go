@@ -16,12 +16,14 @@ import (
 // PruneResult is a body cleaned up against the request schema. Removed lists
 // the dotted paths of the response-only fields that were dropped;
 // DroppedNulls the request fields whose null was dropped (they stay
-// unchanged on update). Both are sorted and without duplicates; array
-// elements appear as [] (line_items[].total_net).
+// unchanged on update); Moved the response references taken over into the
+// request ("contact_person → customer.contact_person"). All are sorted and
+// without duplicates; array elements appear as [] (line_items[].total_net).
 type PruneResult struct {
 	Body         map[string]any
 	Removed      []string
 	DroppedNulls []string
+	Moved        []string
 }
 
 // Prune matches an --input body recursively against the request schema
@@ -34,9 +36,15 @@ type PruneResult struct {
 //     request cannot express "none" otherwise; required fields keep their
 //     null so that Validate reports it;
 //   - not in the request schema but in resp: removed and listed in Removed
-//     (id, customer.name, line_items[].total_net, and top-level response
-//     references such as contact_person or project, which are never
-//     translated into request references);
+//     (id, customer.name, line_items[].total_net). Exception: a reference
+//     of the response (an object with id, e.g. the top-level
+//     contact_person and project of an invoice) that exactly one request
+//     object at the same level takes as a reference of the same name
+//     (customer.contact_person) is moved there as {id} and listed in
+//     Moved, when that object is in the body and does not name it yet
+//     (movableReferences). The live API clears contact person and project
+//     of an invoice whose PUT lacks them (measured 2026-11-04), so a
+//     describe | update round trip has to send them;
 //   - in neither: an unknown field. All unknown fields are collected into one
 //     validation error (exit 5), with a suggestion from the request keys at
 //     that level: unbekanntes Feld "note" – meintest du "notes"? Without a
@@ -53,7 +61,7 @@ func Prune(body map[string]any, req, resp *openapi3.Schema) (PruneResult, error)
 	if req == nil {
 		return PruneResult{}, clierr.New(clierr.CodeError, "Bereinigung ohne Request-Schema nicht möglich", "")
 	}
-	p := &pruner{removed: map[string]bool{}, nulls: map[string]bool{}, unknownSeen: map[string]bool{}}
+	p := &pruner{removed: map[string]bool{}, nulls: map[string]bool{}, moved: map[string]bool{}, unknownSeen: map[string]bool{}}
 	out := p.object(body, req, flatten([]*openapi3.Schema{resp}), "")
 	if len(p.unknown) > 0 {
 		return PruneResult{}, unknownFieldsError(p.unknown)
@@ -62,12 +70,14 @@ func Prune(body map[string]any, req, resp *openapi3.Schema) (PruneResult, error)
 		Body:         out,
 		Removed:      slices.Sorted(maps.Keys(p.removed)),
 		DroppedNulls: slices.Sorted(maps.Keys(p.nulls)),
+		Moved:        slices.Sorted(maps.Keys(p.moved)),
 	}, nil
 }
 
 type pruner struct {
 	removed     map[string]bool
 	nulls       map[string]bool
+	moved       map[string]bool
 	unknown     []unknownField
 	unknownSeen map[string]bool
 }
@@ -82,7 +92,8 @@ func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi
 		return cloneValue(in).(map[string]any)
 	}
 	out := make(map[string]any, len(in))
-	var own []int // indexes in p.unknown of the unknown keys of this object
+	var own []int             // indexes in p.unknown of the unknown keys of this object
+	var responseOnly []string // keys only the response has; moved or removed below
 	for _, k := range slices.Sorted(maps.Keys(in)) {
 		v := in[k]
 		cp := dotPath(path, k)
@@ -96,7 +107,7 @@ func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi
 			}
 			out[k] = p.value(v, ps.Value, rs, cp)
 		case len(rs) > 0:
-			p.removed[cp] = true
+			responseOnly = append(responseOnly, k)
 		default:
 			if !p.unknownSeen[cp] {
 				p.unknownSeen[cp] = true
@@ -105,10 +116,82 @@ func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi
 			}
 		}
 	}
+	for _, k := range responseOnly {
+		if !p.moveReference(out, in[k], k, req, path) {
+			p.removed[dotPath(path, k)] = true
+		}
+	}
 	// only this object's own unknown keys count: nested objects and line
 	// items append theirs to p.unknown too, with their own missing fields
 	if len(own) == 1 && p.unknown[own[0]].suggestion == "" {
 		p.unknown[own[0]].suggestion = onlyMissingRequired(in, req)
+	}
+	return out
+}
+
+// moveReference puts the response reference v (named k, at path) into the
+// request object of out that takes a reference of that name (see
+// referenceTarget), as {id}. It reports whether it did: not when v is no
+// object with an id, there is no single target, the target object is not
+// in out, or it already names k.
+func (p *pruner) moveReference(out map[string]any, v any, k string, req *openapi3.Schema, path string) bool {
+	ref, ok := v.(map[string]any)
+	if !ok || ref["id"] == nil {
+		return false
+	}
+	target := referenceTarget(req, k)
+	obj, ok := out[target].(map[string]any)
+	if target == "" || !ok {
+		return false
+	}
+	if _, named := obj[k]; named {
+		return false
+	}
+	obj[k] = map[string]any{"id": cloneValue(ref["id"])}
+	p.moved[dotPath(path, k)+" → "+dotPath(dotPath(path, target), k)] = true
+	return true
+}
+
+// referenceTarget is the one property of the request object req whose
+// object schema has a reference named k (an object with an id); "" when
+// none or more than one has.
+func referenceTarget(req *openapi3.Schema, k string) string {
+	target := ""
+	for _, name := range slices.Sorted(maps.Keys(req.Properties)) {
+		ps := req.Properties[name]
+		if ps == nil || ps.Value == nil || !isObject(ps.Value) {
+			continue
+		}
+		if c := ps.Value.Properties[k]; c != nil && c.Value != nil && isObject(c.Value) && c.Value.Properties["id"] != nil {
+			if target != "" {
+				return ""
+			}
+			target = name
+		}
+	}
+	return target
+}
+
+// movableReferences lists, for the top level of a request schema and the
+// flattened response schemas of its resource, the response references
+// Prune would move ("contact_person → customer.contact_person"): keys of
+// the response that the request lacks at top level but takes below
+// exactly one request object.
+func movableReferences(req *openapi3.Schema, resp []*openapi3.Schema) []string {
+	var out []string
+	keys := map[string]bool{}
+	for _, s := range resp {
+		for k := range s.Properties {
+			keys[k] = true
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(keys)) {
+		if req.Properties[k] != nil {
+			continue
+		}
+		if t := referenceTarget(req, k); t != "" {
+			out = append(out, k+" → "+t+"."+k)
+		}
 	}
 	return out
 }
