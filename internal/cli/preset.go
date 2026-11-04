@@ -129,28 +129,73 @@ func (a *App) preset(key string) (preset, error) {
 }
 
 // presetFile is the project file as a source of presets. Its IDs belong
-// to the account of its context: when --context or PAPIERKRAM_CONTEXT
-// choose another context, it presets nothing (controller ruling, never
-// write into a project of the wrong account) and a warning names both
-// contexts, once per invocation. Environment presets are not affected.
+// to the account of its context, so they apply only when the effective
+// context of this invocation is that context (controller ruling: never
+// write into a project of the wrong account). When --context or
+// PAPIERKRAM_CONTEXT choose another context, or no context is active
+// (direct mode with the file's context missing from the config), the file
+// presets nothing and a warning says why, once per invocation. A file
+// without context presets as before; environment presets are not
+// affected.
 func (a *App) presetFile() (*projectfile.File, error) {
 	f, err := a.projectFile()
 	if err != nil || f == nil || f.Context == "" {
 		return f, err
 	}
-	chosen, how := a.Flags.Context, "--context"
-	if chosen == "" {
-		chosen, how = a.Env("PAPIERKRAM_CONTEXT"), "PAPIERKRAM_CONTEXT"
+	ctx, source, err := a.effectiveContext()
+	if err != nil {
+		return nil, err
 	}
-	if chosen == "" || chosen == f.Context {
+	if ctx == f.Context {
 		return f, nil
 	}
 	if !a.pfile.warned {
 		a.pfile.warned = true
-		output.Warn(a.Err, fmt.Sprintf("Projektdatei %s gilt für Kontext %q, gewählt ist Kontext %q (%s): "+
-			"ihre Voreinstellungen (company, project, task, user) werden ignoriert", f.Path, f.Context, chosen, how))
+		active := "aber kein Kontext aktiv (Kontext fehlt in der Konfiguration, Direktbetrieb über PAPIERKRAM_TOKEN)"
+		if ctx != "" {
+			active = fmt.Sprintf("aktiv ist Kontext %q (%s)", ctx, contextSourceName(source))
+		}
+		output.Warn(a.Err, fmt.Sprintf("Projektdatei %s gilt für Kontext %q, %s: "+
+			"ihre Voreinstellungen (company, project, task, user) werden ignoriert", f.Path, f.Context, active))
 	}
 	return nil, nil
+}
+
+// effectiveContext is the context of this invocation with its source,
+// "" without one (spec 10.1). Before the client exists it is resolved like
+// Client does, but without the keychain: the token does not decide the
+// context, and the keychain is read once, by Client.
+func (a *App) effectiveContext() (name, source string, err error) {
+	if a.resolved != nil {
+		return a.resolved.Context, a.resolved.ContextSource, nil
+	}
+	cfg, _, err := a.loadConfig()
+	if err != nil {
+		return "", "", err
+	}
+	in, err := a.resolveInput()
+	if err != nil {
+		return "", "", err
+	}
+	in.Store = nil
+	r, err := config.Resolve(cfg, in)
+	if err != nil {
+		return "", "", err
+	}
+	return r.Context, r.ContextSource, nil
+}
+
+// contextSourceName names where a context choice comes from.
+func contextSourceName(source string) string {
+	switch source {
+	case config.SourceFlag:
+		return "--context"
+	case config.SourceEnv:
+		return "PAPIERKRAM_CONTEXT"
+	case config.SourceConfig:
+		return "active_context"
+	}
+	return source
 }
 
 // presetNote names the sources of a preset after flag or ID for help texts.

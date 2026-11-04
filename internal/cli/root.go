@@ -115,9 +115,10 @@ func (a *App) checkGlobalFlags(c *cobra.Command) error {
 
 // NewRootCmd builds the root command with all global flags.
 func NewRootCmd(app *App) *cobra.Command {
-	// a new invocation finds and reads the project file anew
+	// a new invocation resolves configuration and project file anew
 	app.pfile = projectFileCache{}
 	app.presetHints = nil
+	app.resolved = nil
 	root := &cobra.Command{
 		Use:           "papierkram",
 		Short:         "Kommandozeile für die Papierkram-API",

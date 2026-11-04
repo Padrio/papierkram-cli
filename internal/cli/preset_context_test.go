@@ -101,3 +101,67 @@ func TestPresetIgnoresProjectFileOfOtherContext(t *testing.T) {
 		}
 	}
 }
+
+// Controller ruling (open case of M1): project file presets apply only
+// when the effective context equals the file's context. In direct mode
+// (environment token, the file's context missing from the config) no
+// context is active: the presets are ignored with a warning.
+func TestPresetIgnoresProjectFileWithoutActiveContext(t *testing.T) {
+	const file = "context = \"a\"\nproject = 34\n"
+	wantIgnored := func(t *testing.T, app *App) {
+		t.Helper()
+		_, errs := bufs(app)
+		for _, want := range []string{`Warnung: Projektdatei `, `gilt für Kontext "a"`, "kein Kontext aktiv", "ignoriert"} {
+			if !strings.Contains(errs, want) {
+				t.Errorf("stderr ohne %q: %s", want, errs)
+			}
+		}
+		if strings.Contains(errs, "Hinweis: Projekt 34") {
+			t.Errorf("Projekt 34 ohne aktiven Kontext verwendet: %s", errs)
+		}
+		assertNoToken(t, app)
+	}
+
+	app, srv := apiApp(t) // PAPIERKRAM_TOKEN + PAPIERKRAM_BASE_URL, no config
+	writeProjectFile(t, app, file)
+	wantExit(t, app, Run(app, []string{"task", "create", "--name", "Support"}), 5)
+	wantRequests(t, srv, 0)
+	wantIgnored(t, app)
+
+	app, srv = apiApp(t)
+	writeProjectFile(t, app, file)
+	wantExit(t, app, Run(app, []string{"task", "list", "-o", "json"}), 0)
+	if r := wantRequests(t, srv, 1)[0]; r.Query.Encode() != "page_size=25" {
+		t.Errorf("task list: query = %s", r.Query.Encode())
+	}
+	wantIgnored(t, app)
+
+	app, srv = apiApp(t)
+	writeProjectFile(t, app, file)
+	wantExit(t, app, Run(app, []string{"project", "describe"}), 2)
+	wantRequests(t, srv, 0)
+	wantIgnored(t, app)
+
+	// direct mode with the file's context in the config: that context is
+	// effective, the presets apply
+	app, srv = contextApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-env"})
+	writeProjectFile(t, app, file)
+	wantExit(t, app, Run(app, []string{"task", "list", "-o", "json"}), 0)
+	if r := wantRequests(t, srv, 1)[0]; r.Query.Encode() != "page_size=25&project_id=34" {
+		t.Errorf("Kontext a vorhanden: query = %s", r.Query.Encode())
+	}
+	if _, errs := bufs(app); strings.Contains(errs, "ignoriert") {
+		t.Errorf("Kontext a vorhanden: stderr = %q", errs)
+	}
+
+	// without direct mode a missing context is the configuration error it
+	// always was, before any request
+	app, srv = mockApp(t, nil)
+	writeCfg(t, app, twoWritableCtx)
+	writeProjectFile(t, app, "context = \"c\"\nproject = 34\n")
+	wantExit(t, app, Run(app, []string{"task", "list"}), 4)
+	wantRequests(t, srv, 0)
+	if _, errs := bufs(app); !strings.Contains(errs, `Kontext "c" nicht gefunden`) {
+		t.Errorf("stderr = %q", errs)
+	}
+}
