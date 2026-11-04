@@ -1,5 +1,8 @@
-# Build
+# Build and release (GoReleaser; completions/ and man/ come from the
+# before hooks scripts/completions.sh and scripts/manpages.sh)
 /dist/
+/completions/
+/man/
 /bin/
 /papierkram
 /papierkram.exe
