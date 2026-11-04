@@ -7,3 +7,7 @@ internal/spec/openapi.gen.json -text
 # on every OS: the code under test writes LF, so a CRLF checkout (Windows,
 # core.autocrlf) would break every comparison.
 **/testdata/** -text
+
+# Generated command reference: TestReferenceUpToDate compares it byte for
+# byte with a fresh gen-docs run (LF), so a CRLF checkout must not happen.
+docs/reference/** -text

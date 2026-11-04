@@ -1,4 +1,4 @@
-.PHONY: build test lint generate cover snapshot
+.PHONY: build test lint generate cover snapshot docs
 
 VERSION ?= dev
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -24,6 +24,11 @@ COVER_THRESHOLD ?= 80
 
 cover:
 	scripts/coverage.sh $(COVER_THRESHOLD)
+
+# Command reference (Markdown) from the German help; TestReferenceUpToDate
+# fails until it is regenerated. Man pages are built at release time.
+docs:
+	go run ./cmd/papierkram gen-docs --dir docs/reference
 
 snapshot:
 	go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean
