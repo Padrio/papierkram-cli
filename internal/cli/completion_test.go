@@ -759,9 +759,10 @@ func TestCompletionWithoutCacheDir(t *testing.T) {
 // The script of every shell also completes the short form pk (deb/rpm
 // link, Homebrew target, Scoop shim): the same registration as papierkram,
 // with zsh's #compdef header naming both. The lines are pinned to the
-// function names cobra generates and to the line that runs the program the
-// shell completes (so "pk __complete" runs this binary); a cobra that
-// renames them fails here.
+// function names cobra generates and to the line that runs the program
+// named on the command line (bash, zsh and PowerShell run "pk __complete";
+// fish runs the wrap target "papierkram __complete"); a cobra that renames
+// them fails here.
 func TestCompletionShortForm(t *testing.T) {
 	cases := []struct {
 		shell string
@@ -809,11 +810,58 @@ func TestCompletionShortForm(t *testing.T) {
 }
 
 // withShortForm refuses a script without the line it builds on (a cobra
-// with other names) instead of printing a script without pk.
+// with other names) instead of printing a script without pk: a foreign
+// script, and cobra's real script with exactly one of those lines changed.
 func TestCompletionShortFormNeedsCobraLines(t *testing.T) {
 	for _, shell := range completionShells {
 		if _, err := withShortForm(shell, "#compdef andere\nfunction x\n"); err == nil {
 			t.Errorf("%s: kein Fehler", shell)
+		}
+	}
+	if _, err := withShortForm("tcsh", "x\n"); err == nil {
+		t.Error("tcsh: kein Fehler")
+	}
+	cases := []struct{ shell, line, changed string }{
+		{"bash", "    complete -o default -F __start_papierkram papierkram",
+			"    complete -o default -F __start_papierkram_v2 papierkram"},
+		{"bash", "    complete -o default -o nospace -F __start_papierkram papierkram",
+			"    complete -o default -o nospace -F __start_papierkram_v2 papierkram"},
+		{"zsh", "#compdef papierkram", "#compdef papierkram papierkram.exe"},
+		{"zsh", "compdef _papierkram papierkram", "compdef _papierkram_v2 papierkram"},
+		{"fish", "complete -c papierkram -e", "complete --command papierkram --erase"},
+		{"powershell", "Register-ArgumentCompleter -CommandName 'papierkram' -ScriptBlock ${__papierkramCompleterBlock}",
+			"Register-ArgumentCompleter -CommandName 'papierkram' -ScriptBlock ${__papierkramCompleterBlockV2}"},
+	}
+	for _, c := range cases {
+		var buf strings.Builder
+		app, _, _ := newTestApp(t)
+		root := NewRootCmd(app)
+		var err error
+		switch c.shell {
+		case "bash":
+			err = root.GenBashCompletionV2(&buf, true)
+		case "zsh":
+			err = root.GenZshCompletion(&buf)
+		case "fish":
+			err = root.GenFishCompletion(&buf, true)
+		default:
+			err = root.GenPowerShellCompletionWithDesc(&buf)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		script := buf.String()
+		if _, err := withShortForm(c.shell, script); err != nil {
+			t.Fatalf("%s: unverändertes Skript abgelehnt: %v", c.shell, err)
+		}
+		lines := strings.Split(script, "\n")
+		i := slices.Index(lines, c.line)
+		if i < 0 {
+			t.Fatalf("%s: Zeile %q fehlt im Skript von cobra", c.shell, c.line)
+		}
+		lines[i] = c.changed
+		if _, err := withShortForm(c.shell, strings.Join(lines, "\n")); err == nil {
+			t.Errorf("%s: geänderte Zeile %q nicht abgelehnt", c.shell, c.line)
 		}
 	}
 }
