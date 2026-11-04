@@ -10,11 +10,13 @@ import (
 
 // Column describes one table column: Header is the column title (empty:
 // the upper-cased Path), Path the dotted JSON path of the value (as in
-// --fields) and Fmt an optional formatter for the value. Fmt is not called
+// --fields) and Fmt an optional formatter for the value. Fallback is an
+// optional second path whose value is shown when the value at Path is null
+// or missing (company: customer_no, else supplier_no). Fmt is not called
 // for null or missing values; those are always empty cells.
 type Column struct {
-	Header, Path string
-	Fmt          func(any) string
+	Header, Path, Fallback string
+	Fmt                    func(any) string
 }
 
 // Columns are the default columns of a resource: -o table shows Table,

@@ -1,11 +1,11 @@
-ID    NAME                        TYP       KUNDENNR.  LIEFERANTENNR.  E-MAIL
+ID    NAME                        TYP       NR.      E-MAIL
 2820  Mustermann Automobile GmbH  customer  K-00010
 2821  Mustermann Automobile GmbH  customer  K-00011
 2822  Mustermann Automobile GmbH  customer  K-00012
 2823  Mustermann Automobile GmbH  customer  K-00013
 2824  Mustermann Automobile GmbH  customer  K-00014
-2825  Mustermann Automobile GmbH  supplier             L-00005
-2826  Mustermann Automobile GmbH  supplier             L-00006
-2827  Mustermann Automobile GmbH  supplier             L-00007
-2828  Mustermann Automobile GmbH  supplier             L-00008
-2829  Mustermann Automobile GmbH  supplier             L-00009
+2825  Mustermann Automobile GmbH  supplier  L-00005
+2826  Mustermann Automobile GmbH  supplier  L-00006
+2827  Mustermann Automobile GmbH  supplier  L-00007
+2828  Mustermann Automobile GmbH  supplier  L-00008
+2829  Mustermann Automobile GmbH  supplier  L-00009

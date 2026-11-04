@@ -4,15 +4,14 @@ import "github.com/Padrio/papierkram-cli/internal/output"
 
 // Default columns (spec 10.3). Paths are the JSON paths of the API objects.
 var (
-	// customer_no/supplier_no (spec 10.3) are two columns: a column shows
-	// one path, and contact_type says which of the two numbers is set.
+	// customer_no/supplier_no (spec 10.3) is one column: the customer
+	// number, else the supplier number; TYP says which one it is.
 	companyColumns = output.Columns{
 		Table: []output.Column{
 			{Header: "ID", Path: "id"},
 			{Header: "NAME", Path: "name"},
 			{Header: "TYP", Path: "contact_type"},
-			{Header: "KUNDENNR.", Path: "customer_no"},
-			{Header: "LIEFERANTENNR.", Path: "supplier_no"},
+			{Header: "NR.", Path: "customer_no", Fallback: "supplier_no"},
 			{Header: "E-MAIL", Path: "email"},
 		},
 		Wide: []output.Column{

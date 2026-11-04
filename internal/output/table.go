@@ -97,7 +97,8 @@ func tableColumns(o Options, cols Columns) []Column {
 		out := make([]Column, len(o.Fields))
 		for i, f := range o.Fields {
 			out[i] = Column{Path: f}
-			if j := slices.IndexFunc(known, func(c Column) bool { return c.Path == f }); j >= 0 {
+			// a fallback column shows more than the path asked for
+			if j := slices.IndexFunc(known, func(c Column) bool { return c.Path == f && c.Fallback == "" }); j >= 0 {
 				out[i] = known[j]
 			}
 		}
@@ -149,14 +150,18 @@ func headers(cols []Column) []string {
 }
 
 // cell formats the value at c.Path of v (the whole value for an empty
-// path). null and missing values are empty; Fmt is only called for other
-// values.
+// path), or at c.Fallback when that is null or missing. null and missing
+// values are empty; Fmt is only called for other values.
 func cell(v any, c Column) string {
 	if c.Path != "" {
-		var ok bool
-		if v, ok = lookup(v, strings.Split(c.Path, ".")); !ok {
+		x, ok := lookup(v, strings.Split(c.Path, "."))
+		if (!ok || x == nil) && c.Fallback != "" {
+			x, ok = lookup(v, strings.Split(c.Fallback, "."))
+		}
+		if !ok {
 			return ""
 		}
+		v = x
 	}
 	if v == nil {
 		return ""

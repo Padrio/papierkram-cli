@@ -145,10 +145,15 @@ func checkColumns(t *testing.T, name string, op spec.Operation, cols output.Colu
 			t.Errorf("%s: column %s needs an upper-case header, got %q", name, c.Path, c.Header)
 		}
 		if s != nil {
-			if !schemaHasPath(s, c.Path) {
-				t.Errorf("%s: column path %q not in response schema", name, c.Path)
+			for _, p := range []string{c.Path, c.Fallback} {
+				if p != "" && !schemaHasPath(s, p) {
+					t.Errorf("%s: column path %q not in response schema", name, p)
+				}
 			}
 			continue
+		}
+		if c.Fallback != "" {
+			t.Errorf("%s: column %s: fallback without a response schema", name, c.Path)
 		}
 		if !examplesHavePath(t, op, c.Path) {
 			t.Errorf("%s: column path %q not in response examples", name, c.Path)
@@ -316,6 +321,23 @@ func TestCompanyPersonEntriesRegistered(t *testing.T) {
 
 // company list --type: the API ignores contact_type (spec 4.6), so the
 // filter is local (spec 9.7).
+// Spec 10.3: one column customer_no/supplier_no, the supplier number when
+// there is no customer number.
+func TestCompanyNumberColumn(t *testing.T) {
+	for _, action := range []string{"list", "describe"} {
+		e, _ := Lookup("company", action)
+		var paths []string
+		for _, c := range append(e.Columns.Table, e.Columns.Wide...) {
+			if c.Path == "customer_no" || c.Path == "supplier_no" || c.Fallback != "" {
+				paths = append(paths, c.Header+" "+c.Path+"|"+c.Fallback)
+			}
+		}
+		if len(paths) != 1 || paths[0] != "NR. customer_no|supplier_no" {
+			t.Errorf("company %s: number columns %v, want one NR. customer_no|supplier_no", action, paths)
+		}
+	}
+}
+
 func TestCompanyListTypeFilter(t *testing.T) {
 	e, _ := Lookup("company", "list")
 	if len(e.Filters) != 1 {

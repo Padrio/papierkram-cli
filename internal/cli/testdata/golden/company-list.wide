@@ -1,11 +1,11 @@
-ID    NAME                        TYP       KUNDENNR.  LIEFERANTENNR.  E-MAIL  TELEFON  ORT        STATUS
-2820  Mustermann Automobile GmbH  customer  K-00010                                     Wiesbaden  active
-2821  Mustermann Automobile GmbH  customer  K-00011                                     Wiesbaden  active
-2822  Mustermann Automobile GmbH  customer  K-00012                                     Wiesbaden  active
-2823  Mustermann Automobile GmbH  customer  K-00013                                     Wiesbaden  active
-2824  Mustermann Automobile GmbH  customer  K-00014                                     Wiesbaden  active
-2825  Mustermann Automobile GmbH  supplier             L-00005                          Wiesbaden  active
-2826  Mustermann Automobile GmbH  supplier             L-00006                          Wiesbaden  active
-2827  Mustermann Automobile GmbH  supplier             L-00007                          Wiesbaden  active
-2828  Mustermann Automobile GmbH  supplier             L-00008                          Wiesbaden  active
-2829  Mustermann Automobile GmbH  supplier             L-00009                          Wiesbaden  active
+ID    NAME                        TYP       NR.      E-MAIL  TELEFON  ORT        STATUS
+2820  Mustermann Automobile GmbH  customer  K-00010                   Wiesbaden  active
+2821  Mustermann Automobile GmbH  customer  K-00011                   Wiesbaden  active
+2822  Mustermann Automobile GmbH  customer  K-00012                   Wiesbaden  active
+2823  Mustermann Automobile GmbH  customer  K-00013                   Wiesbaden  active
+2824  Mustermann Automobile GmbH  customer  K-00014                   Wiesbaden  active
+2825  Mustermann Automobile GmbH  supplier  L-00005                   Wiesbaden  active
+2826  Mustermann Automobile GmbH  supplier  L-00006                   Wiesbaden  active
+2827  Mustermann Automobile GmbH  supplier  L-00007                   Wiesbaden  active
+2828  Mustermann Automobile GmbH  supplier  L-00008                   Wiesbaden  active
+2829  Mustermann Automobile GmbH  supplier  L-00009                   Wiesbaden  active

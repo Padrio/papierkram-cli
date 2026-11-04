@@ -1,7 +1,6 @@
-FELD            WERT
-ID              2843
-NAME            ACME Corp.
-TYP             customer
-KUNDENNR.       K-00010
-LIEFERANTENNR.
-E-MAIL          contact@acme.com
+FELD    WERT
+ID      2843
+NAME    ACME Corp.
+TYP     customer
+NR.     K-00010
+E-MAIL  contact@acme.com

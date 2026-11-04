@@ -212,3 +212,24 @@ func TestTableHeaderOneLine(t *testing.T) {
 		t.Errorf("object: got\n%q\nwant\n%q", out, want)
 	}
 }
+
+// A column with Fallback shows the value at Fallback when the value at
+// Path is null or missing (company: customer_no, else supplier_no, spec
+// 10.3). --fields names plain paths: a fallback column is not reused.
+func TestTableColumnFallback(t *testing.T) {
+	raw := `{"type":"list","entries":[
+{"id":1,"customer_no":"K-1","supplier_no":"L-9"},
+{"id":2,"customer_no":null,"supplier_no":"L-2"},
+{"id":3,"supplier_no":"L-3"},
+{"id":4,"customer_no":null,"supplier_no":null}]}`
+	cols := Columns{Table: []Column{{Header: "ID", Path: "id"}, {Header: "NR.", Path: "customer_no", Fallback: "supplier_no"}}}
+	out, _ := renderCols(t, Options{Format: FormatTable}, raw, cols)
+	want := "ID  NR.\n1   K-1\n2   L-2\n3   L-3\n4\n"
+	if out != want {
+		t.Errorf("table = %q, erwartet %q", out, want)
+	}
+	out, _ = renderCols(t, Options{Format: FormatTable, Fields: []string{"customer_no"}}, raw, cols)
+	if want := "CUSTOMER_NO\nK-1\n-\n-\n-\n"; out != want { // all-empty rows show "-"
+		t.Errorf("--fields = %q, erwartet %q", out, want)
+	}
+}
