@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -270,5 +271,114 @@ func TestLoad_ErrorsGermanWithCause(t *testing.T) {
 				t.Errorf("syntax error: cause %v, hint %q", ce.Cause, ce.Hint)
 			}
 		})
+	}
+}
+
+func i64(v int64) *int64   { return &v }
+func str(s string) *string { return &s }
+
+// Save creates a missing file with the given keys only.
+func TestSave_Creates(t *testing.T) {
+	p := filepath.Join(t.TempDir(), FileName)
+	res, err := Save(p, Changes{Project: i64(34), Context: str("firma-gmbh")})
+	if err != nil || !res.Created || !res.Changed || res.HadComments {
+		t.Fatalf("Save = %+v, %v", res, err)
+	}
+	f, err := Load(p)
+	if err != nil || f.Project != 34 || f.Context != "firma-gmbh" || f.Company != 0 || f.Task != 0 || f.User != 0 || len(f.Unknown) != 0 {
+		t.Fatalf("Load = %+v, %v", f, err)
+	}
+}
+
+// Save changes only the given keys; other keys, unknown keys and [tasks]
+// stay. Comments cannot be kept and are reported.
+func TestSave_UpdatesKeepsOtherKeys(t *testing.T) {
+	dir := t.TempDir()
+	p := write(t, dir, FileName, "# Projekt X\ncontext = \"a\"\ncompany = 12 # Kunde\nproject = 34\nnotiz = \"bleibt\"\n\n[tasks]\ntickets = 57\n")
+	res, err := Save(p, Changes{Project: i64(35), Task: i64(56)})
+	if err != nil || res.Created || !res.Changed || !res.HadComments {
+		t.Fatalf("Save = %+v, %v", res, err)
+	}
+	f, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &File{Path: p, Context: "a", Company: 12, Project: 35, Task: 56, Tasks: map[string]int64{"tickets": 57}, Unknown: []string{"notiz"}}
+	if !reflect.DeepEqual(f, want) {
+		t.Errorf("Load = %+v, want %+v", f, want)
+	}
+	data, _ := os.ReadFile(p)
+	if !strings.Contains(string(data), "notiz = 'bleibt'") {
+		t.Errorf("unknown key lost:\n%s", data)
+	}
+}
+
+// Without a change the file is not written, so its comments stay.
+func TestSave_UnchangedDoesNotWrite(t *testing.T) {
+	dir := t.TempDir()
+	content := "# Kommentar\nproject = 34\n"
+	p := write(t, dir, FileName, content)
+	res, err := Save(p, Changes{Project: i64(34)})
+	if err != nil || res.Changed || res.Created {
+		t.Fatalf("Save = %+v, %v", res, err)
+	}
+	if data, _ := os.ReadFile(p); string(data) != content {
+		t.Errorf("file rewritten:\n%s", data)
+	}
+	if res, err := Save(filepath.Join(t.TempDir(), FileName), Changes{}); err != nil || res.Changed || res.Created {
+		t.Errorf("empty changes on a missing file: %+v, %v", res, err)
+	}
+}
+
+// Only real comments count: a # inside a string is none.
+func TestHasComments(t *testing.T) {
+	for content, want := range map[string]bool{
+		"project = 34\n":                             false,
+		"context = \"a#b\"\n":                        false,
+		"context = 'a#b'\n":                          false,
+		"notiz = \"\"\"\n# kein Kommentar\n\"\"\"\n": false,
+		"# oben\nproject = 34\n":                     true,
+		"project = 34 # hinten\n":                    true,
+		"liste = [\n  1, # eins\n  2,\n]\n":          true,
+		"[tasks] # Aliase\ntickets = 57\n":           true,
+		"[tasks]\ntickets = 57\n# unten\n":           true,
+	} {
+		if got := hasComments([]byte(content)); got != want {
+			t.Errorf("hasComments(%q) = %v, want %v", content, got, want)
+		}
+	}
+}
+
+// The write is atomic: no temporary files stay, and the mode of an
+// existing file is kept.
+func TestSave_AtomicKeepsMode(t *testing.T) {
+	dir := t.TempDir()
+	p := write(t, dir, FileName, "project = 34\n")
+	if err := os.Chmod(p, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(p, Changes{Project: i64(35)}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("files in dir: %v", entries)
+	}
+	if st, err := os.Stat(p); err == nil && runtime.GOOS != "windows" && st.Mode().Perm() != 0o640 {
+		t.Errorf("mode = %v", st.Mode().Perm())
+	}
+}
+
+// A file that is no valid TOML is not overwritten.
+func TestSave_InvalidFileKept(t *testing.T) {
+	dir := t.TempDir()
+	p := write(t, dir, FileName, "project = \n")
+	_, err := Save(p, Changes{Project: i64(35)})
+	var ce *clierr.Error
+	if !errors.As(err, &ce) || ce.Code != clierr.CodeUsage {
+		t.Fatalf("err = %v", err)
+	}
+	if data, _ := os.ReadFile(p); string(data) != "project = \n" {
+		t.Errorf("file changed: %q", data)
 	}
 }

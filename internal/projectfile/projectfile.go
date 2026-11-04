@@ -79,17 +79,9 @@ func Load(path string) (*File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s lesen: %w", path, err)
 	}
-	var m map[string]any
-	if err := toml.Unmarshal(data, &m); err != nil {
-		hint := "TOML-Syntax prüfen, z. B. project = 34"
-		var de *toml.DecodeError
-		if errors.As(err, &de) {
-			row, col := de.Position()
-			hint = fmt.Sprintf("TOML-Syntax in Zeile %d, Spalte %d prüfen, z. B. project = 34", row, col)
-		}
-		e := clierr.New(clierr.CodeUsage, fmt.Sprintf("Projektdatei %s ist ungültig", path), hint)
-		e.Cause = err
-		return nil, e
+	m, err := decode(path, data)
+	if err != nil {
+		return nil, err
 	}
 	f := &File{Path: path}
 	if v, ok := m["context"]; ok {
@@ -155,6 +147,24 @@ func Load(path string) (*File, error) {
 	}
 	sort.Strings(f.Unknown)
 	return f, nil
+}
+
+// decode parses the TOML of the project file at path; a syntax error is a
+// usage error naming line and column.
+func decode(path string, data []byte) (map[string]any, error) {
+	var m map[string]any
+	if err := toml.Unmarshal(data, &m); err != nil {
+		hint := "TOML-Syntax prüfen, z. B. project = 34"
+		var de *toml.DecodeError
+		if errors.As(err, &de) {
+			row, col := de.Position()
+			hint = fmt.Sprintf("TOML-Syntax in Zeile %d, Spalte %d prüfen, z. B. project = 34", row, col)
+		}
+		e := clierr.New(clierr.CodeUsage, fmt.Sprintf("Projektdatei %s ist ungültig", path), hint)
+		e.Cause = err
+		return nil, e
+	}
+	return m, nil
 }
 
 // ResolveTask turns a --task value (ID or alias from [tasks]) into a task ID.
