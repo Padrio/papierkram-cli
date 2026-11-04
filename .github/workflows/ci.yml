@@ -175,6 +175,11 @@ jobs:
           printf '%s\n' '## [Unreleased]' '' '## [1.2.3] - 2027-01-01' '' '- Eintrag' '' '[1.2.3]: https://example.invalid' > "$RUNNER_TEMP/cl.md"
           test "$(sh scripts/release-notes.sh v1.2.3 "$RUNNER_TEMP/cl.md")" = '- Eintrag'
           if sh scripts/release-notes.sh v9.9.9 "$RUNNER_TEMP/cl.md"; then exit 1; fi
+          # an exact tag only: anything else is exit 2
+          rc=0; sh scripts/release-notes.sh v1.2.3foo "$RUNNER_TEMP/cl.md" || rc=$?; test "$rc" -eq 2
+          # "## [" and link definitions inside a code fence belong to the notes
+          printf '%s\n' '## [1.2.4] - 2027-01-02' '' '```' '## [9.9.9]' '[x]: y' '```' '- Danach' '' '## [1.2.3]' > "$RUNNER_TEMP/fence.md"
+          test "$(sh scripts/release-notes.sh v1.2.4 "$RUNNER_TEMP/fence.md" | tail -n 1)" = '- Danach'
       # dist/, completions/ and man/ are in .gitignore
       - name: snapshot leaves the tree clean
         run: |
