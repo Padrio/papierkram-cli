@@ -1,0 +1,108 @@
+# Invoice from start to finish: create, describe, finalize with deliver
+# --via pdf (spec 9.1). The live API answers deliver with an empty 2xx
+# body (R01); the CLI then reads the invoice back and prints the delivery
+# fields.
+
+# create: the body built from the flags, the API object as the answer
+mock POST /income/invoices 201 created.json
+papierkram invoice create --name 'Beratung November' --customer 3052 --payment-term 1130 --item 'name=Beratung,qty=2,unit=Stunde,price=100,vat=19' -o json
+pkexit 0
+! stderr .
+cmp stdout created.json
+mockreq 1 POST /income/invoices
+mockbody 1 create-body.json
+
+# describe as a table: the standard columns of spec 10.3
+mock GET /income/invoices/501 200 created.json
+papierkram invoice describe 501
+cmp stdout describe.txt
+
+# deliver --via pdf: empty answer, then the readback (2 credits in total)
+mock POST /income/invoices/501/deliver 200
+mock GET /income/invoices/501 200 sent.json
+papierkram invoice deliver 501 --via pdf --yes -o json
+pkexit 0
+! stderr .
+cmp stdout delivered.json
+jsonschema stdout deliver
+mockreq 1 POST /income/invoices/501/deliver
+mockbody 3 deliver-body.json
+mockreq 2 GET /income/invoices/501
+mockreq 4
+
+# the same as a table
+papierkram invoice deliver 501 --via pdf --yes
+cmp stdout delivered.txt
+
+-- created.json --
+{
+  "id": 501,
+  "type": "invoice",
+  "invoice_no": null,
+  "name": "Beratung November",
+  "state": "draft",
+  "document_date": "2026-11-04",
+  "due_date": "2026-11-18",
+  "total_gross": 238.0,
+  "billing": {
+    "company": "Muster GmbH"
+  },
+  "sent_on": null,
+  "sent_via": null,
+  "sent_to": null
+}
+-- create-body.json --
+{
+  "name": "Beratung November",
+  "customer": {"id": 3052},
+  "payment_term": {"id": 1130},
+  "line_items": [
+    {"name": "Beratung", "quantity": 2, "unit": "Stunde", "price": 100, "vat_rate": 0.19}
+  ]
+}
+-- describe.txt --
+FELD    WERT
+ID      501
+NR.
+NAME    Beratung November
+STATUS  draft
+DATUM   2026-11-04
+FÄLLIG  2026-11-18
+BRUTTO  238.0
+KUNDE   Muster GmbH
+-- sent.json --
+{
+  "id": 501,
+  "type": "invoice",
+  "invoice_no": "RE-1042",
+  "name": "Beratung November",
+  "state": "unpaid",
+  "document_date": "2026-11-04",
+  "due_date": "2026-11-18",
+  "total_gross": 238.0,
+  "billing": {
+    "company": "Muster GmbH"
+  },
+  "sent_on": "2026-11-04",
+  "sent_via": "pdf",
+  "sent_to": null
+}
+-- deliver-body.json --
+{"send_via": "pdf"}
+-- delivered.json --
+{
+  "id": 501,
+  "invoice_no": "RE-1042",
+  "state": "unpaid",
+  "sent_on": "2026-11-04",
+  "sent_via": "pdf",
+  "sent_to": null
+}
+-- delivered.txt --
+FELD        WERT
+ID          501
+NR.         RE-1042
+STATUS      unpaid
+VERSENDET   2026-11-04
+VERSANDART  pdf
+EMPFÄNGER

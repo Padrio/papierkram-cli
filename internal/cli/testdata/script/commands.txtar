@@ -1,0 +1,30 @@
+# commands --json is the machine-readable contract for agents: it matches
+# docs/schemas/commands.json, works under the read-only lock and calls no
+# API.
+
+papierkram commands --json
+pkexit 0
+! stderr .
+cp stdout commands.json
+jsonschema commands.json commands
+stdout '"command": "invoice deliver"'
+
+# the same without the cp detour, and under PAPIERKRAM_READ_ONLY
+env PAPIERKRAM_READ_ONLY=1
+papierkram commands --json
+jsonschema stdout commands
+env PAPIERKRAM_READ_ONLY=
+
+# --jq picks single values; deliver is class send and costs the readback too
+papierkram commands --json --jq '.commands[] | select(.command == "invoice deliver") | {class, credits, blocked_by_read_only}'
+cmp stdout deliver.json
+
+# table: German headers
+papierkram commands
+stdout '^COMMAND +KLASSE +CREDITS +KURZ$'
+stdout '^invoice create +create +50 +Rechnung anlegen$'
+
+mockreq 0
+
+-- deliver.json --
+{"blocked_by_read_only":true,"class":"send","credits":2}

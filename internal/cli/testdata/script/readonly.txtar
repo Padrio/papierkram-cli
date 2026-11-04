@@ -1,0 +1,83 @@
+# Write protection (spec 8.3). PAPIERKRAM_READ_ONLY=1 lets only reads
+# through: every mutation, also --dry-run, papierkram api with a non-GET
+# and config writes end with exit 9 before a request is sent.
+
+env PAPIERKRAM_READ_ONLY=1
+
+# reads work
+papierkram invoice list -o json --jq '.entries | length'
+pkexit 0
+stdout '^2$'
+mockreq 1 GET /income/invoices
+
+! papierkram company create --name 'Muster GmbH' --contact-type customer
+pkexit 9
+stderr '^Fehler: Schreibschutz aktiv \(PAPIERKRAM_READ_ONLY\) – Schreibzugriffe sind gesperrt$'
+stderr '^Hinweis: Die Variable setzt, wer diesen Prozess startet; sie lässt sich nicht aufheben\.$'
+! stdout .
+
+# --dry-run is blocked too; -o json adds the structured error
+! papierkram company create --name 'Muster GmbH' --contact-type customer --dry-run -o json
+pkexit 9
+! stdout .
+jsonschema -last stderr error
+stderr '"code":"read_only"'
+stderr '"exit_code":9'
+
+! papierkram api POST /contact/companies -f name=X
+pkexit 9
+
+# deliver, even with --yes
+! papierkram invoice deliver 459 --via pdf --yes
+pkexit 9
+
+# config writes
+! papierkram context create test --subdomain firma
+pkexit 9
+stderr 'Konfiguration und Projektdatei können nicht geändert werden'
+! exists .config/papierkram/config.toml
+
+# auth status shows the active stage
+papierkram auth status
+stdout '^Schreibschutz: +an \(env: PAPIERKRAM_READ_ONLY\)$'
+
+# nothing but the two reads (list, auth status) reached the API
+mockreq 2
+mockreq 0 POST
+
+# The context option read_only = true blocks the chosen context; another
+# one can be chosen with --context.
+env PAPIERKRAM_READ_ONLY=
+
+# without the lock config writes go to PAPIERKRAM_CONFIG_DIR (below $WORK,
+# never the real home)
+papierkram context create neu --subdomain neu
+exists .config/papierkram/config.toml
+cp config.toml .config/papierkram/config.toml
+
+! papierkram company delete 12 --yes
+pkexit 9
+stderr '^Fehler: Kontext "privat" ist schreibgeschützt \(read_only = true\)$'
+stderr '^Hinweis: anderen Kontext mit --context wählen$'
+mockreq 0 DELETE
+
+papierkram company delete 12 --yes --context firma -o json
+pkexit 0
+jsonschema stdout delete
+cmp stdout deleted.json
+mockreq 1 DELETE /contact/companies/12
+
+-- config.toml --
+active_context = "privat"
+
+[contexts.privat]
+subdomain = "privat"
+read_only = true
+
+[contexts.firma]
+subdomain = "firma"
+-- deleted.json --
+{
+  "id": 12,
+  "deleted": true
+}

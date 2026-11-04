@@ -1,0 +1,117 @@
+# Errors (spec 10.4): German text on stderr (Fehler/Hinweis/Correlation-ID),
+# with -o json or --jq also the structured error as the last stderr line
+# (docs/schemas/error.json); stdout stays empty. Exit 10 and 12 need a
+# broken connection; TestErrorContract covers them.
+
+# 1: server error 5xx, with the correlation ID of the API; GET is retried
+mock GET /income/invoices/1 500 server-error.json
+! papierkram invoice describe 1 -o json
+pkexit 1
+! stdout .
+stderr '^Fehler: kaputt$'
+stderr '^Hinweis: Papierkram-Serverfehler, später erneut versuchen$'
+stderr '^Correlation-ID: corr-500$'
+jsonschema -last stderr error
+stderr '^\{"error":\{"code":"server_error","message":"kaputt","hint":"Papierkram-Serverfehler, später erneut versuchen","http_status":500,"correlation_id":"corr-500","exit_code":1\}\}$'
+mockreq 3 GET /income/invoices/1
+
+# 2: usage, with the German usage line as the hint; nothing sent
+! papierkram invoice describe -o json
+pkexit 2
+jsonschema -last stderr error
+stderr '"code":"usage"'
+stderr '"hint":"Verwendung: papierkram invoice describe <id> \[Optionen\]"'
+
+# --jq implies the JSON error too
+! papierkram invoice describe x --jq .id
+pkexit 2
+jsonschema -last stderr error
+
+# 3: no token
+env PAPIERKRAM_TOKEN=
+! papierkram invoice describe 2 -o json
+pkexit 3
+jsonschema -last stderr error
+stderr '"code":"auth"'
+stderr '^Fehler: Kein Token gesetzt$'
+env PAPIERKRAM_TOKEN=test-token-script
+
+# 3: token rejected (401)
+mock GET /income/invoices/2 401
+! papierkram invoice describe 2 -o json
+pkexit 3
+jsonschema -last stderr error
+stderr '"http_status":401'
+
+# 4: not found
+mock GET /income/invoices/4 404 not-found.json
+! papierkram invoice describe 4 -o json
+pkexit 4
+jsonschema -last stderr error
+stderr '"code":"not_found","message":"Rechnung nicht gefunden"'
+
+# 5: rejected by the API (422) and local validation (no request)
+mock POST /contact/companies 422 invalid.json
+! papierkram company create --name 'Muster GmbH' --contact-type customer -o json
+pkexit 5
+jsonschema -last stderr error
+stderr '"http_status":422'
+! papierkram company create --name 'Muster GmbH' -o json
+pkexit 5
+jsonschema -last stderr error
+stderr '^Fehler: Pflichtfeld "contact_type" fehlt$'
+mockreq 1 POST /contact/companies
+
+# 6: monthly quota used up
+mock GET /income/invoices/6 429
+! papierkram invoice describe 6 -o json
+pkexit 6
+jsonschema -last stderr error
+stderr '^Hinweis: Monatskontingent erschöpft, Paket prüfen$'
+
+# 7: conflict
+mock POST /contact/companies/7/archive 409
+! papierkram company archive 7 -o json
+pkexit 7
+jsonschema -last stderr error
+stderr '"code":"conflict"'
+
+# 8: confirmation required, 9: read-only
+! papierkram company delete 8 -o json
+pkexit 8
+jsonschema -last stderr error
+env PAPIERKRAM_READ_ONLY=1
+! papierkram company delete 9 --yes -o json
+pkexit 9
+jsonschema -last stderr error
+env PAPIERKRAM_READ_ONLY=
+mockreq 0 DELETE
+
+# 11: partial (voucher create --file, upload rejected)
+mock POST /expense/vouchers/{voucher_id}/documents 422 invalid.json
+! papierkram voucher create --name Papier --provenance domestic --item 'name=Papier,amount=11.90,vat=19,category=Bürobedarf' --file beleg.pdf -o json
+pkexit 11
+jsonschema -last stderr error
+jsonschema stdout partial
+
+# -o yaml: the structured error as YAML after the text
+! papierkram invoice describe 4 -o yaml
+pkexit 4
+stderr '^error:$'
+stderr '^  code: not_found$'
+stderr '^  exit_code: 4$'
+
+# table output: text only, no JSON
+! papierkram invoice describe 4
+pkexit 4
+! stderr '\{"error"'
+
+-- server-error.json --
+{"type":"error","message":"kaputt","correlation_id":"corr-500"}
+-- not-found.json --
+{"type":"error","error_type":"not_found","message":"Rechnung nicht gefunden"}
+-- invalid.json --
+{"type":"error","error_type":"validation","message":"Eingabe ungültig"}
+-- beleg.pdf --
+%PDF-1.4
+%%EOF

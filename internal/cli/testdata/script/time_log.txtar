@@ -1,0 +1,80 @@
+# time log (spec 9.6): one time entry from --from/--to or --duration (ending
+# now, PK_TEST_NOW = 2026-11-04 10:00 Berlin). Task and user come from flag,
+# env or the project file. Without a terminal it sends without asking; with
+# one it shows a summary with resolved names first (Enter = yes).
+
+papierkram time log --task 545 --user 1 --from 09:00 --to 10:00 -m Daily
+pkexit 0
+! stderr .
+stdout '^ID +271$'
+mockreq 1 POST /tracker/time_entries
+mockbody 1 body-from-to.json
+
+# --duration without --from ends now
+papierkram time log --task 545 --user 1 --duration 1h30m -o json --jq .id
+stdout '^271$'
+mockbody 2 body-duration.json
+
+# missing task and user: exit 2 with the hint to local init, nothing sent
+! papierkram time log --from 09:00 --to 10:00
+pkexit 2
+stderr '^Fehler: Aufgabe und Benutzer fehlen'
+stderr '^Hinweis: --task und --user angeben oder für dieses Verzeichnis voreinstellen: papierkram local init --task <id> --user <id>$'
+
+# over midnight: exit 2 (the body knows only one date)
+! papierkram time log --task 545 --user 1 --from 23:00 --to 01:00 -o json
+pkexit 2
+stderr 'Einträge über Mitternacht sind nicht möglich'
+jsonschema -last stderr error
+mockreq 2
+
+# terminal: summary with names (company, project, task, user), Enter sends
+env PK_TEST_TTY=1
+stdin enter.txt
+papierkram time log --task 545 --user 1 --from 09:00 --to 10:00
+pkexit 0
+stderr '^Neuer Zeiteintrag:$'
+stderr '^  Datum: +2026-11-04$'
+stderr '^  Zeit: +09:00–10:00 \(1:00 h\)$'
+stderr '^  Firma: +ACME Corp\. \(3352\)$'
+stderr '^  Projekt: +Important project \(4835\)$'
+stderr '^  Aufgabe: +Some important task \(545\)$'
+stderr '^  Benutzer: +Will E Coyote \(1\)$'
+stderr '^Zeiteintrag anlegen\? \[J/n\]: $'
+mockreq 3 POST /tracker/time_entries
+mockreq 3 GET
+
+# terminal: n aborts with exit 8; the names come from the cache now
+stdin nein.txt
+! papierkram time log --task 545 --user 1 --from 09:00 --to 10:00
+pkexit 8
+mockreq 3 POST /tracker/time_entries
+mockreq 3 GET
+env PK_TEST_TTY=
+
+# project file: task alias and user from .papierkram.toml
+cp papierkram.toml .papierkram.toml
+papierkram time log --task tickets --duration 30m
+pkexit 0
+stderr '^Hinweis: Benutzer 1 aus Projektdatei .*\.papierkram\.toml$'
+mockreq 4 POST /tracker/time_entries
+# request 7: 4 POSTs and the 3 name reads
+mockreq 7
+mockbody 7 body-alias.json
+
+-- body-from-to.json --
+{"entry_date":"2026-11-04","started_at_time":"09:00","ended_at_time":"10:00","task":{"id":545},"user":{"id":1},"comments":"Daily"}
+-- body-duration.json --
+{"entry_date":"2026-11-04","started_at_time":"08:30","ended_at_time":"10:00","task":{"id":545},"user":{"id":1}}
+-- body-alias.json --
+{"entry_date":"2026-11-04","started_at_time":"09:30","ended_at_time":"10:00","task":{"id":546},"user":{"id":1}}
+-- enter.txt --
+
+-- nein.txt --
+n
+-- papierkram.toml --
+task = 545
+user = 1
+
+[tasks]
+tickets = 546

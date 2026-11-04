@@ -1,0 +1,44 @@
+# The help is German throughout (cobra templates, flags, examples), goes to
+# stdout, needs no API and no token in the output.
+
+papierkram --help
+pkexit 0
+stdout '^Verwendung:$'
+stdout '^  papierkram \[Befehl\]$'
+stdout '^Verfügbare Befehle:$'
+stdout '^Optionen:$'
+stdout 'Mit "papierkram \[Befehl\] --help" gibt es weitere Informationen zu einem Befehl\.'
+! stdout 'Usage:|Available Commands|Flags:|Use "'
+! stderr .
+
+papierkram invoice create --help
+stdout '^Rechnung anlegen\.$'
+stdout '^Kosten: 50 Credits je Anfrage\.$'
+stdout '^Beispiele:$'
+stdout '^Globale Optionen:$'
+stdout '--payment-term ID +ID für payment_term \(Pflicht\)'
+! stdout 'Usage:|Examples:|Global Flags:|\(required\)'
+! stderr .
+
+# help as a command and aliases (rechnung) work the same way
+papierkram help rechnung
+stdout '^Rechnungen verwalten$'
+stdout '^Aliase:$'
+stdout '^  invoice, rechnung$'
+! stdout 'Usage:|Aliases:'
+
+# an unknown command is a German usage error (exit 2)
+! papierkram nichtda
+pkexit 2
+stderr '^Fehler: unbekannter Befehl "nichtda" für "papierkram"$'
+! stderr 'unknown command'
+! stdout .
+
+# an unknown flag too
+! papierkram invoice list --nichtda
+pkexit 2
+stderr '^Fehler: unbekanntes Flag: --nichtda$'
+! stderr 'unknown flag'
+
+# help never calls the API
+mockreq 0

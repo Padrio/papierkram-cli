@@ -1,0 +1,120 @@
+# --dry-run (spec 8.4): validates locally, shows method, URL, body (for an
+# upload the file) and credits, sends no change, exit 0, needs no
+# confirmation. -o json follows docs/schemas/dry-run.json.
+
+# generic create, as text and as JSON
+papierkram company create --name 'Muster GmbH' --contact-type customer --dry-run
+pkexit 0
+cmpenv stdout company.txt
+! stderr .
+papierkram company create --name 'Muster GmbH' --contact-type customer --dry-run -o json
+jsonschema stdout dry-run
+cmpenv stdout company.json
+
+# destructive class without --yes and without a terminal: no confirmation
+# needed, body null
+papierkram company delete 12 --dry-run -o json
+pkexit 0
+jsonschema stdout dry-run
+stdout '"method": "DELETE"'
+stdout '"body": null'
+
+# deliver: the credits include the readback
+papierkram invoice deliver 459 --via email --to kunde@example.org --subject Rechnung --body Hallo --dry-run -o json
+jsonschema stdout dry-run
+stdout '"credits": 2'
+stdout '"send_via": "email"'
+
+# upload: name, size and MIME type of the file
+papierkram voucher upload 295 beleg.pdf --dry-run -o json
+jsonschema stdout dry-run
+cmpenv stdout upload.json
+
+# create --file: the upload as the second request, both in the credits
+papierkram voucher create --name Papier --provenance domestic --item 'name=Papier,amount=11.90,vat=19,category=Bürobedarf' --file beleg.pdf --dry-run
+cmpenv stdout voucher.txt
+papierkram voucher create --name Papier --provenance domestic --item 'name=Papier,amount=11.90,vat=19,category=Bürobedarf' --file beleg.pdf --dry-run -o json
+jsonschema stdout dry-run
+stdout '"credits": 60'
+stdout '"url": ".*/expense/vouchers/\{voucher_id\}/documents"'
+
+# papierkram api with a non-GET
+papierkram api POST /contact/companies -f name=X -f contact_type=customer --dry-run -o json
+jsonschema stdout dry-run
+stdout '"name": "X"'
+
+# up to here: not a single request
+mockreq 0
+
+# --from-estimate reads the estimate (the only request) and names that read
+papierkram invoice create --from-estimate 349 --payment-term 1130 --dry-run -o json
+jsonschema stdout dry-run
+stdout '"credits": 50'
+papierkram invoice create --from-estimate 349 --payment-term 1130 --dry-run -o json --jq .read
+cmpenv stdout read.json
+mockreq 2
+mockreq 2 GET /income/estimates/349
+
+-- beleg.pdf --
+%PDF-1.4
+%%EOF
+-- company.txt --
+Probelauf – nichts gesendet
+Methode: POST
+URL:     $PAPIERKRAM_BASE_URL/contact/companies
+Credits: 10
+Body:
+{
+  "contact_type": "customer",
+  "name": "Muster GmbH"
+}
+-- company.json --
+{
+  "dry_run": true,
+  "method": "POST",
+  "url": "$PAPIERKRAM_BASE_URL/contact/companies",
+  "body": {
+    "contact_type": "customer",
+    "name": "Muster GmbH"
+  },
+  "credits": 10
+}
+-- upload.json --
+{
+  "dry_run": true,
+  "method": "POST",
+  "url": "$PAPIERKRAM_BASE_URL/expense/vouchers/295/documents",
+  "body": null,
+  "upload": {
+    "name": "beleg.pdf",
+    "size": 15,
+    "mime_type": "application/pdf"
+  },
+  "credits": 10
+}
+-- voucher.txt --
+Probelauf – nichts gesendet
+Methode: POST
+URL:     $PAPIERKRAM_BASE_URL/expense/vouchers
+Credits: 60 (beide Anfragen)
+Body:
+{
+  "line_items": [
+    {
+      "amount": 11.90,
+      "category": "Bürobedarf",
+      "name": "Papier",
+      "vat_rate": 0.19
+    }
+  ],
+  "name": "Papier",
+  "provenance": "domestic"
+}
+
+Danach (zweite Anfrage, an den neuen Beleg):
+Methode: POST
+URL:     $PAPIERKRAM_BASE_URL/expense/vouchers/{voucher_id}/documents
+Credits: 10
+Datei:   beleg.pdf (15 Bytes, application/pdf)
+-- read.json --
+{"credits":1,"method":"GET","url":"$PAPIERKRAM_BASE_URL/income/estimates/349"}

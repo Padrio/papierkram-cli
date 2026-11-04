@@ -1,0 +1,43 @@
+# voucher create --file (spec 9.3): create the voucher (50 credits), then
+# upload the file (10 credits). A failed upload leaves the voucher: exit 11
+# (partial), the output names the voucher ID, the steps done and failed and
+# the command that only uploads the file. Nothing is deleted or retried.
+
+mock POST /expense/vouchers/{voucher_id}/documents 422 upload-error.json
+! papierkram voucher create --name Papier --provenance domestic --item 'name=Papier,amount=11.90,vat=19,category=Bürobedarf' --file beleg.pdf -o json
+pkexit 11
+jsonschema stdout partial
+stdout '"id": 290'
+stdout '"retry_command": "papierkram voucher upload 290 .*beleg\.pdf''?"'
+stderr '^Warnung: Beleg 290 angelegt, Datei nicht hochgeladen: Dateityp nicht erlaubt – nur das Hochladen nachholen: papierkram voucher upload 290 .*beleg\.pdf''?; NICHT den ganzen Befehl wiederholen \(sonst ein zweiter Beleg\)$'
+stderr '^Fehler: Beleg 290 angelegt, Hochladen fehlgeschlagen: Dateityp nicht erlaubt$'
+stderr '^Correlation-ID: corr-7$'
+jsonschema -last stderr error
+stderr '"code":"partial"'
+stderr '"exit_code":11'
+
+# exactly one create and one upload, no delete
+mockreq 1 POST /expense/vouchers
+mockreq 1 POST /expense/vouchers/290/documents
+mockreq 0 DELETE
+mockreq 2
+
+# as a table: German lines on stdout
+! papierkram voucher create --name Papier --provenance domestic --item 'name=Papier,amount=11.90,vat=19,category=Bürobedarf' --file beleg.pdf
+pkexit 11
+stdout '^voucher 290 angelegt, Datei nicht hochgeladen \(erledigt: create; fehlgeschlagen: upload\)\.$'
+stdout '^Nachholen: papierkram voucher upload 290 .*beleg\.pdf''?$'
+
+# the retry: only the upload, 1 request
+mock POST /expense/vouchers/290/documents 201
+papierkram voucher upload 290 beleg.pdf
+pkexit 0
+stdout '^voucher 290: Datei hochgeladen\.$'
+mockreq 3 POST /expense/vouchers/290/documents
+mockreq 5
+
+-- beleg.pdf --
+%PDF-1.4
+%%EOF
+-- upload-error.json --
+{"type":"error","error_type":"validation","message":"Dateityp nicht erlaubt","correlation_id":"corr-7"}

@@ -1,0 +1,75 @@
+# Confirmation with a terminal (spec 8.2, PK_TEST_TTY=1 simulates stdin
+# and stdout as terminals): summary and question on stderr, delete wants
+# the ID, send and pay want ja/yes. A wrong answer is exit 8 and sends
+# nothing; the summary read (1 credit) is the only request then.
+
+env PK_TEST_TTY=1
+
+# delete: confirmed by the ID
+stdin id.txt
+papierkram company delete 12
+pkexit 0
+stderr '^Firma 12 „ACME Corp.“ löschen\? Zur Bestätigung ID eingeben: $'
+stdout '^company 12 gelöscht\.$'
+mockreq 1 GET /contact/companies/12
+mockreq 1 DELETE /contact/companies/12
+
+# delete: anything but the ID aborts
+stdin nein.txt
+! papierkram company delete 12
+pkexit 8
+stderr 'Fehler: Abgebrochen durch Nutzer: eingegebene ID stimmt nicht überein$'
+stderr '^Hinweis: Nichts gesendet\. Zum Löschen genau die ID 12 eingeben oder --yes verwenden$'
+! stdout .
+mockreq 2 GET /contact/companies/12
+mockreq 1 DELETE /contact/companies/12
+
+# send: recipient and subject in the summary; ja confirms
+stdin ja.txt
+papierkram invoice deliver 459 --via email --to kunde@example.org --subject Rechnung --body Hallo -o json
+pkexit 0
+stderr '^Versand: +E-Mail$'
+stderr '^Empfänger: +kunde@example.org$'
+stderr '^Betreff: +Rechnung$'
+stderr 'Rechnung 459 „My invoice“ \(226,00 €\) wirklich versenden\? \[ja/nein\]: $'
+jsonschema stdout deliver
+mockreq 1 POST /income/invoices/459/deliver
+
+# send: an empty answer (Enter) is no
+stdin leer.txt
+! papierkram invoice deliver 459 --via pdf
+pkexit 8
+! stdout .
+mockreq 1 POST /income/invoices/459/deliver
+
+# pay is destructive (cannot be undone through the API)
+stdin yes.txt
+papierkram voucher pay 290 --amount 11.90
+pkexit 0
+stderr '^Zahlung: +11,90 €$'
+stderr 'Beleg 290 „Restaurant visit“ \(165,80 €\) wirklich als bezahlt buchen\? \[ja/nein\]: $'
+mockreq 1 POST /expense/vouchers/290/pay
+
+# --no-input: no question even with a terminal, exit 8 before any request
+! papierkram company delete 12 --no-input -o json
+pkexit 8
+stderr '^Fehler: Bestätigung erforderlich: Firma 12 löschen$'
+jsonschema -last stderr error
+! stderr 'löschen\? Zur Bestätigung'
+
+# --yes skips the question and the summary read
+papierkram company delete 12 --yes
+! stderr .
+mockreq 2 GET /contact/companies/12
+mockreq 2 DELETE /contact/companies/12
+
+-- id.txt --
+12
+-- nein.txt --
+nein
+-- ja.txt --
+ja
+-- yes.txt --
+yes
+-- leer.txt --
+

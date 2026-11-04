@@ -1,0 +1,53 @@
+# Without a terminal there are no questions (spec 8.2): classes that need a
+# confirmation (destructive, send) end with exit 8 and a hint to --yes
+# before any request; an answer on stdin does not count. The other classes
+# need none.
+
+# destructive: delete, cancel, pay
+stdin ja.txt
+! papierkram company delete 12
+pkexit 8
+stderr '^Fehler: Bestätigung erforderlich: Firma 12 löschen$'
+stderr '^Hinweis: --yes verwenden \(ohne Terminal und mit --no-input wird nicht nachgefragt\)$'
+! stderr 'Zur Bestätigung'
+! stdout .
+
+! papierkram invoice cancel 459 -o json
+pkexit 8
+jsonschema -last stderr error
+stderr '"code":"confirmation_required"'
+
+! papierkram voucher pay 290 --amount 11.90
+pkexit 8
+
+# send
+! papierkram invoice deliver 459 --via pdf
+pkexit 8
+stderr 'Bestätigung erforderlich'
+
+# not a single request so far
+mockreq 0
+
+# archive is reversible, create needs no confirmation
+papierkram invoice archive 459 -o json
+pkexit 0
+mockreq 1 POST /income/invoices/459/archive
+papierkram company create --name 'Muster GmbH' --contact-type customer -o json --jq .id
+pkexit 0
+mockreq 1 POST /contact/companies
+
+# --yes confirms without a question (and without the summary read)
+papierkram company delete 12 --yes -o json
+pkexit 0
+! stderr .
+jsonschema stdout delete
+mockreq 0 GET
+mockreq 1 DELETE /contact/companies/12
+
+papierkram invoice deliver 459 --via pdf --yes -o json
+pkexit 0
+jsonschema stdout deliver
+mockreq 1 POST /income/invoices/459/deliver
+
+-- ja.txt --
+ja
