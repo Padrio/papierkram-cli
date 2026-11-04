@@ -30,6 +30,11 @@ papierkram voucher upload 295 beleg.pdf --dry-run -o json
 jsonschema stdout dry-run
 cmpenv stdout upload.json
 
+# text types carry a parameter, as sent; no local type restriction
+papierkram voucher upload 295 quittung.html --dry-run -o json
+jsonschema stdout dry-run
+stdout '"mime_type": "text/html; charset=utf-8"'
+
 # create --file: the upload as the second request, both in the credits
 papierkram voucher create --name Papier --provenance domestic --item 'name=Papier,amount=11.90,vat=19,category=Bürobedarf' --file beleg.pdf --dry-run
 cmpenv stdout voucher.txt
@@ -58,6 +63,8 @@ mockreq 2 GET /income/estimates/349
 -- beleg.pdf --
 %PDF-1.4
 %%EOF
+-- quittung.html --
+<html><body>Quittung</body></html>
 -- company.txt --
 Probelauf – nichts gesendet
 Methode: POST

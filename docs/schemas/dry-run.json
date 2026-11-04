@@ -67,9 +67,9 @@
           "minimum": 0
         },
         "mime_type": {
-          "description": "MIME-Typ aus der Dateiendung.",
+          "description": "MIME-Typ aus der Dateiendung, wie er gesendet wird, ggf. mit Parametern (z. B. „text/html; charset=utf-8“); unbekannte Endungen ergeben „application/octet-stream“. Keine lokale Einschränkung der Typen.",
           "type": "string",
-          "pattern": "^[a-z]+/[^ ]+$"
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*( *; *[A-Za-z0-9!#$&^_.+-]+=([^ ;\"]+|\"[^\"]*\"))*$"
         }
       }
     },

@@ -230,6 +230,17 @@ var dryRunRuns = []contractRun{
 	{name: "upload", setup: func(t *testing.T, _ *mockapi.Server) []string {
 		return []string{writeFile(t, "beleg.pdf", pdfContent)}
 	}, args: []string{"voucher", "upload", "295", "--dry-run", "-o", "json"}},
+	// mime.TypeByExtension gives text types with a parameter
+	// ("text/html; charset=utf-8"); no local type restriction (spec 9.3)
+	{name: "upload html", setup: func(t *testing.T, _ *mockapi.Server) []string {
+		return []string{writeFile(t, "quittung.html", "<html></html>")}
+	}, args: []string{"voucher", "upload", "295", "--dry-run", "-o", "json"}},
+	{name: "upload txt", setup: func(t *testing.T, _ *mockapi.Server) []string {
+		return []string{writeFile(t, "beleg.txt", "Beleg")}
+	}, args: []string{"voucher", "upload", "295", "--dry-run", "-o", "json"}},
+	{name: "create --file html", setup: func(t *testing.T, _ *mockapi.Server) []string {
+		return []string{"--file", writeFile(t, "quittung.html", "<html></html>")}
+	}, args: append(slices.Clone(voucherCreateArgs), "--dry-run", "-o", "json")},
 	{name: "create --file", setup: func(t *testing.T, _ *mockapi.Server) []string {
 		return []string{"--file", writeFile(t, "beleg.pdf", pdfContent)}
 	}, args: append(slices.Clone(voucherCreateArgs), "--dry-run", "-o", "json")},
@@ -252,6 +263,10 @@ func TestDryRunContract(t *testing.T) {
 			case "upload", "create --file":
 				if doc["upload"] == nil {
 					t.Errorf("upload fehlt: %s", out)
+				}
+			case "upload html", "upload txt", "create --file html":
+				if !strings.Contains(out, `; charset=utf-8"`) {
+					t.Errorf("MIME-Typ ohne Parameter: %s", out)
 				}
 			case "from-estimate":
 				if doc["read"] == nil {
@@ -331,6 +346,7 @@ func TestDeliverContract(t *testing.T) {
 
 // contractMutation changes a valid document so that its contract must
 // reject it; want is part of the error kin-openapi reports for the rule.
+// An empty want marks a variant the contract must still accept.
 type contractMutation struct {
 	fn   func(d map[string]any)
 	want string
@@ -375,6 +391,14 @@ func TestContractSchemasStrict(t *testing.T) {
 				"upload halb zweite Anfrage": {func(d map[string]any) { delete(objOf(d, "upload"), "credits") }, `Error at "/credits": property "credits" is missing`},
 				"upload unbekanntes Feld":    {func(d map[string]any) { objOf(d, "upload")["path"] = "/tmp/x" }, `property "path" is unsupported`},
 				"read ohne credits":          {func(d map[string]any) { d["read"] = map[string]any{"method": "GET", "url": "https://x/api/v1/a"} }, `property "credits" is missing`},
+				"MIME-Typ mit Leerzeichen":   {withMIME("text plain"), "regular expression"},
+				"MIME-Typ ohne Subtyp":       {withMIME("text"), "regular expression"},
+				"MIME-Parameter ohne Wert":   {withMIME("text/html; charset"), "regular expression"},
+				"MIME-Typ mit Semikolon":     {withMIME("text/html;"), "regular expression"},
+				"MIME-Typ mit Parameter":     {withMIME("text/plain; charset=utf-8"), ""},
+				"MIME-Typ mit Pluszeichen":   {withMIME("image/svg+xml"), ""},
+				"MIME-Parameter in Quotes":   {withMIME(`text/plain;charset="utf-8"`), ""},
+				"MIME-Typ unbekannte Datei":  {withMIME("application/octet-stream"), ""},
 				"read mit POST": {func(d map[string]any) {
 					d["read"] = map[string]any{"method": "POST", "url": "https://x/api/v1/a", "credits": 1.0}
 				}, "value is not one of the allowed values"},
@@ -435,6 +459,9 @@ func TestContractSchemasStrict(t *testing.T) {
 				m.fn(doc)
 				err := schema.VisitJSON(doc)
 				switch {
+				case m.want == "" && err != nil:
+					t.Errorf("%s: gültige Variante abgelehnt: %v", name, err)
+				case m.want == "":
 				case err == nil:
 					t.Errorf("%s: Vertrag lässt das Dokument durch", name)
 				case !strings.Contains(err.Error(), m.want):
@@ -443,6 +470,11 @@ func TestContractSchemasStrict(t *testing.T) {
 			}
 		})
 	}
+}
+
+// withMIME sets the MIME type of the upload of a decoded dry-run document.
+func withMIME(v string) func(d map[string]any) {
+	return func(d map[string]any) { objOf(d, "upload")["mime_type"] = v }
 }
 
 // errOf is the error object of a decoded error document.
