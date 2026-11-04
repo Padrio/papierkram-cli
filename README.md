@@ -42,12 +42,7 @@ scoop bucket add padrio https://github.com/Padrio/scoop-bucket
 scoop install papierkram
 ```
 
-**deb/rpm** (Linux), ab erstem Release: das Paket für die eigene Architektur von der [Release-Seite](https://github.com/Padrio/papierkram-cli/releases) laden und installieren:
-
-```text
-sudo apt install ./papierkram_<version>_linux_amd64.deb
-sudo dnf install ./papierkram_<version>_linux_amd64.rpm
-```
+**deb/rpm** (Linux), ab erstem Release: das `.deb`- bzw. `.rpm`-Paket für die eigene Architektur von der [Release-Seite](https://github.com/Padrio/papierkram-cli/releases) laden und mit dem Paketmanager installieren (z. B. `sudo apt install ./<paket>.deb` oder `sudo dnf install ./<paket>.rpm`).
 
 **Aus dem Quellcode** (Go 1.26 oder neuer):
 
