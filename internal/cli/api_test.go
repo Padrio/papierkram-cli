@@ -616,3 +616,61 @@ func TestAPIDeliverRuleBypasses(t *testing.T) {
 		}
 	}
 }
+
+// Review I2: a path the server may route to a spec operation although it
+// is not that operation's exact form is refused (exit 2, 0 requests):
+// segments hold only letters, digits, _ and -, and a path that matches a
+// spec operation only without case or with a non-digit ID is ambiguous.
+func TestAPIAmbiguousPaths(t *testing.T) {
+	for _, tc := range []struct{ method, path, want string }{
+		{"POST", "/income/invoices/12-x/deliver", "Pfad nicht eindeutig: gemeint ist /income/invoices/12/deliver"},
+		{"POST", "/income/invoices/12/Deliver", "Pfad nicht eindeutig: gemeint ist /income/invoices/12/deliver"},
+		{"POST", "/income/invoices/12/deliver.json", "nur Buchstaben, Ziffern, _ und -"},
+		{"POST", "/income/invoices/12;x/deliver", "nur Buchstaben, Ziffern, _ und -"},
+		{"POST", "/income/invoices/12%3Bx/deliver", "nur Buchstaben, Ziffern, _ und -"},
+		{"DELETE", "/income/invoices/abc", "Pfad nicht eindeutig: gemeint ist /income/invoices/{id}"},
+		{"GET", "/Income/Invoices", "Pfad nicht eindeutig: gemeint ist /income/invoices"},
+		{"GET", "/income/invoices/1e3", "Pfad nicht eindeutig: gemeint ist /income/invoices/1"},
+		{"GET", "/x/a%23b", "nur Buchstaben"},
+		{"GET", "/x/a%2541", "nur Buchstaben"},
+		{"GET", "/x/a+b", "nur Buchstaben"},
+		{"GET", "/x/a~b", "nur Buchstaben"},
+		{"GET", "/x/%C3%A4", "nur Buchstaben"},
+		{"GET", "/x/ä", "nur Buchstaben"},
+		{"GET", "/x/a%00b", "Steuerzeichen"},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, runAPI(app, tc.method, tc.path, "-F", "send_via=email", "--yes"), 2)
+		wantRequests(t, srv, 0)
+		if _, errs := bufs(app); !strings.Contains(errs, tc.want) {
+			t.Errorf("%s %s: stderr ohne %q: %q", tc.method, tc.path, tc.want, errs)
+		}
+	}
+	// a path outside the spec with allowed characters stays unknown
+	app, srv := apiApp(t)
+	srv.On("GET", "/x_1/A-b", http.StatusOK, []byte(`{}`))
+	wantExit(t, app, runAPI(app, "GET", "/x_1/A-b", "-o", "json"), 0)
+	wantRequests(t, srv, 1)
+}
+
+// Review M4: a trailing slash is sent as given and classified like the
+// path without it; %-encoded letters are sent decoded.
+func TestAPITrailingSlashAndEncodedLetters(t *testing.T) {
+	app, srv := apiApp(t)
+	wantExit(t, app, runAPI(app, "DELETE", "/income/invoices/12/", "--dry-run", "-o", "json"), 0)
+	wantRequests(t, srv, 0)
+	if out := mustOut(app); !strings.Contains(out, `"url": "`+srv.URL()+`/income/invoices/12/"`) {
+		t.Errorf("stdout = %s", out)
+	}
+	app, srv = apiApp(t)
+	wantExit(t, app, runAPI(app, "DELETE", "/income/invoices/12/"), 8) // destructive like delete
+	wantRequests(t, srv, 0)
+	app, srv = apiApp(t)
+	wantExit(t, app, runAPI(app, "POST", "/income/invoices/12/deliver/", "-F", "send_via=email", "--yes"), 5)
+	wantRequests(t, srv, 0)
+	app, srv = apiApp(t)
+	wantExit(t, app, runAPI(app, "GET", "/%69nfo", "-o", "json"), 0)
+	if r := wantRequests(t, srv, 1)[0]; r.Path != "/info" {
+		t.Errorf("path = %s", r.Path)
+	}
+}

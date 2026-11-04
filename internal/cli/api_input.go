@@ -30,7 +30,8 @@ type apiPath struct {
 // parseAPIPath checks the path of papierkram api (exit 2): relative to
 // the API base, starting with "/", without scheme or host, backslash,
 // fragment, control characters, empty, "." or ".." segments (also
-// percent-encoded, see api.CheckPath) or encoded slashes. The path that is
+// percent-encoded, see api.CheckPath) or encoded slashes; each decoded
+// segment holds only letters, digits, _ and - (segmentRe). The path that is
 // sent is rebuilt from its decoded segments, so it is exactly the one the
 // class was looked up for; a leading /api/v1 is the base and dropped.
 func parseAPIPath(c *cobra.Command, raw string) (apiPath, error) {
@@ -72,6 +73,8 @@ func parseAPIPath(c *cobra.Command, raw string) (apiPath, error) {
 				return bad(`Segment "` + d + `" nicht erlaubt`)
 			case strings.Contains(d, "/"):
 				return bad("kodierter Schrägstrich (%2F) nicht erlaubt")
+			case !segmentRe.MatchString(d):
+				return bad(fmt.Sprintf("Segment %q: nur Buchstaben, Ziffern, _ und - erlaubt", d))
 			}
 			segs = append(segs, d)
 		}
@@ -89,6 +92,12 @@ func parseAPIPath(c *cobra.Command, raw string) (apiPath, error) {
 	}
 	return ap, nil
 }
+
+// segmentRe is what a path segment may hold after decoding: the paths of
+// the API are made of such words and IDs; anything else (a format suffix
+// .json, ;params, a leftover %) could be routed by the server to an
+// operation the class lookup did not see.
+var segmentRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // apiField is one -f or -F value: the key split at dots, the raw value
 // and whether it is typed (-F).

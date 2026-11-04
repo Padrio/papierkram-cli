@@ -32,7 +32,7 @@ const apiShort = "Beliebige Anfrage an die Papierkram-API senden (wie gh api)"
 
 const apiLong = apiShort + `.
 
-<pfad> ist relativ zur API-Basis /api/v1, beginnt mit / und darf eine Query enthalten (/income/invoices?page=2). Vollständige URLs, //, \, die Segmente . und .. (auch %-kodiert), kodierte Schrägstriche, # und Steuerzeichen sind nicht erlaubt. METHOD ist GET, POST, PUT, PATCH oder DELETE (Groß- und Kleinschreibung egal).
+<pfad> ist relativ zur API-Basis /api/v1, beginnt mit / und darf eine Query enthalten (/income/invoices?page=2). Vollständige URLs, //, \, die Segmente . und .. (auch %-kodiert), kodierte Schrägstriche, # und Steuerzeichen sind nicht erlaubt; Segmente bestehen nur aus Buchstaben, Ziffern, _ und -. Ein Pfad, der nur ohne Groß- und Kleinschreibung oder mit einer ID, die nicht nur aus Ziffern besteht, zu einer Operation der Spec passt (12-x, Deliver), ist nicht eindeutig und wird abgelehnt. METHOD ist GET, POST, PUT, PATCH oder DELETE (Groß- und Kleinschreibung egal).
 
 Felder: -f key=value setzt immer Text. -F key=value erkennt true, false, null und JSON-Zahlen (exakt, 19.99 bleibt 19.99); @datei setzt den Inhalt der Datei als Text, @- die Standardeingabe; alles andere ist Text. Punkte im Schlüssel bilden verschachtelte Objekte (-F email.recipient=…); jeder Schlüssel nur einmal. Bei GET und bei DELETE ohne --input werden die Felder Query-Parameter, sonst bilden sie den JSON-Body. --input datei.json (oder - für die Standardeingabe) liefert den Body; -f/-F überschreiben darin einzelne, auch verschachtelte Felder.
 
@@ -162,6 +162,9 @@ type apiCall struct {
 	paginate bool
 	maxPages int
 	validate bool
+	// ambiguous is the canonical form of a path that matches a spec
+	// operation only loosely (spec.MatchPathLoose), "" otherwise
+	ambiguous string
 }
 
 // checkAPIFlags runs every check that needs only arguments and flags,
@@ -184,6 +187,12 @@ func (a *App) checkAPIFlags(c *cobra.Command, args []string) (*apiCall, error) {
 	call := &apiCall{method: method, path: p, target: apiTargetOf(method, p), fields: fields, input: flagString(c, "input"),
 		paginate: flagBool(c, "paginate"), validate: flagBool(c, "validate")}
 	call.maxPages, _ = fs.GetInt("max-pages")
+	if !call.target.known {
+		// a form the server may route to a spec operation (12-x, Deliver)
+		if _, canonical, ok := spec.MatchPathLoose(method, p.match); ok {
+			call.ambiguous = canonical
+		}
+	}
 	call.hasBody = method != "GET" && (fs.Changed("input") || method != "DELETE" && len(fields) > 0)
 	readers := 0
 	if call.input == "-" {
@@ -218,6 +227,9 @@ func (a *App) checkAPIFlags(c *cobra.Command, args []string) (*apiCall, error) {
 	case call.paginate && !call.target.isList():
 		return usage("--paginate braucht eine Liste der API-Spec (Seiten mit page/page_size und entries)",
 			"ohne --paginate eine Seite laden oder einen Listenpfad wie /income/invoices angeben")
+	case !call.target.known && call.ambiguous != "":
+		return usage("Pfad nicht eindeutig: gemeint ist "+call.ambiguous,
+			"den Pfad genau so angeben: Kleinschreibung wie in der API, IDs nur aus Ziffern")
 	case call.target.entry.Class == registry.ClassSend && (len(p.query) > 0 || !call.hasBody && len(fields) > 0):
 		return usage(fmt.Sprintf("%s %s nimmt keine Query-Parameter: send_via und email gehören in den Body", method, p.send),
 			"Query entfernen und die Felder mit -f/-F oder --input als Body senden")
