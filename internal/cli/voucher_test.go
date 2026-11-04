@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/testutil/golden"
 )
 
-// voucher commands (spec 7.1, 15 no. 19–27). pdf, upload and document
-// delete have their own handlers (pdf.go, upload.go); pay is registered as
-// Custom and not built yet (Task 35).
+// voucher commands (spec 7.1, 15 no. 19–27). pdf, upload, document
+// delete and pay have their own handlers (pdf.go, upload.go, pay.go).
 
 // TestVoucherCommandsGolden renders list and describe of voucher from the
 // spec examples of the mock in every output format.
@@ -309,27 +309,38 @@ func TestVoucherCancelAndReverseNeedConfirmation(t *testing.T) {
 	}
 }
 
-// pay is the only voucher action without a command until its handler
-// exists (Task 35); upload and document delete are built.
-func TestVoucherCustomActionsNotBuilt(t *testing.T) {
-	app, srv := apiApp(t)
-	wantExit(t, app, Run(app, []string{"voucher", "pay", "7", "--yes"}), 2)
-	wantRequests(t, srv, 0)
+// Every Custom entry has its handler now (Phase 8): each one is in the
+// command tree, so TestExamplesAreValidCommands checks all their examples,
+// and the voucher group lists all its actions.
+func TestCustomEntriesAreBuilt(t *testing.T) {
+	app, _ := apiApp(t)
+	root := NewRootCmd(app)
+	n := 0
+	for _, e := range registry.Entries() {
+		if !e.Custom {
+			continue
+		}
+		n++
+		name := strings.TrimSpace(e.Resource + " " + e.Action)
+		if cmd, _, err := root.Find(strings.Fields(name)); err != nil || cmd.CommandPath() != "papierkram "+name {
+			t.Errorf("%s: Custom-Eintrag ohne Befehl (%v)", name, err)
+		}
+	}
+	if n == 0 {
+		t.Fatal("keine Custom-Einträge in der Registry")
+	}
 
 	app, _ = apiApp(t)
 	wantExit(t, app, Run(app, []string{"voucher"}), 0)
 	help := mustOut(app)
 	var actions []string
-	for _, a := range []string{"list", "describe", "create", "update", "delete", "archive", "unarchive", "cancel", "reverse", "pdf", "upload", "document"} {
+	for _, a := range []string{"list", "describe", "create", "update", "delete", "archive", "unarchive", "cancel", "reverse", "pay", "pdf", "upload", "document"} {
 		if strings.Contains(help, "  "+a+" ") {
 			actions = append(actions, a)
 		}
 	}
-	if len(actions) != 12 {
+	if len(actions) != 13 {
 		t.Errorf("Gruppenhilfe %v:\n%s", actions, help)
-	}
-	if strings.Contains(help, "  pay ") {
-		t.Errorf("Gruppenhilfe nennt pay:\n%s", help)
 	}
 }
 

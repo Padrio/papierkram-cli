@@ -568,10 +568,12 @@ var table = []Entry{
 		// own handler (Task 35, spec 9.5)
 		Resource: "voucher", Action: "pay", OperationID: "PayVoucher",
 		Method: "POST", Path: "/expense/vouchers/{id}/pay", Class: ClassDestructive, Credits: 1,
-		Short: "Zahlung zu einem Beleg erfassen",
+		Columns: voucherDetailColumns,
+		Short:   "Zahlung zu einem Beleg erfassen",
 		Examples: []string{
 			"papierkram voucher pay 295 --transaction 457",
 			"papierkram voucher pay 295 --amount 165.80 --date 2026-11-04 --yes",
+			"papierkram voucher pay 295 --amount 150 --reason skonto --date heute --dry-run",
 		},
 		Custom: true,
 	},

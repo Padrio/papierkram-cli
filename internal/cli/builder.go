@@ -74,6 +74,7 @@ var customCmds = map[string]func(*App, registry.Entry) *cobra.Command{
 	"pdf":             (*App).newPDFCmd,
 	"upload":          (*App).newUploadCmd,
 	"document delete": (*App).newDocumentCmd,
+	"pay":             (*App).newPayCmd,
 }
 
 // entryExtras add a step of their own to a generic command, by operation
@@ -354,13 +355,15 @@ func (a *App) beforeMutation(c *cobra.Command, e registry.Entry, client *api.Cli
 
 // sendExtras are what a handler adds to beforeMutation: the file of an
 // upload and a read already sent to build the body (--from-estimate),
-// both shown by --dry-run (spec 8.4), and a summary of its own for the
+// both shown by --dry-run (spec 8.4), a summary of its own for the
 // confirmation, used instead of the one loaded by fetchSummary (an object
-// without a GET of its own, such as a document of a voucher).
+// without a GET of its own, such as a document of a voucher), and details
+// added to either summary (the payment of voucher pay).
 type sendExtras struct {
 	upload  *UploadInfo
 	read    *ReadInfo
 	summary *Summary
+	details []Detail
 }
 
 // beforeSend is beforeMutation with the extras of a handler.
@@ -401,6 +404,7 @@ func (a *App) beforeSend(c *cobra.Command, e registry.Entry, client *api.Client,
 	if e.Class == registry.ClassSend {
 		s.Via, s.Recipient, s.Subject = sendSummary(body)
 	}
+	s.Details = x.details
 	if err := a.confirm(c.Context(), e, s); err != nil {
 		return false, err
 	}

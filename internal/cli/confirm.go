@@ -19,13 +19,21 @@ import (
 
 // Summary is what a confirmation shows (spec 8.2): the German resource
 // noun, the ID, and when known the name and the gross amount; for the send
-// class also the way of sending, recipient and subject (see sendSummary).
+// class also the way of sending, recipient and subject (see sendSummary);
+// Details are further lines a handler adds from its body (the payment of
+// voucher pay, see payDetails).
 type Summary struct {
 	Resource           string
 	ID                 int64
 	Name, Amount       string
 	Via                string
 	Recipient, Subject string
+	Details            []Detail
+}
+
+// Detail is one labelled line of a confirmation summary.
+type Detail struct {
+	Label, Value string
 }
 
 // actionVerbs are the German infinitives of the confirmed actions.
@@ -96,6 +104,9 @@ func (a *App) confirm(ctx context.Context, e registry.Entry, s Summary) error {
 	}
 	if s.Subject != "" {
 		_, _ = fmt.Fprintf(a.Err, "Betreff:   %s\n", s.Subject)
+	}
+	for _, d := range s.Details {
+		_, _ = fmt.Fprintf(a.Err, "%-10s %s\n", printable(d.Label)+":", printable(d.Value))
 	}
 	id := strconv.FormatInt(s.ID, 10)
 	if isDelete(e.Action) {
