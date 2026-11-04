@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,7 +15,8 @@ import (
 
 // The command lines of the documentation (README.md, AGENTS.md) are valid
 // commands of the built tree: the command exists, every flag exists and
-// parses, and the positional arguments pass the argument check (task 45).
+// parses, and the positional arguments pass the argument check (task 45);
+// documented mutations also run with --dry-run against the mock.
 // Checked are the shell code blocks (sh, bash, shell, console, powershell
 // or without language); a line marked with the comment "# Platzhalter" is
 // a syntax sketch and is skipped.
@@ -113,9 +115,10 @@ func cliCommands(text string) ([][]string, error) {
 
 func TestDocCommandsAreValid(t *testing.T) {
 	root := modroot.Find(t)
+	d := decodeCommands(t, runCommandsJSON(t, "--json"))
 	for _, name := range docFiles {
 		lines := docCommandLines(t, filepath.Join(root, name))
-		found := 0
+		found, dryRuns := 0, 0
 		for _, l := range lines {
 			if strings.Contains(l.text, placeholderMark) {
 				continue
@@ -129,13 +132,18 @@ func TestDocCommandsAreValid(t *testing.T) {
 				found++
 				if err := docCommandProblem(t, words); err != nil {
 					t.Errorf("%s:%d: %q: %v", l.file, l.line, strings.Join(words, " "), err)
+				} else if run, ok := docDryRun(t, d, words); ok {
+					dryRuns++
+					if code, errs := runLine(t, nil, run); code != 0 {
+						t.Errorf("%s:%d: %q: exit %d, stderr %q", l.file, l.line, strings.Join(run, " "), code, errs)
+					}
 				}
 			}
 		}
 		if found == 0 {
 			t.Errorf("%s: keine Befehlszeilen gefunden", name)
 		}
-		t.Logf("%s: %d Befehle geprüft", name, found)
+		t.Logf("%s: %d Befehle geprüft, davon %d Änderungen per --dry-run gegen den Mock", name, found, dryRuns)
 	}
 }
 
@@ -146,6 +154,52 @@ func docCommandProblem(t *testing.T, words []string) error {
 	app, _ := apiApp(t)
 	app.StdinTTY, app.StdoutTTY = true, true
 	return commandProblem(app, words, "")
+}
+
+// docDryRun returns the arguments to run a documented mutation with
+// --dry-run against the mock (task 28 M2, like the registry examples) and
+// whether it runs. Mutations are the commands whose class in commands
+// --json is a mutation class (dryRunnable); commands that read stdin (an
+// argument "-") and time stop (needs a running timer) are only parsed.
+func docDryRun(t *testing.T, d cmdDoc, words []string) ([]string, bool) {
+	t.Helper()
+	app, _ := apiApp(t)
+	cmd, _, err := NewRootCmd(app).Find(words[1:])
+	if err != nil || slices.Contains(words, "-") {
+		return nil, false
+	}
+	name := strings.TrimPrefix(cmd.CommandPath(), "papierkram ")
+	i := slices.IndexFunc(d.Commands, func(c cmdInfo) bool { return c.Command == name })
+	if i < 0 || !dryRunnable(d.Commands[i]) || name == "time stop" {
+		return nil, false
+	}
+	run := append([]string{}, words[1:]...)
+	if !slices.Contains(run, "--dry-run") {
+		run = append(run, "--dry-run")
+	}
+	return run, true
+}
+
+func TestDocDryRun(t *testing.T) {
+	d := decodeCommands(t, runCommandsJSON(t, "--json"))
+	for line, want := range map[string]string{
+		"papierkram invoice update 459 --name X":        "invoice update 459 --name X --dry-run",
+		"papierkram company delete 12 --dry-run --yes":  "company delete 12 --dry-run --yes",
+		"papierkram invoice list":                       "",
+		"papierkram invoice update 459 --input -":       "",
+		"papierkram time stop":                          "",
+		"papierkram context create x --subdomain x":     "",
+		"papierkram api DELETE /tracker/time_entries/7": "",
+	} {
+		words, err := shellWords(line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, ok := docDryRun(t, d, words)
+		if got := strings.Join(run, " "); got != want || ok != (want != "") {
+			t.Errorf("docDryRun(%q) = %q, %v, want %q", line, got, ok, want)
+		}
+	}
 }
 
 func TestDocCommandLines(t *testing.T) {
