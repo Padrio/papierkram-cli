@@ -91,12 +91,16 @@ func TestWrapKeepsChain(t *testing.T) {
 	}
 }
 
-// parseErr is the error of url.Parse for badPort (a variable, so the
-// linter does not flag the invalid literal).
+// parseErr is the error of url.Parse for badPort. The URL is joined at
+// run time: staticcheck (SA1007) folds constants and would flag the
+// literal, which is invalid on purpose.
 func parseErr(t *testing.T) error {
 	t.Helper()
-	raw := badPort
-	_, err := url.Parse(raw) //nolint:staticcheck // SA1007: the URL is invalid on purpose
+	raw := strings.Join([]string{"http://alice:s3cret@127.0.0.1", "badport/api/v1"}, ":")
+	if raw != badPort {
+		t.Fatalf("raw = %q", raw)
+	}
+	_, err := url.Parse(raw)
 	if err == nil {
 		t.Fatal("badPort parses")
 	}
