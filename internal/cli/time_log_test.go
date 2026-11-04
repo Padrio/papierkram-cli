@@ -154,6 +154,22 @@ func TestTimeLogDurationAcrossDSTChange(t *testing.T) {
 	wantBody(t, srv, "POST", timeEntries,
 		`{"entry_date":"2026-10-25","started_at_time":"01:40","ended_at_time":"02:10","task":{"id":545},"user":{"id":1}}`)
 
+	// a time that exists twice is its first occurrence (summer time); a
+	// duration that ends in the repeated hour before the start's wall
+	// clock cannot be sent (the body only has wall-clock times)
+	app, srv = logApp(t, morning(t))
+	wantExit(t, app, Run(app, []string{"time", "log", "--task", "545", "--user", "1", "--date", "2026-10-25",
+		"--from", "02:30", "--duration", "1h30m", "-o", "json"}), 0)
+	wantBody(t, srv, "POST", timeEntries,
+		`{"entry_date":"2026-10-25","started_at_time":"02:30","ended_at_time":"03:00","task":{"id":545},"user":{"id":1}}`)
+	app, srv = logApp(t, morning(t))
+	wantExit(t, app, Run(app, []string{"time", "log", "--task", "545", "--user", "1", "--date", "2026-10-25",
+		"--from", "02:30", "--duration", "30m"}), 2)
+	wantRequests(t, srv, 0)
+	if _, errs := bufs(app); !strings.Contains(errs, "Zeitumstellung") {
+		t.Errorf("stderr = %s", errs)
+	}
+
 	// a start that does not exist on the day of the change
 	app, srv = logApp(t, morning(t))
 	wantExit(t, app, Run(app, []string{"time", "log", "--task", "545", "--user", "1", "--date", "2026-03-29",

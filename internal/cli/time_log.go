@@ -24,7 +24,7 @@ import (
 
 const timeLogLong = `Erfasst Zeit als Zeiteintrag: Datum, Zeitraum, Aufgabe und Benutzer.
 
-Zeitraum: --from und --to (H:MM oder HH:MM) oder --duration (1h30m, 90m, 1:30), mit --from ab dieser Uhrzeit, ohne --from bis jetzt (nur für heute). Ein Zeiteintrag hat nur ein Datum: Einträge über Mitternacht werden abgelehnt; sie werden als zwei Einträge erfasst. Eine Dauer ist echte Zeit: Am Tag der Zeitumstellung endet --from 01:30 --duration 2h im Herbst um 02:30 und im Frühjahr um 03:30 (Wanduhrzeit in der lokalen Zeitzone); Uhrzeiten, die es wegen der Umstellung nicht gibt, werden abgelehnt.
+Zeitraum: --from und --to (H:MM oder HH:MM) oder --duration (1h30m, 90m, 1:30), mit --from ab dieser Uhrzeit, ohne --from bis jetzt (nur für heute). Ein Zeiteintrag hat nur ein Datum: Einträge über Mitternacht werden abgelehnt; sie werden als zwei Einträge erfasst. Eine Dauer ist echte Zeit: Am Tag der Zeitumstellung endet --from 01:30 --duration 2h im Herbst um 02:30 und im Frühjahr um 03:30 (Wanduhrzeit in der lokalen Zeitzone); Uhrzeiten, die es wegen der Umstellung nicht gibt, werden abgelehnt; doppelte Uhrzeiten gelten beim ersten Mal (Sommerzeit).
 
 Aufgabe und Benutzer: Flag, sonst PAPIERKRAM_TASK bzw. PAPIERKRAM_USER, sonst task bzw. user aus der Projektdatei .papierkram.toml (anlegen: papierkram local init), beim Benutzer zuletzt user des Kontexts. --task nimmt auch einen Alias aus [tasks] der Projektdatei.
 
@@ -241,7 +241,8 @@ func (a *App) checkTimeLog(c *cobra.Command, e registry.Entry) (timeLogInput, er
 const midnightHint = "Ein Zeiteintrag hat nur ein Datum: über Mitternacht als zwei Einträge erfassen (bis 23:59 und ab 00:00 am Folgetag mit --date)"
 
 // checkPeriod rejects a period that does not lie within its date or does
-// not end after its start (spec 9.6, exit 2).
+// not end after its start, in real time and in wall-clock time (spec 9.6,
+// exit 2).
 func checkPeriod(p period) error {
 	switch {
 	case !p.end.After(p.start):
@@ -256,6 +257,12 @@ func checkPeriod(p period) error {
 		return clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("Zeiteintrag endet am %s um %s: Einträge über Mitternacht sind nicht möglich", p.end.Format(time.DateOnly), hhmm(p.end)),
 			midnightHint)
+	case hhmm(p.end) <= hhmm(p.start):
+		// only in the repeated hour of the change back: the body has
+		// wall-clock times, whose end must follow the start
+		return clierr.New(clierr.CodeUsage,
+			fmt.Sprintf("Ende %s liegt wegen der Zeitumstellung am %s nicht nach dem Beginn %s", hhmm(p.end), p.date, hhmm(p.start)),
+			"Zeiteinträge haben nur Uhrzeiten: Zeitraum mit --from und --to angeben, der in der Uhrzeit nicht zurückläuft")
 	}
 	return nil
 }
