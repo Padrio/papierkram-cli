@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // invoice|estimate deliver (spec 9.1, 10.4).
@@ -449,5 +450,42 @@ func TestDeliverPostError(t *testing.T) {
 		if out != "" || !strings.Contains(errs, "\nHinweis: ") || !strings.Contains(errs, tc.hint) || strings.Contains(errs, "erneut versuchen") {
 			t.Errorf("%d: stdout = %q, stderr = %q", tc.status, out, errs)
 		}
+	}
+}
+
+// A date-only sent_on is a calendar day of Papierkram (Europe/Berlin), not
+// of the host: on a UTC or US host near midnight, "today" is the Berlin day.
+func TestDeliverTimeoutSentOnIsABerlinDay(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// both are 2026-10-27 00:30 in Berlin (CET)
+	utcNow := time.Date(2026, 10, 26, 23, 30, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name   string
+		loc    *time.Location
+		sentOn string
+		exit   int
+	}{
+		{"UTC, Berliner heute", time.UTC, `"2026-10-27"`, 0},
+		{"UTC, Berliner gestern", time.UTC, `"2026-10-26"`, 12},
+		{"New York, Berliner heute", ny, `"2026-10-27"`, 0},
+		{"New York, Berliner gestern", ny, `"2026-10-26"`, 12},
+		{"New York, Uhrzeit Berliner gestern", ny, `"2026-10-26 23:50:00 +0100"`, 12},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, srv := apiApp(t)
+			app.Location = tc.loc
+			app.Now = func() time.Time { return utcNow.In(tc.loc) }
+			srv.OnFunc("POST", "/income/invoices/459/deliver", func(_ http.ResponseWriter, r *http.Request) {
+				<-r.Context().Done()
+			})
+			srv.On("GET", "/income/invoices/459", http.StatusOK, sentDoc("invoice", 459, tc.sentOn))
+			code := waitExit(t, func() int {
+				return Run(app, []string{"invoice", "deliver", "459", "--via", "pdf", "--yes", "--timeout", "300ms", "-o", "json"})
+			})
+			wantExit(t, app, code, tc.exit)
+		})
 	}
 }

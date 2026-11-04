@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -181,7 +182,8 @@ type deliveredJSON struct {
 }
 
 // deliverUnknown decides a deliver whose answer was lost after sending
-// (spec 10.4). Only a sent_on of today (in App.Location) counts as this
+// (spec 10.4). Only a sent_on of today (a Papierkram day, see dayZone)
+// counts as this
 // delivery: exit 0 with a warning. sent_on is set by every delivery, so an
 // earlier date only shows a previous one (a re-delivery of an already sent
 // document); that, no sent_on or no readback is exit 12 with the describe
@@ -221,7 +223,7 @@ func (a *App) deliverUnknown(o output.Options, e registry.Entry, id int64, doc r
 // "2026-08-28 13:41:23 +0200", RFC 3339).
 var sentOnLayouts = []string{"2006-01-02 15:04:05 -0700", time.RFC3339}
 
-// sentDay is the calendar day (YYYY-MM-DD) of sent_on in App.Location; a
+// sentDay is the calendar day (YYYY-MM-DD) of sent_on in dayZone; a
 // date-time is converted first. "" when empty or not readable.
 func (a *App) sentDay(on string) string {
 	if _, err := time.Parse(time.DateOnly, on); err == nil {
@@ -229,16 +231,33 @@ func (a *App) sentDay(on string) string {
 	}
 	for _, layout := range sentOnLayouts {
 		if t, err := time.Parse(layout, on); err == nil {
-			return t.In(a.loc()).Format(time.DateOnly)
+			return t.In(a.dayZone()).Format(time.DateOnly)
 		}
 	}
 	return ""
 }
 
-// today is the current day (YYYY-MM-DD) in App.Location.
-func (a *App) today() string { return a.Now().In(a.loc()).Format(time.DateOnly) }
+// today is the current day (YYYY-MM-DD) in dayZone.
+func (a *App) today() string { return a.Now().In(a.dayZone()).Format(time.DateOnly) }
 
-func (a *App) loc() *time.Location {
+// berlin is the time zone of Papierkram; nil when the system has no zone
+// data for it.
+var berlin = sync.OnceValue(func() *time.Location {
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		return nil
+	}
+	return loc
+})
+
+// dayZone is the zone whose calendar days sent_on counts: a date-only
+// sent_on is a day of Papierkram (Europe/Berlin), not of the host, which
+// may be a UTC container or lie hours behind; both sides are compared
+// there. Without zone data for Berlin it falls back to App.Location.
+func (a *App) dayZone() *time.Location {
+	if loc := berlin(); loc != nil {
+		return loc
+	}
 	if a.Location == nil {
 		return time.Local
 	}
