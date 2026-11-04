@@ -73,9 +73,9 @@ Die CI führt denselben Snapshot im Job `snapshot` aus (`.github/workflows/ci.ym
 | --- | --- | --- | --- |
 | deb, rpm | symbolischer Link `/usr/bin/pk` → `papierkram` (nfpm) | bash, zsh, fish | keine |
 | Homebrew | zweite `binary`-Zeile im Cask: `binary "papierkram", target: "pk"` | bash, zsh, fish | keine |
-| Scoop | Shim über einen Alias in `bin` | nur mit `completions/papierkram.ps1` aus dem Archiv | ja, nach jedem Release |
+| Scoop | Shim über einen Alias in `bin` | PowerShell, nach Einrichten im Profil | ja, nach jedem Release |
 | Archiv | keiner | Skripte in `completions/` registrieren `pk` mit | – |
-| `go install` | keiner | – | – |
+| `go install` | keiner | Skripte registrieren `pk` mit, aber es gibt kein `pk` | – |
 
 **Homebrew:** GoReleaser v2.19 kennt für `homebrew_casks.binaries` kein Linkziel. Die zweite `binary`-Zeile steht deshalb in `custom_block` und landet bei jedem Release automatisch im Cask. `custom_block` steht im Cask vor `version`; das funktioniert, `brew style` kann aber die Reihenfolge der Abschnitte bemängeln. Der Cask ersetzt die früheren Formeln (`brews`), die in v2.19 als veraltet gelten; `brew install Padrio/tap/papierkram` findet den Cask ohne `--cask`. Weil die Programme nicht notarisiert sind, entfernt der Cask nach der Installation unter macOS das Quarantäne-Attribut (`postflight`).
 
@@ -90,15 +90,13 @@ Die CI führt denselben Snapshot im Job `snapshot` aus (`.github/workflows/ci.ym
 
 Committen und pushen (`papierkram: add pk shim`). Das nächste Release überschreibt das Manifest wieder; der Schritt ist also jedes Mal nötig. Prüfen mit `scoop update papierkram` und `pk version`.
 
-**Vervollständigung:** `scripts/completions.sh` ergänzt jedes Skript von `papierkram completion <shell>` um `pk`; die Skripte rufen das Programm auf, das sie vervollständigen (`pk __complete …`), daher genügt die Registrierung:
+**Vervollständigung:** `papierkram completion <shell>` gibt ein Skript aus, das auch `pk` registriert (eine Quelle: `internal/cli/completion.go`); `scripts/completions.sh` ruft nur diesen Befehl auf. Die Skripte rufen das Programm auf, das sie vervollständigen (`pk __complete …`), daher genügt die Registrierung:
 
 - bash: `complete -o default -F __start_papierkram pk` (wie bei `papierkram` mit `-o nospace` für eine bash ohne `compopt`).
-- zsh: Kopfzeilen `#compdef papierkram pk` und `compdef _papierkram papierkram pk`. Eine angehängte `compdef`-Zeile würde bei Installation über `fpath` nur innerhalb der Funktion laufen; deshalb werden die ersten beiden Zeilen ersetzt.
+- zsh: Kopfzeilen `#compdef papierkram pk` und `compdef _papierkram papierkram pk`. Eine angehängte `compdef`-Zeile würde bei Installation über `fpath` nur innerhalb der Funktion laufen; deshalb ändert der Befehl die ersten beiden Zeilen von cobra.
 - fish: `complete -c pk -w papierkram`.
 - PowerShell: `Register-ArgumentCompleter -CommandName 'pk'` mit demselben Skriptblock.
 
-bash-completion und fish laden ein Skript erst beim ersten Tab für den jeweiligen Befehlsnamen. Die Pakete legen daher zusätzlich `/usr/share/bash-completion/completions/pk` → `papierkram` und `/usr/share/fish/vendor_completions.d/pk.fish` → `papierkram.fish` an; der Cask verlinkt das fish-Skript ein zweites Mal als `pk.fish`. zsh bindet `pk` über die `#compdef`-Zeile, bash unter Homebrew lädt `etc/bash_completion.d` beim Start. Ändert ein neues cobra die Zeilen, auf die sich das Skript stützt, bricht der Release ab, statt eine kaputte Vervollständigung auszuliefern.
-
-Nur die Dateien in `completions/` kennen `pk`. Die Ausgabe von `papierkram completion <shell>` (README, `completion --help`) registriert weiterhin nur `papierkram`; wer die Vervollständigung so einrichtet, z. B. unter Scoop im PowerShell-Profil, bekommt für `pk` keine.
+bash-completion und fish laden ein Skript erst beim ersten Tab für den jeweiligen Befehlsnamen. Die Pakete legen daher zusätzlich `/usr/share/bash-completion/completions/pk` → `papierkram` und `/usr/share/fish/vendor_completions.d/pk.fish` → `papierkram.fish` an; der Cask verlinkt das fish-Skript ein zweites Mal als `pk.fish`. zsh bindet `pk` über die `#compdef`-Zeile, bash unter Homebrew lädt `etc/bash_completion.d` beim Start. Wer selbst einrichtet (`completion --help`), braucht für fish zusätzlich `pk.fish` als zweiten Namen. Fehlt eine der Zeilen von cobra, auf die sich der Befehl stützt (z. B. nach einem cobra-Update mit anderen Funktionsnamen), meldet `completion` einen Fehler statt ein Skript ohne `pk` auszugeben; `TestCompletionShortForm` prüft die Zeilen je Shell, und der Release bricht ab.
 
 **Namenskonflikt:** [pkram](https://github.com/mickeyl/pkram) legt ebenfalls `pk` an (README, „Kurzform `pk`“). Ist `pk` schon von einem anderen Paket belegt, brechen Homebrew und deb/rpm die Installation mit einem Dateikonflikt ab; `papierkram` bleibt immer eindeutig.

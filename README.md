@@ -56,7 +56,7 @@ So gebaut meldet `papierkram version` die Version `dev`, und es gibt keinen Alia
 
 Homebrew, Scoop, deb und rpm installieren zusätzlich die Kurzform `pk` (ab erstem Release). `pk invoice list` ist dasselbe wie `papierkram invoice list`. Hinweis: [pkram](https://github.com/mickeyl/pkram) legt ebenfalls einen Befehl `pk` an. Wer beides installiert, bekommt das Programm, das zuerst im `PATH` steht; `papierkram` ist immer eindeutig.
 
-Die Vervollständigung aus den Paketen (Homebrew, deb, rpm) und aus den Release-Archiven gilt auch für `pk`; das Skript, das `completion` direkt ausgibt, registriert nur `papierkram` (Details in [docs/release.md](docs/release.md#kurzform-pk)).
+Die Shell-Vervollständigung gilt auch für `pk`: Homebrew, deb und rpm richten sie für beide Namen ein, und das Skript von `papierkram completion <shell>` registriert `pk` mit (Details in [docs/release.md](docs/release.md#kurzform-pk)).
 
 ## Schnellstart
 
@@ -313,7 +313,7 @@ papierkram completion zsh > "${fpath[1]}/_papierkram"
 papierkram completion fish > ~/.config/fish/completions/papierkram.fish
 ```
 
-PowerShell: `papierkram completion powershell | Out-String | Invoke-Expression` (für dauerhaft in `$PROFILE` eintragen). `papierkram completion --help` beschreibt die Einrichtung je Shell.
+PowerShell: `papierkram completion powershell | Out-String | Invoke-Expression` (für dauerhaft in `$PROFILE` eintragen). Die Skripte vervollständigen auch die Kurzform `pk`; fish lädt sie nach dem Befehlsnamen und braucht dafür zusätzlich `ln -s papierkram.fish ~/.config/fish/completions/pk.fish`. `papierkram completion --help` beschreibt die Einrichtung je Shell.
 
 **IDs kosten Credits:** Für IDs (`papierkram invoice describe <Tab>`, `--company <Tab>`) lädt die Vervollständigung die erste Seite der Liste aus der API (1 Credit je Abfrage) und hält das Ergebnis je Kontext und Ressource **60 Sekunden** im Cache. Abschalten je Kontext in `config.toml`; dann sendet die Vervollständigung keine Anfrage und liest keinen Cache:
 
