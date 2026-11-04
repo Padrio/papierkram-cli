@@ -2,8 +2,10 @@ package registry
 
 import (
 	"bufio"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -100,8 +102,8 @@ func TestCoverageAllOperations(t *testing.T) {
 			continue
 		}
 		name := strings.TrimSpace("papierkram " + e.Resource + " " + e.Action)
-		if r.command != name && !strings.HasPrefix(r.command, name+" ") {
-			t.Errorf("matrix no. %d (%s): command %q, registry has %q", r.no, route, r.command, name)
+		if got := matrixCommandName(r.command); got != name {
+			t.Errorf("matrix no. %d (%s): command %q, registry has %q", r.no, route, got, name)
 		}
 		if e.Class != r.class {
 			t.Errorf("matrix no. %d (%s): class %q, registry has %q", r.no, route, r.class, e.Class)
@@ -110,10 +112,11 @@ func TestCoverageAllOperations(t *testing.T) {
 			t.Errorf("matrix no. %d (%s): credits %d, registry has %d", r.no, route, r.credits, e.Credits)
 		}
 	}
-	// registry → matrix: no entry is missing from the table.
-	for route, e := range byRoute {
+	// registry → matrix: no entry is missing from the table. Sorted, so
+	// that the messages come in the same order on every run.
+	for _, route := range slices.Sorted(maps.Keys(byRoute)) {
 		if _, ok := seenRoute[route]; !ok {
-			t.Errorf("registry entry %s (%s) not in the matrix of spec 15", e.OperationID, route)
+			t.Errorf("registry entry %s (%s) not in the matrix of spec 15", byRoute[route].OperationID, route)
 		}
 	}
 }
@@ -166,6 +169,19 @@ func parseMatrix(t *testing.T, file string) []matrixRow {
 	return rows
 }
 
+// matrixCommandName is the command of a matrix cell: the words before the
+// first argument (<id>) or flag (--company, -O).
+func matrixCommandName(cell string) string {
+	var words []string
+	for _, w := range strings.Fields(cell) {
+		if strings.HasPrefix(w, "<") || strings.HasPrefix(w, "-") {
+			break
+		}
+		words = append(words, w)
+	}
+	return strings.Join(words, " ")
+}
+
 // tableCells splits a markdown table row into its cells without backticks;
 // an escaped pipe (\|) stays part of the cell.
 func tableCells(line string) []string {
@@ -195,4 +211,23 @@ func matrixRowOf(t *testing.T, cells []string, wantNo int) matrixRow {
 		t.Fatalf("spec 15 no. %d: credits %q: %v", no, cells[5], err)
 	}
 	return matrixRow{no: no, method: cells[1], path: cells[2], command: cells[3], class: class, credits: credits}
+}
+
+// TestMatrixCommandName: the command of a matrix cell ends before the first
+// argument or flag, so an extra word in the table is a different command.
+func TestMatrixCommandName(t *testing.T) {
+	tests := []struct{ cell, want string }{
+		{"papierkram info", "papierkram info"},
+		{"papierkram user describe <id>", "papierkram user describe"},
+		{"papierkram user describe extra <id>", "papierkram user describe extra"},
+		{"papierkram voucher document delete <voucher-id> <doc-id>", "papierkram voucher document delete"},
+		{"papierkram invoice deliver <id> --via email|pdf", "papierkram invoice deliver"},
+		{"papierkram voucher pdf <id> -O <file>", "papierkram voucher pdf"},
+		{"papierkram person list --company <id>", "papierkram person list"},
+	}
+	for _, tt := range tests {
+		if got := matrixCommandName(tt.cell); got != tt.want {
+			t.Errorf("matrixCommandName(%q) = %q, want %q", tt.cell, got, tt.want)
+		}
+	}
 }
