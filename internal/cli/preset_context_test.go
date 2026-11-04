@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/testutil/mockapi"
 )
 
@@ -98,6 +99,58 @@ func TestPresetIgnoresProjectFileOfOtherContext(t *testing.T) {
 		wantBody(t, srv, "POST", "/tracker/tasks", `{"name":"Support","project":{"id":34}}`)
 		if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: Projekt 34 aus Projektdatei") || strings.Contains(errs, "ignoriert") {
 			t.Errorf("%q --context %s: stderr = %q", tc.file, tc.ctx, errs)
+		}
+		// the request is sent in the context the preset was judged for
+		if got := srv.Requests()[0].Header.Get("Authorization"); got != "Bearer test-token-"+tc.ctx {
+			t.Errorf("%q --context %s: Authorization = %q", tc.file, tc.ctx, got)
+		}
+	}
+}
+
+// Review T2: task list judges the preset before the client exists; the
+// client then uses that same context. The file selects b although
+// active_context is a.
+func TestPresetContextIsClientContext(t *testing.T) {
+	app, srv := contextApp(t, nil)
+	writeProjectFile(t, app, "context = \"b\"\nproject = 34\n")
+	wantExit(t, app, Run(app, []string{"task", "list", "-o", "json"}), 0)
+	r := wantRequests(t, srv, 1)[0]
+	if r.Query.Encode() != "page_size=25&project_id=34" {
+		t.Errorf("query = %s", r.Query.Encode())
+	}
+	if got := r.Header.Get("Authorization"); got != "Bearer test-token-b" {
+		t.Errorf("Authorization = %q", got)
+	}
+}
+
+// getCounter counts the keychain reads per context.
+type getCounter struct {
+	auth.Store
+	gets map[string]int
+}
+
+func (s *getCounter) Get(ctx string) (string, error) {
+	s.gets[ctx]++
+	return s.Store.Get(ctx)
+}
+
+// Review T1: judging the preset context never reads the keychain; only
+// the client reads the token, once.
+func TestPresetContextDoesNotReadKeychain(t *testing.T) {
+	for _, args := range [][]string{
+		{"task", "list", "--context", "a", "-o", "json"},
+		{"task", "list", "-o", "json"},
+		{"project", "describe", "-o", "json"},
+		{"task", "create", "--name", "Support", "-o", "json"},
+	} {
+		app, srv := contextApp(t, nil)
+		store := &getCounter{Store: app.Keyring, gets: map[string]int{}}
+		app.Keyring = store
+		writeProjectFile(t, app, "context = \"a\"\nproject = 34\n")
+		wantExit(t, app, Run(app, args), 0)
+		wantRequests(t, srv, 1)
+		if len(store.gets) != 1 || store.gets["a"] != 1 {
+			t.Errorf("%v: Schlüsselbund-Zugriffe %v, erwartet genau 1 für a", args, store.gets)
 		}
 	}
 }
