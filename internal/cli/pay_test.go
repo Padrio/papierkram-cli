@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -318,6 +319,34 @@ func TestVoucherPayHelp(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("Hilfe ohne %q:\n%s", want, out)
+		}
+	}
+}
+
+// Like the generic create/update (runWriteThen: newWriteSpec before the
+// flag checks and the read-only gate), a request schema without the pay
+// fields makes the command unavailable (exit 1) before anything else.
+func TestVoucherPayUnavailableFirst(t *testing.T) {
+	// an operation whose request schema lacks value, banking_transaction, …
+	e := specEntry(t, "DeliverInvoice", "invoice", "pay", "destructive")
+	for _, tc := range []struct {
+		env  map[string]string
+		args []string
+	}{
+		{map[string]string{"PAPIERKRAM_TOKEN": "test-token-pay"}, []string{"invoice", "pay", "1", "--yes"}},
+		{map[string]string{"PAPIERKRAM_TOKEN": "test-token-pay", "PAPIERKRAM_READ_ONLY": "1"}, []string{"invoice", "pay", "1", "--amount", "1", "--yes"}},
+	} {
+		app, srv := mockApp(t, tc.env)
+		root := NewRootCmd(app)
+		group, _, err := root.Find([]string{"invoice"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		group.AddCommand(app.newPayCmd(e))
+		wantExit(t, app, executeContext(context.Background(), app, root, tc.args), 1)
+		wantRequests(t, srv, 0)
+		if _, errs := bufs(app); !strings.Contains(errs, "Befehl nicht verfügbar") {
+			t.Errorf("%v: stderr = %q", tc.args, errs)
 		}
 	}
 }

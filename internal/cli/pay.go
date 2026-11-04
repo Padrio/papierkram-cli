@@ -93,9 +93,10 @@ func payHelp(text string, f spec.Field) string {
 	return text
 }
 
-// runPay records a payment of a voucher (spec 9.5). Order (plan): the ID
-// and flags (exit 2: without --input, --amount or --transaction is
-// required), configuration and read-only gate (mutationClient, exit 9,
+// runPay records a payment of a voucher (spec 9.5). Order (plan, as in
+// runWriteThen): the ID, the fields of the request schema (exit 1 when the
+// spec lacks one, like newWriteSpec), the flags (exit 2: without --input,
+// --amount or --transaction is required), configuration and read-only gate (mutationClient, exit 9,
 // before --input is read or a value checked), body (payBody, exit 5),
 // --dry-run and confirmation (beforeSend, exit 8 without terminal and
 // --yes), then the request. Output is the API object (the voucher); an
@@ -105,6 +106,10 @@ func (a *App) runPay(c *cobra.Command, e registry.Entry, args []string) error {
 	if err != nil {
 		return err
 	}
+	fields, err := payFields(e)
+	if err != nil {
+		return errUnavailable(err)
+	}
 	if err := checkPayFlags(c); err != nil {
 		return err
 	}
@@ -112,7 +117,7 @@ func (a *App) runPay(c *cobra.Command, e registry.Entry, args []string) error {
 	if err != nil {
 		return err
 	}
-	body, err := a.payBody(c, e)
+	body, err := a.payBody(c, e, fields)
 	if err != nil {
 		return err
 	}
@@ -161,12 +166,9 @@ func checkPayFlags(c *cobra.Command) error {
 // outside the request is unknown, exit 5), then the changed flags at their
 // field (converted by spec.CoerceFlag: exact decimals, relative dates,
 // enum with suggestions, {id}), which win; coerced, checked for a payment
-// (exit 5) and validated against the request schema (exit 5).
-func (a *App) payBody(c *cobra.Command, e registry.Entry) (map[string]any, error) {
-	fields, err := payFields(e)
-	if err != nil {
-		return nil, errUnavailable(err)
-	}
+// (exit 5) and validated against the request schema (exit 5). fields
+// are those of payFields.
+func (a *App) payBody(c *cobra.Command, e registry.Entry, fields map[string]spec.Field) (map[string]any, error) {
 	req := spec.RequestSchema(e.OperationID)
 	body := map[string]any{}
 	if c.Flags().Changed("input") {
