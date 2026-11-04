@@ -160,7 +160,7 @@ func TestTimerStopFailureKeepsState(t *testing.T) {
 			setup: func(s *mockapi.Server) {
 				s.On("POST", timeEntries, http.StatusInternalServerError, []byte(`{"type":"error","message":"kaputt"}`))
 			},
-			stderr: []string{"Timer läuft weiter", "papierkram time log --task 545 --user 1 --date 2026-11-04 --from 09:00 --to 10:47", "papierkram time discard"}},
+			stderr: []string{"Timer läuft weiter", "papierkram time list", "papierkram time log --task 545 --user 1 --date 2026-11-04 --from 09:00 --to 10:47", "papierkram time discard"}},
 		{name: "validation", start: nine(t), stop: morning(t), exit: 5, posts: 1,
 			setup: func(s *mockapi.Server) {
 				s.On("POST", timeEntries, http.StatusUnprocessableEntity, []byte(`{"type":"error","message":"Aufgabe abgeschlossen"}`))
@@ -506,7 +506,7 @@ func TestTimerStopDeleteFailureIsPartial(t *testing.T) {
 	if out, _ := bufs(app); !strings.Contains(out, `"id":`) {
 		t.Errorf("created entry not shown: %s", out)
 	}
-	wantStderr(t, app, "Zeiteintrag angelegt", "NICHT erneut", "papierkram time discard")
+	wantStderr(t, app, "Zeiteintrag angelegt", "NICHT erneut", "papierkram time discard", "timer-.direct.json", "von Hand löschen")
 }
 
 // Controller ruling (concern 1): the timer remembers the account (base
@@ -643,4 +643,66 @@ func TestTimerStopInAnotherTimeZone(t *testing.T) {
 	if !strings.Contains(cmd.Long, "Zeitzone") || !strings.Contains(cmd.Long, "Stopp-Orts") {
 		t.Errorf("help without the time zone rule: %s", cmd.Long)
 	}
+}
+
+// Review M1: the hint for a timer over midnight to the next day leaves out
+// an empty half, and says there is nothing to book when both halves are
+// empty (23:59 → 00:00).
+func TestTimerMidnightHintEdges(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		start, stop time.Time
+		want, not   []string
+	}{
+		{"23:59 to 00:00", berlinAt(t, 2026, 11, 3, 23, 59, 10), berlinAt(t, 2026, 11, 4, 0, 0, 20),
+			[]string{"nichts zu buchen", "papierkram time discard"}, []string{"papierkram time log", ": ,"}},
+		{"23:59 to 00:30", berlinAt(t, 2026, 11, 3, 23, 59, 0), berlinAt(t, 2026, 11, 4, 0, 30, 0),
+			[]string{"papierkram time log --task 545 --user 1 --date 2026-11-04 --from 00:00 --to 00:30", "papierkram time discard"},
+			[]string{"--date 2026-11-03"}},
+		{"22:10 to 00:00", berlinAt(t, 2026, 11, 3, 22, 10, 0), berlinAt(t, 2026, 11, 4, 0, 0, 0),
+			[]string{"papierkram time log --task 545 --user 1 --date 2026-11-03 --from 22:10 --to 23:59", "papierkram time discard"},
+			[]string{"--date 2026-11-04"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, srv := logApp(t, tc.start)
+			wantExit(t, app, at(app, tc.start, "time", "start", "--task", "545", "--user", "1"), 0)
+			wantExit(t, app, at(app, tc.stop, "time", "stop"), 2)
+			wantStderr(t, app, tc.want...)
+			_, errs := bufs(app)
+			for _, n := range tc.not {
+				if strings.Contains(errs, n) {
+					t.Errorf("stderr mit %q: %s", n, errs)
+				}
+			}
+			wantRequests(t, srv, 0)
+		})
+	}
+}
+
+// Review M7: the commands in the hints quote a context name the shell
+// would read otherwise and name a stored comment as a placeholder, so it
+// is not lost silently when booking by hand.
+func TestTimerHintCommandsQuoteAndNameComment(t *testing.T) {
+	app, srv := logApp(t, nine(t))
+	writeCfg(t, app, "[contexts.'a;b']\nsubdomain = \"firma\"\n[contexts.plain]\nsubdomain = \"firma\"\n")
+	app.Env = envMap(map[string]string{"PAPIERKRAM_BASE_URL": srv.URL()})
+	for _, name := range []string{"a;b", "plain"} {
+		if err := app.Keyring.Set(name, "test-token-"+name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv.On("POST", timeEntries, http.StatusInternalServerError, []byte(`{"type":"error","message":"kaputt"}`))
+	wantExit(t, app, at(app, nine(t), "time", "start", "--context", "a;b", "--task", "545", "--user", "1", "-m", "Abstimmung"), 0)
+	wantExit(t, app, at(app, morning(t), "time", "stop", "--context", "a;b"), 1)
+	wantStderr(t, app, `--context 'a;b'`, `-m "<Kommentar>"`)
+
+	wantExit(t, app, at(app, nine(t), "time", "start", "--context", "plain", "--task", "545", "--user", "1"), 0)
+	wantExit(t, app, at(app, morning(t), "time", "stop", "--context", "plain"), 1)
+	wantStderr(t, app, "--context plain")
+	if _, errs := bufs(app); strings.Contains(errs, "<Kommentar>") || strings.Contains(errs, "'plain'") {
+		t.Errorf("stderr = %s", errs)
+	}
+	// a comment given to stop is named as well
+	wantExit(t, app, at(app, morning(t), "time", "stop", "--context", "plain", "-m", "neu"), 1)
+	wantStderr(t, app, `-m "<Kommentar>"`)
 }

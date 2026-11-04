@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -306,22 +307,23 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 	if st.BaseURL != r.BaseURL {
 		return errTimerAccount(st.BaseURL, r.BaseURL)
 	}
-	p, err := a.timerPeriod(*st)
+	// eff is the timer with the comment of this stop (-m replaces it)
+	eff := *st
+	if c.Flags().Changed("comments") {
+		eff.Comment = flagString(c, "comments")
+	}
+	p, err := a.timerPeriod(eff)
 	if err != nil {
 		return err
 	}
-	te := timeEntry{period: p, task: st.Task, user: st.User}
-	comment := st.Comment
-	if c.Flags().Changed("comments") {
-		comment = flagString(c, "comments")
-		te.comments = &comment
-	} else if comment != "" {
-		te.comments = &comment
+	te := timeEntry{period: p, task: eff.Task, user: eff.User}
+	if c.Flags().Changed("comments") || eff.Comment != "" {
+		te.comments = &eff.Comment
 	}
 	// not guarded: two concurrent stops of one timer may both book it
 	resp, err := a.sendTimeEntry(c, e, client, r, fields, te)
 	if err != nil {
-		return a.keepTimer(err, *st, p)
+		return a.keepTimer(err, eff, p)
 	}
 	if resp == nil {
 		_, _ = fmt.Fprintln(a.Err, "Hinweis: Probelauf – nichts gebucht, der Timer läuft weiter.")
@@ -332,7 +334,8 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 	if delErr != nil {
 		ce := clierr.New(clierr.CodePartial,
 			fmt.Sprintf("Zeiteintrag angelegt, aber Timer-Datei nicht gelöscht: %s", printable(delErr.Error())),
-			"NICHT erneut papierkram time stop ausführen (würde doppelt buchen); den Timer mit papierkram time discard verwerfen")
+			fmt.Sprintf("NICHT erneut papierkram time stop ausführen (würde doppelt buchen); den Timer mit papierkram time discard verwerfen "+
+				"oder die Datei %s von Hand löschen", printable(path)))
 		ce.Cause = delErr
 		return ce
 	}
@@ -417,6 +420,7 @@ func (a *App) midnightTimerHint(st timer.State, start, now time.Time) string {
 		return keep + "Je Tag einen Eintrag von Hand buchen, z. B. " +
 			a.timeLogCommand(st, start.Format(time.DateOnly), from, "23:59") + ", danach papierkram time discard"
 	}
+	// a half of zero minutes (start 23:59, stop 00:00) is no entry
 	var cmds []string
 	if from != "23:59" {
 		cmds = append(cmds, a.timeLogCommand(st, start.Format(time.DateOnly), from, "23:59"))
@@ -424,17 +428,36 @@ func (a *App) midnightTimerHint(st timer.State, start, now time.Time) string {
 	if end != "00:00" {
 		cmds = append(cmds, a.timeLogCommand(st, now.Format(time.DateOnly), "00:00", end))
 	}
+	if len(cmds) == 0 {
+		return "Weniger als eine Minute je Tag, nichts zu buchen: den Timer mit papierkram time discard verwerfen"
+	}
 	return keep + "Von Hand buchen: " + strings.Join(cmds, " und ") + ", danach papierkram time discard"
 }
 
 // timeLogCommand is the time log command that books st from from to to on
-// date by hand (the comment is left out: shell quoting).
+// date by hand. The context of --context is quoted for the shell (a name
+// may hold ; or $, review M7); a comment is named as a placeholder, since
+// its text would need quoting for every shell.
 func (a *App) timeLogCommand(st timer.State, date, from, to string) string {
 	cmd := fmt.Sprintf("papierkram time log --task %d --user %d --date %s --from %s --to %s", st.Task, st.User, date, from, to)
+	if st.Comment != "" {
+		cmd += ` -m "<Kommentar>"`
+	}
 	if a.Flags.Context != "" {
-		cmd += " --context " + printable(a.Flags.Context)
+		cmd += " --context " + shellWord(a.Flags.Context)
 	}
 	return cmd
+}
+
+var plainWord = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// shellWord is s as one word of a POSIX shell: as is when it has only
+// letters, digits, - and _, otherwise in single quotes (printable).
+func shellWord(s string) string {
+	if plainWord.MatchString(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(printable(s), "'", `'\''`) + "'"
 }
 
 // keepTimer adds to an error of time stop after the timer was read that
@@ -448,6 +471,11 @@ func (a *App) keepTimer(err error, st timer.State, p period) error {
 	case clierr.CodeOutcomeUnknown:
 		keep = "Der Timer läuft weiter: erst mit papierkram time list prüfen, ob der Eintrag angelegt wurde; " +
 			"wenn ja, den Timer mit papierkram time discard verwerfen, sonst erneut papierkram time stop"
+	case clierr.CodeServer:
+		// a 5xx after the POST may still have created the entry
+		keep = "Der Timer läuft weiter: erst mit papierkram time list prüfen, ob der Eintrag angelegt wurde; " +
+			"wenn ja, den Timer mit papierkram time discard verwerfen, sonst erneut papierkram time stop oder von Hand buchen mit " +
+			a.timeLogCommand(st, p.date, hhmm(p.start), hhmm(p.end)) + ", danach papierkram time discard"
 	case clierr.CodeConfirmation:
 		keep = "Der Timer läuft weiter"
 	default:
