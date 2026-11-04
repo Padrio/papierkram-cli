@@ -21,8 +21,13 @@ import (
 // are skipped: their handlers add themselves to the group. Resources without
 // any entry get no command yet.
 func BuildResourceCommands(app *App, root *cobra.Command) {
-	entries := registry.Entries()
-	for _, r := range registry.Resources() {
+	buildResourceCommands(app, root, registry.Resources(), registry.Entries())
+}
+
+// buildResourceCommands is BuildResourceCommands for the given resources
+// and entries.
+func buildResourceCommands(app *App, root *cobra.Command, resources []registry.Resource, entries []registry.Entry) {
+	for _, r := range resources {
 		var own []registry.Entry
 		for _, e := range entries {
 			if e.Resource == r.Name {

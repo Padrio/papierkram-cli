@@ -628,12 +628,26 @@ func TestResourceGroupsAndAliases(t *testing.T) {
 	wantExit(t, app, Run(app, []string{"user", "bogus"}), 2)
 	wantRequests(t, srv, 0)
 
-	// resources without entries get no command yet
+	// a resource without entries gets no command; built from a fixed
+	// resource list so the check does not depend on which resources the
+	// registry has entries for yet
 	app, _ = apiApp(t)
-	root := NewRootCmd(app)
-	if c, _, err := root.Find([]string{"estimate"}); err == nil && c != root {
-		t.Errorf("estimate ohne Registry-Einträge hat einen Befehl")
+	user, _ := registry.Lookup("user", "list")
+	empty := &cobra.Command{Use: "papierkram"}
+	buildResourceCommands(app, empty, []registry.Resource{
+		{Name: "user", Aliases: []string{"benutzer"}, Short: "Benutzer", Noun: "Benutzer"},
+		{Name: "leer", Aliases: []string{"nichts"}, Short: "ohne Einträge", Noun: "Leer"},
+	}, []registry.Entry{user})
+	for _, name := range []string{"leer", "nichts"} {
+		if c, _, err := empty.Find([]string{name}); err == nil && c != empty {
+			t.Errorf("%s ohne Registry-Einträge hat einen Befehl", name)
+		}
 	}
+	if c, _, err := empty.Find([]string{"benutzer", "list"}); err != nil || c.Name() != "list" {
+		t.Errorf("user list fehlt: %v", err)
+	}
+
+	root := NewRootCmd(app)
 	if c, _, err := root.Find([]string{"info"}); err != nil || c.Name() != "info" || c.HasSubCommands() {
 		t.Errorf("info ist kein eigener Befehl: %v", err)
 	}
