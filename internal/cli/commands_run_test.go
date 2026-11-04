@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Padrio/papierkram-cli/internal/projectfile"
 	"github.com/Padrio/papierkram-cli/internal/registry"
+	"github.com/Padrio/papierkram-cli/internal/testutil/mockapi"
 )
 
 // The contract against the running CLI: commands are run with their own
@@ -46,6 +48,14 @@ var runFixtures = map[string]string{
 // mock and a user preset (time log, time start need one).
 func runLine(t *testing.T, env map[string]string, words []string) (int, string) {
 	t.Helper()
+	code, errs, _ := runLineServer(t, env, words)
+	return code, errs
+}
+
+// runLineServer is runLine that also returns the mock, so a test can check
+// the requests the run sent.
+func runLineServer(t *testing.T, env map[string]string, words []string) (int, string, *mockapi.Server) {
+	t.Helper()
 	dir := t.TempDir()
 	for name, content := range runFixtures {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
@@ -57,13 +67,28 @@ func runLine(t *testing.T, env map[string]string, words []string) (int, string) 
 	for k, v := range env {
 		all[k] = v
 	}
-	app, _ := mockApp(t, all)
+	app, srv := mockApp(t, all)
 	// the project file of the fixtures is found in the run directory
 	app.Getwd = func() (string, error) { return dir, nil }
 	code := Run(app, words)
 	assertNoToken(t, app)
 	_, errs := bufs(app)
-	return code, errs
+	return code, errs, srv
+}
+
+// dryRunRequests checks what a --dry-run sent to the mock: nothing but GET,
+// and a GET only as the read-only pre-step of invoice create
+// --from-estimate (reading the estimate, shown as "read").
+func dryRunRequests(srv *mockapi.Server, words []string) error {
+	for _, r := range srv.Requests() {
+		if r.Method != "GET" {
+			return fmt.Errorf("--dry-run sendete %s %s", r.Method, r.Path)
+		}
+		if !slices.Contains(words, "--from-estimate") {
+			return fmt.Errorf("--dry-run sendete GET %s ohne erlaubten Lese-Vorschritt", r.Path)
+		}
+	}
+	return nil
 }
 
 // exampleRuns returns the examples of c as argument lists that run
@@ -95,6 +120,28 @@ func dryRunnable(c cmdInfo) bool {
 		return true
 	}
 	return false
+}
+
+func TestDryRunRequests(t *testing.T) {
+	for _, tc := range []struct {
+		words []string
+		ok    bool
+	}{
+		{[]string{"company", "create", "--name", "X", "--contact-type", "customer", "--dry-run"}, true},
+		{[]string{"invoice", "create", "--from-estimate", "349", "--payment-term", "1130", "--dry-run"}, true},
+		// a mutation without --dry-run reaches the mock: POST
+		{[]string{"company", "create", "--name", "X", "--contact-type", "customer"}, false},
+		// a GET without the from-estimate pre-step
+		{[]string{"invoice", "list"}, false},
+	} {
+		code, errs, srv := runLineServer(t, nil, tc.words)
+		if code != 0 {
+			t.Fatalf("%v: exit %d, %q", tc.words, code, errs)
+		}
+		if err := dryRunRequests(srv, tc.words); (err == nil) != tc.ok {
+			t.Errorf("dryRunRequests(%v) = %v, want ok %v", tc.words, err, tc.ok)
+		}
+	}
 }
 
 // valueRejected reports whether a run rejected the value of flag: a usage
@@ -315,8 +362,12 @@ func TestMutationExamplesDryRun(t *testing.T) {
 				words = append(words, "--dry-run")
 			}
 			checked++
-			if code, errs := runLine(t, nil, words); code != 0 {
+			code, errs, srv := runLineServer(t, nil, words)
+			if code != 0 {
 				t.Errorf("%s: exit %d, stderr %q", strings.Join(words, " "), code, errs)
+			}
+			if err := dryRunRequests(srv, words); err != nil {
+				t.Errorf("%s: %v", strings.Join(words, " "), err)
 			}
 		}
 	}
