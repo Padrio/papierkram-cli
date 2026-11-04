@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestEmbeddedSpecLoads(t *testing.T) {
@@ -142,6 +144,31 @@ func TestFileMediaType(t *testing.T) {
 	for _, op := range []string{"GetInvoice", "DeliverInvoice", "Nope"} {
 		if got := FileMediaType(op); got != "" {
 			t.Errorf("%s: %q, want empty", op, got)
+		}
+	}
+}
+
+// JSON content keys in any spelling (parameters, +json) are no file type.
+func TestFileMediaTypeSkipsJSONVariants(t *testing.T) {
+	resp := func(cts ...string) *openapi3.Response {
+		r := openapi3.NewResponse()
+		r.Content = openapi3.Content{}
+		for _, ct := range cts {
+			r.Content[ct] = openapi3.NewMediaType()
+		}
+		return r
+	}
+	for _, tc := range []struct {
+		resps []*openapi3.Response
+		want  string
+	}{
+		{[]*openapi3.Response{resp("application/json; charset=utf-8")}, ""},
+		{[]*openapi3.Response{resp("application/problem+json")}, ""},
+		{[]*openapi3.Response{resp("Application/JSON", "application/pdf")}, "application/pdf"},
+		{[]*openapi3.Response{resp(), resp("Application/PDF")}, "application/pdf"},
+	} {
+		if got := fileMediaType(tc.resps); got != tc.want {
+			t.Errorf("%v: %q, want %q", tc.resps, got, tc.want)
 		}
 	}
 }

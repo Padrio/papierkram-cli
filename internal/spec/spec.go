@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"maps"
+	"mime"
 	"slices"
 	"sort"
 	"strconv"
@@ -200,16 +201,20 @@ func ResponseSchema(opID string) *openapi3.Schema {
 
 // FileMediaType returns the media type of a file answer (application/pdf):
 // the first non-JSON content type of the first 2xx response that has
-// content. It is "" for JSON operations, operations without content and
-// unknown operations.
-func FileMediaType(opID string) string {
-	for _, r := range successResponses(opID) {
+// content, lowercased without parameters. JSON in any spelling
+// (application/json with parameters, *+json) is no file type. It is "" for
+// JSON operations, operations without content and unknown operations.
+func FileMediaType(opID string) string { return fileMediaType(successResponses(opID)) }
+
+func fileMediaType(resps []*openapi3.Response) string {
+	for _, r := range resps {
 		if len(r.Content) == 0 {
 			continue
 		}
 		for _, ct := range slices.Sorted(maps.Keys(r.Content)) {
-			if ct != "application/json" {
-				return ct
+			mt, _, err := mime.ParseMediaType(ct)
+			if err == nil && mt != "application/json" && !strings.HasSuffix(mt, "+json") {
+				return mt
 			}
 		}
 		return ""
