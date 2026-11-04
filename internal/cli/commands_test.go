@@ -138,57 +138,83 @@ func TestCommandsJSONMatchesContract(t *testing.T) {
 	}
 
 	// strictness: each mutation of a valid document must fail
-	mutate := map[string]func(doc map[string]any){
-		"unbekanntes Feld oben":       func(d map[string]any) { d["extra"] = 1 },
-		"unbekanntes Befehlsfeld":     func(d map[string]any) { firstCmd(d)["use"] = "x" },
-		"usage fehlt":                 func(d map[string]any) { delete(firstCmd(d), "usage") },
-		"usage ohne papierkram":       func(d map[string]any) { firstCmd(d)["usage"] = "invoice create" },
-		"shorthand leer":              func(d map[string]any) { firstFlag(d)["shorthand"] = "" },
-		"shorthand null":              func(d map[string]any) { firstFlag(d)["shorthand"] = nil },
-		"shorthand zu lang":           func(d map[string]any) { firstFlag(d)["shorthand"] = "ab" },
-		"alternatives leer":           func(d map[string]any) { firstFlag(d)["alternatives"] = []any{} },
-		"alternative ohne --":         func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"input"} },
-		"alternative doppelt":         func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"--input", "--input"} },
-		"alternatives ohne required":  func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"--input"} },
-		"alternatives kein Array":     func(d map[string]any) { firstFlag(d)["alternatives"] = "--input" },
-		"blocked fehlt":               func(d map[string]any) { delete(firstCmd(d), "blocked_by_read_only") },
-		"blocked kein bool":           func(d map[string]any) { firstCmd(d)["blocked_by_read_only"] = "ja" },
-		"per_request nicht blockiert": func(d map[string]any) { apiCmd(d, "api")["blocked_by_read_only"] = false },
-		"Flag-Credits 0":              func(d map[string]any) { firstFlag(d)["credits"] = 0.0 },
-		"Flag-Credits Text":           func(d map[string]any) { firstFlag(d)["credits"] = "10" },
-		"globaler shorthand null":     func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["shorthand"] = nil },
-		"unbekannte Klasse":           func(d map[string]any) { firstCmd(d)["class"] = "write" },
-		"Operation ohne Methode":      func(d map[string]any) { delete(apiCmd(d, "invoice create"), "method") },
-		"lokal mit Credits":           func(d map[string]any) { apiCmd(d, "version")["credits"] = 1.0 },
-		"per_request mit Credits":     func(d map[string]any) { apiCmd(d, "api")["credits"] = 1.0 },
-		"unbekanntes Flag-Feld":       func(d map[string]any) { firstFlag(d)["short"] = "x" },
-		"unbekannter Flag-Typ":        func(d map[string]any) { firstFlag(d)["type"] = "int64" },
-		"enum fehlt":                  func(d map[string]any) { delete(firstFlag(d), "enum") },
-		"unbekannte Quelle":           func(d map[string]any) { firstFlag(d)["default_from"] = []any{"cache"} },
-		"env fehlt zu default_from": func(d map[string]any) {
-			for _, f := range apiCmd(d, "task list")["flags"].([]any) {
-				delete(f.(map[string]any), "env")
-			}
-		},
-		"globales Flag-Feld":       func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["x"] = true },
-		"falsche Vertragsversion":  func(d map[string]any) { d["version"] = 2.0 },
-		"Beispiel ohne papierkram": func(d map[string]any) { apiCmd(d, "invoice create")["examples"] = []any{"invoice create"} },
+	// each change must fail for the rule it names: want is a part of the
+	// error kin-openapi reports for that rule. Rules inside oneOf/allOf
+	// report only one branch at the top, so for them the changed object
+	// (obj) is checked against the subschema of the rule (rule) itself.
+	cmdItem := schema.Properties["commands"].Value.Items.Value
+	flagItem := cmdItem.Properties["flags"].Value.Items.Value
+	branch := func(i int) *openapi3.Schema { return cmdItem.OneOf[i].Value }
+	type mutation struct {
+		fn   func(d map[string]any)
+		want string
+		rule *openapi3.Schema
+		obj  func(d map[string]any) any
 	}
-	for name, fn := range mutate {
+	mutate := map[string]mutation{
+		"unbekanntes Feld oben":   {func(d map[string]any) { d["extra"] = 1 }, `property "extra" is unsupported`, nil, nil},
+		"unbekanntes Befehlsfeld": {func(d map[string]any) { cmdOf(d, "version")["use"] = "x" }, `property "use" is unsupported`, nil, nil},
+		"usage fehlt":             {func(d map[string]any) { delete(cmdOf(d, "version"), "usage") }, `property "usage" is missing`, nil, nil},
+		"usage ohne papierkram":   {func(d map[string]any) { cmdOf(d, "version")["usage"] = "version" }, "regular expression", nil, nil},
+		"shorthand leer":          {func(d map[string]any) { reqFlag(d)["shorthand"] = "" }, "regular expression", nil, nil},
+		"shorthand null":          {func(d map[string]any) { reqFlag(d)["shorthand"] = nil }, "Value is not nullable", nil, nil},
+		"shorthand zu lang":       {func(d map[string]any) { reqFlag(d)["shorthand"] = "ab" }, "regular expression", nil, nil},
+		"alternatives leer":       {func(d map[string]any) { reqFlag(d)["alternatives"] = []any{} }, "minimum number of items is 1", nil, nil},
+		"alternative ohne --":     {func(d map[string]any) { reqFlag(d)["alternatives"] = []any{"input"} }, "regular expression", nil, nil},
+		"alternative doppelt":     {func(d map[string]any) { reqFlag(d)["alternatives"] = []any{"--input", "--input"} }, "duplicate items found", nil, nil},
+		"alternatives ohne required": {func(d map[string]any) { optFlag(d)["alternatives"] = []any{"--input"} }, `any schema from "anyOf"`,
+			flagItem.AllOf[0].Value, func(d map[string]any) any { return optFlag(d) }},
+		"alternatives kein Array": {func(d map[string]any) { reqFlag(d)["alternatives"] = "--input" }, "value must be an array", nil, nil},
+		"blocked fehlt":           {func(d map[string]any) { delete(cmdOf(d, "version"), "blocked_by_read_only") }, `property "blocked_by_read_only" is missing`, nil, nil},
+		"blocked kein bool":       {func(d map[string]any) { cmdOf(d, "version")["blocked_by_read_only"] = "ja" }, "value must be a boolean", nil, nil},
+		"per_request nicht blockiert": {func(d map[string]any) { cmdOf(d, "api")["blocked_by_read_only"] = false }, `"/blocked_by_read_only"`,
+			branch(2), func(d map[string]any) any { return cmdOf(d, "api") }},
+		"Flag-Credits 0":          {func(d map[string]any) { flagOf(d, "voucher create", "file")["credits"] = 0.0 }, "number must be at least 1", nil, nil},
+		"Flag-Credits Text":       {func(d map[string]any) { flagOf(d, "voucher create", "file")["credits"] = "10" }, "value must be an integer", nil, nil},
+		"globaler shorthand null": {func(d map[string]any) { globalFlag(d, "output")["shorthand"] = nil }, "Value is not nullable", nil, nil},
+		"unbekannte Klasse":       {func(d map[string]any) { cmdOf(d, "version")["class"] = "write" }, "value is not one of the allowed values", nil, nil},
+		"Operation ohne Methode":  {func(d map[string]any) { delete(cmdOf(d, "invoice create"), "method") }, `property "method" is missing`, nil, nil},
+		"lokal mit Credits": {func(d map[string]any) { cmdOf(d, "version")["credits"] = 1.0 }, `"/credits"`,
+			branch(1), func(d map[string]any) any { return cmdOf(d, "version") }},
+		"per_request mit Credits": {func(d map[string]any) { cmdOf(d, "api")["credits"] = 1.0 }, `"/credits"`,
+			branch(2), func(d map[string]any) any { return cmdOf(d, "api") }},
+		"unbekanntes Flag-Feld": {func(d map[string]any) { reqFlag(d)["short"] = "x" }, `property "short" is unsupported`, nil, nil},
+		"unbekannter Flag-Typ":  {func(d map[string]any) { reqFlag(d)["type"] = "int64" }, "value is not one of the allowed values", nil, nil},
+		"enum fehlt":            {func(d map[string]any) { delete(reqFlag(d), "enum") }, `property "enum" is missing`, nil, nil},
+		"unbekannte Quelle":     {func(d map[string]any) { flagOf(d, "task list", "project")["default_from"] = []any{"cache"} }, "value is not one of the allowed values", nil, nil},
+		"env fehlt zu default_from": {func(d map[string]any) { delete(flagOf(d, "task list", "project"), "env") }, `any schema from "anyOf"`,
+			flagItem.AllOf[1].Value, func(d map[string]any) any { return flagOf(d, "task list", "project") }},
+		"globales Flag-Feld":       {func(d map[string]any) { globalFlag(d, "output")["x"] = true }, `property "x" is unsupported`, nil, nil},
+		"falsche Vertragsversion":  {func(d map[string]any) { d["version"] = 2.0 }, "value is not one of the allowed values", nil, nil},
+		"Beispiel ohne papierkram": {func(d map[string]any) { cmdOf(d, "invoice create")["examples"] = []any{"invoice create"} }, "regular expression", nil, nil},
+	}
+	for name, m := range mutate {
 		var doc map[string]any
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			t.Fatal(err)
 		}
-		fn(doc)
-		if err := schema.VisitJSON(doc); err == nil {
+		if m.rule != nil {
+			// the rule holds for the unchanged object
+			if err := m.rule.VisitJSON(m.obj(doc)); err != nil {
+				t.Errorf("%s: Regel lehnt schon das unveränderte Objekt ab: %v", name, err)
+			}
+		}
+		m.fn(doc)
+		err := schema.VisitJSON(doc)
+		if m.rule != nil && err != nil {
+			err = m.rule.VisitJSON(m.obj(doc))
+		}
+		switch {
+		case err == nil:
 			t.Errorf("%s: Vertrag lässt das Dokument durch", name)
+		case !strings.Contains(err.Error(), m.want):
+			t.Errorf("%s: abgelehnt, aber nicht wegen %q:\n%v", name, m.want, err)
 		}
 	}
 }
 
-func firstCmd(d map[string]any) map[string]any { return d["commands"].([]any)[0].(map[string]any) }
-
-func apiCmd(d map[string]any, command string) map[string]any {
+// cmdOf is the command of a decoded commands document.
+func cmdOf(d map[string]any, command string) map[string]any {
 	for _, c := range d["commands"].([]any) {
 		if m := c.(map[string]any); m["command"] == command {
 			return m
@@ -197,9 +223,30 @@ func apiCmd(d map[string]any, command string) map[string]any {
 	panic(command)
 }
 
-func firstFlag(d map[string]any) map[string]any {
-	return apiCmd(d, "invoice create")["flags"].([]any)[0].(map[string]any)
+// flagOf is a flag of a command of a decoded commands document.
+func flagOf(d map[string]any, command, name string) map[string]any {
+	for _, f := range cmdOf(d, command)["flags"].([]any) {
+		if m := f.(map[string]any); m["name"] == name {
+			return m
+		}
+	}
+	panic(command + " --" + name)
 }
+
+// globalFlag is a global flag of a decoded commands document.
+func globalFlag(d map[string]any, name string) map[string]any {
+	for _, f := range d["global_flags"].([]any) {
+		if m := f.(map[string]any); m["name"] == name {
+			return m
+		}
+	}
+	panic(name)
+}
+
+// reqFlag is a required flag with alternatives (invoice create --name),
+// optFlag an optional one without (invoice create --description).
+func reqFlag(d map[string]any) map[string]any { return flagOf(d, "invoice create", "name") }
+func optFlag(d map[string]any) map[string]any { return flagOf(d, "invoice create", "description") }
 
 // The two flag schemas of the contract (commands[].flags and
 // global_flags) are the same.
