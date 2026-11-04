@@ -24,20 +24,21 @@
 //	VoucherStateValues: 3 list pages                                3
 //	PartialUpdateSemantics: task 10, payment terms 1, invoice
 //	  51, user 1, time entry 10, custom attribute 10,
-//	  10 × (describe, update, describe)                           113
-//	ReplaceLineItems: describe, update, describe                    3
+//	  10 × (describe, update, describe), invoice update reads
+//	  the invoice first (1)                                       114
+//	ReplaceLineItems: describe, read + update, describe              4
 //	Carries (13 subtests, 2 time entries of 10 in no. 12,
 //	  describe, update, describe in no. 6)                         37
 //	final cleanup: 1 delete per object (12 fixtures and up to 2
 //	  midnight time entries = 14); a final document costs up to 3
 //	  more (cancel, delete, archive)                               14
-//	                                                     total    428
+//	                                                     total    430
 //
 // Of the budget, cleanupReserve = 46 is kept for the final cleanup: the
 // documented worst case (e2eguard.CleanupReserve) for the 4 documents
 // (2 estimates, invoice, voucher; 4 each) and up to 10 other objects
 // (2 each), plus a margin of 10. Tests may use 490 - 46 = 444 (planned:
-// 414). The meter (e2eguard.Meter) counts every sent request, rejected
+// 416). The meter (e2eguard.Meter) counts every sent request, rejected
 // ones too, with max(documented cost, X-Consumed-Quota), the header being
 // the cost of that one request; before the cleanup the transport refuses every
 // request that would cut into the reserve, and need() skips a test (and
@@ -548,11 +549,13 @@ func TestE2E_PartialUpdateSemantics(t *testing.T) {
 		{"estimate", byID("estimate", idf(s.estimate)), upd("estimate", idf(s.estimate), "--description", val),
 			[]string{"description"}, val, [][]string{{"name"}, {"customer", "id"}, {"line_items"}}},
 		// payment_term of an invoice is a copy of the chosen template (in
-		// every spec example its id is template_id + 1); run 2 saw its id
-		// change 22 → 25 on a PUT with only description. What must stay is
-		// the template; the id is measured (see paymentTermShape).
+		// every spec example its id is template_id + 1). Run 3 showed a PUT
+		// without payment_term switching to the default template and
+		// changing due_date; invoice update now reads the invoice and
+		// sends its payment_term.id (ruling E2E-A). Hard: template and
+		// due_date stay.
 		{"invoice", byID("invoice", idf(s.invoice)), upd("invoice", idf(s.invoice), "--description", val),
-			[]string{"description"}, val, [][]string{{"name"}, {"payment_term", "template_id"}, {"line_items"}}},
+			[]string{"description"}, val, [][]string{{"name"}, {"payment_term", "template_id"}, {"due_date"}, {"line_items"}}},
 		{"voucher", byID("voucher", idf(s.voucher)), upd("voucher", idf(s.voucher), "--description", val),
 			[]string{"description"}, val, [][]string{{"name"}, {"provenance"}, {"creditor", "id"}, {"line_items"}}},
 		{"time", byID("time", idf(s.timeEntry)), upd("time", idf(s.timeEntry), "--comments", val),
@@ -564,7 +567,13 @@ func TestE2E_PartialUpdateSemantics(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			d := c.describe(t) // creates the object if needed
 			u := c.update(t)
-			s.need(t, 3)
+			// describe, update, describe; invoice update reads the
+			// invoice first (keeps its payment term)
+			n := 3
+			if c.name == "invoice" {
+				n = 4
+			}
+			s.need(t, n)
 			before := s.ok(t, "", d...)
 			s.ok(t, "", u...)
 			after := s.ok(t, "", d...)
@@ -639,7 +648,7 @@ func (s *liveSuite) customAttribute(t *testing.T) int64 {
 func TestE2E_ReplaceLineItems(t *testing.T) {
 	s := live(t)
 	inv := idOf(s.invoice(t))
-	s.need(t, 3)
+	s.need(t, 4) // describe, update (reads the invoice first), describe
 	before := s.ok(t, "", "invoice", "describe", ids(inv))
 	n, _ := before["line_items"].([]any)
 	if len(n) < 2 {
