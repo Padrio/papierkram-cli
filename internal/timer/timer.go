@@ -32,6 +32,11 @@ import (
 // a comment needs far less.
 const MaxSize = 64 << 10
 
+// MaxComment is the longest comment of a timer, in bytes. JSON escapes a
+// byte to at most six (\u00XX), so a state with the longest comment stays
+// below MaxSize and what Save writes Load reads.
+const MaxComment = 8 << 10
+
 // DirectName is the name part of the state file without a context
 // (direct mode over PAPIERKRAM_TOKEN): it has a dot, so it is no valid
 // context name (config.ValidateName) and the escaping of Path never
@@ -112,15 +117,28 @@ func Load(path string) (*State, error) {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return nil, invalid(path, "Daten nach dem JSON-Objekt", nil)
 	}
-	switch {
-	case s.Task <= 0:
-		return nil, invalid(path, "Aufgabe fehlt oder ist ungültig", nil)
-	case s.User <= 0:
-		return nil, invalid(path, "Benutzer fehlt oder ist ungültig", nil)
-	case s.StartedAt.IsZero():
-		return nil, invalid(path, "Startzeit fehlt", nil)
+	if why := validate(s); why != "" {
+		return nil, invalid(path, why, nil)
 	}
 	return &s, nil
+}
+
+// validate is the check of a state that Load and Save share, so a state
+// Save writes is one Load accepts: positive task and user, a start, a
+// comment of at most MaxComment bytes. It returns why s is invalid, ""
+// when it is valid.
+func validate(s State) string {
+	switch {
+	case s.Task <= 0:
+		return "Aufgabe fehlt oder ist ungültig"
+	case s.User <= 0:
+		return "Benutzer fehlt oder ist ungültig"
+	case s.StartedAt.IsZero():
+		return "Startzeit fehlt"
+	case len(s.Comment) > MaxComment:
+		return fmt.Sprintf("Kommentar zu lang (mehr als %d KiB)", MaxComment>>10)
+	}
+	return ""
 }
 
 // invalid is the error of a state file that cannot be used; the path is
@@ -133,13 +151,21 @@ func invalid(path, why string, cause error) error {
 }
 
 // Save writes s as a new state file at path (mode 0600, the directory
-// 0700), atomically and only when there is none: an existing file, also
+// 0700) when it passes the validation of Load and fits MaxSize,
+// atomically and only when there is none: an existing file, also
 // a symbolic link, is never replaced or followed; the error then matches
 // fs.ErrExist.
 func Save(path string, s State) error {
+	if why := validate(s); why != "" {
+		return errors.New("ungültiger Timer: " + why)
+	}
 	data, err := json.Marshal(s)
 	if err != nil {
 		return err
+	}
+	if len(data)+1 > MaxSize {
+		// only a huge context name or base URL gets here
+		return fmt.Errorf("ungültiger Timer: zu groß (mehr als %d KiB)", MaxSize>>10)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err

@@ -121,6 +121,9 @@ func (a *App) runTimeStart(c *cobra.Command, e registry.Entry) error {
 	if err := checkTaskUserFlags(c); err != nil {
 		return err
 	}
+	if n := len(flagString(c, "comments")); n > timer.MaxComment {
+		return usageErr(fmt.Sprintf("Kommentar zu lang (%d Bytes, höchstens %d KiB)", n, timer.MaxComment>>10))
+	}
 	_, r, err := a.mutationClient(e)
 	if err != nil {
 		return err
@@ -128,6 +131,19 @@ func (a *App) runTimeStart(c *cobra.Command, e registry.Entry) error {
 	task, user, err := a.timeLogPresets(c, r)
 	if err != nil {
 		return err
+	}
+	// ID 0 passes the preset rules (R24) and is rejected by the server
+	// at once on time log; a timer would only fail at stop, hours later
+	// (review I1)
+	for _, p := range []struct {
+		key string
+		p   preset
+	}{{presetTask, task}, {presetUser, user}} {
+		if p.p.ID <= 0 {
+			return clierr.New(clierr.CodeUsage,
+				fmt.Sprintf("%s %d aus %s ist ungültig: der Timer braucht eine ID größer als 0", resourceNoun(p.key), p.p.ID, printable(p.p.Origin)),
+				"Timer nicht gestartet. Gültige ID angeben, z. B. "+useLine(c)+" --"+p.key+" <id>")
+		}
 	}
 	path, cur, err := a.loadTimer(r)
 	if err != nil {

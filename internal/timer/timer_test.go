@@ -119,6 +119,8 @@ func TestLoadRejectsInvalidState(t *testing.T) {
 		"too large":       `{"comment":"` + strings.Repeat("x", MaxSize) + `"}`,
 		"empty":           "",
 		"comment no text": `{"context":"firma","started_at":"2026-11-04T09:00:00+01:00","task":1,"user":1,"comment":5}`,
+		"comment too long": `{"context":"firma","started_at":"2026-11-04T09:00:00+01:00","task":1,"user":1,"comment":"` +
+			strings.Repeat("x", MaxComment+1) + `"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), "x\x1b[2J")
@@ -177,5 +179,46 @@ func TestLoadRejectsNonRegularFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(valid); err != nil {
 		t.Errorf("link target removed: %v", err)
+	}
+}
+
+// Review I1: Save and Load share one validation, so what Save writes Load
+// can always read: an invalid state is never written, and the limits hold
+// at their boundary, also for a comment that JSON escapes to six times
+// its length.
+func TestSaveValidatesLikeLoad(t *testing.T) {
+	dir := t.TempDir()
+	for name, mod := range map[string]func(*State){
+		"task 0":           func(s *State) { s.Task = 0 },
+		"user 0":           func(s *State) { s.User = 0 },
+		"negative task":    func(s *State) { s.Task = -1 },
+		"no start":         func(s *State) { s.StartedAt = time.Time{} },
+		"comment too long": func(s *State) { s.Comment = strings.Repeat("x", MaxComment+1) },
+		"state too large":  func(s *State) { s.BaseURL = strings.Repeat("x", MaxSize) },
+	} {
+		s := state(t)
+		mod(&s)
+		path := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".json")
+		if err := Save(path, s); err == nil {
+			t.Errorf("%s: Save accepted %+v", name, s)
+		}
+		if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s: file written", name)
+		}
+	}
+	for name, comment := range map[string]string{
+		"longest comment":       strings.Repeat("x", MaxComment),
+		"longest escaped":       strings.Repeat("<", MaxComment),
+		"longest control chars": strings.Repeat("\x01", MaxComment),
+	} {
+		s := state(t)
+		s.Comment = comment
+		path := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".json")
+		if err := Save(path, s); err != nil {
+			t.Fatalf("%s: Save = %v", name, err)
+		}
+		if got, err := Load(path); err != nil || got == nil || got.Comment != comment {
+			t.Errorf("%s: Load = %v", name, err)
+		}
 	}
 }

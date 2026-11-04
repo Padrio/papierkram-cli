@@ -542,3 +542,39 @@ func TestTimerStopOtherAccountRefused(t *testing.T) {
 	}
 	wantStderr(t, app, host(srv.URL()), "papierkram time discard")
 }
+
+// Review I1: time start never saves a timer the other commands reject:
+// task or user 0 (flag or environment) and an overlong comment are exit 2
+// before anything is saved or sent.
+func TestTimerStartRejectsUnusableState(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		args []string
+		want string
+	}{
+		{"task 0", nil, []string{"--task", "0", "--user", "1"}, "Aufgabe 0 aus --task"},
+		{"user 0", nil, []string{"--task", "545", "--user", "0"}, "Benutzer 0 aus --user"},
+		{"env task 0", map[string]string{"PAPIERKRAM_TASK": "0"}, []string{"--user", "1"}, "Aufgabe 0 aus PAPIERKRAM_TASK"},
+		{"long comment", nil, []string{"--task", "545", "--user", "1", "-m", strings.Repeat("x", 70000)}, "Kommentar zu lang"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, srv := logApp(t, nine(t))
+			env := map[string]string{"PAPIERKRAM_BASE_URL": srv.URL(), "PAPIERKRAM_TOKEN": "test-token-log"}
+			for k, v := range tc.env {
+				env[k] = v
+			}
+			app.Env = envMap(env)
+			wantExit(t, app, at(app, nine(t), append([]string{"time", "start"}, tc.args...)...), 2)
+			wantStderr(t, app, tc.want)
+			if timerFile(t, app, "") != nil {
+				t.Error("state saved")
+			}
+			wantRequests(t, srv, 0)
+		})
+	}
+	// the longest comment is fine and the timer can be read again
+	app, _ := logApp(t, nine(t))
+	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1", "-m", strings.Repeat("<", timer.MaxComment)), 0)
+	wantExit(t, app, at(app, morning(t), "time", "status"), 0)
+}
