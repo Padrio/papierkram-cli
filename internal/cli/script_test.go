@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -305,8 +306,18 @@ func cmdJSONSchema(ts *testscript.TestScript, neg bool, args []string) {
 	ts.Check(checkContract(args[1], []byte(raw)))
 }
 
+// literalJoin is the boundary of two concatenated string literals
+// ("PK_" + "TEST_", also with backquotes and across lines).
+var literalJoin = regexp.MustCompile("[\"`]\\s*\\+\\s*[\"`]")
+
+// hookNames are the names that betray a test hook: the prefix (after
+// joining concatenated literals) and the hook names without it, which
+// also catch "PK_" + suffix with the suffix from elsewhere.
+var hookNames = []string{"PK_TEST_", "TEST_TTY", "TEST_NOW"}
+
 // The test hooks PK_TEST_* exist only in this test binary: no Go file
-// outside tests may read (or name) them.
+// outside tests may read (or name) them, not even as concatenated
+// literals.
 func TestTestHooksOnlyInTests(t *testing.T) {
 	root := modroot.Find(t)
 	var found []string
@@ -327,8 +338,12 @@ func TestTestHooksOnlyInTests(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if bytes.Contains(raw, []byte("PK_TEST_")) {
-			found = append(found, path)
+		joined := literalJoin.ReplaceAll(raw, nil)
+		for _, name := range hookNames {
+			if bytes.Contains(joined, []byte(name)) {
+				found = append(found, path+" ("+name+")")
+				break
+			}
 		}
 		return nil
 	})
