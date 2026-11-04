@@ -35,14 +35,28 @@ func (a *App) Client(_ *cobra.Command) (*api.Client, *config.Resolved, error) {
 // invocation (spec 10.1). It warns when environment credentials override an
 // explicitly chosen context.
 func (a *App) resolveConfig() (*config.Resolved, error) {
+	r, err := a.resolveWith(a.Flags.Context, a.Keyring)
+	if err != nil {
+		return nil, err
+	}
+	a.resolved = r
+	a.warnEnvOverrides(r)
+	return r, nil
+}
+
+// resolveWith is the resolution of resolveConfig with flagContext as the
+// --context value and store as the keychain (nil: none is read), without
+// side effects; the ID completion resolves through it.
+func (a *App) resolveWith(flagContext string, store auth.Store) (*config.Resolved, error) {
 	cfg, _, err := a.loadConfig()
 	if err != nil {
 		return nil, err
 	}
-	in, err := a.resolveInput()
+	in, err := a.resolveInputFor(flagContext)
 	if err != nil {
 		return nil, err
 	}
+	in.Store = store
 	r, err := config.Resolve(cfg, in)
 	if err != nil {
 		return nil, err
@@ -50,8 +64,6 @@ func (a *App) resolveConfig() (*config.Resolved, error) {
 	if err := checkContextOptions(r); err != nil {
 		return nil, err
 	}
-	a.resolved = r
-	a.warnEnvOverrides(r)
 	return r, nil
 }
 
@@ -70,7 +82,12 @@ func checkContextOptions(r *config.Resolved) error {
 // file is only consulted when neither --context nor PAPIERKRAM_CONTEXT
 // decide.
 func (a *App) resolveInput() (config.ResolveInput, error) {
-	in := config.ResolveInput{FlagContext: a.Flags.Context, Env: a.Env, Store: a.Keyring}
+	return a.resolveInputFor(a.Flags.Context)
+}
+
+// resolveInputFor is resolveInput with flagContext as the --context value.
+func (a *App) resolveInputFor(flagContext string) (config.ResolveInput, error) {
+	in := config.ResolveInput{FlagContext: flagContext, Env: a.Env, Store: a.Keyring}
 	if in.FlagContext != "" || a.Env("PAPIERKRAM_CONTEXT") != "" {
 		return in, nil
 	}
