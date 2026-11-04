@@ -61,6 +61,9 @@ func buildResourceCommands(app *App, root *cobra.Command, resources []registry.R
 				group.AddCommand(cmd)
 			}
 		}
+		for _, build := range groupCmds[r.Name] {
+			group.AddCommand(build(app))
+		}
 		root.AddCommand(group)
 	}
 }
@@ -75,6 +78,13 @@ var customCmds = map[string]func(*App, registry.Entry) *cobra.Command{
 	"upload":          (*App).newUploadCmd,
 	"document delete": (*App).newDocumentCmd,
 	"pay":             (*App).newPayCmd,
+}
+
+// groupCmds are custom commands of a resource group without a registry
+// entry of their own (time log, spec 9.6: the operation belongs to time
+// create, whose entry they use for class, credits and guards).
+var groupCmds = map[string][]func(*App) *cobra.Command{
+	"time": {(*App).newTimeLogCmd},
 }
 
 // entryExtras add a step of their own to a generic command, by operation

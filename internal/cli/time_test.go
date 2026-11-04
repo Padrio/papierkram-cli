@@ -9,8 +9,8 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/testutil/golden"
 )
 
-// time entry commands (spec 7.1, 9.8, 15 no. 81–87). time log and the
-// timer are custom commands of a later task.
+// time entry commands (spec 7.1, 9.8, 15 no. 81–87). time log has its
+// own tests (time_log_test.go); the timer comes in a later task.
 
 // TestTimeGolden renders list and describe from the spec examples of the
 // mock in every output format. The working directory has no project file,

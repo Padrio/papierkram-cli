@@ -830,7 +830,8 @@ func TestProjectTaskCustomAttributeColumns(t *testing.T) {
 
 // Spec 9.8: project describe without ID, task list, task create and time
 // list take the project from the project file; no other command has a
-// preset (time log/start/stop are custom commands of a later task).
+// registry preset (time log and the timer are custom commands that
+// resolve task and user themselves).
 func TestProjectFilePresets(t *testing.T) {
 	want := map[string]string{"project describe": "project", "task list": "project", "task create": "project", "time list": "project"}
 	for _, e := range Entries() {

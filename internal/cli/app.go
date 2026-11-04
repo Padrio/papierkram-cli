@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
 	"golang.org/x/term"
@@ -116,7 +115,8 @@ func NewApp() *App {
 		app.ConfigDir = dir
 	}
 	if dir, err := os.UserCacheDir(); err == nil {
-		app.CacheDir = filepath.Join(dir, "papierkram")
+		// the cache packages append "papierkram/" (see cacheDir)
+		app.CacheDir = dir
 	}
 	return app
 }

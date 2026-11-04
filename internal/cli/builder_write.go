@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/spec"
@@ -249,8 +250,16 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 	if up != nil {
 		return a.uploadCreated(c, e, client, r, resp, up)
 	}
-	if len(bytes.TrimSpace(resp.Body)) > 0 {
-		return a.render(c, resp.Body, e.Columns)
+	return a.writeResult(c, e, r, params, resp.Body)
+}
+
+// writeResult prints the answer of a sent create or update (e): the API
+// object, or for an empty answer {"id":N,"ok":true} on update and
+// {"ok":true} with a warning on create. time log shares it with create.
+func (a *App) writeResult(c *cobra.Command, e registry.Entry, r *config.Resolved, params []int64, body []byte) error {
+	isUpdate := e.Action == "update"
+	if len(bytes.TrimSpace(body)) > 0 {
+		return a.render(c, body, e.Columns)
 	}
 	o := a.outputOptions(c.Context(), a.outputFormat(r))
 	var result any = struct {

@@ -1148,8 +1148,9 @@ var table = []Entry{
 			"papierkram task unarchive 488 -o json",
 		},
 	},
-	// 81–87; time log, start, stop, status and discard are custom commands
-	// (spec 9.6) of a later task
+	// 81–87; time log (and the timer of a later task) are custom commands
+	// of the time group without an entry of their own (spec 9.6): they use
+	// the entry of time create (internal/cli groupCmds)
 	{
 		// spec 9.8: without --project the project of the project file
 		Resource: "time", Action: "list", OperationID: "ListTimeEntries",
