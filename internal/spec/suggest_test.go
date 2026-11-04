@@ -32,13 +32,11 @@ func TestSuggest(t *testing.T) {
 	}
 }
 
+// categories are the 94 expense categories, read through the accessor
+// shell completion uses (no second way to extract the enum).
 func categories(t *testing.T) []string {
 	t.Helper()
-	s := RequestSchema("CreateVoucher").Properties["line_items"].Value.Items.Value.Properties["category"].Value
-	var out []string
-	for _, e := range s.Enum {
-		out = append(out, e.(string))
-	}
+	out := VoucherCategories()
 	if len(out) != 94 {
 		t.Fatalf("got %d categories, want 94", len(out))
 	}
