@@ -101,6 +101,10 @@
               "type": "object",
               "additionalProperties": false,
               "required": ["name", "type", "required", "repeatable", "enum", "description"],
+              "anyOf": [
+                {"description": "ohne alternatives", "not": {"required": ["alternatives"]}},
+                {"description": "alternatives nur bei Pflicht-Flags", "properties": {"required": {"type": "boolean", "enum": [true]}}}
+              ],
               "properties": {
                 "name": {
                   "description": "Flag-Name ohne Bindestriche.",
@@ -118,7 +122,7 @@
                   "enum": ["string", "boolean", "integer", "number", "id", "date", "duration"]
                 },
                 "required": {
-                  "description": "Ein Wert muss aus einer Quelle kommen – diesem Flag, --input oder einer Voreinstellung (default_from) –, sonst bricht der Befehl ab (in der Hilfe „Pflicht“). Bedingte Pflichtangaben (z. B. „Pflicht bei --via email“) stehen nur in description.",
+                  "description": "Ein Wert muss aus einer Quelle kommen – diesem Flag, einem Flag aus alternatives (z. B. --input) oder einer Voreinstellung (default_from) –, sonst bricht der Befehl ab (in der Hilfe „Pflicht“). Bedingte Pflichtangaben (z. B. „Pflicht bei --via email“) stehen nur in description.",
                   "type": "boolean"
                 },
                 "repeatable": {
@@ -150,6 +154,13 @@
                     "enum": ["flag", "env", "projectfile", "context"]
                   }
                 },
+                "alternatives": {
+                  "description": "Nur bei required: andere Flags des Befehls (mit --), die dieselbe Pflicht erfüllen, z. B. --items und --input für --item; --from-estimate für die Felder, die invoice create aus dem Angebot übernimmt. Sortiert.",
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {"type": "string", "pattern": "^--[a-z][a-z0-9-]*$"}
+                },
                 "env": {
                   "description": "Umgebungsvariable, die den Wert setzt, wenn das Flag fehlt.",
                   "type": "string",
@@ -176,6 +187,10 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["name", "type", "required", "repeatable", "enum", "description"],
+        "anyOf": [
+          {"description": "ohne alternatives", "not": {"required": ["alternatives"]}},
+          {"description": "alternatives nur bei Pflicht-Flags", "properties": {"required": {"type": "boolean", "enum": [true]}}}
+        ],
         "properties": {
           "name": {
             "description": "Flag-Name ohne Bindestriche.",
@@ -193,7 +208,7 @@
             "enum": ["string", "boolean", "integer", "number", "id", "date", "duration"]
           },
           "required": {
-            "description": "Ein Wert muss aus einer Quelle kommen – diesem Flag, --input oder einer Voreinstellung (default_from) –, sonst bricht der Befehl ab (in der Hilfe „Pflicht“). Bedingte Pflichtangaben (z. B. „Pflicht bei --via email“) stehen nur in description.",
+            "description": "Ein Wert muss aus einer Quelle kommen – diesem Flag, einem Flag aus alternatives (z. B. --input) oder einer Voreinstellung (default_from) –, sonst bricht der Befehl ab (in der Hilfe „Pflicht“). Bedingte Pflichtangaben (z. B. „Pflicht bei --via email“) stehen nur in description.",
             "type": "boolean"
           },
           "repeatable": {
@@ -224,6 +239,13 @@
               "type": "string",
               "enum": ["flag", "env", "projectfile", "context"]
             }
+          },
+          "alternatives": {
+            "description": "Nur bei required: andere Flags des Befehls (mit --), die dieselbe Pflicht erfüllen, z. B. --items und --input für --item; --from-estimate für die Felder, die invoice create aus dem Angebot übernimmt. Sortiert.",
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^--[a-z][a-z0-9-]*$"}
           },
           "env": {
             "description": "Umgebungsvariable, die den Wert setzt, wenn das Flag fehlt.",

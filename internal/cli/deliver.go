@@ -70,6 +70,7 @@ func (a *App) newDeliverCmd(e registry.Entry) *cobra.Command {
 	fs := cmd.Flags()
 	fs.String("via", "", "Versandart: "+strings.Join(deliverModes(e), " oder ")+" (Pflicht; pdf finalisiert ohne E-Mail)")
 	markRequired(fs, "via")
+	addAlternatives(fs, "via", "--input") // send_via may come from --input
 	markEnum(fs, "via", deliverModes(e))
 	fs.String("to", "", "Empfängeradresse der E-Mail (Pflicht bei --via email)")
 	fs.String("subject", "", "Betreff der E-Mail, Platzhalter erlaubt (Pflicht bei --via email)")

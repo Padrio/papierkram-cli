@@ -99,12 +99,29 @@ func (a *App) addFromEstimate(e registry.Entry, cmd *cobra.Command) {
 	}
 	cmd.Long += fromEstimateLong
 	cmd.Flags().Var(&rawValue{typ: "id"}, "from-estimate", "Angebot, aus dem die Rechnung entsteht (liest es: 1 weiterer Credit)")
+	markFromEstimateAlternatives(cmd, newWriteSpec(e))
 	write := cmd.RunE
 	cmd.RunE = func(c *cobra.Command, args []string) error {
 		if !c.Flags().Changed("from-estimate") {
 			return write(c, args)
 		}
 		return a.runWriteThen(c, e, args, writeSteps{from: &fromEstimate{read: read, raw: rawText(c, "from-estimate")}})
+	}
+}
+
+// markFromEstimateAlternatives names --from-estimate as an alternative of
+// the required flags whose field the estimate fills: the targets of
+// fromEstimateFields and the line items (fromEstimateItemFields).
+func markFromEstimateAlternatives(cmd *cobra.Command, ws writeSpec) {
+	filled := map[string]bool{}
+	for _, f := range fromEstimateFields {
+		root, _, _ := strings.Cut(f.to, ".")
+		filled[root] = true
+	}
+	for _, f := range ws.fields {
+		if f.Flag != "" && f.Required && (filled[f.Path[0]] || f.Kind == spec.KindItems) {
+			addAlternatives(cmd.Flags(), f.Flag, "--from-estimate")
+		}
 	}
 }
 

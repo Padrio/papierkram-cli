@@ -75,16 +75,17 @@ type cmdInfo struct {
 }
 
 type flgInfo struct {
-	Name        string   `json:"name"`
-	Shorthand   *string  `json:"shorthand"`
-	Type        string   `json:"type"`
-	Required    bool     `json:"required"`
-	Repeatable  bool     `json:"repeatable"`
-	Enum        []string `json:"enum"`
-	Description string   `json:"description"`
-	LocalFilter bool     `json:"local_filter"`
-	DefaultFrom []string `json:"default_from"`
-	Env         string   `json:"env"`
+	Name         string   `json:"name"`
+	Shorthand    *string  `json:"shorthand"`
+	Type         string   `json:"type"`
+	Required     bool     `json:"required"`
+	Repeatable   bool     `json:"repeatable"`
+	Enum         []string `json:"enum"`
+	Description  string   `json:"description"`
+	LocalFilter  bool     `json:"local_filter"`
+	DefaultFrom  []string `json:"default_from"`
+	Env          string   `json:"env"`
+	Alternatives []string `json:"alternatives"`
 }
 
 func decodeCommands(t *testing.T, raw []byte) cmdDoc {
@@ -136,25 +137,30 @@ func TestCommandsJSONMatchesContract(t *testing.T) {
 
 	// strictness: each mutation of a valid document must fail
 	mutate := map[string]func(doc map[string]any){
-		"unbekanntes Feld oben":    func(d map[string]any) { d["extra"] = 1 },
-		"unbekanntes Befehlsfeld":  func(d map[string]any) { firstCmd(d)["use"] = "x" },
-		"usage fehlt":              func(d map[string]any) { delete(firstCmd(d), "usage") },
-		"usage ohne papierkram":    func(d map[string]any) { firstCmd(d)["usage"] = "invoice create" },
-		"shorthand leer":           func(d map[string]any) { firstFlag(d)["shorthand"] = "" },
-		"shorthand null":           func(d map[string]any) { firstFlag(d)["shorthand"] = nil },
-		"shorthand zu lang":        func(d map[string]any) { firstFlag(d)["shorthand"] = "ab" },
-		"globaler shorthand null":  func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["shorthand"] = nil },
-		"unbekannte Klasse":        func(d map[string]any) { firstCmd(d)["class"] = "write" },
-		"Operation ohne Methode":   func(d map[string]any) { delete(apiCmd(d, "invoice create"), "method") },
-		"lokal mit Credits":        func(d map[string]any) { apiCmd(d, "version")["credits"] = 1.0 },
-		"per_request mit Credits":  func(d map[string]any) { apiCmd(d, "api")["credits"] = 1.0 },
-		"unbekanntes Flag-Feld":    func(d map[string]any) { firstFlag(d)["short"] = "x" },
-		"unbekannter Flag-Typ":     func(d map[string]any) { firstFlag(d)["type"] = "int64" },
-		"enum fehlt":               func(d map[string]any) { delete(firstFlag(d), "enum") },
-		"unbekannte Quelle":        func(d map[string]any) { firstFlag(d)["default_from"] = []any{"config"} },
-		"globales Flag-Feld":       func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["x"] = true },
-		"falsche Vertragsversion":  func(d map[string]any) { d["version"] = 2.0 },
-		"Beispiel ohne papierkram": func(d map[string]any) { apiCmd(d, "invoice create")["examples"] = []any{"invoice create"} },
+		"unbekanntes Feld oben":      func(d map[string]any) { d["extra"] = 1 },
+		"unbekanntes Befehlsfeld":    func(d map[string]any) { firstCmd(d)["use"] = "x" },
+		"usage fehlt":                func(d map[string]any) { delete(firstCmd(d), "usage") },
+		"usage ohne papierkram":      func(d map[string]any) { firstCmd(d)["usage"] = "invoice create" },
+		"shorthand leer":             func(d map[string]any) { firstFlag(d)["shorthand"] = "" },
+		"shorthand null":             func(d map[string]any) { firstFlag(d)["shorthand"] = nil },
+		"shorthand zu lang":          func(d map[string]any) { firstFlag(d)["shorthand"] = "ab" },
+		"alternatives leer":          func(d map[string]any) { firstFlag(d)["alternatives"] = []any{} },
+		"alternative ohne --":        func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"input"} },
+		"alternative doppelt":        func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"--input", "--input"} },
+		"alternatives ohne required": func(d map[string]any) { firstFlag(d)["alternatives"] = []any{"--input"} },
+		"alternatives kein Array":    func(d map[string]any) { firstFlag(d)["alternatives"] = "--input" },
+		"globaler shorthand null":    func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["shorthand"] = nil },
+		"unbekannte Klasse":          func(d map[string]any) { firstCmd(d)["class"] = "write" },
+		"Operation ohne Methode":     func(d map[string]any) { delete(apiCmd(d, "invoice create"), "method") },
+		"lokal mit Credits":          func(d map[string]any) { apiCmd(d, "version")["credits"] = 1.0 },
+		"per_request mit Credits":    func(d map[string]any) { apiCmd(d, "api")["credits"] = 1.0 },
+		"unbekanntes Flag-Feld":      func(d map[string]any) { firstFlag(d)["short"] = "x" },
+		"unbekannter Flag-Typ":       func(d map[string]any) { firstFlag(d)["type"] = "int64" },
+		"enum fehlt":                 func(d map[string]any) { delete(firstFlag(d), "enum") },
+		"unbekannte Quelle":          func(d map[string]any) { firstFlag(d)["default_from"] = []any{"config"} },
+		"globales Flag-Feld":         func(d map[string]any) { d["global_flags"].([]any)[0].(map[string]any)["x"] = true },
+		"falsche Vertragsversion":    func(d map[string]any) { d["version"] = 2.0 },
+		"Beispiel ohne papierkram":   func(d map[string]any) { apiCmd(d, "invoice create")["examples"] = []any{"invoice create"} },
 	}
 	for name, fn := range mutate {
 		var doc map[string]any
@@ -654,5 +660,49 @@ func TestCommandsJSONUsageAndShorthand(t *testing.T) {
 	// a flag without shorthand has no key at all (never null or "")
 	if bytes.Contains(raw, []byte(`"shorthand": null`)) || bytes.Contains(raw, []byte(`"shorthand": ""`)) {
 		t.Error("shorthand null oder leer statt weggelassen")
+	}
+}
+
+// alternatives name the flags that satisfy the same requirement as a
+// required flag (--items and --input for --item, --from-estimate for the
+// fields invoice create takes from the estimate).
+func TestCommandsJSONAlternatives(t *testing.T) {
+	d := decodeCommands(t, runCommandsJSON(t, "--json"))
+	for _, tc := range []struct {
+		cmd, flag string
+		want      []string
+	}{
+		{"invoice create", "item", []string{"--from-estimate", "--input", "--items"}},
+		{"invoice create", "name", []string{"--from-estimate", "--input"}},
+		{"invoice create", "payment-term", []string{"--input"}},
+		{"estimate create", "item", []string{"--input", "--items"}},
+		{"voucher create", "item", []string{"--input", "--items"}},
+		{"voucher create", "provenance", []string{"--input"}},
+		{"company create", "name", []string{"--input"}},
+		{"task create", "project", []string{"--input"}},
+		{"invoice deliver", "via", []string{"--input"}},
+		{"person describe", "company", nil},
+		{"time log", "task", nil},
+		{"context create", "subdomain", nil},
+	} {
+		if got := d.find(t, tc.cmd).flag(t, tc.flag).Alternatives; !slices.Equal(got, tc.want) {
+			t.Errorf("%s --%s: alternatives %q, erwartet %q", tc.cmd, tc.flag, got, tc.want)
+		}
+	}
+	for _, c := range d.Commands {
+		names := map[string]bool{}
+		for _, f := range c.Flags {
+			names["--"+f.Name] = true
+		}
+		for _, f := range c.Flags {
+			if len(f.Alternatives) > 0 && !f.Required {
+				t.Errorf("%s --%s: alternatives ohne required", c.Command, f.Name)
+			}
+			for _, a := range f.Alternatives {
+				if !names[a] {
+					t.Errorf("%s --%s: Alternative %s ist kein Flag des Befehls", c.Command, f.Name, a)
+				}
+			}
+		}
 	}
 }

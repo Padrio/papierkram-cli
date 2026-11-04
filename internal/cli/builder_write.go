@@ -147,7 +147,13 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 			fl.NoOptDefVal = "true"
 		}
 		if f.Required {
+			// --input (merged before Validate) and, for the line items,
+			// --items give the value as well
 			markRequired(fs, f.Flag)
+			addAlternatives(fs, f.Flag, "--input")
+			if f.Kind == spec.KindItems {
+				addAlternatives(fs, f.Flag, "--items")
+			}
 		}
 		markEnum(fs, f.Flag, f.Enum)
 		if f.Flag == e.Preset {

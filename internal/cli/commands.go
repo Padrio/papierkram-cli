@@ -52,6 +52,7 @@ const (
 	flagDefaultFrom = "pk:default-from" // sources of the value without the flag (spec 9.8)
 	flagEnv         = "pk:env"          // environment variable that sets the value
 	flagValueType   = "pk:type"         // the contract type when the pflag type says less (date filters are text flags)
+	flagAlternative = "pk:alternatives" // other flags that satisfy the same requirement (--items for --item)
 )
 
 // annotate sets a flag annotation; a flag that does not exist is a
@@ -64,6 +65,15 @@ func annotate(fs *pflag.FlagSet, name, key string, values ...string) {
 
 // markRequired marks a flag the help calls Pflicht.
 func markRequired(fs *pflag.FlagSet, name string) { annotate(fs, name, flagRequired, "true") }
+
+// addAlternatives records flags (with dashes) that satisfy the
+// requirement of the required flag name as well; the list stays sorted
+// and unique.
+func addAlternatives(fs *pflag.FlagSet, name string, alts ...string) {
+	all := append(slices.Clone(fs.Lookup(name).Annotations[flagAlternative]), alts...)
+	slices.Sort(all)
+	annotate(fs, name, flagAlternative, slices.Compact(all)...)
+}
 
 // markEnum records the allowed values of a flag (nothing without values).
 func markEnum(fs *pflag.FlagSet, name string, values []string) {
@@ -111,16 +121,17 @@ type commandInfo struct {
 
 // flagInfo is one flag; Shorthand is omitted when the flag has none.
 type flagInfo struct {
-	Name        string   `json:"name"`
-	Shorthand   string   `json:"shorthand,omitempty"`
-	Type        string   `json:"type"`
-	Required    bool     `json:"required"`
-	Repeatable  bool     `json:"repeatable"`
-	Enum        []string `json:"enum"`
-	Description string   `json:"description"`
-	LocalFilter bool     `json:"local_filter,omitempty"`
-	DefaultFrom []string `json:"default_from,omitempty"`
-	Env         string   `json:"env,omitempty"`
+	Name         string   `json:"name"`
+	Shorthand    string   `json:"shorthand,omitempty"`
+	Type         string   `json:"type"`
+	Required     bool     `json:"required"`
+	Repeatable   bool     `json:"repeatable"`
+	Enum         []string `json:"enum"`
+	Description  string   `json:"description"`
+	LocalFilter  bool     `json:"local_filter,omitempty"`
+	DefaultFrom  []string `json:"default_from,omitempty"`
+	Env          string   `json:"env,omitempty"`
+	Alternatives []string `json:"alternatives,omitempty"`
 }
 
 // commandMeta is what a command sends: its registry entry (op false
@@ -315,16 +326,17 @@ func flagInfos(fs *pflag.FlagSet) ([]flagInfo, error) {
 			enum = []string{}
 		}
 		out = append(out, flagInfo{
-			Name:        f.Name,
-			Shorthand:   f.Shorthand,
-			Type:        typ,
-			Required:    f.Annotations[flagRequired] != nil,
-			Repeatable:  f.Value.Type() == "stringArray",
-			Enum:        slices.Clone(enum),
-			Description: f.Usage,
-			LocalFilter: f.Annotations[flagLocalFilter] != nil,
-			DefaultFrom: slices.Clone(f.Annotations[flagDefaultFrom]),
-			Env:         strings.Join(f.Annotations[flagEnv], ""),
+			Name:         f.Name,
+			Shorthand:    f.Shorthand,
+			Type:         typ,
+			Required:     f.Annotations[flagRequired] != nil,
+			Repeatable:   f.Value.Type() == "stringArray",
+			Enum:         slices.Clone(enum),
+			Description:  f.Usage,
+			LocalFilter:  f.Annotations[flagLocalFilter] != nil,
+			DefaultFrom:  slices.Clone(f.Annotations[flagDefaultFrom]),
+			Env:          strings.Join(f.Annotations[flagEnv], ""),
+			Alternatives: slices.Clone(f.Annotations[flagAlternative]),
 		})
 	})
 	return out, err
@@ -340,7 +352,7 @@ var commandsColumns = output.Columns{Table: []output.Column{
 
 const commandsLong = `Listet alle Befehle mit Klasse (Spec 8.1), Credits je Anfrage und Kurzhilfe.
 
-Mit --json (oder -o json|yaml, --jq) kommt die maschinenlesbare Liste für Agents: je Befehl Verwendungszeile mit Positionsargumenten, Aliase, Kurzhilfe, Klasse, Credits, Operation (operation_id, method, path), Flags mit Kurzform, Typ, Pflicht, Wiederholbarkeit, erlaubten Werten und Hilfetext sowie Beispiele; die globalen Flags stehen einmal unter global_flags. Vertrag: docs/schemas/commands.json (Version 1).
+Mit --json (oder -o json|yaml, --jq) kommt die maschinenlesbare Liste für Agents: je Befehl Verwendungszeile mit Positionsargumenten, Aliase, Kurzhilfe, Klasse, Credits, Operation (operation_id, method, path), Flags mit Kurzform, Typ, Pflicht (mit gleichwertigen Flags unter alternatives), Wiederholbarkeit, erlaubten Werten und Hilfetext sowie Beispiele; die globalen Flags stehen einmal unter global_flags. Vertrag: docs/schemas/commands.json (Version 1).
 
 Klassen außer denen der Spec: local wirkt nur lokal (Konfiguration, Schlüsselbund, Projektdatei, Timer) und kostet nichts, außer der Befehl nennt eine Operation (auth login prüft das Token per GET /info); per_request entscheidet sich je Anfrage (papierkram api), credits ist dann null.
 
