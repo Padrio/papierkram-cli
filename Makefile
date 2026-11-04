@@ -20,7 +20,7 @@ generate:
 	go generate ./...
 
 # Same package set and threshold logic as CI (scripts/coverage.sh).
-COVER_THRESHOLD ?= 0
+COVER_THRESHOLD ?= 80
 
 cover:
 	scripts/coverage.sh $(COVER_THRESHOLD)
