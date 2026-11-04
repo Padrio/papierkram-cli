@@ -1,5 +1,6 @@
 #!/bin/sh
-# Checks the scripts of scripts/completions.sh (default dir: completions):
+# Checks the scripts of scripts/completions.sh (default dir: completions),
+# i.e. the output of "papierkram completion <shell>":
 # each shell completes both papierkram and the short form pk. Shells that
 # are not installed are skipped, unless REQUIRE_ALL_SHELLS=1 (CI).
 #
