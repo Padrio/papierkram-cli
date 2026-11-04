@@ -171,6 +171,12 @@ func TestIncomeUpdateSendsOnlyChangedFields(t *testing.T) {
 	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--name", "Beratung November", "--payment-term", "1131", "-o", "json"}), 0)
 	wantBody(t, srv, "PUT", "/income/invoices/459", `{"name":"Beratung November","payment_term":{"id":1131}}`)
 
+	// what the live suite sent before payment_term changed (run 2,
+	// 2026-11-04): only description, no reference
+	app, srv = apiApp(t)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--description", "pk-e2e-teilupdate", "-o", "json"}), 0)
+	wantBody(t, srv, "PUT", "/income/invoices/459", `{"description":"pk-e2e-teilupdate"}`)
+
 	app, srv = apiApp(t)
 	wantExit(t, app, Run(app, []string{"estimate", "update", "349", "--description", "Gültig bis Jahresende", "-o", "json"}), 0)
 	wantBody(t, srv, "PUT", "/income/estimates/349", `{"description":"Gültig bis Jahresende"}`)

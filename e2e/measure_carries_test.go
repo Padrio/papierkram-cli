@@ -63,6 +63,8 @@ func TestE2E_Carries(t *testing.T) {
 			s.fatalf(t, "describe | update --input -: Exit %d\n%s", r.code, r.stderr)
 		}
 		after := s.ok(t, "", "invoice", "describe", ids(inv))
+		s.measuref(t, "Rundlauf Rechnung", "payment_term vorher %s, nachher %s (gesendet id %q)",
+			paymentTermShape(before), paymentTermShape(after), str(get(lastBody(x), "payment_term", "id")))
 		for _, k := range []string{"contact_person", "project"} {
 			b, a := str(get(before, k, "id")), str(get(after, k, "id"))
 			s.measuref(t, "Rundlauf Rechnung", "%s vorher %q, nachher %q", k, b, a)
@@ -303,6 +305,16 @@ func TestE2E_Carries(t *testing.T) {
 		slices.Sort(paths)
 		s.measuref(t, "GET /info Struktur", "%s", strings.Join(paths, ", "))
 	})
+}
+
+// lastBody is the decoded request body of x; nil without x or JSON.
+func lastBody(x *e2eguard.Exchange) map[string]any {
+	if x == nil {
+		return nil
+	}
+	var m map[string]any
+	_ = json.Unmarshal(x.ReqBody, &m)
+	return m
 }
 
 // keyShape is the key structure of a JSON object without its values:

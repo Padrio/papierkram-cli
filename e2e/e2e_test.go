@@ -547,8 +547,12 @@ func TestE2E_PartialUpdateSemantics(t *testing.T) {
 			[]string{"description"}, val, [][]string{{"name"}, {"article_no"}, {"price"}, {"vat_rate", "rate"}}},
 		{"estimate", byID("estimate", idf(s.estimate)), upd("estimate", idf(s.estimate), "--description", val),
 			[]string{"description"}, val, [][]string{{"name"}, {"customer", "id"}, {"line_items"}}},
+		// payment_term of an invoice is a copy of the chosen template (in
+		// every spec example its id is template_id + 1); run 2 saw its id
+		// change 22 → 25 on a PUT with only description. What must stay is
+		// the template; the id is measured (see paymentTermShape).
 		{"invoice", byID("invoice", idf(s.invoice)), upd("invoice", idf(s.invoice), "--description", val),
-			[]string{"description"}, val, [][]string{{"name"}, {"payment_term", "id"}, {"line_items"}}},
+			[]string{"description"}, val, [][]string{{"name"}, {"payment_term", "template_id"}, {"line_items"}}},
 		{"voucher", byID("voucher", idf(s.voucher)), upd("voucher", idf(s.voucher), "--description", val),
 			[]string{"description"}, val, [][]string{{"name"}, {"provenance"}, {"creditor", "id"}, {"line_items"}}},
 		{"time", byID("time", idf(s.timeEntry)), upd("time", idf(s.timeEntry), "--comments", val),
@@ -564,6 +568,12 @@ func TestE2E_PartialUpdateSemantics(t *testing.T) {
 			before := s.ok(t, "", d...)
 			s.ok(t, "", u...)
 			after := s.ok(t, "", d...)
+			if other := changedKeys(before, after, c.field[0]); len(other) > 0 {
+				s.measuref(t, "Teil-Update", "%s: außerdem geändert (nur Schlüssel): %s", c.name, strings.Join(other, ", "))
+			}
+			if c.name == "invoice" {
+				s.measuref(t, "Teil-Update", "invoice: payment_term vorher %s, nachher %s", paymentTermShape(before), paymentTermShape(after))
+			}
 			var lost []string
 			if got := str(get(after, c.field...)); got != c.want {
 				lost = append(lost, fmt.Sprintf("%s nicht übernommen: %q statt %q", strings.Join(c.field, "."), got, c.want))
@@ -581,6 +591,36 @@ func TestE2E_PartialUpdateSemantics(t *testing.T) {
 			}
 		})
 	}
+}
+
+// changedKeys are the top-level keys whose value differs between before
+// and after, without skip and the timestamps; sorted. Only the keys are
+// logged, never the values.
+func changedKeys(before, after map[string]any, skip string) []string {
+	keys := map[string]bool{}
+	for k := range before {
+		keys[k] = true
+	}
+	for k := range after {
+		keys[k] = true
+	}
+	var out []string
+	for _, k := range slices.Sorted(maps.Keys(keys)) {
+		if k == skip || k == "updated_at" || k == "created_at" {
+			continue
+		}
+		if fmt.Sprint(before[k]) != fmt.Sprint(after[k]) {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// paymentTermShape is id, template_id and name of the payment_term of an
+// invoice answer.
+func paymentTermShape(m map[string]any) string {
+	return fmt.Sprintf("id %s, template_id %s, name %q",
+		str(get(m, "payment_term", "id")), str(get(m, "payment_term", "template_id")), str(get(m, "payment_term", "name")))
 }
 
 // customAttribute is a custom field definition for projects (only for
