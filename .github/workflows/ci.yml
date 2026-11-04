@@ -28,6 +28,12 @@ jobs:
       - run: go test -race ./...
         env:
           CGO_ENABLED: '1'
+      # no test may leave files in the repository, on any OS
+      - name: tests leave the tree clean
+        shell: bash
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)"
 
   keychain:
     name: keychain (${{ matrix.os }})
