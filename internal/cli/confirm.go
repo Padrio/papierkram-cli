@@ -120,10 +120,11 @@ func (a *App) confirm(ctx context.Context, e registry.Entry, s Summary) error {
 }
 
 // printable replaces control characters (line breaks, \r, tabs, the ESC
-// of ANSI sequences) with a space, like the table output does.
+// of ANSI sequences) and invisible format characters (bidi overrides,
+// zero-width spaces, which could disguise a recipient) with a space.
 func printable(s string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
 			return ' '
 		}
 		return r
