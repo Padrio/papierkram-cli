@@ -99,6 +99,19 @@ jobs:
       # comment (.github/dependabot.yml keeps them current)
       - name: actions pinned to commit SHAs
         run: sh scripts/check-action-pins.sh
+      # self-test on a copy: quoted keys and blanks before the colon are
+      # valid YAML that Actions reads as uses, so they are checked too
+      - name: action pin check sees quoted keys
+        run: |
+          # the key is assembled so that this file does not hold the forms
+          k=uses
+          for line in "\"$k\": actions/cache@v4" "'$k': actions/cache@v4" "$k : actions/cache@v4" "{\"$k\": actions/cache@v4}" "- \"$k\" : actions/cache@v4"; do
+            dir="$(mktemp -d "$RUNNER_TEMP/pins.XXXXXX")"
+            mkdir -p "$dir/scripts" "$dir/.github/workflows"
+            cp scripts/check-action-pins.sh "$dir/scripts/"
+            printf 'jobs:\n  x:\n    steps:\n      %s\n' "$line" > "$dir/.github/workflows/x.yml"
+            if sh "$dir/scripts/check-action-pins.sh"; then echo "nicht erkannt: $line"; exit 1; fi
+          done
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       # git diff misses newly generated untracked files; git status sees both.
