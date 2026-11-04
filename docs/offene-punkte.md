@@ -25,7 +25,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 10 | `due_date` per `UpdateInvoice` nicht änderbar | Feld wird aus `--input` entfernt | – | nicht gemessen |
 | 11 | `sent_on`/`sent_to` als `null` im Angebots-`PUT` | wird akzeptiert | `TestE2E_Carries/03_EstimateNullSentFields` | hart |
 | 12 | `entertainment_persons: []` im Beleg-`PUT` | wird akzeptiert | `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` | hart (Bedeutung: Messung) |
-| 13 | `supply_date` im Antwortformat und `customer` als `{id}` im Rundlauf | wird akzeptiert, Kontaktperson und Projekt bleiben | `TestE2E_Carries/02_InvoiceRoundTrip` | hart |
+| 13 | `supply_date` im Antwortformat und Kontaktperson/Projekt im Rundlauf | wird akzeptiert; Kontaktperson und Projekt werden unter `customer` mitgesendet (seit Lauf 2) | `TestE2E_Carries/02_InvoiceRoundTrip` | hart |
 | 14 | Werte von `due_time_unit` | meist `day`; die Tabelle zeigt `ZIEL` und `EINHEIT` getrennt | `TestE2E_Carries/05_PaymentTermUnits` | Messung |
 | 15 | Einheit von `billable_duration` | Sekunden; beim Anlegen überschreibt die API den Wert (gemessen) | `TestE2E_Carries/06_BillableDurationSeconds` | Messung |
 | 16 | Setzt `deliver --via pdf` `sent_on`? | ja (für das Nachlesen nach Abbruch) | `TestE2E_Carries/07_DeliverPdfSentOn` | Messung |
@@ -120,7 +120,9 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 - **Offen:** Die API liefert `supply_date` als `"2026-08-28 13:41:23 +0200"`. Nimmt `PUT` dieses Format zurück? Und bleiben Kontaktperson und Projekt erhalten, wenn `customer` auf `{id}` reduziert gesendet wird?
 - **Annahme:** Ja zu beidem; `describe -o json | update --input -` ist ein dokumentierter Ablauf.
-- **E2E:** `TestE2E_Carries/02_InvoiceRoundTrip` (hart).
+- **E2E:** `TestE2E_Carries/02_InvoiceRoundTrip` (hart); loggt seit Lauf 3 die Schlüssel des gesendeten Bodys (ohne Werte) und die IDs unter `customer`.
+- **Gemessen 2026-11-04 (Lauf 2):** Gesendet wurde `customer` als `{id}` ohne Kontaktperson und Projekt (die Antwort hat beide auf oberster Ebene, die das CLI damals als nur lesbar entfernte). Danach waren `contact_person` und `project` der Rechnung leer. `supply_date` war im Lauf leer und ist damit weiter ungeprüft.
+- **Stand des CLI:** Die Bereinigung von `--input` übernimmt `contact_person` und `project` der Antwort jetzt als `customer.contact_person`/`customer.project` (`{id}`), wenn `customer` im Body steht (Hinweis „Referenzen übernommen“). Ob die API sie damit behält, zeigt Lauf 3.
 
 ### 14. Werte von `due_time_unit`
 

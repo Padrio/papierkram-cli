@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -36,9 +37,11 @@ func TestE2E_Carries(t *testing.T) {
 	})
 
 	// 2. invoice describe -o json | invoice update --input -: supply_date
-	// in the response format ("… +0200") accepted; customer reduced to
-	// {id}: contact person and project kept. Hard (documented pipeline,
-	// spec 6.3a).
+	// in the response format ("… +0200") accepted; contact person and
+	// project kept. Run 2 (2026-11-04) sent customer as {id} and the API
+	// cleared both; the CLI now moves them below customer (spec.Prune).
+	// The keys of the sent body are logged (no values). Hard (documented
+	// pipeline, spec 6.3a).
 	t.Run("02_InvoiceRoundTrip", func(t *testing.T) {
 		inv := idOf(s.invoice(t))
 		s.need(t, 3)
@@ -52,7 +55,9 @@ func TestE2E_Carries(t *testing.T) {
 		if x != nil {
 			var body map[string]any
 			_ = json.Unmarshal(x.ReqBody, &body)
-			s.measuref(t, "Rundlauf Rechnung", "gesendet supply_date %q, customer %v", str(body["supply_date"]), body["customer"])
+			s.measuref(t, "Rundlauf Rechnung", "gesendet supply_date %q, Schlüssel %s", str(body["supply_date"]), keyShape(body))
+			s.measuref(t, "Rundlauf Rechnung", "gesendet customer.id %q, customer.contact_person.id %q, customer.project.id %q",
+				str(get(body, "customer", "id")), str(get(body, "customer", "contact_person", "id")), str(get(body, "customer", "project", "id")))
 		}
 		if r.code != 0 {
 			s.fatalf(t, "describe | update --input -: Exit %d\n%s", r.code, r.stderr)
@@ -298,6 +303,26 @@ func TestE2E_Carries(t *testing.T) {
 		slices.Sort(paths)
 		s.measuref(t, "GET /info Struktur", "%s", strings.Join(paths, ", "))
 	})
+}
+
+// keyShape is the key structure of a JSON object without its values:
+// sorted keys, nested objects in braces, arrays of objects by their first
+// element in brackets (customer{contact_person{id},id}).
+func keyShape(v any) string {
+	switch x := v.(type) {
+	case map[string]any:
+		parts := make([]string, 0, len(x))
+		for _, k := range slices.Sorted(maps.Keys(x)) {
+			parts = append(parts, k+keyShape(x[k]))
+		}
+		return "{" + strings.Join(parts, ",") + "}"
+	case []any:
+		if len(x) == 0 {
+			return "[]"
+		}
+		return "[" + keyShape(x[0]) + "]"
+	}
+	return ""
 }
 
 // shape lists the key paths of v with their JSON types (arrays by their
