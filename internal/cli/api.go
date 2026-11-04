@@ -75,8 +75,8 @@ func newAPICmd(app *App) *cobra.Command {
 		RunE:        func(c *cobra.Command, args []string) error { return app.runAPI(c, args) },
 	}
 	fs := cmd.Flags()
-	fs.StringArrayP("raw-field", "f", nil, "Feld als Text: key=value (Punkte verschachteln; bei GET Query-Parameter)")
-	fs.StringArrayP("field", "F", nil, "Feld mit Typ: true, false, null, Zahl, @datei, @- (Standardeingabe), sonst Text")
+	fs.StringArrayP("raw-field", "f", nil, "Feld als Text: key=value (Punkte verschachteln; bei GET und DELETE ohne --input Query-Parameter)")
+	fs.StringArrayP("field", "F", nil, "Feld mit Typ: true, false, null, Zahl, @datei, @- (Standardeingabe), sonst Text (bei GET und DELETE ohne --input Query-Parameter)")
 	fs.String("input", "", "Body als JSON-Datei oder - für die Standardeingabe; -f/-F überschreiben einzelne Felder")
 	fs.Bool("paginate", false, "bei GET alle Seiten einer Liste laden und zusammenführen (1 Anfrage je Seite)")
 	fs.Int("max-pages", 0, "mit --paginate höchstens so viele Seiten laden")
@@ -215,7 +215,7 @@ func (a *App) checkAPIFlags(c *cobra.Command, args []string) (*apiCall, error) {
 	case readers > 1:
 		return usage("die Standardeingabe kann nur einmal gelesen werden (--input - und @-)", "höchstens eine Angabe mit -, die anderen als Datei")
 	case method == "GET" && fs.Changed("input"):
-		return usage("GET sendet keinen Body: --input nicht möglich", "Felder mit -f/-F werden bei GET Query-Parameter")
+		return usage("GET sendet keinen Body: --input nicht möglich", "Felder mit -f/-F werden bei GET (und DELETE ohne --input) Query-Parameter")
 	case method == "GET" && a.Flags.DryRun:
 		return usage("--dry-run gilt nur für ändernde Befehle", "GET liest nur; ohne --dry-run ausführen. Verwendung: "+useLine(c))
 	case call.paginate && method != "GET":

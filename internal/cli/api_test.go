@@ -729,3 +729,30 @@ func TestAPIConfirmationShowsRequest(t *testing.T) {
 		t.Errorf("%d Requests", n)
 	}
 }
+
+// Review M1: DELETE without --input sends -f/-F as query parameters; the
+// help and the flag descriptions say so.
+func TestAPIHelpDocumentsDeleteQuery(t *testing.T) {
+	app, _ := apiApp(t)
+	wantExit(t, app, runAPI(app, "--help"), 0)
+	out := mustOut(app)
+	for _, want := range []string{
+		"Bei GET und bei DELETE ohne --input werden die Felder Query-Parameter",
+		"Feld als Text: key=value (Punkte verschachteln; bei GET und DELETE ohne --input Query-Parameter)",
+		"Feld mit Typ: true, false, null, Zahl, @datei, @- (Standardeingabe), sonst Text (bei GET und DELETE ohne --input Query-Parameter)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Hilfe ohne %q:\n%s", want, out)
+		}
+	}
+
+	// behaviour on a spec path (the request itself: TestAPIFieldsAsQuery):
+	// the fields are the query, there is no body
+	app, srv := apiApp(t)
+	wantExit(t, app, runAPI(app, "DELETE", "/projects/5", "-f", "grund=doppelt", "-F", "n=2", "--dry-run", "-o", "json"), 0)
+	wantRequests(t, srv, 0)
+	want := `{"dry_run":true,"method":"DELETE","url":"` + srv.URL() + `/projects/5?grund=doppelt&n=2","body":null,"credits":1}`
+	if got, w := canonJSON(t, []byte(mustOut(app))), canonJSON(t, []byte(want)); got != w {
+		t.Errorf("dry-run = %s\nerwartet %s", got, w)
+	}
+}
