@@ -186,11 +186,8 @@ func entryKind(e registry.Entry) (string, error) {
 // entryLong is the German long help of an entry command: the short help
 // plus the credit cost and, with a preset, where the value comes from.
 func entryLong(e registry.Entry) string {
-	unit := "Credits"
-	if e.Credits == 1 {
-		unit = "Credit"
-	}
-	long := fmt.Sprintf("%s.\n\nKosten: %d %s je Anfrage", e.Short, e.Credits, unit)
+	cost := creditsText(e.Credits)
+	long := fmt.Sprintf("%s.\n\nKosten: %s je Anfrage", e.Short, cost)
 	if e.Action == "list" {
 		long += " (mit --all je geladener Seite; ab 10 Seiten fragt --all im Terminal nach)"
 	}
@@ -204,13 +201,21 @@ func entryLong(e registry.Entry) string {
 	}
 	for _, flag := range localFlags(e) {
 		long += fmt.Sprintf("\n\nDie API ignoriert diesen Filter: Mit %[1]s lädt das CLI alle Seiten wie --all "+
-			"(je Seite %[2]d %[3]s, Warnung ab 10 Seiten, im Terminal mit Rückfrage; --max-pages begrenzt) und filtert lokal. "+
+			"(je Seite %[2]s, Warnung ab 10 Seiten, im Terminal mit Rückfrage; --max-pages begrenzt) und filtert lokal. "+
 			"--page und --limit gelten für das gefilterte Ergebnis: page, page_size, total_entries, total_pages und has_more "+
 			"beziehen sich auf die gefilterten Einträge; mit --all kommen alle gefilterten Einträge. "+
 			"Mit --max-pages zählen total_entries und total_pages nur die Treffer der geladenen Seiten; "+
-			"has_more ist dann true, weil weitere Seiten Treffer enthalten können.", flag, e.Credits, unit)
+			"has_more ist dann true, weil weitere Seiten Treffer enthalten können.", flag, cost)
 	}
 	return long
+}
+
+// creditsText is "1 Credit" or "N Credits".
+func creditsText(n int) string {
+	if n == 1 {
+		return "1 Credit"
+	}
+	return fmt.Sprintf("%d Credits", n)
 }
 
 // entryExample indents the registry examples like cobra expects.

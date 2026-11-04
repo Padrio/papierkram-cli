@@ -2,12 +2,15 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
+	"errors"
 	"fmt"
 	"io/fs"
 	"mime"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -26,7 +29,7 @@ const pdfStdout = "-"
 
 const pdfLong = `
 
--O datei.pdf speichert das PDF in der Datei; eine vorhandene Datei wird erst ersetzt, wenn das PDF vollständig geladen ist. -O - schreibt das PDF nach stdout. Ohne -O geht es nur dann nach stdout, wenn stdout kein Terminal ist (Umleitung oder Pipe); im Terminal bricht der Befehl ohne Anfrage ab.
+-O datei.pdf speichert das PDF in der Datei; eine vorhandene Datei wird erst ersetzt, wenn das PDF vollständig geladen ist, und behält ihre Rechte (eine neue Datei erhält die Rechte gemäß umask). Eine schreibgeschützte Datei wird nicht ersetzt; ein symbolischer Verweis bleibt erhalten, ersetzt wird die Datei, auf die er zeigt; Gerätedateien wie /dev/null werden direkt beschrieben. -O - schreibt das PDF nach stdout. Ohne -O geht es nur dann nach stdout, wenn stdout kein Terminal ist (Umleitung oder Pipe); im Terminal bricht der Befehl ohne Anfrage ab.
 
 Danach meldet der Befehl Pfad und Größe ({"path":…,"bytes":…}, path "-" für stdout) auf stderr, bei -O datei mit -o json|yaml, --fields oder --jq auf stdout. Geht das PDF nach stdout, bleibt die Meldung auf stderr; --fields und --jq sind dann nicht erlaubt.`
 
@@ -58,14 +61,15 @@ type pdfSaved struct {
 // (exit 2, R29: no request without a target). A target file is written
 // through a temporary file in its directory, created before the request
 // (an unwritable directory costs no credit) and renamed only after the
-// whole PDF arrived: a failed download or write leaves no partial file and
-// an existing file untouched.
+// whole PDF arrived: a failed or cancelled download or write leaves no
+// partial file and an existing file untouched. A device (/dev/null) is
+// written directly.
 func (a *App) runPDF(c *cobra.Command, e registry.Entry, args []string) error {
 	params, err := pathValues(c, e, args)
 	if err != nil {
 		return err
 	}
-	target, err := a.pdfTarget(c)
+	dest, err := a.pdfTarget(c)
 	if err != nil {
 		return err
 	}
@@ -74,8 +78,8 @@ func (a *App) runPDF(c *cobra.Command, e registry.Entry, args []string) error {
 		return err
 	}
 	var file *pdfFile
-	if target != pdfStdout {
-		if file, err = createPDFFile(target); err != nil {
+	if !dest.stdout() && !dest.device() {
+		if file, err = createPDFFile(dest.path); err != nil {
 			return err
 		}
 		defer file.discard()
@@ -90,49 +94,113 @@ func (a *App) runPDF(c *cobra.Command, e registry.Entry, args []string) error {
 	if len(resp.Body) == 0 {
 		output.Warn(a.Err, "Papierkram hat eine leere Antwort geliefert: PDF mit 0 Bytes geschrieben")
 	}
-	if file == nil {
+	switch {
+	case dest.stdout():
 		if _, err := a.Out.Write(resp.Body); err != nil {
 			return clierr.New(clierr.CodeError, "Befehl ausgeführt, Ausgabe fehlgeschlagen: PDF nicht nach stdout geschrieben: "+err.Error(), "")
 		}
-	} else if err := file.commit(resp.Body, e); err != nil {
-		return err
+	case file == nil:
+		if err := writeDevice(dest.path, resp.Body); err != nil {
+			return pdfSaveFailed(err, e)
+		}
+	default:
+		warning, err := file.commit(resp.Body, dest.info)
+		if err != nil {
+			return pdfSaveFailed(err, e)
+		}
+		if warning != "" {
+			output.Warn(a.Err, warning)
+		}
 	}
-	return a.pdfMessage(c.Context(), r, pdfSaved{Path: target, Bytes: len(resp.Body)})
+	return a.pdfMessage(c.Context(), r, pdfSaved{Path: dest.arg, Bytes: len(resp.Body)})
 }
 
-// pdfTarget returns the target of the PDF: the file of -O or pdfStdout.
+// pdfDest is the target of the PDF.
+type pdfDest struct {
+	arg  string      // the value of -O, pdfStdout for stdout; the path of the message
+	path string      // the file written: arg with symbolic links resolved
+	info fs.FileInfo // the existing file at path, nil when there is none
+}
+
+func (d pdfDest) stdout() bool { return d.arg == pdfStdout }
+
+// device reports an existing target that is no regular file (/dev/null, a
+// FIFO): it is written directly, a temporary file next to it makes no
+// sense.
+func (d pdfDest) device() bool { return d.info != nil && !d.info.Mode().IsRegular() }
+
+// pdfTarget returns the target of the PDF: the file of -O or stdout.
 // Without -O the PDF goes to stdout only when it is no terminal (spec 9.2,
 // R29). --fields and --jq apply to the message only, which is no output of
-// its own when the PDF fills stdout. A file needs an existing directory
-// and must not be a directory itself.
-func (a *App) pdfTarget(c *cobra.Command) (string, error) {
-	path := pdfStdout
+// its own when the PDF fills stdout. A file is checked by pdfFileDest.
+func (a *App) pdfTarget(c *cobra.Command) (pdfDest, error) {
+	arg := pdfStdout
 	switch {
 	case c.Flags().Changed("output-file"):
-		if path = flagString(c, "output-file"); path == "" {
-			return "", clierr.New(clierr.CodeUsage, "-O: Dateiname fehlt", "Datei angeben oder - für stdout")
+		if arg = flagString(c, "output-file"); arg == "" {
+			return pdfDest{}, clierr.New(clierr.CodeUsage, "-O: Dateiname fehlt", "Datei angeben oder - für stdout")
 		}
 	case a.StdoutTTY:
-		return "", clierr.New(clierr.CodeUsage, "kein Ziel für das PDF: stdout ist ein Terminal",
+		return pdfDest{}, clierr.New(clierr.CodeUsage, "kein Ziel für das PDF: stdout ist ein Terminal",
 			"-O datei.pdf speichert das PDF in einer Datei, -O - schreibt es trotzdem nach stdout (z. B. -O - > datei.pdf). Verwendung: "+useLine(c)+" -O datei.pdf")
 	}
-	if path == pdfStdout {
-		if len(output.ParseFields(a.Flags.Fields)) > 0 || a.Flags.JQ != "" {
-			return "", clierr.New(clierr.CodeUsage, "--fields und --jq gelten nicht für ein PDF auf stdout",
-				`mit -O datei.pdf gelten sie für die Meldung {"path":…,"bytes":…}`)
+	if arg != pdfStdout {
+		return pdfFileDest(arg)
+	}
+	if len(output.ParseFields(a.Flags.Fields)) > 0 || a.Flags.JQ != "" {
+		return pdfDest{}, clierr.New(clierr.CodeUsage, "--fields und --jq gelten nicht für ein PDF auf stdout",
+			`mit -O datei.pdf gelten sie für die Meldung {"path":…,"bytes":…}`)
+	}
+	return pdfDest{arg: arg, path: arg}, nil
+}
+
+// pdfFileDest checks the file target arg before the request. A symbolic
+// link is followed (the link stays, its target is replaced); one that
+// leads nowhere, a missing directory and a directory as target are usage
+// errors (exit 2). A directory or file that cannot be checked, and a
+// write-protected file, are errors (exit 1): Windows refuses to replace a
+// read-only file, so it is refused everywhere.
+func pdfFileDest(arg string) (pdfDest, error) {
+	d := pdfDest{arg: arg, path: arg}
+	if fi, err := os.Lstat(arg); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		real, err := filepath.EvalSymlinks(arg)
+		if err != nil {
+			return d, clierr.New(clierr.CodeUsage, fmt.Sprintf("-O %s: symbolischer Verweis zeigt auf kein vorhandenes Ziel", arg),
+				"Ziel des Verweises anlegen oder einen anderen Pfad angeben")
 		}
-		return path, nil
+		d.path = real
 	}
-	dir := filepath.Dir(path)
-	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("-O %s: Verzeichnis %s existiert nicht", path, dir),
+	dir := filepath.Dir(d.path)
+	fi, err := os.Stat(dir)
+	switch {
+	case err == nil && !fi.IsDir(), errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
+		return d, clierr.New(clierr.CodeUsage, fmt.Sprintf("-O %s: Verzeichnis %s existiert nicht", arg, dir),
 			"Verzeichnis anlegen oder einen anderen Pfad angeben")
+	case err != nil:
+		return d, pdfTargetUnusable(arg, err)
 	}
-	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
-		return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("-O %s ist ein Verzeichnis", path),
-			"Dateinamen angeben, z. B. -O "+filepath.Join(path, "datei.pdf"))
+	fi, err = os.Stat(d.path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return d, nil
+	case err != nil:
+		return d, pdfTargetUnusable(arg, err)
+	case fi.IsDir():
+		return d, clierr.New(clierr.CodeUsage, fmt.Sprintf("-O %s ist ein Verzeichnis", arg),
+			"Dateinamen angeben, z. B. -O "+filepath.Join(arg, "datei.pdf"))
+	case fi.Mode().IsRegular() && fi.Mode().Perm()&0o200 == 0:
+		return d, clierr.New(clierr.CodeError, fmt.Sprintf("-O %s: Datei ist schreibgeschützt und wird nicht ersetzt", arg),
+			"Schreibschutz aufheben oder einen anderen Dateinamen wählen; es wurde nichts angefragt")
 	}
-	return path, nil
+	d.info = fi
+	return d, nil
+}
+
+// pdfTargetUnusable is the error of a target that cannot be checked
+// (permission, I/O): exit 1, nothing was requested.
+func pdfTargetUnusable(arg string, err error) error {
+	return clierr.New(clierr.CodeError, fmt.Sprintf("-O %s: Ziel nicht nutzbar: %v", arg, err),
+		"Rechte prüfen; es wurde nichts angefragt")
 }
 
 // pdfMediaType is the file type of the download from the spec
@@ -185,41 +253,53 @@ type pdfFile struct {
 	done bool
 }
 
-// createPDFFile creates the temporary file next to path.
+// createPDFFile creates the temporary file next to path with mode 0666, so
+// the umask applies like for any new file (curl, wget, os.WriteFile):
+// os.CreateTemp would create 0600 and need a chmod that bypasses it.
 func createPDFFile(path string) (*pdfFile, error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return nil, clierr.New(clierr.CodeError, "PDF nicht gespeichert: "+err.Error(),
-			"Schreibrechte im Verzeichnis prüfen; es wurde nichts angefragt")
+	dir, base := filepath.Dir(path), filepath.Base(path)
+	var err error
+	for range 10 {
+		name := filepath.Join(dir, "."+base+"."+rand.Text()[:12]+".tmp")
+		var f *os.File
+		f, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o666)
+		if err == nil {
+			return &pdfFile{path: path, tmp: f}, nil
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			break
+		}
 	}
-	return &pdfFile{path: path, tmp: tmp}, nil
+	return nil, clierr.New(clierr.CodeError, "PDF nicht gespeichert: "+err.Error(),
+		"Schreibrechte im Verzeichnis prüfen; es wurde nichts angefragt")
 }
 
 // commit writes data to the temporary file and renames it to the target.
-// A new file gets mode 0644, an existing one keeps its mode.
-func (f *pdfFile) commit(data []byte, e registry.Entry) error {
-	mode := fs.FileMode(0o644)
-	if fi, err := os.Stat(f.path); err == nil {
-		mode = fi.Mode().Perm()
+// When it replaces existing, it takes over its mode best effort: a failed
+// chmod (file systems without Unix modes) never discards the paid
+// download, it only returns a warning.
+func (f *pdfFile) commit(data []byte, existing fs.FileInfo) (warning string, err error) {
+	if err := writeAll(f.tmp, data); err != nil {
+		return "", err
 	}
-	err := writeAll(f.tmp, data, mode)
-	if err == nil {
-		err = os.Rename(f.tmp.Name(), f.path)
+	if existing != nil {
+		if err := chmodFile(f.tmp.Name(), existing.Mode().Perm()); err != nil {
+			warning = "Rechte der ersetzten Datei nicht übernommen: " + err.Error()
+		}
 	}
-	if err != nil {
-		return clierr.New(clierr.CodeError, "PDF nicht gespeichert: "+err.Error(),
-			fmt.Sprintf("Download erfolgreich, Speichern fehlgeschlagen: Schreibrechte und Speicherplatz prüfen; ein neuer Aufruf kostet %s", creditsText(e.Credits)))
+	if err := os.Rename(f.tmp.Name(), f.path); err != nil {
+		return "", err
 	}
 	f.done = true
-	return nil
+	return warning, nil
 }
 
-// writeAll writes data to f, sets mode, syncs and closes f.
-func writeAll(f *os.File, data []byte, mode fs.FileMode) error {
+// chmodFile sets the mode of a file by name; tests replace it.
+var chmodFile = os.Chmod
+
+// writeAll writes data to f, syncs and closes it.
+func writeAll(f *os.File, data []byte) error {
 	_, err := f.Write(data)
-	if err == nil {
-		err = f.Chmod(mode)
-	}
 	if err == nil {
 		err = f.Sync()
 	}
@@ -229,6 +309,26 @@ func writeAll(f *os.File, data []byte, mode fs.FileMode) error {
 	return err
 }
 
+// writeDevice writes data to an existing file that is no regular file
+// (/dev/null, a FIFO).
+func writeDevice(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
+// pdfSaveFailed is the error of a write after the download (exit 1).
+func pdfSaveFailed(err error, e registry.Entry) error {
+	return clierr.New(clierr.CodeError, "PDF nicht gespeichert: "+err.Error(),
+		fmt.Sprintf("Download erfolgreich, Speichern fehlgeschlagen: Schreibrechte und Speicherplatz prüfen; ein neuer Aufruf kostet %s", creditsText(e.Credits)))
+}
+
 // discard removes the temporary file unless commit renamed it.
 func (f *pdfFile) discard() {
 	if f.done {
@@ -236,12 +336,4 @@ func (f *pdfFile) discard() {
 	}
 	_ = f.tmp.Close()
 	_ = os.Remove(f.tmp.Name())
-}
-
-// creditsText is "1 Credit" or "N Credits".
-func creditsText(n int) string {
-	if n == 1 {
-		return "1 Credit"
-	}
-	return fmt.Sprintf("%d Credits", n)
 }

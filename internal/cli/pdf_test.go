@@ -2,14 +2,17 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // invoice|estimate|voucher pdf <id> [-O datei|-] (spec 9.2).
@@ -142,17 +145,121 @@ func TestPdfOverwritesExistingFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		return
 	}
-	// an existing file keeps its mode, a new one gets 0644
+	// an existing file keeps its mode (new files: umask, pdf_unix_test.go)
 	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
 		t.Errorf("Modus vorhandene Datei = %v", fi.Mode().Perm())
 	}
-	app, srv = apiApp(t)
-	onPDF(srv, binaryPDF)
-	neu := filepath.Join(dir, "neu.pdf")
-	wantExit(t, app, Run(app, []string{"invoice", "pdf", "459", "-O", neu}), 0)
-	if fi, _ := os.Stat(neu); fi.Mode().Perm() != 0o644 {
-		t.Errorf("Modus neue Datei = %v", fi.Mode().Perm())
+}
+
+// Taking over the mode of the replaced file is best effort: when it fails,
+// the paid download is still saved, with a warning.
+func TestPdfChmodFailureKeepsDownload(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rechnung.pdf")
+	if err := os.WriteFile(path, []byte("alt"), 0o600); err != nil {
+		t.Fatal(err)
 	}
+	orig := chmodFile
+	chmodFile = func(string, fs.FileMode) error { return errors.New("Operation nicht erlaubt") }
+	t.Cleanup(func() { chmodFile = orig })
+	app, srv := apiApp(t)
+	onPDF(srv, binaryPDF)
+	wantExit(t, app, Run(app, []string{"invoice", "pdf", "459", "-O", path}), 0)
+	if got, _ := os.ReadFile(path); string(got) != binaryPDF {
+		t.Errorf("Datei = %q", got)
+	}
+	wantDirFiles(t, dir, "rechnung.pdf")
+	if _, errs := bufs(app); !strings.Contains(errs, "Warnung: ") || !strings.Contains(errs, "Operation nicht erlaubt") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
+
+// A cancelled download (Ctrl+C) leaves the directory as it was: the
+// temporary file is removed, an existing file is untouched.
+func TestPdfCancelRemovesTempFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rechnung.pdf")
+	if err := os.WriteFile(path, []byte("alt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app, srv := apiApp(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv.OnFunc("GET", "/income/invoices/{id}/pdf", func(w http.ResponseWriter, r *http.Request) {
+		cancel() // the interrupt arrives while the download runs
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	})
+	wantExit(t, app, executeContext(ctx, app, NewRootCmd(app), []string{"invoice", "pdf", "459", "-O", path}), 10)
+	wantRequests(t, srv, 1) // no retry after the interrupt
+	if got, _ := os.ReadFile(path); string(got) != "alt" {
+		t.Errorf("Datei = %q", got)
+	}
+	wantDirFiles(t, dir, "rechnung.pdf")
+	if _, errs := bufs(app); !strings.Contains(errs, "Abgebrochen") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
+
+// A symbolic link as target is followed: the link stays, its target gets
+// the PDF. A link to nowhere is a usage error before the request.
+func TestPdfFollowsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "ablage", "rechnung.pdf")
+	if err := os.MkdirAll(filepath.Dir(real), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(real, []byte("alt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "aktuell.pdf")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("keine symbolischen Verweise: %v", err)
+	}
+	app, srv := apiApp(t)
+	onPDF(srv, binaryPDF)
+	wantExit(t, app, Run(app, []string{"invoice", "pdf", "459", "-O", link}), 0)
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+		t.Errorf("Verweis ersetzt: %v, %v", fi, err)
+	}
+	if got, _ := os.ReadFile(real); string(got) != binaryPDF {
+		t.Errorf("Ziel = %q", got)
+	}
+	wantDirFiles(t, filepath.Dir(real), "rechnung.pdf")
+	if _, errs := bufs(app); !strings.Contains(errs, "PDF gespeichert: "+link+" ") {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	dangling := filepath.Join(dir, "weg.pdf")
+	if err := os.Symlink(filepath.Join(dir, "fehlt", "x.pdf"), dangling); err != nil {
+		t.Fatal(err)
+	}
+	app, srv = apiApp(t)
+	wantExit(t, app, Run(app, []string{"invoice", "pdf", "459", "-O", dangling}), 2)
+	wantRequests(t, srv, 0)
+}
+
+// A write-protected file is not replaced: exit 1 before the request, on
+// every platform (Windows refuses to replace it anyway).
+func TestPdfReadOnlyFileNotReplaced(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rechnung.pdf")
+	if err := os.WriteFile(path, []byte("alt"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	app, srv := apiApp(t)
+	wantExit(t, app, Run(app, []string{"invoice", "pdf", "459", "-O", path}), 1)
+	wantRequests(t, srv, 0)
+	if got, _ := os.ReadFile(path); string(got) != "alt" {
+		t.Errorf("Datei = %q", got)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "schreibgeschützt") {
+		t.Errorf("stderr = %q", errs)
+	}
+	wantDirFiles(t, dir, "rechnung.pdf")
 }
 
 // A failed download leaves an existing file untouched and no partial or
@@ -308,15 +415,27 @@ func TestPdfJSONAnswerIsNoPDF(t *testing.T) {
 
 // --debug shows the PDF only as its size (spec 5.5).
 func TestPdfDebugShowsOnlySize(t *testing.T) {
-	app, srv := apiApp(t)
-	onPDF(srv, binaryPDF)
-	path := filepath.Join(t.TempDir(), "r.pdf")
-	wantExit(t, app, Run(app, []string{"invoice", "pdf", "459", "-O", path, "--debug"}), 0)
-	_, errs := bufs(app)
-	if !strings.Contains(errs, fmt.Sprintf("< <binär, %d Bytes>", len(binaryPDF))) || strings.Contains(errs, "%PDF") {
-		t.Errorf("stderr = %q", errs)
+	// the PDF type, an unknown binary type and none at all: only the size
+	for _, ct := range []string{"application/pdf", "binary/octet-stream", ""} {
+		app, srv := apiApp(t)
+		srv.OnFunc("GET", "/income/invoices/{id}/pdf", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header()["Content-Type"] = nil // nil: net/http does not sniff a type
+			if ct != "" {
+				w.Header().Set("Content-Type", ct)
+			}
+			_, _ = w.Write([]byte(binaryPDF))
+		})
+		path := filepath.Join(t.TempDir(), "r.pdf")
+		wantExit(t, app, Run(app, []string{"invoice", "pdf", "459", "-O", path, "--debug"}), 0)
+		_, errs := bufs(app)
+		if !strings.Contains(errs, fmt.Sprintf("< <binär, %d Bytes>", len(binaryPDF))) || strings.Contains(errs, "%PDF") || strings.Contains(errs, "\x1b") {
+			t.Errorf("%q: stderr = %q", ct, errs)
+		}
+		if got, _ := os.ReadFile(path); string(got) != binaryPDF {
+			t.Errorf("%q: Datei = %q", ct, got)
+		}
+		assertNoToken(t, app)
 	}
-	assertNoToken(t, app)
 }
 
 type failWriter struct{}
