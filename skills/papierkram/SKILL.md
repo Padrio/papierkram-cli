@@ -108,12 +108,12 @@ papierkram invoice deliver 459 --via email --to kunde@example.org --subject "Rec
 
 ## Ablauf 3: offene Posten prüfen
 
-Alles lesend. Die Statuswerte (`state`) dokumentiert die API nicht vollständig ([offene Punkte](https://github.com/Padrio/papierkram-cli/blob/main/docs/offene-punkte.md)); maßgeblich ist `outstanding_amount`, das die API als Zeichenkette liefert (`"119.0"`): in `--jq` vor jedem Vergleich mit `tonumber` umwandeln, sonst gilt auch `"0.0" > 0`. Entwürfe (`draft`) sind keine offenen Posten. Filter der API: `--company`, `--project`, `--from` und `--to` (Belegdatum); alles Weitere per `--jq`:
+Alles lesend. Die Statuswerte (`state`) dokumentiert die API nicht vollständig ([offene Punkte](https://github.com/Padrio/papierkram-cli/blob/main/docs/offene-punkte.md)); maßgeblich ist `outstanding_amount`, das die API als Zeichenkette liefert (`"119.0"`): in `--jq` vor jedem Vergleich mit `tonumber` umwandeln, sonst gilt auch `"0.0" > 0`. Entwürfe (`draft`), stornierte (`canceled`) und gelöschte (`deleted`) Rechnungen sind keine offenen Posten, auch wenn `outstanding_amount` stehen bleibt (eine stornierte Rechnung behält ihren Betrag). Nach dem Status filtert die API nicht, nur per `--jq`. Filter der API: `--company`, `--project`, `--from` und `--to` (Belegdatum); alles Weitere per `--jq`:
 
 ```sh
-PAPIERKRAM_READ_ONLY=1 papierkram invoice list --from 2026-01-01 --to 2026-10-31 --all --max-pages 5 -o json --no-input --jq '.entries[] | select((.outstanding_amount // "0" | tonumber) > 0 and .state != "draft") | {id, invoice_no, kunde: .billing.company, due_date, outstanding_amount}'
-PAPIERKRAM_READ_ONLY=1 papierkram invoice list --all --max-pages 5 -o json --no-input --jq '(now | strftime("%Y-%m-%d")) as $heute | [.entries[] | select((.outstanding_amount // "0" | tonumber) > 0 and .state != "draft" and .due_date != null and .due_date < $heute)] | sort_by(.due_date) | .[] | {invoice_no, due_date, outstanding_amount}'
-PAPIERKRAM_READ_ONLY=1 papierkram invoice list --company 3214 --all --max-pages 5 -o json --no-input --jq '[.entries[] | select(.state != "draft") | .outstanding_amount // "0" | tonumber] | add // 0'
+PAPIERKRAM_READ_ONLY=1 papierkram invoice list --from 2026-01-01 --to 2026-10-31 --all --max-pages 5 -o json --no-input --jq '.entries[] | select((.outstanding_amount // "0" | tonumber) > 0 and (.state | IN("draft", "canceled", "deleted") | not)) | {id, invoice_no, kunde: .billing.company, due_date, outstanding_amount}'
+PAPIERKRAM_READ_ONLY=1 papierkram invoice list --all --max-pages 5 -o json --no-input --jq '(now | strftime("%Y-%m-%d")) as $heute | [.entries[] | select((.outstanding_amount // "0" | tonumber) > 0 and (.state | IN("draft", "canceled", "deleted") | not) and .due_date != null and .due_date < $heute)] | sort_by(.due_date) | .[] | {invoice_no, due_date, outstanding_amount}'
+PAPIERKRAM_READ_ONLY=1 papierkram invoice list --company 3214 --all --max-pages 5 -o json --no-input --jq '[.entries[] | select((.state | IN("draft", "canceled", "deleted") | not)) | .outstanding_amount // "0" | tonumber] | add // 0'
 PAPIERKRAM_READ_ONLY=1 papierkram invoice describe 459 -o json --no-input
 ```
 

@@ -504,3 +504,63 @@ func TestSkillFrontmatter(t *testing.T) {
 		t.Error("SKILL.md: Verweis auf AGENTS.md fehlt")
 	}
 }
+
+// skillInvoiceJQ returns the --jq programs of the skill's invoice list
+// lines (workflow "offene Posten"), in document order, as the lines
+// themselves (environment and words).
+func skillInvoiceJQ(t *testing.T) []docCmd {
+	t.Helper()
+	var out []docCmd
+	for _, l := range docCommandLines(t, filepath.Join(modroot.Find(t), "skills", "papierkram", "SKILL.md")) {
+		cmds, err := docLineCommands(l.text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range cmds {
+			if len(c.words) > 2 && c.words[1] == "invoice" && c.words[2] == "list" && slices.Contains(c.words, "--jq") {
+				out = append(out, c)
+			}
+		}
+	}
+	return out
+}
+
+// The jq programs of "offene Posten prüfen" run on a list the way the API
+// answers (outstanding_amount as a string): drafts, canceled and deleted
+// invoices are no open items even with an amount left (the spec example
+// of a canceled invoice keeps "119.0"), paid ones ("0.0") neither, and
+// only due dates before today count as overdue (review I1).
+func TestSkillOpenItemsJQ(t *testing.T) {
+	list := `{"type":"list","page":1,"page_size":100,"total_pages":1,"total_entries":7,"has_more":false,"entries":[
+	{"id":1,"invoice_no":"RE-1","state":"unpaid","due_date":"2000-01-31","outstanding_amount":"19.0","billing":{"company":"Muster GmbH"}},
+	{"id":2,"invoice_no":"RE-2","state":"partially_paid","due_date":"2999-12-31","outstanding_amount":"100.0","billing":{"company":"Muster GmbH"}},
+	{"id":3,"invoice_no":"RE-3","state":"paid","due_date":"2000-01-31","outstanding_amount":"0.0","billing":{"company":"Muster GmbH"}},
+	{"id":4,"invoice_no":"RE-4","state":"canceled","due_date":"2000-01-31","outstanding_amount":"119.0","billing":{"company":"Muster GmbH"}},
+	{"id":5,"invoice_no":null,"state":"draft","due_date":null,"outstanding_amount":"10.0","billing":{"company":"Muster GmbH"}},
+	{"id":6,"invoice_no":"RE-6","state":"deleted","due_date":"2000-01-31","outstanding_amount":"50.0","billing":{"company":"Muster GmbH"}},
+	{"id":7,"invoice_no":"RE-7","state":"unpaid","due_date":"2000-01-31","outstanding_amount":null,"billing":{"company":"Muster GmbH"}}]}`
+	want := []string{
+		`{"due_date":"2000-01-31","id":1,"invoice_no":"RE-1","kunde":"Muster GmbH","outstanding_amount":"19.0"}` + "\n" +
+			`{"due_date":"2999-12-31","id":2,"invoice_no":"RE-2","kunde":"Muster GmbH","outstanding_amount":"100.0"}` + "\n",
+		`{"due_date":"2000-01-31","invoice_no":"RE-1","outstanding_amount":"19.0"}` + "\n",
+		"119\n",
+	}
+	lines := skillInvoiceJQ(t)
+	if len(lines) != len(want) {
+		t.Fatalf("SKILL.md: %d Zeilen invoice list --jq, want %d (offene, überfällige, Summe)", len(lines), len(want))
+	}
+	for i, c := range lines {
+		env := map[string]string{"PAPIERKRAM_TOKEN": "test-token-skill"}
+		for k, v := range c.env {
+			env[k] = v
+		}
+		app, srv := mockApp(t, env)
+		srv.On("GET", "/income/invoices", 200, []byte(list))
+		code := Run(app, c.words[1:])
+		out, errs := bufs(app)
+		if code != 0 || out != want[i] {
+			t.Errorf("%s\nexit %d, stdout:\n%s\nwant:\n%s\nstderr %q", strings.Join(c.words, " "), code, out, want[i], errs)
+		}
+		assertNoToken(t, app)
+	}
+}
