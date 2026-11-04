@@ -206,10 +206,11 @@ Eine Go-Tabelle beschreibt jedes API-Command: Ressource, Aktion, Method, Pfad-Te
   - Felder, die im Request-Schema vorkommen, bleiben erhalten (und werden typumgewandelt, z. B. Position-`vat_rate` `"19%"` → `0.19`).
   - Felder, die nicht im Request-Schema, aber im Response-Schema der Ressource vorkommen (z. B. `id`, `customer_no`, `created_at`, `customer.name`, `line_items[].total_net`), werden entfernt; ein Hinweis auf stderr nennt sie.
   - Jedes Feld, das in keinem der beiden Schemas vorkommt, führt zu Exit 5 mit Vorschlag (`unbekanntes Feld "note" – meintest du "notes"?`). Kein stilles Verwerfen.
+  - Wechselt der Kunde, gehören übernommene Referenzen nicht mehr dazu: Nennt `--customer` eine andere ID als `customer.id` aus `--input`, werden die von Prune übernommenen `contact_person`/`project` wieder entfernt (Hinweis „Kunde X statt Y aus --input: … nicht übernommen“), wie bei `--from-estimate`; eine Referenz mit eigenem Flag (`--contact-person`, `--customer-project`) bleibt. Ändert jemand `customer.id` per `jq` im Input selbst, erkennt das CLI den Wechsel nicht: Dann `.contact_person` und `.project` im Input mit löschen (`jq '.customer.id=99 | del(.contact_person, .project)'`) oder per Flag setzen. Der Hinweis „Referenzen übernommen“ nennt nur, was danach gesendet wird.
   - Flache bzw. top-level Response-Felder (`company_id`, `contact_person`, `project` auf oberster Ebene) werden grundsätzlich **nicht** in die verschachtelten Request-Referenzen übersetzt **[Call]**; sie werden als Response-Felder entfernt. Referenzen ändert man per Flag (`--customer`, `--contact-person`). Ausnahmen: `--from-estimate` (9.4) und, seit Live-Lauf 2 (2026-11-04), eine Response-Referenz (Objekt mit `id`), die genau ein Request-Objekt derselben Ebene unter gleichem Namen als Referenz führt: Sie wird als `{id}` dorthin übernommen, wenn dieses Objekt im Body steht und sie noch nicht nennt (Hinweis „Referenzen übernommen“). Das betrifft nur `contact_person` und `project` von Rechnung und Angebot (→ `customer.contact_person`, `customer.project`); gemessen: Fehlen sie im `PUT` einer Rechnung, leert die API beide.
 
 ### 6.3a Update-Semantik **[Call]**
-- `PUT` gilt als Teil-Update: Es werden nur die angegebenen Felder gesendet. Der MCP-Server arbeitet live so; die E2E-Suite bestätigt es für jede Ressource.
+- `PUT` gilt als Teil-Update: Es werden nur die angegebenen Felder gesendet. Der MCP-Server arbeitet live so; die E2E-Suite bestätigt es für jede Ressource außer der Rechnung: Ein Rechnungs-`PUT` ohne `payment_term` stellt die Zahlungsbedingung auf den Standard des Accounts um und ändert `due_date` (gemessen Live-Lauf 3, 2026-11-04). `invoice update` sendet deshalb ohne `--payment-term` und ohne `payment_term` in `--input` die aktuelle Zahlungsbedingung mit und liest sie dafür vorher (Ruling E2E-A, siehe 9.4a). `papierkram api PUT` sendet weiter nur, was angegeben ist.
 - `line_items` haben im Request keine `id`; das Senden von `line_items` ersetzt deshalb **alle** Positionen. `update` mit `--item`/`--items` verlangt darum zusätzlich `--replace-items`, sonst Exit 2 mit Erklärung. Positionen ergänzt man per `describe -o json | jq … | update --input - --replace-items`.
 - Ein leeres `line_items` (R18) wird nur mit `--replace-items` gesendet.
 - So funktioniert `papierkram invoice describe 12 -o json | jq '.name="Neu"' | papierkram invoice update 12 --input -`.
@@ -312,6 +313,9 @@ Ohne `-O` und mit TTY auf stdout: Fehler mit Hinweis (kein Binärmüll ins Termi
 
 ### 9.4 `invoice create --from-estimate <id>`
 Liest das Angebot und baut daraus den Rechnungs-Body: `name`, `description`, `customer` (`id`, ggf. `contact_person`, `project`), `billing`, `gross`, alle Positionen (`name`, `description`, `quantity`, `unit`, `price`, `price_gross`, `discount_*`, `proposition:{id}` falls gesetzt, `type_of`, `vat_rate` aus `"19%"` normalisiert). `--payment-term` bleibt Pflicht (Angebote haben keine Zahlungsbedingung). Alle anderen Flags überschreiben. Mit `--dry-run` sieht man den Body vor dem Anlegen (50 Credits). **[Builder]**: genaue Feldliste gegen `EstimateWithDetailedEmbeds` und das Rechnungs-Request-Schema abgleichen; Felder, die nicht übertragbar sind, in der Hilfe nennen.
+
+### 9.4a `invoice update <id>`: Zahlungsbedingung erhalten (Ruling E2E-A)
+Ohne `--payment-term` und ohne `payment_term` im fertigen Body (nach `--input` und Flags; ein `null` gilt als fehlend) liest `invoice update` die Rechnung vorher (`GET /income/invoices/{id}`, 1 Credit) und sendet `payment_term: {id: <aktuelle payment_term.id>}` mit; ein Hinweis auf stderr nennt die ID. Das Lesen läuft nach Schreibschutz-Gate, Flag- und Body-Prüfung (Fehler dort kosten kein Lesen) und wie bei `--from-estimate` (9.4): derselbe `describe`-Eintrag, ein gescheitertes Lesen behält seinen Code und ändert nichts, eine Antwort ohne `payment_term.id` endet mit Exit 1 (nichts gesendet, Hinweis auf `--payment-term`). `--dry-run` liest ebenfalls und weist das Lesen als `read` aus; `credits` ist dann 2, mit `--payment-term` 1. `commands --json` nennt für `invoice update` 2 Credits. Nur Rechnungen: beim Angebot zeigte Lauf 3 keine solche Änderung.
 
 ### 9.5 `voucher pay <id>`
 Flags `--amount` (→ `value`), `--transaction` (→ `banking_transaction:{id}`), `--date` (→ `payment_date`), `--reason` (→ `difference_reason`). Mindestens `--amount` oder `--transaction` Pflicht (Exit 2).
@@ -471,7 +475,7 @@ Coverage-Ziel ≥ 80 % ohne `internal/api/gen`.
 
 ## 15. Abdeckungsmatrix (alle 89 Operationen)
 
-Erzeugt per `jq` aus `api/openapi.json`. Der Abdeckungstest erzwingt diese Zuordnung. Credits = Kosten laut Abschnitt 4.3.
+Erzeugt per `jq` aus `api/openapi.json`. Der Abdeckungstest erzwingt diese Zuordnung. Credits = Kosten der Operation laut Abschnitt 4.3; zusammengesetzte Befehle kosten die Summe ihrer Anfragen (`deliver` mit Nachlesen 2, `invoice update` ohne `--payment-term` mit Lesen 2, siehe 9.1 und 9.4a).
 
 | # | Method | Pfad | Command | Klasse | Credits |
 |---|---|---|---|---|---|
@@ -517,7 +521,7 @@ Erzeugt per `jq` aus `api/openapi.json`. Der Abdeckungstest erzwingt diese Zuord
 | 40 | `GET` | `/income/invoices` | `papierkram invoice list` | read_only | 1 |
 | 41 | `POST` | `/income/invoices` | `papierkram invoice create` | create | 50 |
 | 42 | `GET` | `/income/invoices/{id}` | `papierkram invoice describe <id>` | read_only | 1 |
-| 43 | `PUT` | `/income/invoices/{id}` | `papierkram invoice update <id>` | update | 1 |
+| 43 | `PUT` | `/income/invoices/{id}` | `papierkram invoice update <id>` (ohne `--payment-term` zuvor Lesen, +1 Credit, 9.4a) | update | 1 |
 | 44 | `DELETE` | `/income/invoices/{id}` | `papierkram invoice delete <id>` | destructive | 1 |
 | 45 | `POST` | `/income/invoices/{id}/archive` | `papierkram invoice archive <id>` | archive | 1 |
 | 46 | `POST` | `/income/invoices/{id}/unarchive` | `papierkram invoice unarchive <id>` | archive | 1 |
