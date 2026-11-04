@@ -95,6 +95,13 @@ func TestMeterRecordUnanswered(t *testing.T) {
 // charged in full. The API used 303 credits (10000 → 9697); the meter of
 // that run, which took the growth of X-Consumed-Quota as the cost,
 // counted 151 (8 by documented cost). Replayed, it must count 303.
+//
+// The request list is reconstructed from the log and the code of the
+// suite, not recorded: requests of equal cost are partly merged under one
+// path (e.g. describe, update and describe of company, person and project
+// as 9 × GET /contact/companies/1), and every header equals the
+// documented cost. The test therefore guards against the old growth logic
+// only; the max rule is TestMeterCountsMaxOfDocumentedAndConsumed's.
 func TestMeterReplaysFirstLiveRun(t *testing.T) {
 	type req struct {
 		method, path string
