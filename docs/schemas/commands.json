@@ -128,7 +128,7 @@
                   "pattern": "^[A-Za-z]$"
                 },
                 "type": {
-                  "description": "Werttyp: string, boolean (Schalter), integer, number (Dezimalpunkt), id (ganze Zahl ≥ 0), date (YYYY-MM-DD, heute, gestern), duration (z. B. 30s).",
+                  "description": "Werttyp: string, boolean (Schalter), integer, number (Dezimalpunkt), id (ganze Zahl ≥ 0), date (YYYY-MM-DD, heute/today, gestern/yesterday), duration (z. B. 30s).",
                   "type": "string",
                   "enum": ["string", "boolean", "integer", "number", "id", "date", "duration"]
                 },
@@ -225,7 +225,7 @@
             "pattern": "^[A-Za-z]$"
           },
           "type": {
-            "description": "Werttyp: string, boolean (Schalter), integer, number (Dezimalpunkt), id (ganze Zahl ≥ 0), date (YYYY-MM-DD, heute, gestern), duration (z. B. 30s).",
+            "description": "Werttyp: string, boolean (Schalter), integer, number (Dezimalpunkt), id (ganze Zahl ≥ 0), date (YYYY-MM-DD, heute/today, gestern/yesterday), duration (z. B. 30s).",
             "type": "string",
             "enum": ["string", "boolean", "integer", "number", "id", "date", "duration"]
           },

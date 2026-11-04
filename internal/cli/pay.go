@@ -15,12 +15,15 @@ import (
 // voucher pay <id> (spec 9.5, 8.1: class destructive, a payment cannot be
 // taken back through the API).
 
+// payOneOf is the condition checkPayFlags enforces, named in the help.
+const payOneOf = "--amount oder --transaction Pflicht, außer mit --input"
+
 // payFlags map the flags of pay to the fields of its request body
 // (spec 9.5). Type, format, enum and the conversion of each value come
 // from the field of the request schema (spec.Fields, spec.CoerceFlag).
 var payFlags = []struct{ flag, field, help string }{
-	{"amount", "value", "gezahlter Betrag mit Dezimalpunkt, z. B. 165.80"},
-	{"transaction", "banking_transaction", "ID des Bankumsatzes, mit dem der Beleg bezahlt wurde (papierkram transaction list)"},
+	{"amount", "value", "gezahlter Betrag mit Dezimalpunkt, z. B. 165.80 (" + payOneOf + ")"},
+	{"transaction", "banking_transaction", "ID des Bankumsatzes, mit dem der Beleg bezahlt wurde (papierkram transaction list; " + payOneOf + ")"},
 	{"date", "payment_date", "Zahlungsdatum"},
 	{"reason", "difference_reason", "Grund, wenn der Betrag vom offenen Betrag abweicht"},
 }

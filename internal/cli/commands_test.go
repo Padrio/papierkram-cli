@@ -473,6 +473,11 @@ func TestCommandsJSONFlags(t *testing.T) {
 	if f := d.find(t, "voucher pay").flag(t, "reason"); !slices.Equal(f.Enum, []string{"sonstige", "mahnung", "teilzahlung", "skonto", "schmaelerung"}) {
 		t.Errorf("voucher pay --reason = %+v", f)
 	}
+	for _, name := range []string{"amount", "transaction"} {
+		if f := d.find(t, "voucher pay").flag(t, name); f.Required || !strings.Contains(f.Description, "--amount oder --transaction Pflicht, außer mit --input") {
+			t.Errorf("voucher pay --%s = %+v", name, f)
+		}
+	}
 	if f := d.find(t, "voucher pay").flag(t, "amount"); f.Type != "number" {
 		t.Errorf("voucher pay --amount = %+v", f)
 	}
