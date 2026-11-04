@@ -11,8 +11,6 @@ package timer
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,11 +18,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/safefile"
 )
@@ -39,10 +37,8 @@ const MaxSize = 64 << 10
 const MaxComment = 8 << 10
 
 // DirectName is the name part of the state file without a context
-// (direct mode over PAPIERKRAM_TOKEN): it has a dot, so it is no valid
-// context name (config.ValidateName) and the escaping of Path never
-// produces it for one.
-const DirectName = ".direct"
+// (direct mode over PAPIERKRAM_TOKEN), see config.DirectFileName.
+const DirectName = config.DirectFileName
 
 // State is a running timer: its context ("" in direct mode), start, task,
 // user and comment ("" without one). BaseURL is the API base URL of the
@@ -60,36 +56,10 @@ type State struct {
 
 // Path is the state file of the context ctx below cacheDir (os.UserCacheDir()
 // or PAPIERKRAM_CACHE_DIR, chosen by the caller like for the name cache):
-// <cacheDir>/papierkram/timer-<ctx>.json. A context name may hold any
-// character but spaces and dots, so every character other than a–z, 0–9,
-// - and _ is escaped as %XX per byte: the name is never a path, and
-// contexts that differ only in case get files that differ in more than
-// case (case-insensitive file systems). An empty ctx is DirectName; a
-// name escaped to more than 128 bytes is replaced by a hash (~<hex>).
+// <cacheDir>/papierkram/timer-<ctx>.json, the context name in its file
+// name form (config.FileName: escaped, DirectName without a context).
 func Path(cacheDir, ctx string) string {
-	name := DirectName
-	if ctx != "" {
-		name = escape(ctx)
-		if len(name) > 128 {
-			h := sha256.Sum256([]byte(ctx))
-			name = "~" + hex.EncodeToString(h[:16])
-		}
-	}
-	return filepath.Join(cacheDir, "papierkram", "timer-"+name+".json")
-}
-
-// escape keeps a–z, 0–9, - and _ and writes every other byte as %XX.
-func escape(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_' {
-			b.WriteByte(c)
-		} else {
-			fmt.Fprintf(&b, "%%%02X", c)
-		}
-	}
-	return b.String()
+	return filepath.Join(cacheDir, "papierkram", "timer-"+config.FileName(ctx)+".json")
 }
 
 // DiscardHint is the way out of a state that cannot be used.
