@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 var (
@@ -129,17 +130,30 @@ func CreateAtomic(path string, data []byte, mode fs.FileMode) error {
 		return err
 	}
 	claimed, serr := claim.Stat()
-	_ = claim.Close()
-	if err := renameFile(tmp, path); err != nil {
+	// While the claim stays open its inode cannot be reused, so SameFile
+	// below cannot mistake a file created by another writer for it
+	// (Linux reuses a freed inode number at once). Windows refuses to
+	// rename over an open file, so there the claim is closed first.
+	if !holdClaimDuringRename {
+		_ = claim.Close()
+	}
+	rerr := renameFile(tmp, path)
+	if rerr != nil {
 		// remove the claim only while path is still it: another writer
 		// may have taken path since (review N2)
 		if now, err := os.Lstat(path); serr == nil && err == nil && os.SameFile(claimed, now) {
 			_ = os.Remove(path)
 		}
-		return err
 	}
-	return nil
+	if holdClaimDuringRename {
+		_ = claim.Close()
+	}
+	return rerr
 }
+
+// holdClaimDuringRename keeps the claim of the no-hard-link fallback open
+// until its ownership check is done; not possible on Windows.
+var holdClaimDuringRename = runtime.GOOS != "windows"
 
 // writeTemp writes data to a new, exclusively created temporary file in
 // the directory of path and returns its name; it is removed on error.
