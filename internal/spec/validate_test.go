@@ -305,3 +305,27 @@ func TestDecodeJSONErrors(t *testing.T) {
 		}
 	}
 }
+
+// A pattern violation names the expected form (x-cli-pattern-format) in the
+// message and the hint; without the extension the pattern itself is shown.
+func TestValidatePatternNamesFormat(t *testing.T) {
+	body := map[string]any{
+		"entry_date": "2026-11-04", "started_at_time": "9:00", "ended_at_time": "10:30",
+		"task": map[string]any{"id": json.Number("545")}, "user": map[string]any{"id": json.Number("1")},
+	}
+	ce := validationError(t, Validate(body, RequestSchema("CreateTimeEntry")))
+	if want := `started_at_time: ungültiger Wert "9:00", erwartet HH:MM`; ce.Message != want {
+		t.Errorf("message = %q, want %q", ce.Message, want)
+	}
+	if want := "Wert im Format HH:MM angeben"; ce.Hint != want {
+		t.Errorf("hint = %q, want %q", ce.Hint, want)
+	}
+
+	s := &openapi3.Schema{Type: &openapi3.Types{"object"}, Properties: openapi3.Schemas{
+		"code": {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}, Pattern: "^[A-Z]{2}$"}},
+	}}
+	ce = validationError(t, Validate(map[string]any{"code": "de"}, s))
+	if want := `code: ungültiger Wert "de" (Muster ^[A-Z]{2}$)`; ce.Message != want || ce.Hint != "" {
+		t.Errorf("message = %q, hint = %q, want %q", ce.Message, ce.Hint, want)
+	}
+}

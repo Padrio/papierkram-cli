@@ -45,7 +45,8 @@ Das Overlay
 - markiert String-Felder mit boolescher Bedeutung (`x-cli-bool-string`) und Enum-Hinweise (`x-cli-enum-hints`),
 - ersetzt `patternProperties` durch OpenAPI-3.0-Konstrukte (`x-cli-key-pattern` bewahrt das Schlüsselmuster),
 - passt die Response-Schemas an die aufgezeichneten Beispiele an,
-- macht den Dateiteil `file` beim Beleg-Upload (`UploadVoucherDocument`) zur Pflicht.
+- macht den Dateiteil `file` beim Beleg-Upload (`UploadVoucherDocument`) zur Pflicht,
+- verlangt für `started_at_time`/`ended_at_time` der Zeiteinträge das Format `HH:MM` (`pattern`, `x-cli-pattern-format` nennt die Form).
 
 Das Werkzeug `tools/applyoverlay` wendet das Overlay strikt an: Trifft ein Ziel keinen Knoten oder ändert eine Aktion nichts, bricht die Erzeugung ab. Behebt ein neuer Snapshot einen Mangel, fällt die zugehörige Aktion dadurch auf und wird aus dem Overlay entfernt.
 

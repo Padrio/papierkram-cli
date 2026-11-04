@@ -668,3 +668,40 @@ func TestUploadFileRequired(t *testing.T) {
 		t.Errorf("UploadVoucherDocument: required = %v, want [file]", s.Required)
 	}
 }
+
+// Spec R16, 4.4: the start and end times of a time entry are HH:MM; the
+// pattern rejects ISO timestamps and single-digit hours before any request,
+// and x-cli-pattern-format names the form in help and errors.
+func TestTimeEntryTimesHHMM(t *testing.T) {
+	want := []string{
+		"CreateTimeEntry.started_at_time", "CreateTimeEntry.ended_at_time",
+		"UpdateTimeEntry.started_at_time", "UpdateTimeEntry.ended_at_time",
+	}
+	got := extensionPaths(t, "x-cli-pattern-format")
+	assertPaths(t, "x-cli-pattern-format", got, want)
+	for _, g := range got {
+		if g.value != "HH:MM" {
+			t.Errorf("%s: x-cli-pattern-format=%v, want HH:MM", g.path, g.value)
+		}
+	}
+	doc := loadDoc(t, generatedPath)
+	for _, w := range want {
+		id, name, _ := strings.Cut(w, ".")
+		s := property(t, requestSchema(t, doc, id), name)
+		if s.Pattern == "" {
+			t.Errorf("%s: no pattern", w)
+			continue
+		}
+		re := regexp.MustCompile(s.Pattern)
+		for _, ok := range []string{"00:00", "09:00", "10:20", "23:59"} {
+			if !re.MatchString(ok) {
+				t.Errorf("%s: pattern %s rejects %q", w, s.Pattern, ok)
+			}
+		}
+		for _, bad := range []string{"9:00", "24:00", "09:60", "09:00:00", "2026-10-25T09:00:00+02:00", "0900", ""} {
+			if re.MatchString(bad) {
+				t.Errorf("%s: pattern %s accepts %q", w, s.Pattern, bad)
+			}
+		}
+	}
+}

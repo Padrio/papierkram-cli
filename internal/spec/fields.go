@@ -295,6 +295,17 @@ func isFreeFormMap(s *openapi3.Schema) bool {
 	return isObject(s) && len(s.Properties) == 0 && s.AdditionalProperties.Schema != nil
 }
 
+// patternFormat is the human-readable form of a string pattern, from the
+// schema's x-cli-pattern-format ("HH:MM" for the times of a time entry), or
+// "" when the schema has none.
+func patternFormat(s *openapi3.Schema) string {
+	if s == nil {
+		return ""
+	}
+	name, _ := s.Extensions["x-cli-pattern-format"].(string)
+	return name
+}
+
 func kebab(s string) string { return strings.ToLower(strings.ReplaceAll(s, "_", "-")) }
 
 func singular(s string) string {
@@ -331,6 +342,8 @@ func help(f Field, s *openapi3.Schema) string {
 		h += " (19, 19%, 0,19 oder 0.19)"
 	case f.IsBool():
 		h += " (true/false)"
+	case patternFormat(s) != "":
+		h += " (" + patternFormat(s) + ")"
 	}
 	switch n := len(f.Enum); {
 	case n > bigEnum:

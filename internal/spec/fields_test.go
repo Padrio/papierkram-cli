@@ -365,3 +365,29 @@ func TestFieldsHugeEnumHelp(t *testing.T) {
 		t.Errorf("help %q", h)
 	}
 }
+
+// The flag help names the form of a pattern field (x-cli-pattern-format):
+// --started-at-time of a time entry takes HH:MM.
+func TestFieldsPatternFormatHelp(t *testing.T) {
+	fs, err := Fields(RequestSchema("CreateTimeEntry"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, f := range fs {
+		switch f.Flag {
+		case "started-at-time", "ended-at-time":
+			n++
+			if !strings.HasSuffix(f.Help, " (HH:MM)") {
+				t.Errorf("--%s: help %q", f.Flag, f.Help)
+			}
+		case "entry-date":
+			if !strings.Contains(f.Help, "YYYY-MM-DD") {
+				t.Errorf("--%s: help %q", f.Flag, f.Help)
+			}
+		}
+	}
+	if n != 2 {
+		t.Errorf("%d time flags found, want 2", n)
+	}
+}

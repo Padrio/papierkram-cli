@@ -25291,7 +25291,9 @@
                   },
                   "ended_at_time": {
                     "nullable": false,
-                    "type": "string"
+                    "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                    "type": "string",
+                    "x-cli-pattern-format": "HH:MM"
                   },
                   "entry_date": {
                     "format": "date",
@@ -25300,7 +25302,9 @@
                   },
                   "started_at_time": {
                     "nullable": false,
-                    "type": "string"
+                    "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                    "type": "string",
+                    "x-cli-pattern-format": "HH:MM"
                   },
                   "task": {
                     "additionalProperties": false,
@@ -25744,7 +25748,9 @@
                   },
                   "ended_at_time": {
                     "nullable": false,
-                    "type": "string"
+                    "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                    "type": "string",
+                    "x-cli-pattern-format": "HH:MM"
                   },
                   "entry_date": {
                     "format": "date",
@@ -25753,7 +25759,9 @@
                   },
                   "started_at_time": {
                     "nullable": false,
-                    "type": "string"
+                    "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                    "type": "string",
+                    "x-cli-pattern-format": "HH:MM"
                   },
                   "task": {
                     "additionalProperties": false,

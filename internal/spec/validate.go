@@ -142,6 +142,12 @@ func convertSchemaError(body any, se *openapi3.SchemaError) problem {
 			return problem{path, fmt.Sprintf("%s: ungültiges Datum %s", where, showJSON(se.Value)), dateFormatHint}
 		}
 		return problem{path, fmt.Sprintf("%s: ungültiges Format %s", where, showJSON(se.Value)), ""}
+	case "pattern":
+		if name := patternFormat(s); name != "" {
+			return problem{path, fmt.Sprintf("%s: ungültiger Wert %s, erwartet %s", where, showJSON(se.Value), name),
+				"Wert im Format " + name + " angeben"}
+		}
+		return problem{path, fmt.Sprintf("%s: ungültiger Wert %s (Muster %s)", where, showJSON(se.Value), s.Pattern), ""}
 	}
 	return problem{path, fmt.Sprintf("%s: ungültiger Wert %s", where, showJSON(se.Value)), ""}
 }

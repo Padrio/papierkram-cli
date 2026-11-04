@@ -668,3 +668,16 @@ actions:
     update:
       required:
         - file
+
+  # ---------------------------------------------------------------------------
+  # 14. Time entry start and end times (x-cli-pattern-format)
+  # Why: started_at_time and ended_at_time are plain strings, although the API
+  # takes a wall-clock time HH:MM (all snapshot examples, spec 4.4, R16) and
+  # no ISO timestamp. The pattern lets the CLI (and the mock server) reject
+  # "9:00" or "2026-10-25T09:00:00+02:00" before credits are spent; the
+  # extension names the expected form for help texts and error messages.
+  # ---------------------------------------------------------------------------
+  - target: $.paths['/tracker/time_entries','/tracker/time_entries/{id}']['post','put'].requestBody.content['application/json'].schema.properties['started_at_time','ended_at_time']
+    update:
+      pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+      x-cli-pattern-format: 'HH:MM'
