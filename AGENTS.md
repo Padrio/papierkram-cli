@@ -131,6 +131,7 @@ Immer zuerst `error.hint` (bzw. `Hinweis:`) und `error.message` lesen; die Texte
 2. Sagt `message` „Beleg N angelegt, Hochladen fehlgeschlagen“ (die API hat das Hochladen abgelehnt, oder die Datei war nicht lesbar), lautet der Hinweis „nur das Hochladen nachholen: …“. Ursache beheben (z. B. Dateityp), dann `retry_command` ausführen.
 3. Ist `retry_command` `null` („Beleg angelegt, Beleg-ID unbekannt“), heißt der Hinweis „Beleg per papierkram voucher list suchen und die Datei mit voucher upload an ihn hochladen“. Den Beleg per `voucher list` suchen (Name, Datum), dann `voucher upload <id> <datei>`.
 4. In keinem Fall den ganzen Befehl wiederholen: Der Hinweis endet mit „NICHT den ganzen Befehl wiederholen (sonst ein zweiter Beleg)“.
+5. Endet der Hinweis mit „Kontingent erschöpft – nicht jetzt nachholen“ (`http_status` 429 beim Hochladen), ist das Monatskontingent aufgebraucht: `retry_command` jetzt nicht ausführen (es endete mit Exit 6), sondern abbrechen und dem Menschen die Beleg-ID und `retry_command` melden.
 
 **`time stop`, Exit 11** („Zeiteintrag angelegt, aber Timer-Datei nicht gelöscht“): Der Eintrag **ist** angelegt (stdout zeigt ihn). Der Hinweis sagt „NICHT erneut papierkram time stop ausführen (würde doppelt buchen); den Timer mit papierkram time discard verwerfen oder die Datei … von Hand löschen“. Also nach Prüfung per `time list --since heute -o json` den Timer mit `papierkram time discard --yes` verwerfen (mit Freigabe), nie erneut `time stop`.
 

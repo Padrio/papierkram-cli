@@ -46,7 +46,7 @@ papierkram voucher create --name "Büromaterial Oktober" --provenance domestic -
 papierkram voucher create --name "Büromaterial Oktober" --provenance domestic --creditor 2904 --document-date 2026-10-28 --item "name=Papier,amount=11.90,vat=19,category=Bürobedarf" --file beleg.pdf -o json --no-input
 ```
 
-Endet das mit Exit 11, ist der Beleg angelegt und nur das Hochladen fehlt oder ist unsicher: **nie** den ganzen Befehl wiederholen (sonst ein zweiter Beleg), sondern dem Hinweis folgen (erst `voucher describe`, dann höchstens `retry_command`).
+Endet das mit Exit 11, ist der Beleg angelegt und nur das Hochladen fehlt oder ist unsicher: **nie** den ganzen Befehl wiederholen (sonst ein zweiter Beleg), sondern dem Hinweis folgen (erst `voucher describe`, dann höchstens `retry_command`; endet der Hinweis mit „Kontingent erschöpft – nicht jetzt nachholen“, auch das nicht, sondern melden).
 
 Datei an einen vorhandenen Beleg hängen und das Ergebnis prüfen:
 

@@ -473,6 +473,12 @@ func (a *App) uploadPartial(o output.Options, e registry.Entry, up *createUpload
 	if timedOut(err) {
 		out.Hint += "; " + timeoutHint
 	}
+	if ce.Code == clierr.CodeQuota {
+		// retry_command would fail with exit 6 until the quota is renewed;
+		// the code stays partial (the object exists)
+		out.Hint += "; " + quotaPartialHint
+		warning += "; " + quotaPartialHint
+	}
 	output.Warn(a.Err, warning)
 	var werr error
 	if ownText(o) {
@@ -498,6 +504,10 @@ func uploadUncertain(ce *clierr.Error) bool {
 	}
 	return ce.HTTPStatus >= 500
 }
+
+// quotaPartialHint ends the hint of a partial run whose upload got a 429
+// (monthly quota): nothing can be done now.
+const quotaPartialHint = "Kontingent erschöpft – nicht jetzt nachholen"
 
 // timeoutHint names --timeout: the whole file has to go out within it.
 const timeoutHint = "größere Dateien brauchen ggf. --timeout 120s"

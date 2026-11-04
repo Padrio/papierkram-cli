@@ -462,6 +462,37 @@ func TestR39_VoucherFileUploadPartial(t *testing.T) {
 	}
 }
 
+// A 429 on the upload keeps exit 11 (the voucher exists), but the hint
+// and the warning end with the quota: retry_command would fail with exit
+// 6 now (M8). http_status stays 429.
+func TestVoucherFileUploadQuotaPartial(t *testing.T) {
+	path := writeFile(t, "beleg.pdf", pdfContent)
+	app, srv := apiApp(t)
+	srv.On("POST", "/expense/vouchers/290/documents", http.StatusTooManyRequests,
+		[]byte(`{"type":"error","message":"Kontingent erschöpft"}`))
+	wantExit(t, app, Run(app, append(append([]string{}, voucherCreateArgs...), "--file", path, "-o", "json")), 11)
+	wantRequests(t, srv, 2)
+	out, errs := bufs(app)
+	var got struct {
+		Error struct {
+			Code, Hint string
+			HTTPStatus int `json:"http_status"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(lastLine(errs)), &got); err != nil {
+		t.Fatalf("%v: %s", err, errs)
+	}
+	const tail = "Kontingent erschöpft – nicht jetzt nachholen"
+	if got.Error.Code != "partial" || got.Error.HTTPStatus != 429 || !strings.HasSuffix(got.Error.Hint, "; "+tail) ||
+		!strings.Contains(got.Error.Hint, "nur das Hochladen nachholen: papierkram voucher upload 290 ") {
+		t.Errorf("error = %+v", got.Error)
+	}
+	var res struct{ Warnings []string }
+	if err := json.Unmarshal([]byte(out), &res); err != nil || len(res.Warnings) != 1 || !strings.HasSuffix(res.Warnings[0], "; "+tail) {
+		t.Errorf("stdout = %s (%v)", out, err)
+	}
+}
+
 // The partial result in the table format: German lines on stdout with ID
 // and the command to retry.
 func TestVoucherCreateFilePartialText(t *testing.T) {
