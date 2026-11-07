@@ -61,6 +61,7 @@ const (
 	testPartial        = "TestE2E_PartialUpdateSemantics/"
 	testInvoice        = "TestE2E_InvoiceFlow"
 	testVoucher        = "TestE2E_VoucherFlow"
+	testTime           = "TestE2E_TimeFlow"
 )
 
 // CoveragePlan names, for every operation of the registry (spec 15), how
@@ -167,8 +168,8 @@ var CoveragePlan = map[string]Expectation{
 	"GetTimeEntry":       {Test: testPartial + "time"},
 	"UpdateTimeEntry":    {Test: testPartial + "time"},
 	"DeleteTimeEntry":    {Test: cleanupTest, Phase: PhaseAny},
-	"ArchiveTimeEntry":   {Pending: 5},
-	"UnarchiveTimeEntry": {Pending: 5},
+	"ArchiveTimeEntry":   {Test: testTime},
+	"UnarchiveTimeEntry": {Test: testTime},
 
 	// users
 	"ListUsers": {Test: "TestE2E_QuotaHeadersPresent"},

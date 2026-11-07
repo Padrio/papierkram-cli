@@ -115,6 +115,13 @@ type result struct {
 // sandbox and these directories: no user config, no keychain (in-memory
 // store), no PAPIERKRAM_BASE_URL or other variable of the caller.
 func (s *liveSuite) exec(dir, stdin string, args ...string) result {
+	return s.execAt(dir, time.Now, stdin, args...)
+}
+
+// execAt is exec with the clock now of the CLI (App.Now): the local timer
+// (time start, status, stop, discard) reads it, and its state file lies
+// below <dir>/cache/papierkram/.
+func (s *liveSuite) execAt(dir string, now func() time.Time, stdin string, args ...string) result {
 	cfg, cache := filepath.Join(dir, "config"), filepath.Join(dir, "cache")
 	env := map[string]string{
 		"PAPIERKRAM_SUBDOMAIN":  s.sub,
@@ -126,7 +133,7 @@ func (s *liveSuite) exec(dir, stdin string, args ...string) result {
 	app := &cli.App{
 		In: strings.NewReader(stdin), Out: &out, Err: &errb,
 		Env:          func(k string) string { return env[k] },
-		Now:          time.Now,
+		Now:          now,
 		Location:     s.loc,
 		ConfigDir:    cfg,
 		CacheDir:     cache,
@@ -145,7 +152,14 @@ func (s *liveSuite) exec(dir, stdin string, args ...string) result {
 // contain the token (hard: the CLI promises that).
 func (s *liveSuite) run(t *testing.T, stdin string, args ...string) result {
 	t.Helper()
-	r := s.exec(t.TempDir(), stdin, args...)
+	return s.runIn(t, t.TempDir(), time.Now, stdin, args...)
+}
+
+// runIn is run with the directory dir and the clock now (execAt): runs
+// that share dir share the timer of the CLI.
+func (s *liveSuite) runIn(t *testing.T, dir string, now func() time.Time, stdin string, args ...string) result {
+	t.Helper()
+	r := s.execAt(dir, now, stdin, args...)
 	if s.red.Contains(r.stdout) || s.red.Contains(r.stderr) {
 		s.errorf(t, "CLI-Ausgabe von %q enthält das Token", strings.Join(args, " "))
 	}

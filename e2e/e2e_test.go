@@ -34,7 +34,8 @@
 //	  cancel + describe 2                                          60
 //	MasterDataArchive (geplant, Task 6)                            12
 //	ReadCommands (geplant, Task 6)                                  8
-//	TimeFlow (geplant, Task 5)                                     24
+//	TimeFlow: time log 10, list 1, archive + unarchive 2, stop
+//	  10, describe 1 (start, status, discard local: 0)             24
 //	VoucherFlow: create --file 60, describe 1, pdf 1, document
 //	  delete 1, archive + unarchive 2, reverse + describe 2,
 //	  cancel + describe 2                                          69
@@ -89,7 +90,11 @@
 //	  invoice flow: deliver --via pdf, pdf (%PDF file), archive and
 //	  unarchive exit 0; voucher flow: create --file (exit 0, upload
 //	  2xx), exactly one document, pdf, document delete, archive and
-//	  unarchive exit 0.
+//	  unarchive exit 0; time flow: time log, the entry in time list
+//	  --since heute, archive and unarchive exit 0, the timer (start,
+//	  status, stop, status, stop again exit 2, start, discard; all but
+//	  stop without a request), the stopped entry 11:00-11:02 of today
+//	  with duration 120.
 //	measured only: empty deliver body, upload of png/jpg/txt, voucher
 //	  state values, invoice states along its life cycle, invoice and
 //	  estimate cancel, voucher document key shape, voucher pdf
