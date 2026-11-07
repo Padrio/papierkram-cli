@@ -24,7 +24,7 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 - Shell-Vervollständigung für bash, zsh, fish und PowerShell, mit IDs aus der API (60 Sekunden Cache, abschaltbar per `completion_lookup = false`).
 - Live-E2E-Suite gegen einen Sandbox-Account (`-tags e2e`), die die offenen Punkte der API misst; ohne Freigabe sendet sie keine Anfrage.
 - Live-E2E-Suite: Abdeckungsbericht je Lauf (`ABDECKUNG …` im Log) über alle 89 Operationen; ein vollständiger Lauf scheitert, wenn eine erwartete Operation fehlt.
-- Live-E2E-Suite: Credit-Budget je Lauf 760 (davon 62 fürs Aufräumen, Zielwert unter 800). Der Workflow „E2E (Sandbox)“ prüft das Log auf das Token, schreibt Abdeckung, Abweichungen und Credits in die Zusammenfassung des Laufs und lädt das Log nur nach bestandener Prüfung als Artefakt `e2e-log` hoch (14 Tage).
+- Live-E2E-Suite: Credit-Budget je Lauf 760 (davon 62 fürs Aufräumen, Zielwert unter 800). Der Workflow „E2E (Sandbox)“ schwärzt die Sandbox-Subdomain im Log, prüft es auf Token und Subdomain, schreibt Abdeckung, Abweichungen und Credits in die Zusammenfassung des Laufs und lädt das Log nur nach bestandener Prüfung als Artefakt `e2e-log` hoch (14 Tage).
 - Dokumentation: README, AGENTS.md für KI-Agents, Claude-Code-Skill (`skills/papierkram`), aus der Hilfe generierte Befehlsreferenz (`docs/reference`), offene Punkte der API, Hinweise zu Drittsoftware.
 
 [Unreleased]: https://github.com/Padrio/papierkram-cli/commits/main

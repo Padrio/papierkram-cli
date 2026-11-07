@@ -58,23 +58,53 @@ jobs:
           set -o pipefail
           go test -count=1 -timeout 25m -tags e2e -v ./e2e/... 2>&1 | tee e2e.log
       # The suite redacts the token; this check is the second line of
-      # defence before the log leaves the runner. The token goes to grep
-      # as a pattern file (process substitution), never as an argument.
+      # defence before the log leaves the runner (the repository is
+      # public, so are its artifacts). The sandbox subdomain is replaced
+      # by <sandbox> (fixed string, any case; perl reads it from the
+      # environment), then neither token nor subdomain may be left. Both
+      # go to grep as a pattern file (process substitution), never as an
+      # argument. An empty secret cannot be checked: log deleted.
       - name: token check
         id: tokencheck
         if: always()
         shell: bash
         env:
           PAPIERKRAM_E2E_TOKEN: ${{ secrets.PAPIERKRAM_E2E_TOKEN }}
+          PAPIERKRAM_E2E_SUBDOMAIN: ${{ secrets.PAPIERKRAM_E2E_SUBDOMAIN }}
         run: |
           if [ ! -f e2e.log ]; then
             echo "clean=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          if [ -z "$PAPIERKRAM_E2E_TOKEN" ]; then
+            rm -f e2e.log
+            echo "Token-Secret leer: Log gelöscht, kein Upload" >&2
+            exit 1
+          fi
+          # the suite logs the subdomain trimmed and in lower case
+          SANDBOX_SUB="${PAPIERKRAM_E2E_SUBDOMAIN//[[:space:]]/}"
+          if [ -z "$SANDBOX_SUB" ]; then
+            rm -f e2e.log
+            echo "Subdomain-Secret leer: Log gelöscht, kein Upload" >&2
+            exit 1
+          fi
+          export SANDBOX_SUB
+          if ! perl -i -pe 'BEGIN { $s = $ENV{SANDBOX_SUB}; die "leer\n" if $s eq "" } s/\Q$s\E/<sandbox>/gi' e2e.log; then
+            rm -f e2e.log
+            echo "Subdomain nicht geschwärzt: Log gelöscht, kein Upload" >&2
+            exit 1
+          fi
           hits="$(grep -cFf <(printf '%s\n' "$PAPIERKRAM_E2E_TOKEN") e2e.log || true)"
           if [ "$hits" != "0" ]; then
             rm -f e2e.log
             echo "Token im Log gefunden: Log gelöscht, kein Upload" >&2
+            exit 1
+          fi
+          # without the placeholders, so a subdomain such as "box" still passes
+          hits="$(sed 's/<sandbox>//g' e2e.log | grep -ciFf <(printf '%s\n' "$SANDBOX_SUB") || true)"
+          if [ "$hits" != "0" ]; then
+            rm -f e2e.log
+            echo "Subdomain im Log gefunden: Log gelöscht, kein Upload" >&2
             exit 1
           fi
           echo "clean=true" >> "$GITHUB_OUTPUT"

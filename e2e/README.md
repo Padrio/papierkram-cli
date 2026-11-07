@@ -49,11 +49,17 @@ Ablauf des Workflows:
 2. `live suite`: `go test -count=1 -timeout 25m -tags e2e -v ./e2e/...`,
    die Ausgabe geht per `tee` auch nach `e2e.log` (`set -o pipefail`: der
    Exit-Code der Suite zählt).
-3. `token check` (läuft immer): Sucht das Token in `e2e.log`. Das Token
-   geht `grep` als Musterdatei zu, nie als Argument. Ein Treffer löscht das
-   Log und lässt den Schritt scheitern („Token im Log gefunden: Log
-   gelöscht, kein Upload“); ohne Log gibt es weder Zusammenfassung noch
-   Artefakt.
+3. `token check` (läuft immer): Das Repository und seine Artefakte sind
+   öffentlich. Der Schritt ersetzt deshalb zuerst die Sandbox-Subdomain in
+   `e2e.log` durch `<sandbox>` (fester Text, jede Groß-/Kleinschreibung;
+   der Wert kommt aus der Umgebung, nie als Argument) und sucht danach
+   Token und Subdomain im Log. Beide gehen `grep` als Musterdatei zu, nie
+   als Argument. Ein Treffer löscht das Log und lässt den Schritt scheitern
+   („Token im Log gefunden: Log gelöscht, kein Upload“ bzw. „Subdomain im
+   Log gefunden: …“); ebenso ein leeres Secret („Token-Secret leer: Log
+   gelöscht, kein Upload“ bzw. „Subdomain-Secret leer: …“), weil sich dann
+   nichts prüfen lässt. Ohne sauberes Log gibt es weder Zusammenfassung
+   noch Artefakt.
 4. `summary`: nur bei sauberem Log. Schreibt unter „E2E-Ergebnis“ alle
    Zeilen mit `ABDECKUNG`, `ABWEICHUNG` oder `Credits:` in die
    Zusammenfassung des Laufs.
