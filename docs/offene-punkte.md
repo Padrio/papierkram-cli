@@ -13,7 +13,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 | Nr. | Punkt | Annahme des CLI | E2E-Test | Art |
 |---|---|---|---|---|
-| 1 | Statuswerte (`state`) der Belege | `state` wird roh angezeigt, nicht geprüft | `TestE2E_VoucherStateValues` | Messung |
+| 1 | Statuswerte (`state`) der Belege | `state` wird roh angezeigt, nicht geprüft | `TestE2E_VoucherStateValues`, `TestE2E_InvoiceFlow` | Messung |
 | 2 | Erlaubte Upload-MIME-Typen | keine lokale Einschränkung; gemessen: PDF, PNG, JPG ja, TXT HTTP 500 | `TestE2E_UploadMimeTypes` | PDF hart, sonst Messung |
 | 3 | Maximale Upload-Dateigröße | keine lokale Grenze | – | **bewusst nicht gemessen** |
 | 4 | `0.19` ergibt 19 % (Position und Artikel) | `0.19` als Zahl bzw. beim Artikel als String `"0.19"` | `TestE2E_VatRate019Is19Percent/Position`, `TestE2E_VatRate019Is19Percent/Artikel` | hart |
@@ -28,7 +28,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 13 | `supply_date` im Antwortformat und Kontaktperson/Projekt im Rundlauf | Kontaktperson und Projekt werden unter `customer` mitgesendet und bleiben (gemessen Lauf 3 und 4); `supply_date` offen | `TestE2E_Carries/02_InvoiceRoundTrip` | hart |
 | 14 | Werte von `due_time_unit` | meist `day`; die Tabelle zeigt `ZIEL` und `EINHEIT` getrennt | `TestE2E_Carries/05_PaymentTermUnits` | Messung |
 | 15 | Einheit von `billable_duration` | Sekunden; die API ignoriert den Wert beim Anlegen und Ändern (gemessen) | `TestE2E_Carries/06_BillableDurationSeconds` | Messung |
-| 16 | Setzt `deliver --via pdf` `sent_on`? | nein (gemessen); abgebrochener PDF-Versand endet mit Exit 12 | `TestE2E_Carries/07_DeliverPdfSentOn` | Messung |
+| 16 | Setzt `deliver --via pdf` `sent_on`? | nein (gemessen); abgebrochener PDF-Versand endet mit Exit 12 | `TestE2E_Carries/07_DeliverPdfSentOn`, `TestE2E_InvoiceFlow` | Messung |
 | 17 | `Accept` beim PDF-Download | `application/pdf, application/json;q=0.9` ergibt 200 `application/pdf` | `TestE2E_Carries/08_PDFDownloadAccept` | hart |
 | 18 | `price_gross: 0.0` bei `gross: false` (`--from-estimate`) | wird akzeptiert | `TestE2E_Carries/09_FromEstimatePriceGrossZero` | hart |
 | 19 | `voucher pay`: `value: null` mit Bankumsatz | wird akzeptiert | `TestE2E_Carries/10_VoucherPayValueNull` | Messung |
@@ -49,7 +49,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 - **Offen:** Die Spec dokumentiert die Werte von `state` für Rechnungen, Angebote und Belege nicht (Beispiele zeigen u. a. `draft`, `canceled`, `unpaid`, `partially_paid`, `deleted`, `imported`).
 - **Annahme:** Tabellen zeigen `state` roh; das CLI prüft oder übersetzt keine Statuswerte. Filter nach Status bietet die API nur für Zeiteinträge (`--state`, dort ist das Enum dokumentiert).
-- **E2E:** `TestE2E_VoucherStateValues` (Messung) sammelt die Werte der ersten Listenseite von Belegen, Rechnungen und Angeboten und den Status eines neuen Belegs. Danach sollen die Werte in der Doku ergänzt werden.
+- **E2E:** `TestE2E_VoucherStateValues` (Messung) sammelt die Werte der ersten Listenseite von Belegen, Rechnungen und Angeboten und den Status eines neuen Belegs. `TestE2E_InvoiceFlow` (Messung) misst die Statuswerte einer eigenen Rechnung im Lebenszyklus: `state` nach dem Anlegen, nach `deliver --via pdf` (mit `invoice_no`, `sent_on`, `sent_via`) und nach `cancel` (mit Exit, HTTP-Status und Meldung der API), `record_state` nach `archive`, außerdem `state` des versendeten Angebots nach `estimate cancel`. Danach sollen die Werte in der Doku ergänzt werden; die Ergebnisse von `TestE2E_InvoiceFlow` folgen nach Live-Lauf 5.
 - **Gemessen 2026-11-04 (Lauf 2):** Ein neuer Beleg hat `state` `unpaid`; die erste Belegliste zeigte nur `unpaid`, die Angebotsliste `draft` und `sent` (nach `deliver --via pdf`), die Rechnungsliste war leer. Weitere Werte (z. B. von Rechnungen) bleiben offen.
 
 ### 2. Erlaubte Upload-MIME-Typen
@@ -157,7 +157,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 - **Offen:** Setzt die API beim PDF-Versand `sent_on`?
 - **Annahme:** Bricht die Verbindung nach dem Senden ab, liest `deliver` den Beleg nach: `sent_on` von heute ergibt Exit 0 mit Warnung, sonst Exit 12. Setzt die API `sent_on` bei `--via pdf` nicht, endet dieser Fall immer mit Exit 12 (sicher, aber unnötig vorsichtig).
-- **E2E:** `TestE2E_Carries/07_DeliverPdfSentOn` (Messung).
+- **E2E:** `TestE2E_Carries/07_DeliverPdfSentOn` (Messung, Angebot); `TestE2E_InvoiceFlow` misst dasselbe für eine Rechnung (`sent_on`, `sent_via`, `state`, `invoice_no` nach `invoice deliver --via pdf`).
 - **Gemessen 2026-11-04 (Lauf 2):** **nein.** `deliver --via pdf` antwortet 204 ohne Body; danach sind `sent_on`, `sent_via` und `sent_to` `null`, `state` ist `sent`, die Nummer (`A-00001`) ist vergeben. Folge: Bricht die Verbindung bei einem PDF-Versand ab, endet `deliver` immer mit Exit 12; die Meldung sagt jetzt, dass die API bei `--via pdf` kein `sent_on` setzt, und nennt `state`. `state` allein ist kein Beweis (der Beleg kann schon früher versendet worden sein), deshalb bleibt es bei Exit 12.
 
 ### 17. `Accept` beim PDF-Download

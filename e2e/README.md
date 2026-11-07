@@ -19,8 +19,9 @@ normalen CI mit (ohne Variablen, nur Kompilieren und Überspringen).
 Ob der Account wirklich eine Sandbox ist, kann die Suite nicht prüfen. Das
 liegt bei dir: Trage nie Subdomain und Token der echten Buchhaltung ein. Die
 Suite legt Firmen, Kontaktpersonen, Projekte, Aufgaben, Zeiteinträge,
-Artikel, ein Datenfeld, zwei Angebote, eine Rechnung und einen Beleg an,
-lädt Dateien hoch und versendet ein Angebot als PDF.
+Artikel, ein Datenfeld, zwei Angebote, zwei Rechnungen und einen Beleg an,
+lädt Dateien hoch, versendet ein Angebot und eine Rechnung als PDF und
+versucht, beide zu stornieren (ob die API das zulässt, wird gemessen).
 
 ## Ausführen
 
@@ -117,8 +118,10 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
   fasst die Suite nie an (Lesen ausgenommen).
 - Was sich nicht löschen lässt (z. B. ein versendetes Angebot), wird
   storniert bzw. archiviert. Rechnungen, Angebote und Belege werden als
-  Entwurf angelegt; versendet wird nur ein eigenes Angebot, keine Rechnung
-  (keine Lücke im Rechnungsnummernkreis).
+  Entwurf angelegt; versendet werden nur ein eigenes Angebot und eine eigene
+  Rechnung (`TestE2E_InvoiceFlow`), beide nur als PDF; danach versucht die
+  Suite, beide zu stornieren. Die Rechnung erhält dabei eine Nummer aus dem
+  Rechnungsnummernkreis der Sandbox.
 - Die Suite bezahlt nie etwas: `voucher pay` wird nur mit `value: null` und
   der Bankumsatz-ID 999999999 gemessen, die es nicht gibt (ohne Betrag). Der
   Transport lässt für `pay` genau diesen Body durch,
