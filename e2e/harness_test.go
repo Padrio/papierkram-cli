@@ -367,12 +367,16 @@ var noArchive = map[string]bool{"person": true}
 // archives it (spec 11.1). It touches o only when its name is owned by the
 // suite, or when o is a follow-up object (followUpOf): the API may name
 // that one itself, but its id was read verbatim from the answer to a
-// cancel or reverse of an object of this run, and only that id is
-// touched. A follow-up is never cancelled (it is a cancellation or reverse
-// entry itself; its cancel could create yet another object), only deleted
-// or archived. It returns what happened and false when o is still active.
+// cancel or reverse of an object of this run (ownTarget), its type is
+// that of the resource, and only that id is touched. A follow-up is never
+// cancelled (it is a cancellation or reverse entry itself; its cancel
+// could create yet another object), only deleted or archived. It returns
+// what happened and false when o is still active.
 func (s *liveSuite) remove(dir string, o object) (string, bool) {
-	if !e2eguard.Owned(o.name) && o.followUpOf == 0 {
+	switch {
+	case o.followUpOf != 0 && !s.ownTarget(o):
+		return fmt.Sprintf("nicht angefasst: Folgeobjekt von %s %d, das dieser Lauf nicht angelegt hat", o.resource, o.followUpOf), false
+	case o.followUpOf == 0 && !e2eguard.Owned(o.name):
 		return fmt.Sprintf("nicht angefasst: Name %q ohne Präfix %s", o.name, e2eguard.NamePrefix), false
 	}
 	id := ids(o.id)
@@ -406,6 +410,18 @@ func (s *liveSuite) remove(dir string, o object) (string, bool) {
 		return strings.Join(append(steps, "archiviert"), ", "), true
 	}
 	return strings.Join(append(steps, fmt.Sprintf("archive Exit %d", a.code)), ", ") + ": " + strings.TrimSpace(a.stderr), false
+}
+
+// ownTarget reports whether the target of follow-up o (followUpOf) is an
+// object this run registered itself: same resource, no follow-up, name
+// owned by the suite.
+func (s *liveSuite) ownTarget(o object) bool {
+	for _, c := range s.created {
+		if c.resource == o.resource && c.id == o.followUpOf && c.followUpOf == 0 && e2eguard.Owned(c.name) {
+			return true
+		}
+	}
+	return false
 }
 
 // cleanup removes all objects of this run, newest first (children before

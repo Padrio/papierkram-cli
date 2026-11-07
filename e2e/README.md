@@ -116,7 +116,8 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
   Zufallszahl). Aufgeräumt werden nur Objekte,
   deren Name mit `pk-e2e-` beginnt: am Ende des Laufs die eigenen, im Test
   `TestE2E_CleanupLeftovers` die Reste früherer Läufe. Andere Objekte
-  fasst die Suite nie an (Lesen ausgenommen).
+  fasst die Suite nie an (Lesen ausgenommen); einzige Ausnahme sind
+  Folgeobjekte eines Stornos oder einer Gegenbuchung (siehe unten).
 - Was sich nicht löschen lässt (z. B. ein versendetes Angebot), wird
   storniert bzw. archiviert. Rechnungen, Angebote und Belege werden als
   Entwurf angelegt; versendet werden nur ein eigenes Angebot und eine eigene
@@ -126,10 +127,13 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
   `TestE2E_VoucherFlow` gegen (`reverse`) und storniert ihn.
 - Nennt die Antwort auf `cancel` oder `reverse` ein anderes Objekt als das
   stornierte (ein Folgeobjekt mit eigener ID, z. B. eine Gegenbuchung), steht
-  das als `ABWEICHUNG` im Log, und das Aufräumen entfernt genau dieses
-  Objekt mit, auch wenn die API ihm einen Namen ohne `pk-e2e-` gegeben hat:
-  Seine ID stammt unverändert aus dieser Antwort. Ein Folgeobjekt wird nur
-  gelöscht oder archiviert, nie storniert.
+  das als `ABWEICHUNG` im Log. Hat es denselben Typ (`type` der Antwort)
+  wie das stornierte Objekt, entfernt das Aufräumen genau dieses Objekt mit,
+  auch wenn die API ihm einen Namen ohne `pk-e2e-` gegeben hat: Seine ID
+  stammt unverändert aus dieser Antwort, und das stornierte Objekt hat
+  dieser Lauf selbst angelegt. Ein Folgeobjekt wird nur gelöscht oder
+  archiviert, nie storniert. Ein Folgeobjekt anderen Typs fasst die Suite
+  nicht an.
 - Die Suite bezahlt nie etwas: `voucher pay` wird nur mit `value: null` und
   der Bankumsatz-ID 999999999 gemessen, die es nicht gibt (ohne Betrag). Der
   Transport lässt für `pay` genau diesen Body durch,

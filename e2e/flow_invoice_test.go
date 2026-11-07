@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Padrio/papierkram-cli/internal/e2eguard"
 )
 
 // Spec 9.1, 9.2, 8.1, 17 (open points 1 and 16): the life cycle of an
@@ -112,24 +114,32 @@ func (s *liveSuite) cancelMeasured(t *testing.T, resource, action, id string) {
 
 // followUp handles the answer body of a status change of resource target:
 // a cancel or reverse may create a new object with an id of its own (a
-// cancellation document, a reverse entry). When the answer is an object
-// whose id differs from target, that is logged as ABWEICHUNG (the CLI
-// shows the answer as is and says nothing about a new object) and the
-// object is registered for the cleanup under its own name, or
-// <prefix>folgeobjekt-<id> without one. remove touches it although the
-// API chose its name, because the id comes verbatim from this answer.
+// cancellation document, a reverse entry; e2eguard.JudgeFollowUp). Such
+// an object is logged as ABWEICHUNG (the CLI shows the answer as is and
+// says nothing about a new object). Only when its type is that of
+// resource (same ID space) is it registered for the cleanup, under its
+// own name or <prefix>folgeobjekt-<id>; remove touches it although the API
+// chose its name, because the id comes verbatim from this answer. Any
+// other follow-up is left alone.
 func (s *liveSuite) followUp(t *testing.T, resource, action, target string, body []byte) {
 	t.Helper()
-	m := tryDecode(string(body))
-	id := idOf(m)
-	if id == 0 || ids(id) == target {
+	of, err := strconv.ParseInt(target, 10, 64)
+	if err != nil || of <= 0 {
+		s.logf(t, "%s %s: Ziel-ID %q ist keine ID, Folgeobjekt nicht geprüft", resource, action, target)
 		return
 	}
-	of, _ := strconv.ParseInt(target, 10, 64)
-	name := str(m["name"])
-	if name == "" {
-		name = s.prefix + "folgeobjekt-" + ids(id)
+	f, ok := e2eguard.JudgeFollowUp(resource, of, body)
+	if !ok {
+		return
 	}
-	s.deviatef(t, "%s %s %s: Antwort nennt ein anderes Objekt %d (Folgeobjekt), zum Aufräumen registriert", resource, action, target, id)
-	s.track(object{resource: resource, id: id, name: name, followUpOf: of})
+	if !f.Track {
+		s.deviatef(t, "%s %s %s: Folgeobjekt %d Typ %q, nicht angefasst", resource, action, target, f.ID, f.Type)
+		return
+	}
+	name := f.Name
+	if name == "" {
+		name = s.prefix + "folgeobjekt-" + ids(f.ID)
+	}
+	s.deviatef(t, "%s %s %s: Antwort nennt ein anderes Objekt %d (Folgeobjekt), zum Aufräumen registriert", resource, action, target, f.ID)
+	s.track(object{resource: resource, id: f.ID, name: name, followUpOf: of})
 }
