@@ -23,6 +23,7 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 - Credit-Kosten in Hilfe, `commands --json` und `--dry-run`; Warnung bei `--all` ab 10 Seiten und bei weniger als 100 verbleibenden Credits.
 - Shell-Vervollständigung für bash, zsh, fish und PowerShell, mit IDs aus der API (60 Sekunden Cache, abschaltbar per `completion_lookup = false`).
 - Live-E2E-Suite gegen einen Sandbox-Account (`-tags e2e`), die die offenen Punkte der API misst; ohne Freigabe sendet sie keine Anfrage.
+- Live-E2E-Suite: Abdeckungsbericht je Lauf (`ABDECKUNG …` im Log) über alle 89 Operationen; ein vollständiger Lauf scheitert, wenn eine erwartete Operation fehlt.
 - Dokumentation: README, AGENTS.md für KI-Agents, Claude-Code-Skill (`skills/papierkram`), aus der Hilfe generierte Befehlsreferenz (`docs/reference`), offene Punkte der API, Hinweise zu Drittsoftware.
 
 [Unreleased]: https://github.com/Padrio/papierkram-cli/commits/main

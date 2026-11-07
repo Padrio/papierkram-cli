@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -291,5 +292,58 @@ func TestTransportMetersUnansweredRequests(t *testing.T) {
 	if base.calls != 1 || tr.Meter.Spent() != 50 || tr.Meter.Requests() != 1 || tr.Meter.Unmeasured() != 1 {
 		t.Errorf("calls %d spent %d requests %d unmeasured %d, want 1, 50, 1, 1",
 			base.calls, tr.Meter.Spent(), tr.Meter.Requests(), tr.Meter.Unmeasured())
+	}
+}
+
+// Coverage counts every answered request, whatever its status; a refused
+// (host, budget, pay body) or unanswered request does not count.
+func TestTransportRecordsCoverage(t *testing.T) {
+	srv := mockapi.New(t)
+	srv.On("GET", "/info", 200, []byte(`{}`))
+	srv.On("GET", "/users/4", 404, []byte(`{"message":"nicht gefunden"}`))
+	tr, u := newTestTransport(t, srv, 2)
+	cov := NewCoverage()
+	tr.Coverage = cov
+	for _, r := range []struct{ method, url, body string }{
+		{"GET", u.String() + "/info", ""},
+		{"GET", u.String() + "/users/4", ""},
+	} {
+		resp, err := send(t, tr, r.method, r.url, r.body)
+		if err != nil {
+			t.Fatalf("%s %s: %v", r.method, r.url, err)
+		}
+		_ = resp.Body.Close()
+	}
+	if _, err := send(t, tr, "GET", "http://example.org/api/v1/users", ""); !errors.Is(err, ErrRefused) {
+		t.Errorf("other host: %v, want ErrRefused", err)
+	}
+	if _, err := send(t, tr, "POST", u.String()+"/expense/vouchers/7/pay", `{"value":5}`); !errors.Is(err, ErrRefused) {
+		t.Errorf("pay: %v, want ErrRefused", err)
+	}
+	if _, err := send(t, tr, "GET", u.String()+"/payment_terms", ""); !errors.Is(err, ErrBudget) {
+		t.Errorf("budget: %v, want ErrBudget", err)
+	}
+	failing := &Transport{Base: &failingBase{}, Scheme: "https", Host: "sandbox.example", Meter: NewMeter(1000, 0), Coverage: cov}
+	if _, err := send(t, failing, "POST", "https://sandbox.example/api/v1/income/estimates", `{"name":"A"}`); err == nil {
+		t.Fatal("unanswered request: no error")
+	}
+
+	plan := map[string]Expectation{
+		"GetInfo":          {Test: "TestA"},
+		"GetUser":          {Test: "TestA", Mode: ModeAnswered, Note: "n"},
+		"ListUsers":        {Test: "TestA", Mode: ModeAnswered, Note: "n"},
+		"PayVoucher":       {Test: "TestA", Mode: ModeAnswered, Note: "n"},
+		"ListPaymentTerms": {Test: "TestA", Mode: ModeAnswered, Note: "n"},
+		"CreateEstimate":   {Test: "TestA", Mode: ModeAnswered, Note: "n"},
+	}
+	r := cov.Report(plan)
+	if want := []string{"GetInfo", "GetUser"}; !slices.Equal(r.Covered, want) {
+		t.Errorf("Covered %v, want %v", r.Covered, want)
+	}
+	if want := []string{"CreateEstimate", "ListPaymentTerms", "ListUsers", "PayVoucher"}; !slices.Equal(r.Missing, want) {
+		t.Errorf("Missing %v, want %v", r.Missing, want)
+	}
+	if len(r.Unknown) != 0 {
+		t.Errorf("Unknown %v", r.Unknown)
 	}
 }

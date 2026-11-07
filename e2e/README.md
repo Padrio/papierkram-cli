@@ -142,6 +142,34 @@ Budget für einen Test nicht mehr, werden dieser und alle folgenden Tests mit
 Begründung übersprungen. Erst das Aufräumen am Ende darf die Reserve nutzen.
 Am Ende steht die Summe im Log.
 
+## Abdeckung
+
+Der Transport der Suite ordnet jede beantwortete Anfrage über ihren Pfad
+einer der 89 Operationen der API zu (`internal/e2eguard/coverage.go`).
+Abgelehnte Anfragen (fremder Host, Budget, unzulässiger `pay`- oder
+`deliver`-Body) und Anfragen ohne Antwort zählen nicht. Was ein Lauf
+abdecken muss, steht in `e2eguard.CoveragePlan`: je Operation der Test, der
+sie zuerst trifft, ob eine 2xx-Antwort nötig ist oder jede Antwort genügt
+(z. B. `voucher pay` ohne echte Zahlung, 4xx erwartet) oder nur bei
+vorhandenen Daten (Bankverbindung, Umsatz), ob die Aufräumphase zählt (nur
+`delete`) und welche spätere Task sie erst abdeckt.
+
+Nach dem Aufräumen stehen im Log diese Zeilen (jeweils mit `e2e: ` davor):
+
+```text
+ABDECKUNG: abgedeckt X/89 (davon A nur mit Fehlerantwort, C nur im Aufräumen), nicht anwendbar N, ausstehend P, fehlend M
+ABDECKUNG fehlt: <OpID> (erwartet von <Test>)
+ABDECKUNG nicht anwendbar: <OpID>: <Grund>
+ABDECKUNG ausstehend: <OpID> (Task <N>)
+ABDECKUNG unbekannter Pfad: <METHOD> <path>
+```
+
+Gate: Fehlt eine erwartete Operation, endet der Lauf mit Exit 1 und
+`e2e: Abdeckung unvollständig: <n> Operation(en) fehlen`, aber nur bei einem
+vollständigen Lauf: kein `-run` und kein `-skip`, Budget nicht erschöpft und
+bis dahin kein Fehler. Sonst stehen nur die Zeilen im Log. Ausstehende
+Operationen lassen den Lauf nie scheitern.
+
 ## Bewusst nicht gemessen
 
 - Die maximale Dateigröße beim Upload (Spezifikation 17) bleibt bewusst

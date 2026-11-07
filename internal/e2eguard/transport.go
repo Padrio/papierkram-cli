@@ -51,11 +51,13 @@ type Exchange struct {
 // ErrBudget. Every request handed to Base is counted by Meter (answered:
 // Record, whatever the status; failed: RecordUnanswered); every answered
 // one is recorded with both bodies, so tests can measure what the API
-// answered.
+// answered, and counted by Coverage (when set) for the operation it
+// reached. Refused and unanswered requests never count for Coverage.
 type Transport struct {
 	Base         http.RoundTripper
 	Scheme, Host string
 	Meter        *Meter
+	Coverage     *Coverage
 
 	mu        sync.Mutex
 	exchanges []Exchange
@@ -113,6 +115,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// every answer counts, whatever its status (a rejected create is
 	// charged in full)
 	t.Meter.Record(req.Method, req.URL.Path, resp.Header)
+	t.Coverage.Record(req.Method, req.URL.Path, resp.StatusCode)
 	respBody, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {

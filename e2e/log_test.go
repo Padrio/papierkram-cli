@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/Padrio/papierkram-cli/internal/e2eguard"
 )
 
 // This file is the only place of the suite that writes test output: every
@@ -89,6 +91,16 @@ func (s *liveSuite) deviationSummary() {
 	for _, d := range s.deviations {
 		s.stderrf("ABWEICHUNG: %s", d)
 	}
+}
+
+// coverageSummary writes the coverage report of the run (one ABDECKUNG
+// line each) to stderr and returns it (TestMain).
+func (s *liveSuite) coverageSummary() e2eguard.CoverageReport {
+	rep := s.coverage.Report(e2eguard.CoveragePlan)
+	for _, l := range rep.Lines {
+		s.stderrf("%s", l)
+	}
+	return rep
 }
 
 // stderrPlain writes a line of TestMain before the suite exists; it never

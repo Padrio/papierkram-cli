@@ -28,6 +28,7 @@ type liveSuite struct {
 	prefix     string // pk-e2e-<runid>-
 	red        e2eguard.Redactor
 	meter      *e2eguard.Meter
+	coverage   *e2eguard.Coverage // operations reached (reported by TestMain)
 	tr         *e2eguard.Transport
 	loc        *time.Location
 	// mainDir holds config and cache of the CLI runs of TestMain
@@ -80,6 +81,7 @@ func newLiveSuite(getenv func(string) string, red e2eguard.Redactor) (*liveSuite
 		loc = time.Local
 	}
 	meter := e2eguard.NewMeter(creditBudget, cleanupReserve)
+	coverage := e2eguard.NewCoverage()
 	return &liveSuite{
 		sub:      sub,
 		token:    getenv(e2eguard.EnvToken),
@@ -87,7 +89,8 @@ func newLiveSuite(getenv func(string) string, red e2eguard.Redactor) (*liveSuite
 		prefix:   e2eguard.Prefix(runID),
 		red:      red,
 		meter:    meter,
-		tr:       &e2eguard.Transport{Base: e2eguard.DirectTransport(), Scheme: "https", Host: norm + ".papierkram.de", Meter: meter},
+		coverage: coverage,
+		tr:       &e2eguard.Transport{Base: e2eguard.DirectTransport(), Scheme: "https", Host: norm + ".papierkram.de", Meter: meter, Coverage: coverage},
 		loc:      loc,
 		mainDir:  dir,
 		fixtures: map[string]map[string]any{},

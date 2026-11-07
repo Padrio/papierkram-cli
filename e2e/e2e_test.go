@@ -45,6 +45,12 @@
 // all later ones) when its cost no longer fits. TestMain releases the
 // reserve for the cleanup and prints the total at the end.
 //
+// Coverage: the transport also records which operation each answered
+// request reached (e2eguard.Coverage). After the cleanup TestMain prints
+// one ABDECKUNG line per finding against e2eguard.CoveragePlan and fails
+// a full run (no -run or -skip, budget not exhausted, no failure so far)
+// that missed an expected operation; pending ones never fail it.
+//
 // Measurements (MESSUNG in the log) answer the open points of spec 17 and
 // the carries of task 44. A test fails hard only where the CLI relies on
 // the behaviour:
@@ -73,6 +79,7 @@ package e2e
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"image"
 	"image/color"
@@ -123,14 +130,33 @@ func TestMain(m *testing.M) {
 	s.stderrf("Lauf %s gegen Sandbox %s, Credit-Budget %d", s.runID, s.sub, creditBudget)
 	code := m.Run()
 	s.meter.BeginCleanup()
+	s.coverage.BeginCleanup()
 	if !s.cleanup() && code == 0 {
 		s.stderrf("Aufräumen unvollständig: Objekte mit Präfix %s prüfen", s.prefix)
 		code = 1
 	}
 	_ = os.RemoveAll(s.mainDir)
+	rep := s.coverageSummary()
+	// only a full run must cover every expected operation: not one
+	// narrowed by -run or -skip, stopped by the budget or failed already
+	if len(rep.Missing) > 0 && fullRun() && !s.exhausted && code == 0 {
+		s.stderrf("Abdeckung unvollständig: %d Operation(en) fehlen", len(rep.Missing))
+		code = 1
+	}
 	s.deviationSummary()
 	s.stderrf("%s", s.meter.Summary())
 	os.Exit(code)
+}
+
+// fullRun reports whether no test was selected or skipped by name
+// (-run, -skip): only then does the coverage gate of TestMain apply.
+func fullRun() bool {
+	for _, name := range []string{"test.run", "test.skip"} {
+		if f := flag.Lookup(name); f != nil && f.Value.String() != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // leftoverKinds are the resources TestE2E_CleanupLeftovers searches, in
