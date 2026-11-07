@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -102,6 +103,45 @@ func TestCoveragePlanModes(t *testing.T) {
 		}
 		if e.Phase == PhaseAny && (!strings.HasPrefix(id, "Delete") || id == "DeleteVoucherDocument") {
 			t.Errorf("%s: PhaseAny only for the deletes of the cleanup", id)
+		}
+	}
+}
+
+// Task 6 (round 2): archive/unarchive of the master data and the read
+// commands are expected now, each by its subtest of
+// TestE2E_MasterDataArchive or TestE2E_ReadCommands; nothing is left
+// pending for task 6.
+func TestCoveragePlanMasterDataAndReads(t *testing.T) {
+	const archive, read = "TestE2E_MasterDataArchive/", "TestE2E_ReadCommands/"
+	want := map[string]string{
+		"ArchiveCompany":           archive + "company",
+		"UnarchiveCompany":         archive + "company",
+		"ArchiveProject":           archive + "project",
+		"UnarchiveProject":         archive + "project",
+		"ArchiveTask":              archive + "task",
+		"UnarchiveTask":            archive + "task",
+		"ArchiveProposition":       archive + "proposition",
+		"UnarchiveProposition":     archive + "proposition",
+		"ArchiveCustomAttribute":   archive + "custom-attribute",
+		"UnarchiveCustomAttribute": archive + "custom-attribute",
+		"ArchiveEstimate":          archive + "estimate",
+		"UnarchiveEstimate":        archive + "estimate",
+		"ListPersons":              read + "person_list",
+		"GetUser":                  read + "user_describe",
+		"GetPaymentTerm":           read + "payment_term_describe",
+		"ListBankConnections":      read + "bank_connection",
+		"GetBankConnection":        read + "bank_connection",
+		"ListTransactions":         read + "transaction",
+		"GetTransaction":           read + "transaction",
+	}
+	for _, id := range slices.Sorted(maps.Keys(want)) {
+		if e := CoveragePlan[id]; e.Test != want[id] || e.Pending != 0 {
+			t.Errorf("%s: Test %q, Pending %d; want %q, 0", id, e.Test, e.Pending, want[id])
+		}
+	}
+	for id, e := range CoveragePlan {
+		if e.Pending == 6 {
+			t.Errorf("%s: still pending for task 6", id)
 		}
 	}
 }

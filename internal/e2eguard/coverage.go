@@ -62,6 +62,8 @@ const (
 	testInvoice        = "TestE2E_InvoiceFlow"
 	testVoucher        = "TestE2E_VoucherFlow"
 	testTime           = "TestE2E_TimeFlow"
+	testArchive        = "TestE2E_MasterDataArchive/"
+	testReads          = "TestE2E_ReadCommands/"
 )
 
 // CoveragePlan names, for every operation of the registry (spec 15), how
@@ -69,10 +71,10 @@ const (
 // expected operation (Pending 0) is missing (see Coverage.Report).
 var CoveragePlan = map[string]Expectation{
 	// banking
-	"ListBankConnections": {Pending: 6},
-	"GetBankConnection":   {Mode: ModeIfData, Pending: 6, Note: noteIfData},
-	"ListTransactions":    {Pending: 6},
-	"GetTransaction":      {Mode: ModeIfData, Pending: 6, Note: noteIfData},
+	"ListBankConnections": {Test: testReads + "bank_connection"},
+	"GetBankConnection":   {Test: testReads + "bank_connection", Mode: ModeIfData, Note: noteIfData},
+	"ListTransactions":    {Test: testReads + "transaction"},
+	"GetTransaction":      {Test: testReads + "transaction", Mode: ModeIfData, Note: noteIfData},
 
 	// companies and persons
 	"ListCompanies":    {Test: testLeftover},
@@ -80,9 +82,9 @@ var CoveragePlan = map[string]Expectation{
 	"GetCompany":       {Test: testPartial + "company"},
 	"UpdateCompany":    {Test: testPartial + "company"},
 	"DeleteCompany":    {Test: cleanupTest, Phase: PhaseAny},
-	"ArchiveCompany":   {Pending: 6},
-	"UnarchiveCompany": {Pending: 6},
-	"ListPersons":      {Pending: 6},
+	"ArchiveCompany":   {Test: testArchive + "company"},
+	"UnarchiveCompany": {Test: testArchive + "company"},
+	"ListPersons":      {Test: testReads + "person_list"},
 	"CreatePerson":     {Test: testDeliver},
 	"GetPerson":        {Test: "TestE2E_PersonDefaultIsString"},
 	"UpdatePerson":     {Test: testPartial + "person"},
@@ -109,8 +111,8 @@ var CoveragePlan = map[string]Expectation{
 	"GetEstimate":       {Test: testDeliver},
 	"UpdateEstimate":    {Test: testPartial + "estimate"},
 	"DeleteEstimate":    {Test: cleanupTest, Phase: PhaseAny},
-	"ArchiveEstimate":   {Pending: 6},
-	"UnarchiveEstimate": {Pending: 6},
+	"ArchiveEstimate":   {Test: testArchive + "estimate"},
+	"UnarchiveEstimate": {Test: testArchive + "estimate"},
 	"CancelEstimate":    {Test: testInvoice, Mode: ModeAnswered, Note: noteCancelMeasured},
 	"DeliverEstimate":   {Test: testDeliver},
 	"GetEstimatePdf":    {Test: "TestE2E_Carries/08_PDFDownloadAccept"},
@@ -129,14 +131,14 @@ var CoveragePlan = map[string]Expectation{
 
 	// payment terms, propositions, info
 	"ListPaymentTerms":     {Test: testPartial + "invoice"},
-	"GetPaymentTerm":       {Pending: 6},
+	"GetPaymentTerm":       {Test: testReads + "payment_term_describe"},
 	"ListPropositions":     {Test: testLeftover},
 	"CreateProposition":    {Test: testArticle},
 	"GetProposition":       {Test: testArticle},
 	"UpdateProposition":    {Test: testPartial + "proposition"},
 	"DeleteProposition":    {Test: cleanupTest, Phase: PhaseAny},
-	"ArchiveProposition":   {Pending: 6},
-	"UnarchiveProposition": {Pending: 6},
+	"ArchiveProposition":   {Test: testArchive + "proposition"},
+	"UnarchiveProposition": {Test: testArchive + "proposition"},
 	"GetInfo":              {Test: "TestE2E_InfoCreditCost"},
 
 	// projects and custom attributes
@@ -145,15 +147,15 @@ var CoveragePlan = map[string]Expectation{
 	"GetProject":               {Test: testPartial + "project"},
 	"UpdateProject":            {Test: testPartial + "project"},
 	"DeleteProject":            {Test: cleanupTest, Phase: PhaseAny},
-	"ArchiveProject":           {Pending: 6},
-	"UnarchiveProject":         {Pending: 6},
+	"ArchiveProject":           {Test: testArchive + "project"},
+	"UnarchiveProject":         {Test: testArchive + "project"},
 	"ListCustomAttributes":     {Test: testLeftover},
 	"CreateCustomAttribute":    {Test: testPartial + "custom-attribute"},
 	"GetCustomAttribute":       {Test: testPartial + "custom-attribute"},
 	"UpdateCustomAttribute":    {Test: testPartial + "custom-attribute"},
 	"DeleteCustomAttribute":    {Test: cleanupTest, Phase: PhaseAny},
-	"ArchiveCustomAttribute":   {Pending: 6},
-	"UnarchiveCustomAttribute": {Pending: 6},
+	"ArchiveCustomAttribute":   {Test: testArchive + "custom-attribute"},
+	"UnarchiveCustomAttribute": {Test: testArchive + "custom-attribute"},
 
 	// tasks and time entries
 	"ListTasks":          {Test: testLeftover},
@@ -161,8 +163,8 @@ var CoveragePlan = map[string]Expectation{
 	"GetTask":            {Test: testPartial + "task"},
 	"UpdateTask":         {Test: testPartial + "task"},
 	"DeleteTask":         {Test: cleanupTest, Phase: PhaseAny},
-	"ArchiveTask":        {Pending: 6},
-	"UnarchiveTask":      {Pending: 6},
+	"ArchiveTask":        {Test: testArchive + "task"},
+	"UnarchiveTask":      {Test: testArchive + "task"},
 	"ListTimeEntries":    {Test: testLeftover},
 	"CreateTimeEntry":    {Test: testPartial + "time"},
 	"GetTimeEntry":       {Test: testPartial + "time"},
@@ -173,7 +175,7 @@ var CoveragePlan = map[string]Expectation{
 
 	// users
 	"ListUsers": {Test: "TestE2E_QuotaHeadersPresent"},
-	"GetUser":   {Pending: 6},
+	"GetUser":   {Test: testReads + "user_describe"},
 }
 
 // hits counts the answers of one operation by phase (0 test, 1 cleanup).

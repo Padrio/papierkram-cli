@@ -32,8 +32,13 @@
 //	InvoiceFlow: invoice 50, deliver 2, pdf 1, cancel +
 //	  describe 2, archive + describe + unarchive 3, estimate
 //	  cancel + describe 2                                          60
-//	MasterDataArchive (geplant, Task 6)                            12
-//	ReadCommands (geplant, Task 6)                                  8
+//	MasterDataArchive: archive + unarchive (2) of supplier,
+//	  project, task, article, custom attribute, estimate
+//	  (6 subtests)                                                 12
+//	ReadCommands: person list 1, user describe 1, payment-term
+//	  describe 1, bank-connection and transaction list 1 each and
+//	  describe 1 each (only with data), auth status (GET /info)
+//	  1; at most                                                    8
 //	TimeFlow: time log 10, list 1, archive + unarchive 2, stop
 //	  10, describe 1 (start, status, discard local: 0)             24
 //	VoucherFlow: create --file 60, describe 1, pdf 1, document
@@ -94,7 +99,13 @@
 //	  --since heute, archive and unarchive exit 0, the timer (start,
 //	  status, stop, status, stop again exit 2, start, discard; all but
 //	  stop without a request), the stopped entry 11:00-11:02 of today
-//	  with duration 120.
+//	  with duration 120; master data: archive and unarchive of
+//	  company, project, task, proposition, custom attribute and
+//	  estimate exit 0; read commands: the person of the run in person
+//	  list, user and payment-term describe answer with the asked id,
+//	  bank-connection and transaction list (and describe of the first
+//	  entry, if any) exit 0, auth status with an integer
+//	  quota.remaining, read_only false and token_source env.
 //	measured only: empty deliver body, upload of png/jpg/txt, voucher
 //	  state values, invoice states along its life cycle, invoice and
 //	  estimate cancel, voucher document key shape, voucher pdf
@@ -103,7 +114,11 @@
 //	  6 (billable_duration on create and update; run 1: the create
 //	  stored duration instead), 7 (sent_on after deliver pdf), 10 (pay body with value null and a
 //	  transaction that does not exist: the suite never pays),
-//	  12 (end 00:00/24:00), 13 (structure of GET /info).
+//	  12 (end 00:00/24:00), 13 (structure of GET /info), the answer
+//	  of archive and unarchive (record_state or empty), the number
+//	  (total_entries) and key shape of bank connections and bank
+//	  transactions (never their values; without an entry the read by
+//	  id is reported not applicable).
 //	A measurement that differs from what the CLI assumes (GET /info cost
 //	  vs. registry, due_time_unit other than "day", billable_duration
 //	  not stored as sent, a cancel or reverse answering with another
