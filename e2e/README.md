@@ -42,6 +42,24 @@ Secrets `PAPIERKRAM_E2E_SUBDOMAIN` und `PAPIERKRAM_E2E_TOKEN` hinein. Umgebung,
 Secrets und Schutzregeln richtet der Repository-Inhaber in den
 Repository-Einstellungen ein; das Repository selbst legt sie nicht an.
 
+Ablauf des Workflows:
+
+1. `confirmation matches the sandbox`: Die Eingabe muss genau dem Secret
+   `PAPIERKRAM_E2E_SUBDOMAIN` entsprechen, sonst bricht der Job ab.
+2. `live suite`: `go test -count=1 -timeout 25m -tags e2e -v ./e2e/...`,
+   die Ausgabe geht per `tee` auch nach `e2e.log` (`set -o pipefail`: der
+   Exit-Code der Suite zählt).
+3. `token check` (läuft immer): Sucht das Token in `e2e.log`. Das Token
+   geht `grep` als Musterdatei zu, nie als Argument. Ein Treffer löscht das
+   Log und lässt den Schritt scheitern („Token im Log gefunden: Log
+   gelöscht, kein Upload“); ohne Log gibt es weder Zusammenfassung noch
+   Artefakt.
+4. `summary`: nur bei sauberem Log. Schreibt unter „E2E-Ergebnis“ alle
+   Zeilen mit `ABDECKUNG`, `ABWEICHUNG` oder `Credits:` in die
+   Zusammenfassung des Laufs.
+5. `log artifact`: nur bei sauberem Log. Lädt `e2e.log` als Artefakt
+   `e2e-log` hoch; es bleibt **14 Tage** erhalten.
+
 **Wichtig:** Secrets `PAPIERKRAM_E2E_*` dürfen **nur** in der Umgebung
 `sandbox` liegen, **nie** als Repository-Secrets. Die Umgebung `sandbox`
 braucht eine Branch-Regel (Deployment-Branch nur `main`), sinnvollerweise
@@ -125,8 +143,10 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
 ## Credit-Budget
 
 Ein voller Lauf kostet nach den dokumentierten Preisen (Abschnitt 4.3) etwa
-**430 Credits**; das Budget je Lauf ist **490** (Zielwert unter 500, die
-Aufschlüsselung steht im Kopf von `e2e_test.go`). Jede gesendete Anfrage
+**683 Credits** (Tests 655, Aufräumen 28; eingerechnet sind die geplanten
+Tests, im Kopf von `e2e_test.go` mit „(geplant, Task N)“ markiert); das
+Budget je Lauf ist **760** (Zielwert unter 800, die Aufschlüsselung steht
+im Kopf von `e2e_test.go`). Jede gesendete Anfrage
 zählt, auch eine abgelehnte (4xx/5xx): Die API berechnet z. B. ein mit 422
 abgelehntes Anlegen voll (gemessen 2026-11-04). Gezählt wird der größere
 Wert aus den dokumentierten Kosten und `X-Consumed-Quota`, das die Kosten
@@ -134,9 +154,10 @@ genau dieser einen Anfrage nennt (kein laufender Zähler); fehlt der Header
 oder kommt keine Antwort (Netzwerkfehler), zählen die dokumentierten
 Kosten.
 
-Vom Budget sind **46 Credits fürs Aufräumen reserviert** (dokumentierter
+Vom Budget sind **62 Credits fürs Aufräumen reserviert** (dokumentierter
 Höchstaufwand: je Rechnung/Angebot/Beleg 4, je anderem Objekt 2, plus 10
-Puffer). Die Tests dürfen also höchstens 444 Credits verbrauchen (geplant: 416): Eine
+Puffer; bei 7 Rechnungen, Angeboten und Belegen und 12 anderen Objekten).
+Die Tests dürfen also höchstens 698 Credits verbrauchen (geplant: 655): Eine
 Anfrage, die in die Reserve greifen würde, wird nicht gesendet, und reicht das
 Budget für einen Test nicht mehr, werden dieser und alle folgenden Tests mit
 Begründung übersprungen. Erst das Aufräumen am Ende darf die Reserve nutzen.

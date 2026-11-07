@@ -8,10 +8,12 @@
 // (e2eguard.Decide, TestMain). Choosing a sandbox is the caller's
 // responsibility: never point it at real bookkeeping.
 //
-// Credit budget per run: creditBudget = 490 (spec 11.1: target < 500).
+// Credit budget per run: creditBudget = 760 (spec 11.1: target < 800).
 // Documented cost (registry.ExpectedCredits, spec 4.3) of every request of
-// a full run without leftovers, by test in file order; a fixture counts
-// where it is used first:
+// a full run without leftovers, by test in execution order (files
+// alphabetically, source order within a file); a fixture counts where it
+// is used first. Rows marked "(geplant, Task N)" are planned: task N
+// replaces them by their breakdown, the amount stays.
 //
 //	CleanupLeftovers: 1 list page per 100 entries of 9 resources
 //	  (all pages; more with leftovers), at least                    9
@@ -27,23 +29,33 @@
 //	  10 × (describe, update, describe), invoice update reads
 //	  the invoice first (1)                                       114
 //	ReplaceLineItems: describe, read + update, describe              4
-//	Carries (13 subtests, 2 time entries of 10 in no. 12,
-//	  describe, update, describe in no. 6)                         37
-//	final cleanup: 1 delete per object (12 fixtures and up to 2
-//	  midnight time entries = 14); a final document costs up to 3
-//	  more (cancel, delete, archive)                               14
-//	                                                     total    430
+//	InvoiceFlow (geplant, Task 3)                                  60
+//	MasterDataArchive (geplant, Task 6)                            12
+//	ReadCommands (geplant, Task 6)                                  8
+//	TimeFlow (geplant, Task 5)                                     24
+//	VoucherFlow (geplant, Task 4)                                  69
+//	Carries: 13 subtests 37 (2 time entries of 10 in no. 12,
+//	  describe, update, describe in no. 6), no. 14 (geplant,
+//	  Task 8) 4                                                    41
+//	OpenMeasurements (geplant, Task 7)                             62
+//	final cleanup: 1 delete per object (7 documents and 12 other
+//	  objects = 19); each of up to 3 final documents costs up to 3
+//	  more (cancel, delete, archive)                               28
+//	                                                     total    683
 //
-// Of the budget, cleanupReserve = 46 is kept for the final cleanup: the
-// documented worst case (e2eguard.CleanupReserve) for the 4 documents
-// (2 estimates, invoice, voucher; 4 each) and up to 10 other objects
-// (2 each), plus a margin of 10. Tests may use 490 - 46 = 444 (planned:
-// 416). The meter (e2eguard.Meter) counts every sent request, rejected
-// ones too, with max(documented cost, X-Consumed-Quota), the header being
-// the cost of that one request; before the cleanup the transport refuses every
-// request that would cut into the reserve, and need() skips a test (and
-// all later ones) when its cost no longer fits. TestMain releases the
-// reserve for the cleanup and prints the total at the end.
+// Of the budget, cleanupReserve = 62 is kept for the final cleanup: the
+// documented worst case (e2eguard.CleanupReserve) for the 7 documents
+// (2 estimates, up to 3 invoices, 2 vouchers; 4 each) and up to 12 other
+// objects (customer, supplier, person, project, task, article, custom
+// attribute, time entry fixture, 2 midnight time entries, the entries of
+// time log and time stop; 2 each), plus a margin of 10. Tests may use
+// 760 - 62 = 698 (planned: 655, margin 43). The meter (e2eguard.Meter)
+// counts every sent request, rejected ones too, with max(documented cost,
+// X-Consumed-Quota), the header being the cost of that one request;
+// before the cleanup the transport refuses every request that would cut
+// into the reserve, and need() skips a test (and all later ones) when its
+// cost no longer fits. TestMain releases the reserve for the cleanup and
+// prints the total at the end.
 //
 // Coverage: the transport also records which operation each answered
 // request reached (e2eguard.Coverage). After the cleanup TestMain prints
@@ -97,15 +109,15 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/registry"
 )
 
-// creditBudget is the most credits one run may use (spec 11.1: < 500).
-const creditBudget = 490
+// creditBudget is the most credits one run may use (spec 11.1: < 800).
+const creditBudget = 760
 
-// The build fails when creditBudget reaches 500 (constant overflow).
-const _ = uint(499 - creditBudget)
+// The build fails when creditBudget reaches 800 (constant overflow).
+const _ = uint(799 - creditBudget)
 
 // cleanupReserve is the part of the budget kept for the final cleanup
-// (see the header).
-var cleanupReserve = e2eguard.CleanupReserve(4, 10, 10)
+// (see the header): 7 documents, 12 other objects, margin 10 = 62.
+var cleanupReserve = e2eguard.CleanupReserve(7, 12, 10)
 
 // suite is the live run; nil when the suite is skipped (skipReason).
 var (
