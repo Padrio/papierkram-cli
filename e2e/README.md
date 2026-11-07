@@ -18,8 +18,10 @@ normalen CI mit (ohne Variablen, nur Kompilieren und Überspringen).
 
 Ob der Account wirklich eine Sandbox ist, kann die Suite nicht prüfen. Das
 liegt bei dir: Trage nie Subdomain und Token der echten Buchhaltung ein. Die
-Suite legt Firmen, Kontaktpersonen, Projekte, Aufgaben, Zeiteinträge,
-Artikel, ein Datenfeld, zwei Angebote, zwei Rechnungen und zwei Belege an,
+Suite legt Firmen, Kontaktpersonen, Projekte, Aufgaben, Zeiteinträge
+(darunter zwei von heute aus `TestE2E_TimeFlow`: einen per `time log`,
+einen per `time stop` aus dem lokalen Timer), Artikel, ein Datenfeld, zwei
+Angebote, zwei Rechnungen und zwei Belege an,
 lädt Dateien hoch, versendet ein Angebot und eine Rechnung als PDF und
 versucht, beide zu stornieren und einen Beleg zu stornieren und gegenzubuchen
 (ob die API das zulässt, wird gemessen).
