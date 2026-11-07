@@ -29,7 +29,9 @@
 //	  10 × (describe, update, describe), invoice update reads
 //	  the invoice first (1)                                       114
 //	ReplaceLineItems: describe, read + update, describe              4
-//	InvoiceFlow (geplant, Task 3)                                  60
+//	InvoiceFlow: invoice 50, deliver 2, pdf 1, cancel +
+//	  describe 2, archive + describe + unarchive 3, estimate
+//	  cancel + describe 2                                          60
 //	MasterDataArchive (geplant, Task 6)                            12
 //	ReadCommands (geplant, Task 6)                                  8
 //	TimeFlow (geplant, Task 5)                                     24
@@ -75,9 +77,12 @@
 //	  PUT with sent_on/sent_to null), 4 (voucher PUT with
 //	  entertainment_persons []),
 //	  8 (PDF download Accept/Content-Type), 9 (price_gross 0.0 with
-//	  gross=false), 11 (duration = wall clock difference on a normal day).
+//	  gross=false), 11 (duration = wall clock difference on a normal day);
+//	  invoice flow: deliver --via pdf, pdf (%PDF file), archive and
+//	  unarchive exit 0.
 //	measured only: empty deliver body, upload of png/jpg/txt, voucher
-//	  state values, GET /info cost, carries 5 (due_time_unit values),
+//	  state values, invoice states along its life cycle, invoice and
+//	  estimate cancel, GET /info cost, carries 5 (due_time_unit values),
 //	  6 (billable_duration on create and update; run 1: the create
 //	  stored duration instead), 7 (sent_on after deliver pdf), 10 (pay body with value null and a
 //	  transaction that does not exist: the suite never pays),

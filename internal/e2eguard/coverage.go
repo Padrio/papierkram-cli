@@ -50,15 +50,16 @@ type Expectation struct {
 }
 
 const (
-	notePay      = "nie echt bezahlt: nur value null mit NoTransactionID, 4xx erwartet"
-	noteInvoice  = "Statuswechsel; Voraussetzung live unbekannt, nur gemessen"
-	noteVoucher  = "Statuswechsel; Voraussetzung live unbekannt"
-	noteIfData   = "nur wenn die Liste Einträge hat"
-	cleanupTest  = "TestMain/cleanup"
-	testLeftover = "TestE2E_CleanupLeftovers"
-	testDeliver  = "TestE2E_DeliverPdfEmptyBody"
-	testArticle  = "TestE2E_VatRate019Is19Percent/Artikel"
-	testPartial  = "TestE2E_PartialUpdateSemantics/"
+	notePay            = "nie echt bezahlt: nur value null mit NoTransactionID, 4xx erwartet"
+	noteCancelMeasured = "Statuswechsel; Voraussetzung live unbekannt, nur gemessen"
+	noteVoucher        = "Statuswechsel; Voraussetzung live unbekannt"
+	noteIfData         = "nur wenn die Liste Einträge hat"
+	cleanupTest        = "TestMain/cleanup"
+	testLeftover       = "TestE2E_CleanupLeftovers"
+	testDeliver        = "TestE2E_DeliverPdfEmptyBody"
+	testArticle        = "TestE2E_VatRate019Is19Percent/Artikel"
+	testPartial        = "TestE2E_PartialUpdateSemantics/"
+	testInvoice        = "TestE2E_InvoiceFlow"
 )
 
 // CoveragePlan names, for every operation of the registry (spec 15), how
@@ -108,7 +109,7 @@ var CoveragePlan = map[string]Expectation{
 	"DeleteEstimate":    {Test: cleanupTest, Phase: PhaseAny},
 	"ArchiveEstimate":   {Pending: 6},
 	"UnarchiveEstimate": {Pending: 6},
-	"CancelEstimate":    {Mode: ModeAnswered, Pending: 3, Note: noteInvoice},
+	"CancelEstimate":    {Test: testInvoice, Mode: ModeAnswered, Note: noteCancelMeasured},
 	"DeliverEstimate":   {Test: testDeliver},
 	"GetEstimatePdf":    {Test: "TestE2E_Carries/08_PDFDownloadAccept"},
 
@@ -118,11 +119,11 @@ var CoveragePlan = map[string]Expectation{
 	"GetInvoice":       {Test: testPartial + "invoice"},
 	"UpdateInvoice":    {Test: testPartial + "invoice"},
 	"DeleteInvoice":    {Test: cleanupTest, Phase: PhaseAny},
-	"ArchiveInvoice":   {Pending: 3},
-	"UnarchiveInvoice": {Pending: 3},
-	"CancelInvoice":    {Mode: ModeAnswered, Pending: 3, Note: noteInvoice},
-	"DeliverInvoice":   {Pending: 3},
-	"GetInvoicePdf":    {Pending: 3},
+	"ArchiveInvoice":   {Test: testInvoice},
+	"UnarchiveInvoice": {Test: testInvoice},
+	"CancelInvoice":    {Test: testInvoice, Mode: ModeAnswered, Note: noteCancelMeasured},
+	"DeliverInvoice":   {Test: testInvoice},
+	"GetInvoicePdf":    {Test: testInvoice},
 
 	// payment terms, propositions, info
 	"ListPaymentTerms":     {Test: testPartial + "invoice"},
