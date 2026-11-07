@@ -52,7 +52,7 @@ type Expectation struct {
 const (
 	notePay            = "nie echt bezahlt: nur value null mit NoTransactionID, 4xx erwartet"
 	noteCancelMeasured = "Statuswechsel; Voraussetzung live unbekannt, nur gemessen"
-	noteVoucher        = "Statuswechsel; Voraussetzung live unbekannt"
+	noteCancelVoucher  = "Statuswechsel; Voraussetzung live unbekannt"
 	noteIfData         = "nur wenn die Liste Einträge hat"
 	cleanupTest        = "TestMain/cleanup"
 	testLeftover       = "TestE2E_CleanupLeftovers"
@@ -60,6 +60,7 @@ const (
 	testArticle        = "TestE2E_VatRate019Is19Percent/Artikel"
 	testPartial        = "TestE2E_PartialUpdateSemantics/"
 	testInvoice        = "TestE2E_InvoiceFlow"
+	testVoucher        = "TestE2E_VoucherFlow"
 )
 
 // CoveragePlan names, for every operation of the registry (spec 15), how
@@ -88,18 +89,18 @@ var CoveragePlan = map[string]Expectation{
 
 	// vouchers
 	"UploadVoucherDocument":         {Test: "TestE2E_UploadMimeTypes"},
-	"DeleteVoucherDocument":         {Pending: 4},
+	"DeleteVoucherDocument":         {Test: testVoucher},
 	"ListVouchers":                  {Test: testLeftover},
 	"CreateVoucher":                 {Test: "TestE2E_UploadMimeTypes"},
 	"GetVoucher":                    {Test: testPartial + "voucher"},
 	"UpdateVoucher":                 {Test: testPartial + "voucher"},
 	"DeleteVoucher":                 {Test: cleanupTest, Phase: PhaseAny},
-	"ArchiveVoucher":                {Pending: 4},
-	"UnarchiveVoucher":              {Pending: 4},
-	"CancelVoucher":                 {Mode: ModeAnswered, Pending: 4, Note: noteVoucher},
-	"CancelVoucherWithReverseEntry": {Mode: ModeAnswered, Pending: 4, Note: noteVoucher},
+	"ArchiveVoucher":                {Test: testVoucher},
+	"UnarchiveVoucher":              {Test: testVoucher},
+	"CancelVoucher":                 {Test: testVoucher, Mode: ModeAnswered, Note: noteCancelVoucher},
+	"CancelVoucherWithReverseEntry": {Test: testVoucher, Mode: ModeAnswered, Note: noteCancelVoucher},
 	"PayVoucher":                    {Test: "TestE2E_Carries/10_VoucherPayValueNull", Mode: ModeAnswered, Note: notePay},
-	"GetVoucherPdf":                 {Pending: 4},
+	"GetVoucherPdf":                 {Test: testVoucher},
 
 	// estimates
 	"ListEstimates":     {Test: testLeftover},

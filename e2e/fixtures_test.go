@@ -31,8 +31,24 @@ const (
 // body (sentBody) and returns the API object.
 func (s *liveSuite) create(t *testing.T, o object, args ...string) map[string]any {
 	t.Helper()
+	m, _ := s.createRun(t, o, args...)
+	return m
+}
+
+// createRun is create that also returns the CLI run. A create that fails
+// after the object exists (exit 11 of voucher create --file: the partial
+// output names its id) still registers the object before the test fails,
+// so the cleanup removes it. The sent body is that of the first POST (the
+// create; an upload of --file follows it).
+func (s *liveSuite) createRun(t *testing.T, o object, args ...string) (map[string]any, result) {
+	t.Helper()
 	r := s.run(t, "", append(args, "-o", "json")...)
 	if r.code != 0 {
+		if id := idOf(tryDecode(r.stdout)); id != 0 {
+			o.id = id
+			s.track(o)
+			s.logf(t, "angelegt trotz Exit %d: %s %d (%s)", r.code, o.resource, o.id, o.name)
+		}
 		s.fatalf(t, "papierkram %s: Exit %d\n%s", strings.Join(args, " "), r.code, r.stderr)
 	}
 	m := s.decode(t, r.stdout)
@@ -41,11 +57,11 @@ func (s *liveSuite) create(t *testing.T, o object, args ...string) map[string]an
 		s.fatalf(t, "%s: Antwort ohne id", o.resource)
 	}
 	s.track(o)
-	if x := lastExchange(r, "POST", ""); x != nil {
+	if x := firstExchange(r, "POST"); x != nil {
 		s.sent[o.resource+"/"+ids(o.id)] = x.ReqBody
 	}
 	s.logf(t, "angelegt: %s %d (%s)", o.resource, o.id, o.name)
-	return m
+	return m, r
 }
 
 // user is the first user of the account (time entries need one).

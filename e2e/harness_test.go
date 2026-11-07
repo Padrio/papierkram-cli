@@ -59,6 +59,9 @@ type object struct {
 	id       int64
 	company  int64 // person: its company
 	name     string
+	// followUpOf is the id of the object of this run whose cancel or
+	// reverse answered with this object (cancelMeasured); 0 otherwise.
+	followUpOf int64
 }
 
 // newLiveSuite prepares a run. It sends nothing.
@@ -157,6 +160,18 @@ func (s *liveSuite) ok(t *testing.T, stdin string, args ...string) map[string]an
 		s.fatalf(t, "papierkram %s: Exit %d\n%s", strings.Join(args, " "), r.code, r.stderr)
 	}
 	return s.decode(t, r.stdout)
+}
+
+// tryDecode is raw as a JSON object with exact numbers; nil when it is
+// none (no failure: for output that may be missing).
+func tryDecode(raw string) map[string]any {
+	var m map[string]any
+	d := json.NewDecoder(strings.NewReader(raw))
+	d.UseNumber()
+	if d.Decode(&m) != nil {
+		return nil
+	}
+	return m
 }
 
 func (s *liveSuite) decode(t *testing.T, raw string) map[string]any {
@@ -302,6 +317,17 @@ func jsonType(v any) string {
 	return fmt.Sprintf("%T", v)
 }
 
+// firstExchange is the first exchange of r with method; nil when there is
+// none.
+func firstExchange(r result, method string) *e2eguard.Exchange {
+	for i := range r.exchanges {
+		if r.exchanges[i].Method == method {
+			return &r.exchanges[i]
+		}
+	}
+	return nil
+}
+
 // lastExchange is the last exchange of r with method and a path ending in
 // suffix; nil when there is none.
 func lastExchange(r result, method, suffix string) *e2eguard.Exchange {
@@ -339,9 +365,14 @@ var noArchive = map[string]bool{"person": true}
 
 // remove deletes o; where that is not possible it cancels (documents) and
 // archives it (spec 11.1). It touches o only when its name is owned by the
-// suite. It returns what happened and false when o is still active.
+// suite, or when o is a follow-up object (followUpOf): the API may name
+// that one itself, but its id was read verbatim from the answer to a
+// cancel or reverse of an object of this run, and only that id is
+// touched. A follow-up is never cancelled (it is a cancellation or reverse
+// entry itself; its cancel could create yet another object), only deleted
+// or archived. It returns what happened and false when o is still active.
 func (s *liveSuite) remove(dir string, o object) (string, bool) {
-	if !e2eguard.Owned(o.name) {
+	if !e2eguard.Owned(o.name) && o.followUpOf == 0 {
 		return fmt.Sprintf("nicht angefasst: Name %q ohne Präfix %s", o.name, e2eguard.NamePrefix), false
 	}
 	id := ids(o.id)
@@ -357,7 +388,7 @@ func (s *liveSuite) remove(dir string, o object) (string, bool) {
 		return "gelöscht", true
 	}
 	steps := []string{fmt.Sprintf("delete Exit %d", r.code)}
-	if cleanupDocs[o.resource] {
+	if cleanupDocs[o.resource] && o.followUpOf == 0 {
 		if c := do("cancel"); c.code == 0 {
 			steps = append(steps, "storniert")
 			if d := do("delete"); d.code == 0 {

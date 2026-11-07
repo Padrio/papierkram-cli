@@ -35,7 +35,9 @@
 //	MasterDataArchive (geplant, Task 6)                            12
 //	ReadCommands (geplant, Task 6)                                  8
 //	TimeFlow (geplant, Task 5)                                     24
-//	VoucherFlow (geplant, Task 4)                                  69
+//	VoucherFlow: create --file 60, describe 1, pdf 1, document
+//	  delete 1, archive + unarchive 2, reverse + describe 2,
+//	  cancel + describe 2                                          69
 //	Carries: 13 subtests 37 (2 time entries of 10 in no. 12,
 //	  describe, update, describe in no. 6), no. 14 (geplant,
 //	  Task 8) 4                                                    41
@@ -44,6 +46,12 @@
 //	  objects = 19); each of up to 3 final documents costs up to 3
 //	  more (cancel, delete, archive)                               28
 //	                                                     total    683
+//
+// Not counted: a cancel or reverse (InvoiceFlow, VoucherFlow; 4 in all)
+// whose answer names an object other than its target registers that
+// follow-up object for the cleanup (followUp; none expected). Each costs
+// up to 2 there (delete, archive; never cancel), together at most 8, taken
+// from the margin of the reserve: worst case 691 in all, cleanup 60 of 62.
 //
 // Of the budget, cleanupReserve = 62 is kept for the final cleanup: the
 // documented worst case (e2eguard.CleanupReserve) for the 7 documents
@@ -79,17 +87,22 @@
 //	  8 (PDF download Accept/Content-Type), 9 (price_gross 0.0 with
 //	  gross=false), 11 (duration = wall clock difference on a normal day);
 //	  invoice flow: deliver --via pdf, pdf (%PDF file), archive and
+//	  unarchive exit 0; voucher flow: create --file (exit 0, upload
+//	  2xx), exactly one document, pdf, document delete, archive and
 //	  unarchive exit 0.
 //	measured only: empty deliver body, upload of png/jpg/txt, voucher
 //	  state values, invoice states along its life cycle, invoice and
-//	  estimate cancel, GET /info cost, carries 5 (due_time_unit values),
+//	  estimate cancel, voucher document key shape, voucher pdf
+//	  download, voucher reverse and cancel with the states after them,
+//	  GET /info cost, carries 5 (due_time_unit values),
 //	  6 (billable_duration on create and update; run 1: the create
 //	  stored duration instead), 7 (sent_on after deliver pdf), 10 (pay body with value null and a
 //	  transaction that does not exist: the suite never pays),
 //	  12 (end 00:00/24:00), 13 (structure of GET /info).
 //	A measurement that differs from what the CLI assumes (GET /info cost
 //	  vs. registry, due_time_unit other than "day", billable_duration
-//	  not stored as sent) is logged as
+//	  not stored as sent, a cancel or reverse answering with another
+//	  object) is logged as
 //	  ABWEICHUNG and listed again in a summary at the end of the run;
 //	  it does not fail the run.
 package e2e
@@ -338,6 +351,8 @@ var delivered *deliverRun
 // deliverPDF delivers an estimate of its own as PDF, once per run. It is
 // an estimate, not an invoice: an invoice would get a number of the
 // invoice sequence. Never by mail (the transport refuses that as well).
+// TestE2E_InvoiceFlow cancels this estimate: a test after it finds it
+// cancelled.
 func (s *liveSuite) deliverPDF(t *testing.T) *deliverRun {
 	t.Helper()
 	if delivered != nil {

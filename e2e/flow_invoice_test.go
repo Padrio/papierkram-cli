@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -50,17 +51,19 @@ func TestE2E_InvoiceFlow(t *testing.T) {
 	if x := lastExchange(r, "GET", "/pdf"); x != nil {
 		s.measuref(t, "invoice pdf", "HTTP %d, Content-Type %q, %d Bytes", x.Status, x.RespHeader.Get("Content-Type"), len(x.RespBody))
 	}
-	data, _ := os.ReadFile(file)
+	data, err := os.ReadFile(file)
 	switch {
 	case r.code != 0:
 		s.errorf(t, "invoice pdf: Exit %d\n%s", r.code, r.stderr)
+	case err != nil:
+		s.errorf(t, "invoice pdf: Datei nicht lesbar: %v", err)
 	case !bytes.HasPrefix(data, []byte("%PDF")):
 		s.errorf(t, "invoice pdf: Datei ist kein PDF (%d Bytes)", len(data))
 	}
 
 	// 4. cancel and describe (2), measured
 	s.need(t, 2)
-	s.cancelMeasured(t, "invoice", id)
+	s.cancelMeasured(t, "invoice", "cancel", id)
 	m := s.ok(t, "", "invoice", "describe", id)
 	s.measuref(t, "Statuswerte Rechnung", "nach cancel: state %q", str(m["state"]))
 
@@ -80,20 +83,53 @@ func TestE2E_InvoiceFlow(t *testing.T) {
 	// estimate exists already in a full run (memoized)
 	est := ids(s.deliverPDF(t).estimate)
 	s.need(t, 2)
-	s.cancelMeasured(t, "estimate", est)
+	s.cancelMeasured(t, "estimate", "cancel", est)
 	m = s.ok(t, "", "estimate", "describe", est)
 	s.measuref(t, "Statuswerte Angebot", "nach deliver --via pdf und cancel: state %q", str(m["state"]))
 }
 
-// cancelMeasured cancels resource id (1 credit) and logs exit, HTTP
-// status and API message: whether a cancel is allowed in a state is not
-// known live, so the outcome is a measurement, never a failure.
-func (s *liveSuite) cancelMeasured(t *testing.T, resource, id string) {
+// cancelPaths are the path suffixes of the status changes cancelMeasured
+// runs, by CLI action.
+var cancelPaths = map[string]string{"cancel": "/cancel", "reverse": "/cancel_with_reverse_entry"}
+
+// cancelMeasured runs the status change action (cancel or reverse) of
+// resource id (1 credit) and logs exit, HTTP status and API message:
+// whether it is allowed in a state is not known live, so the outcome is a
+// measurement, never a failure. A 2xx answer naming another object is a
+// follow-up object (followUp).
+func (s *liveSuite) cancelMeasured(t *testing.T, resource, action, id string) {
 	t.Helper()
-	r := s.run(t, "", resource, "cancel", id, "--yes", "-o", "json")
+	r := s.run(t, "", resource, action, id, "--yes", "-o", "json")
 	status, msg := 0, strings.TrimSpace(r.stderr)
-	if x := lastExchange(r, "POST", "/cancel"); x != nil {
+	if x := lastExchange(r, "POST", cancelPaths[action]); x != nil {
 		status, msg = x.Status, apiMessage(x.RespBody)
+		if x.Status >= 200 && x.Status <= 299 {
+			s.followUp(t, resource, action, id, x.RespBody)
+		}
 	}
-	s.measuref(t, resource+" cancel", "Exit %d, HTTP %d, Meldung %q", r.code, status, msg)
+	s.measuref(t, resource+" "+action, "Exit %d, HTTP %d, Meldung %q", r.code, status, msg)
+}
+
+// followUp handles the answer body of a status change of resource target:
+// a cancel or reverse may create a new object with an id of its own (a
+// cancellation document, a reverse entry). When the answer is an object
+// whose id differs from target, that is logged as ABWEICHUNG (the CLI
+// shows the answer as is and says nothing about a new object) and the
+// object is registered for the cleanup under its own name, or
+// <prefix>folgeobjekt-<id> without one. remove touches it although the
+// API chose its name, because the id comes verbatim from this answer.
+func (s *liveSuite) followUp(t *testing.T, resource, action, target string, body []byte) {
+	t.Helper()
+	m := tryDecode(string(body))
+	id := idOf(m)
+	if id == 0 || ids(id) == target {
+		return
+	}
+	of, _ := strconv.ParseInt(target, 10, 64)
+	name := str(m["name"])
+	if name == "" {
+		name = s.prefix + "folgeobjekt-" + ids(id)
+	}
+	s.deviatef(t, "%s %s %s: Antwort nennt ein anderes Objekt %d (Folgeobjekt), zum Aufräumen registriert", resource, action, target, id)
+	s.track(object{resource: resource, id: id, name: name, followUpOf: of})
 }
