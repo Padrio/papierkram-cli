@@ -35,7 +35,24 @@ func newTestApp(t *testing.T) (*App, *bytes.Buffer, *bytes.Buffer) {
 	app.Sleep = func(time.Duration) {}
 	app.StdinTTY = false
 	app.StdoutTTY = false
+	app.Location, app.Now = testClock(t)
 	return app, out, errb
+}
+
+// testClock is the fixed clock of the test apps: Wednesday, 2026-06-10,
+// 12:00 in Europe/Berlin, as host zone too. Relative times (time log
+// --duration without --from, heute/gestern) then never cross midnight, a
+// weekend or a month boundary, whatever the real clock or the TZ of the
+// test run (fix F1: the doc examples failed between 00:00 and 01:30). A
+// test that needs another time sets app.Now (and app.Location) itself.
+func testClock(t *testing.T) (*time.Location, func() time.Time) {
+	t.Helper()
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.June, 10, 12, 0, 0, 0, loc)
+	return loc, func() time.Time { return now }
 }
 
 func TestRootHelpGerman(t *testing.T) {
