@@ -24,7 +24,10 @@ einen per `time stop` aus dem lokalen Timer), Artikel, ein Datenfeld, zwei
 Angebote, zwei Rechnungen und zwei Belege an,
 lädt Dateien hoch, versendet ein Angebot und eine Rechnung als PDF und
 versucht, beide zu stornieren und einen Beleg zu stornieren und gegenzubuchen
-(ob die API das zulässt, wird gemessen).
+(ob die API das zulässt, wird gemessen). `TestE2E_MasterDataArchive`
+archiviert eigene Stammdaten (Lieferant, Projekt, Aufgabe, Artikel,
+Datenfeld) und ein eigenes Angebot und holt sie gleich danach wieder aus dem
+Archiv. Bankverbindungen und Bankumsätze liest die Suite nur.
 
 ## Ausführen
 
@@ -159,6 +162,11 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
   acht Stufen), gilt ebenfalls als geschützt. Alles andere wird vor dem
   Senden abgelehnt, z. B.
   `papierkram api POST '/expense/vouchers/<id>/pay?value=5' --input -`.
+- Bankdaten (Bankverbindungen, Bankumsätze) stehen nie mit Werten im Log,
+  auch nicht ihre IDs: `TestE2E_ReadCommands` protokolliert nur die Anzahl
+  (`total_entries`) und die Schlüsselform des ersten Eintrags (nur die
+  Schlüssel, ohne Werte). Scheitert ein Lesen, nennt die Meldung nur den
+  Exit-Code und den Fehlercode des CLI, nie die Ausgabe.
 - Das Token erscheint nie in der Testausgabe: Jede Logzeile wird vorher
   geschwärzt und danach auf Reste geprüft; die CLI-Ausgaben werden auf das
   Token geprüft.
@@ -210,6 +218,11 @@ ABDECKUNG nicht anwendbar: <OpID>: <Grund>
 ABDECKUNG ausstehend: <OpID> (Task <N>)
 ABDECKUNG unbekannter Pfad: <METHOD> <path>
 ```
+
+Hat der Account keine Bankverbindung bzw. keinen Bankumsatz, meldet
+`TestE2E_ReadCommands` das Lesen per ID als nicht anwendbar, z. B.
+`ABDECKUNG nicht anwendbar: GetBankConnection: keine Bankverbindung im
+Sandbox-Account (gemessen)`; das entschuldigt nur diese beiden Operationen.
 
 Gate: Fehlt eine erwartete Operation, endet der Lauf mit Exit 1 und
 `e2e: Abdeckung unvollständig: <n> Operation(en) fehlen`, aber nur bei einem
