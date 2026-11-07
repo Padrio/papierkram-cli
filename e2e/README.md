@@ -19,9 +19,10 @@ normalen CI mit (ohne Variablen, nur Kompilieren und Überspringen).
 Ob der Account wirklich eine Sandbox ist, kann die Suite nicht prüfen. Das
 liegt bei dir: Trage nie Subdomain und Token der echten Buchhaltung ein. Die
 Suite legt Firmen, Kontaktpersonen, Projekte, Aufgaben, Zeiteinträge,
-Artikel, ein Datenfeld, zwei Angebote, zwei Rechnungen und einen Beleg an,
+Artikel, ein Datenfeld, zwei Angebote, zwei Rechnungen und zwei Belege an,
 lädt Dateien hoch, versendet ein Angebot und eine Rechnung als PDF und
-versucht, beide zu stornieren (ob die API das zulässt, wird gemessen).
+versucht, beide zu stornieren und einen Beleg zu stornieren und gegenzubuchen
+(ob die API das zulässt, wird gemessen).
 
 ## Ausführen
 
@@ -121,7 +122,14 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
   Entwurf angelegt; versendet werden nur ein eigenes Angebot und eine eigene
   Rechnung (`TestE2E_InvoiceFlow`), beide nur als PDF; danach versucht die
   Suite, beide zu stornieren. Die Rechnung erhält dabei eine Nummer aus dem
-  Rechnungsnummernkreis der Sandbox.
+  Rechnungsnummernkreis der Sandbox. Einen eigenen Beleg bucht
+  `TestE2E_VoucherFlow` gegen (`reverse`) und storniert ihn.
+- Nennt die Antwort auf `cancel` oder `reverse` ein anderes Objekt als das
+  stornierte (ein Folgeobjekt mit eigener ID, z. B. eine Gegenbuchung), steht
+  das als `ABWEICHUNG` im Log, und das Aufräumen entfernt genau dieses
+  Objekt mit, auch wenn die API ihm einen Namen ohne `pk-e2e-` gegeben hat:
+  Seine ID stammt unverändert aus dieser Antwort. Ein Folgeobjekt wird nur
+  gelöscht oder archiviert, nie storniert.
 - Die Suite bezahlt nie etwas: `voucher pay` wird nur mit `value: null` und
   der Bankumsatz-ID 999999999 gemessen, die es nicht gibt (ohne Betrag). Der
   Transport lässt für `pay` genau diesen Body durch,
@@ -170,6 +178,9 @@ Die Tests dürfen also höchstens 698 Credits verbrauchen (geplant: 655): Eine
 Anfrage, die in die Reserve greifen würde, wird nicht gesendet, und reicht das
 Budget für einen Test nicht mehr, werden dieser und alle folgenden Tests mit
 Begründung übersprungen. Erst das Aufräumen am Ende darf die Reserve nutzen.
+Entstehen beim Stornieren Folgeobjekte (nicht erwartet), kostet jedes beim
+Aufräumen bis zu 2 Credits mehr, bei den 4 Stornos und Gegenbuchungen der
+Suite zusammen höchstens 8 aus dem Puffer der Reserve.
 Am Ende steht die Summe im Log.
 
 ## Abdeckung

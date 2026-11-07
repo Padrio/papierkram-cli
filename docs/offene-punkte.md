@@ -13,8 +13,8 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 | Nr. | Punkt | Annahme des CLI | E2E-Test | Art |
 |---|---|---|---|---|
-| 1 | Statuswerte (`state`) der Belege | `state` wird roh angezeigt, nicht geprüft | `TestE2E_VoucherStateValues`, `TestE2E_InvoiceFlow` | Messung |
-| 2 | Erlaubte Upload-MIME-Typen | keine lokale Einschränkung; gemessen: PDF, PNG, JPG ja, TXT HTTP 500 | `TestE2E_UploadMimeTypes` | PDF hart, sonst Messung |
+| 1 | Statuswerte (`state`) der Belege | `state` wird roh angezeigt, nicht geprüft | `TestE2E_VoucherStateValues`, `TestE2E_InvoiceFlow`, `TestE2E_VoucherFlow` | Messung |
+| 2 | Erlaubte Upload-MIME-Typen | keine lokale Einschränkung; gemessen: PDF, PNG, JPG ja, TXT HTTP 500 | `TestE2E_UploadMimeTypes`, `TestE2E_VoucherFlow` | PDF hart, sonst Messung |
 | 3 | Maximale Upload-Dateigröße | keine lokale Grenze | – | **bewusst nicht gemessen** |
 | 4 | `0.19` ergibt 19 % (Position und Artikel) | `0.19` als Zahl bzw. beim Artikel als String `"0.19"` | `TestE2E_VatRate019Is19Percent/Position`, `TestE2E_VatRate019Is19Percent/Artikel` | hart |
 | 5 | Kosten von `GET /info` | 1 Credit | `TestE2E_InfoCreditCost` | Messung |
@@ -49,14 +49,14 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 - **Offen:** Die Spec dokumentiert die Werte von `state` für Rechnungen, Angebote und Belege nicht (Beispiele zeigen u. a. `draft`, `canceled`, `unpaid`, `partially_paid`, `deleted`, `imported`).
 - **Annahme:** Tabellen zeigen `state` roh; das CLI prüft oder übersetzt keine Statuswerte. Filter nach Status bietet die API nur für Zeiteinträge (`--state`, dort ist das Enum dokumentiert).
-- **E2E:** `TestE2E_VoucherStateValues` (Messung) sammelt die Werte der ersten Listenseite von Belegen, Rechnungen und Angeboten und den Status eines neuen Belegs. `TestE2E_InvoiceFlow` (Messung) misst die Statuswerte einer eigenen Rechnung im Lebenszyklus: `state` nach dem Anlegen, nach `deliver --via pdf` (mit `invoice_no`, `sent_on`, `sent_via`) und nach `cancel` (mit Exit, HTTP-Status und Meldung der API), `record_state` nach `archive`, außerdem `state` des versendeten Angebots nach `estimate cancel`. Danach sollen die Werte in der Doku ergänzt werden; die Ergebnisse von `TestE2E_InvoiceFlow` folgen nach Live-Lauf 5.
+- **E2E:** `TestE2E_VoucherStateValues` (Messung) sammelt die Werte der ersten Listenseite von Belegen, Rechnungen und Angeboten und den Status eines neuen Belegs. `TestE2E_InvoiceFlow` (Messung) misst die Statuswerte einer eigenen Rechnung im Lebenszyklus: `state` nach dem Anlegen, nach `deliver --via pdf` (mit `invoice_no`, `sent_on`, `sent_via`) und nach `cancel` (mit Exit, HTTP-Status und Meldung der API), `record_state` nach `archive`, außerdem `state` des versendeten Angebots nach `estimate cancel`. `TestE2E_VoucherFlow` (Messung) misst an einem eigenen Beleg `voucher reverse` und danach `voucher cancel` (je Exit, HTTP-Status und Meldung der API) und `state` nach jedem Schritt; nennt die Antwort ein anderes Objekt als den Beleg (Folgeobjekt, z. B. eine Gegenbuchung), steht das als `ABWEICHUNG` im Log, und das Objekt wird mit aufgeräumt. Danach sollen die Werte in der Doku ergänzt werden; die Ergebnisse von `TestE2E_InvoiceFlow` und `TestE2E_VoucherFlow` folgen nach Live-Lauf 5.
 - **Gemessen 2026-11-04 (Lauf 2):** Ein neuer Beleg hat `state` `unpaid`; die erste Belegliste zeigte nur `unpaid`, die Angebotsliste `draft` und `sent` (nach `deliver --via pdf`), die Rechnungsliste war leer. Weitere Werte (z. B. von Rechnungen) bleiben offen.
 
 ### 2. Erlaubte Upload-MIME-Typen
 
 - **Offen:** Welche Dateitypen nimmt `POST /expense/vouchers/{id}/documents` an?
 - **Annahme:** Keine lokale Einschränkung. Der MIME-Typ folgt aus der Dateiendung, unbekannte Endungen werden als `application/octet-stream` gesendet. Eine Ablehnung mit 4xx käme als Exit 5; gemessen lehnt die API TXT aber mit HTTP 500 ab (Exit 1, siehe unten).
-- **E2E:** `TestE2E_UploadMimeTypes` lädt PDF, PNG, JPG und TXT hoch. Hart nur für PDF (`voucher create --file beleg.pdf` muss funktionieren), die übrigen sind Messung.
+- **E2E:** `TestE2E_UploadMimeTypes` lädt PDF, PNG, JPG und TXT per `voucher upload` hoch. Hart nur für PDF, die übrigen sind Messung. `TestE2E_VoucherFlow` prüft hart, dass `voucher create --file beleg.pdf` mit Exit 0 endet (kein Exit 11) und der Beleg danach genau ein Dokument hat; die Schlüssel dieses Dokuments (ohne Werte) und der PDF-Download des Belegs (`voucher pdf`: Content-Type, Größe, beginnt mit `%PDF`) sind Messung.
 - **Gemessen 2026-11-04 (Lauf 2):** PDF, PNG und JPG nimmt die API an (HTTP 201). TXT lehnt sie mit **HTTP 500** („Internal server error.“) ab statt mit 4xx (andere Typen nicht gemessen); das CLI meldet das als Exit 1 (`server_error`), bei `voucher create --file` als Exit 11 mit „Ergebnis des Hochladens unbekannt“. Ein Upload eines nicht unterstützten Typs ist also nicht vorübergehend: nicht blind wiederholen, sondern den Dateityp ändern.
 
 ### 3. Maximale Upload-Dateigröße — bewusst nicht gemessen
