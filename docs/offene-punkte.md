@@ -22,10 +22,10 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 7 | `line_items` im `PUT` ersetzen alle Positionen | ja; deshalb `--replace-items` | `TestE2E_ReplaceLineItems` | hart |
 | 8 | `{id}`-Pfadparameter in der Spec nicht deklariert | im Overlay ergänzt | – | erledigt (kein Live-Punkt) |
 | 9 | `deadline` als ISO-Datum | `YYYY-MM-DD` | `TestE2E_Carries/01_DeadlineISO` | hart |
-| 10 | `due_date` per `UpdateInvoice` nicht änderbar | Feld wird aus `--input` entfernt | – | nicht gemessen |
+| 10 | `due_date` per `UpdateInvoice` nicht änderbar | Feld wird aus `--input` entfernt | `TestE2E_OpenMeasurements/10_InvoiceDueDatePut` | Messung |
 | 11 | `sent_on`/`sent_to` als `null` im Angebots-`PUT` | wird akzeptiert | `TestE2E_Carries/03_EstimateNullSentFields` | hart |
-| 12 | `entertainment_persons: []` im Beleg-`PUT` | wird akzeptiert | `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` | hart (Bedeutung: Messung) |
-| 13 | `supply_date` im Antwortformat und Kontaktperson/Projekt im Rundlauf | Kontaktperson und Projekt werden unter `customer` mitgesendet und bleiben (gemessen Lauf 3 und 4); `supply_date` offen | `TestE2E_Carries/02_InvoiceRoundTrip` | hart |
+| 12 | `entertainment_persons: []` im Beleg-`PUT` | wird akzeptiert | `TestE2E_OpenMeasurements/12_VoucherEntertainmentPersons` (Bedeutung); Annahme hart in `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` | Messung |
+| 13 | `supply_date` im Antwortformat und Kontaktperson/Projekt im Rundlauf | Kontaktperson und Projekt werden unter `customer` mitgesendet und bleiben (gemessen Lauf 3 und 4); `supply_date` kommt im Rundlauf unverändert zurück | `TestE2E_OpenMeasurements/13_InvoiceSupplyDate` (`supply_date`); Kontaktperson und Projekt hart in `TestE2E_Carries/02_InvoiceRoundTrip` | Messung |
 | 14 | Werte von `due_time_unit` | meist `day`; die Tabelle zeigt `ZIEL` und `EINHEIT` getrennt | `TestE2E_Carries/05_PaymentTermUnits` | Messung |
 | 15 | Einheit von `billable_duration` | Sekunden; die API ignoriert den Wert beim Anlegen und Ändern (gemessen) | `TestE2E_Carries/06_BillableDurationSeconds` | Messung |
 | 16 | Setzt `deliver --via pdf` `sent_on`? | nein (gemessen); abgebrochener PDF-Versand endet mit Exit 12 | `TestE2E_Carries/07_DeliverPdfSentOn`, `TestE2E_InvoiceFlow` | Messung |
@@ -40,7 +40,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 25 | Quota-Header `X-Remaining-Quota`, `X-Consumed-Quota` | vorhanden und ganzzahlig | `TestE2E_QuotaHeadersPresent` | hart |
 | 26 | Person `default` als String | Request `"true"`/`"false"`; Antwort Boolean (gemessen) | `TestE2E_PersonDefaultIsString` | hart |
 | 27 | **Entscheidung offen (Pascal):** `PAPIERKRAM_COMPANY`/`company` aus der Projektdatei als Default für `person … --company`? | keine Voreinstellung; nur Anzeige in `local show` | – | keine API-Frage, nicht gemessen |
-| 28 | `document_date` Pflicht beim Anlegen | Angebot: Pflicht (gemessen); Rechnung: nicht Pflicht | `TestE2E_DeliverPdfEmptyBody` (Angebot, indirekt) | Angebot erledigt; Rechnung **offen**, nicht gemessen |
+| 28 | `document_date` Pflicht beim Anlegen | Angebot: Pflicht (gemessen); Rechnung: nicht Pflicht | `TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate` (Rechnung); Angebot indirekt in `TestE2E_DeliverPdfEmptyBody` | Messung |
 | 29 | `invoice update --customer X` ohne Kontaktperson/Projekt | sendet `customer` nur mit `id`; die API leert dann `contact_person` und `project` (gemessen) | – (Lauf 2, Rundlauf) | **offen**, Verhalten unverändert |
 
 ## Punkte im Einzelnen
@@ -109,11 +109,11 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **E2E:** `TestE2E_Carries/01_DeadlineISO` (hart).
 - **Gemessen 2026-11-04 (Lauf 2):** bestätigt: gesendet und gespeichert `2026-12-31`.
 
-### 10. `due_date` per `UpdateInvoice` nicht änderbar — nicht gemessen
+### 10. `due_date` per `UpdateInvoice` nicht änderbar
 
 - **Offen:** Das Request-Schema von `UpdateInvoice` hat kein `due_date`. Lässt sich das Fälligkeitsdatum nur über `payment_term` ändern, oder nimmt die API das Feld trotzdem an?
 - **Annahme:** Nur über `payment_term`. `invoice update --input` entfernt `due_date` als nur lesbares Feld (Hinweis auf stderr); `papierkram api PUT` sendet es unverändert, die API lehnt es dann vermutlich mit 422 ab.
-- **E2E:** Nicht gemessen; die Suite hat dafür keinen Test. Bei Bedarf ließe es sich mit `papierkram api PUT /income/invoices/<id>` und einem Body mit `due_date` an einer Entwurfsrechnung messen.
+- **E2E:** `TestE2E_OpenMeasurements/10_InvoiceDueDatePut` (Messung): `papierkram api PUT /income/invoices/<id>` ohne `--validate` (der Body geht unverändert hinaus) an der Entwurfsrechnung der Suite mit `{"due_date":"<heute + 45 Tage>","payment_term":{"id":<aktuelle>}}`, davor und danach `invoice describe` (3 Credits). Im Log stehen HTTP-Status und `due_date` vorher und nachher; ändert sich `due_date`, steht das als `ABWEICHUNG` im Log. Lehnte `api` den Body lokal ab (Exit 5, nichts gesendet), stünde „lokal abgelehnt“ im Log.
 
 ### 11. `sent_on`/`sent_to` als `null` im Angebots-`PUT`
 
@@ -126,14 +126,14 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 - **Offen:** Nimmt die API ein leeres Array an, und leert es die Liste oder bleibt sie unverändert?
 - **Annahme:** Wird angenommen; das CLI sendet es, wenn es angegeben ist.
-- **E2E:** `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` (Annahme hart, Bedeutung gemessen).
+- **E2E:** `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` (Annahme hart); die Bedeutung misst `TestE2E_OpenMeasurements/12_VoucherEntertainmentPersons` (Messung, 4 Credits): Er setzt am Beleg der Suite `entertainment_persons` auf eine Person (`pk-e2e-<lauf-id>-gast`), liest den Beleg, sendet `[]` und liest ihn erneut; im Log steht „geleert“ oder „unverändert“. Lehnt die API schon die Person ab, endet die Messung dort; ein abgelehntes `[]` steht als `ABWEICHUNG` im Log.
 - **Gemessen 2026-11-04 (Lauf 2):** angenommen; danach `[]` (die Liste war vorher schon leer, die Bedeutung „leeren oder unverändert“ bleibt damit offen).
 
 ### 13. Rundlauf einer Rechnung: `supply_date` und `customer`
 
 - **Offen:** Die API liefert `supply_date` als `"2026-08-28 13:41:23 +0200"`. Nimmt `PUT` dieses Format zurück? Und bleiben Kontaktperson und Projekt erhalten, wenn `customer` auf `{id}` reduziert gesendet wird?
 - **Annahme:** Ja zu beidem; `describe -o json | update --input -` ist ein dokumentierter Ablauf.
-- **E2E:** `TestE2E_Carries/02_InvoiceRoundTrip` (hart); loggt seit Lauf 3 die Schlüssel des gesendeten Bodys (ohne Werte) und die IDs unter `customer`.
+- **E2E:** `TestE2E_Carries/02_InvoiceRoundTrip` (hart); loggt seit Lauf 3 die Schlüssel des gesendeten Bodys (ohne Werte) und die IDs unter `customer`. `supply_date` misst `TestE2E_OpenMeasurements/13_InvoiceSupplyDate` (Messung, 5 Credits): `invoice update --supply-date 2026-11-01` (liest die Rechnung vorher), `invoice describe` (Format der Antwort im Log, Ziffern als `9`), dann genau diese Ausgabe per `invoice update --input -` zurück (mit `payment_term` im Body, ohne Lesen) und erneut `describe`. Scheitert ein Schritt, weicht die Antwort von `2026-11-01` ab oder ändert der Rundlauf `supply_date`, steht das als `ABWEICHUNG` im Log.
 - **Gemessen 2026-11-04 (Lauf 2):** Gesendet wurde `customer` als `{id}` ohne Kontaktperson und Projekt (die Antwort hat beide auf oberster Ebene, die das CLI damals als nur lesbar entfernte). Danach waren `contact_person` und `project` der Rechnung leer. `supply_date` war im Lauf leer und ist damit weiter ungeprüft.
 - **Stand des CLI:** Die Bereinigung von `--input` übernimmt `contact_person` und `project` der Antwort jetzt als `customer.contact_person`/`customer.project` (`{id}`), wenn `customer` im Body steht (Hinweis „Referenzen übernommen“); nennt `--customer` einen anderen Kunden, entfallen sie wieder (Hinweis „Kunde X statt Y aus --input“).
 - **Gemessen 2026-11-04 (Lauf 3 und 4):** Mit `customer{contact_person{id},id,project{id}}` im `PUT` bleiben Kontaktperson und Projekt erhalten (Lauf 3: 7 → 7, 16 → 16; Lauf 4: 10 → 10, 22 → 22). `supply_date` war weiter leer, das Antwortformat ist damit ungeprüft.
@@ -240,7 +240,8 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 - **Gemessen 2026-11-04 (erster Live-Lauf):** `POST /income/estimates` ohne `document_date` lehnt die API mit 422 „Datum muss ausgefüllt werden“ ab und berechnet trotzdem die 50 Credits des Anlegens. Die Spec nennt nur `name` und `line_items` als Pflicht.
 - **Stand des CLI:** Das Overlay ([api/overlay.yaml](../api/overlay.yaml), Abschnitt 16) macht `document_date` im Anlege-Body des Angebots zur Pflicht (auch `null` gilt als fehlend). `estimate create` ohne `--document-date` (bzw. ohne `document_date` in `--input`) endet mit Exit 5, bevor eine Anfrage gesendet wird. `invoice create --from-estimate` ist nicht betroffen: Das Rechnungsdatum kommt nie aus dem Angebot, sondern aus `--document-date`.
-- **Offen:** Ob auch `POST /income/invoices` ohne `document_date` scheitert, ist nicht gemessen. Das CLI behandelt das Feld bei Rechnungen deshalb weiter als optional; die E2E-Suite sendet es vorsichtshalber immer mit. Bei einer Messung (422 wie beim Angebot) das Overlay entsprechend ergänzen.
+- **Offen:** Ob auch `POST /income/invoices` ohne `document_date` scheitert. Das CLI behandelt das Feld bei Rechnungen weiter als optional; die Fixtures der E2E-Suite senden es immer mit. Bei 422 wie beim Angebot das Overlay entsprechend ergänzen.
+- **E2E:** `TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate` (Messung, 50 Credits): `invoice create --name pk-e2e-<lauf-id>-rechnung-ohne-datum --customer <C> --payment-term <PT> --item name=pk-e2e-pos-19,qty=1,price=100,vat=19` ohne `--document-date`. Angenommen: Die Rechnung wird fürs Aufräumen registriert, `document_date` der Antwort steht im Log. Abgelehnt: Exit, HTTP-Status und Meldung der API im Log; ein 422 steht als `ABWEICHUNG` im Log.
 - **Gemessen 2026-11-04 (Lauf 2):** `estimate create` mit `--document-date` gelingt (zwei Angebote angelegt).
 
 ### 29. `invoice update --customer X` leert Kontaktperson und Projekt

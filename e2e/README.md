@@ -21,13 +21,18 @@ liegt bei dir: Trage nie Subdomain und Token der echten Buchhaltung ein. Die
 Suite legt Firmen, Kontaktpersonen, Projekte, Aufgaben, Zeiteinträge
 (darunter zwei von heute aus `TestE2E_TimeFlow`: einen per `time log`,
 einen per `time stop` aus dem lokalen Timer), Artikel, ein Datenfeld, zwei
-Angebote, zwei Rechnungen und zwei Belege an,
+Angebote, zwei Rechnungen (drei, wenn die API in
+`TestE2E_OpenMeasurements` eine Rechnung ohne Rechnungsdatum annimmt) und zwei
+Belege an,
 lädt Dateien hoch, versendet ein Angebot und eine Rechnung als PDF und
 versucht, beide zu stornieren und einen Beleg zu stornieren und gegenzubuchen
 (ob die API das zulässt, wird gemessen). `TestE2E_MasterDataArchive`
 archiviert eigene Stammdaten (Lieferant, Projekt, Aufgabe, Artikel,
 Datenfeld) und ein eigenes Angebot und holt sie gleich danach wieder aus dem
-Archiv. Bankverbindungen und Bankumsätze liest die Suite nur.
+Archiv, sofern `archive` sie archiviert haben kann (Exit 0, 1 oder 12; nach
+einer Ablehnung oder 429 kein `unarchive`). Scheitert `unarchive`, steht
+„Fixture <ressource> <id> womöglich noch archiviert – Folgefehler möglich“
+im Log. Bankverbindungen und Bankumsätze liest die Suite nur.
 
 ## Ausführen
 
@@ -207,7 +212,8 @@ abdecken muss, steht in `e2eguard.CoveragePlan`: je Operation der Test, der
 sie zuerst trifft, ob eine 2xx-Antwort nötig ist oder jede Antwort genügt
 (z. B. `voucher pay` ohne echte Zahlung, 4xx erwartet) oder nur bei
 vorhandenen Daten (Bankverbindung, Umsatz), ob die Aufräumphase zählt (nur
-`delete`) und welche spätere Task sie erst abdeckt.
+`delete`) und welche spätere Task sie erst abdeckt (derzeit keine: jede
+Operation ist erwartet, geprüft von `TestCoveragePlanComplete`).
 
 Nach dem Aufräumen stehen im Log diese Zeilen (jeweils mit `e2e: ` davor):
 
@@ -248,3 +254,13 @@ Weicht eine Messung von dem ab, was das CLI annimmt (z. B. andere Kosten
 für `GET /info` als in der Registry), steht sie mit `ABWEICHUNG:` im Log und
 am Ende des Laufs noch einmal in einer Zusammenfassung. Welche Prüfung zu welcher Gruppe gehört, steht im Kopf
 von `e2e_test.go`.
+
+`TestE2E_OpenMeasurements` misst vier offene Punkte (62 Credits je Lauf,
+siehe [docs/offene-punkte.md](../docs/offene-punkte.md)), alle als Messung:
+Nr. 28 legt eine Rechnung ohne `--document-date` an (angenommen: Aufräumen
+wie jede Rechnung; ein 422 ist eine `ABWEICHUNG`), Nr. 10 sendet per
+`papierkram api PUT` ein `due_date` an die Entwurfsrechnung, Nr. 13 setzt
+`supply_date` per `--supply-date` und schickt die `describe`-Ausgabe im
+Rundlauf zurück, Nr. 12 setzt eine Bewirtungsperson am Beleg und sendet
+danach `[]` („geleert“ oder „unverändert“). Antwortet ein Schritt mit 429,
+endet der Subtest ohne weitere Anfrage.
