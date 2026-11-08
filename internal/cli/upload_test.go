@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -697,4 +698,51 @@ func TestCreateFileUploadNeedsNoOwnConfirmation(t *testing.T) {
 	}()
 	app, _ := apiApp(t)
 	app.addCreateFileWith(create, upload, &cobra.Command{RunE: func(*cobra.Command, []string) error { return nil }})
+}
+
+// Review T14-M2: the upload runs on a copy of the client with the longer
+// timeout (api.Client.WithTimeout). The copy keeps --debug with the token
+// redacted and the quota callback: the upload request is logged without
+// the token and its X-Remaining-Quota warns, for voucher upload and for
+// the upload step of voucher create --file.
+func TestUploadClientCopyKeepsDebugAndQuota(t *testing.T) {
+	path := writeFile(t, "beleg.pdf", pdfContent)
+	lowQuota := func(w http.ResponseWriter, status int, body string) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Remaining-Quota", "50")
+		w.Header().Set("X-Consumed-Quota", "10")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"voucher upload", []string{"voucher", "upload", "295", path}},
+		{"voucher create --file", append(slices.Clone(voucherCreateArgs), "--file", path)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, srv := apiApp(t)
+			srv.OnFunc("POST", "/expense/vouchers/295/documents", func(w http.ResponseWriter, _ *http.Request) {
+				lowQuota(w, http.StatusCreated, `{"type":"document","id":1}`)
+			})
+			srv.On("POST", "/expense/vouchers", http.StatusCreated, []byte(`{"type":"voucher","id":295}`))
+			wantExit(t, app, Run(app, append(slices.Clone(tc.args), "--debug", "-o", "json")), 0)
+			_, errs := bufs(app)
+			for _, want := range []string{
+				"> POST " + srv.URL() + "/expense/vouchers/295/documents",
+				"> Authorization: Bearer ***",
+				"< X-Remaining-Quota: 50",
+				"Warnung: Restkontingent niedrig: 50 Credits",
+			} {
+				if !strings.Contains(errs, want) {
+					t.Errorf("stderr ohne %q:\n%s", want, errs)
+				}
+			}
+			if n := strings.Count(errs, "Warnung: Restkontingent niedrig"); n != 1 {
+				t.Errorf("Warnung %d-mal:\n%s", n, errs)
+			}
+			assertNoToken(t, app)
+		})
+	}
 }
