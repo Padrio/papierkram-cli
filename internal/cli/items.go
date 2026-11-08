@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -160,9 +162,11 @@ func itemErr(s, msg string) error {
 }
 
 // showItem renders an --item value for an error message so that the column
-// counts match what is shown: unescaped between ‹ and ›, with each control
-// character replaced by one visible symbol (U+2400 block), never by an
-// escape sequence that would shift the columns.
+// counts (runes) match what is shown: unescaped between ‹ and ›, with each
+// C0 control character replaced by one visible symbol (U+2400 block) and
+// every other character printable hides (other controls, Unicode Cf such as
+// bidi controls and zero width characters) by �, never by an escape
+// sequence or a removal that would shift the columns.
 func showItem(s string) string {
 	return "‹" + strings.Map(func(r rune) rune {
 		switch {
@@ -170,7 +174,7 @@ func showItem(s string) string {
 			return 0x2400 + r
 		case r == 0x7f:
 			return '␡'
-		case unicode.IsControl(r):
+		case invisible(r):
 			return '�'
 		}
 		return r
@@ -380,9 +384,11 @@ func checkItemShape(s string, it map[string]any, schema *openapi3.Schema) error 
 
 // itemRefs turns the reference fields of an --item position, objects with
 // only an id, from an integer into {"id": n} (proposition=2); an invalid ID
-// is a validation error (exit 5).
+// is a validation error (exit 5). The keys are checked in sorted order, so
+// of several invalid IDs always the same one is reported.
 func itemRefs(s string, it map[string]any, schema *openapi3.Schema) error {
-	for k, v := range it {
+	for _, k := range slices.Sorted(maps.Keys(it)) {
+		v := it[k]
 		ps := itemField(schema, k)
 		if ps == nil || !spec.IsIDOnly(ps) {
 			continue

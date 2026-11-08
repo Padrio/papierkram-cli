@@ -722,8 +722,31 @@ func TestWriteNullLineItemsWithReplace(t *testing.T) {
 	app.In = strings.NewReader(`{"name":"Neu","line_items":null}`)
 	wantExit(t, app, runWrite(t, app, "invoice", "update", "12", "--input", "-", "--replace-items"), 5)
 	wantRequests(t, srv, 0)
-	if _, errs := bufs(app); !strings.Contains(errs, "line_items: null ist nicht erlaubt – für leere Positionsliste [] angeben") {
+	if _, errs := bufs(app); !strings.Contains(errs, "Fehler: line_items: null ist nicht erlaubt – für leere Positionsliste [] angeben oder Positionen per --item/--items setzen\n") {
 		t.Errorf("stderr = %q", errs)
+	}
+}
+
+// Positions per --item/--items win over line_items: null of --input, like
+// every flag over --input (task 17, L213).
+func TestWriteNullLineItemsFlagsWin(t *testing.T) {
+	items := writeFile(t, "items.json", `[{"name":"B","quantity":1,"price":5,"vat_rate":0.19}]`)
+	for _, flags := range [][]string{
+		{"--item", item1},
+		{"--items", items},
+	} {
+		app, srv := apiApp(t)
+		app.In = strings.NewReader(`{"name":"Neu","line_items":null}`)
+		args := append([]string{"invoice", "update", "12", "--input", "-", "--replace-items", "-o", "json"}, flags...)
+		wantExit(t, app, runWrite(t, app, args...), 0)
+		want := `{"name":"Neu","line_items":[{"name":"Beratung","quantity":2,"price":100,"vat_rate":0.19}]}`
+		if flags[0] == "--items" {
+			want = `{"name":"Neu","line_items":[{"name":"B","quantity":1,"price":5,"vat_rate":0.19}]}`
+		}
+		wantBody(t, srv, "PUT", "/income/invoices/12", want)
+		if _, errs := bufs(app); errs != "" {
+			t.Errorf("%v: stderr = %q", flags, errs)
+		}
 	}
 }
 

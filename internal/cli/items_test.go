@@ -129,7 +129,8 @@ const end = "<end>"
 // the last character) in the shown text.
 func checkColumn(t *testing.T, msg, at string) {
 	t.Helper()
-	open, cl := strings.Index(msg, "‹"), strings.Index(msg, "›")
+	// the input may contain › itself: the closing one is followed by ": "
+	open, cl := strings.Index(msg, "‹"), strings.Index(msg, "›: ")
 	if open < 0 || cl < open {
 		t.Errorf("message %q does not show the input in ‹…›", msg)
 		return
@@ -182,6 +183,12 @@ func TestParseItemErrors(t *testing.T) {
 		// control characters are shown as one symbol each, so columns stay right
 		{"\x01=x,name=\"a", []string{"--item ‹␁=x,name=\"a›", "Spalte 10"}, `"`},
 		{"name=\"a\tb\"c", []string{"--item ‹name=\"a␉b\"c›", "Spalte 11"}, "c"},
+		// invisible format characters (bidi, zero width; Unicode Cf) too
+		{"name=\"a\u200bb\u202e\"c", []string{"--item ‹name=\"a�b�\"c›", "Spalte 12"}, "c"},
+		{"name=\"a\u200d\u00ad\ufeff\"c", []string{"--item ‹name=\"a���\"c›", "Spalte 12"}, "c"},
+		// columns count runes, also after a › in the input
+		{`name="›"b`, []string{`--item ‹name="›"b›`, `unerwartetes Zeichen "b"`, "Spalte 9"}, "b"},
+		{`name=Größe›,qty`, []string{`Schlüssel "qty" ohne "="`, "Spalte 16"}, end},
 	}
 	item := itemSchema(t, "CreateInvoice")
 	for _, tt := range tests {
@@ -348,5 +355,25 @@ func TestLoadItemsErrors(t *testing.T) {
 	_, err := LoadItems("-", nil)
 	if ce := cliErr(t, err, clierr.CodeValidation); !strings.Contains(ce.Message, "--items") || !strings.Contains(ce.Message, "leer") {
 		t.Errorf("nil stdin: message %q lacks --items/leer", ce.Message)
+	}
+}
+
+// With several invalid references the message always names the first key
+// in sorted order (task 17, L213), not one by map order.
+func TestItemRefsDeterministic(t *testing.T) {
+	ref := func() *openapi3.SchemaRef {
+		return openapi3.NewObjectSchema().WithProperty("id", openapi3.NewIntegerSchema()).NewRef()
+	}
+	schema := openapi3.NewObjectSchema()
+	for _, k := range []string{"zeta", "alpha", "mid", "beta", "omega"} {
+		schema.Properties[k] = ref()
+	}
+	for range 50 {
+		it := map[string]any{"zeta": "z", "alpha": "a", "mid": "m", "beta": "b", "omega": "o"}
+		err := itemRefs("alpha=a", it, schema)
+		ce := cliErr(t, err, clierr.CodeValidation)
+		if want := `--item ‹alpha=a›: ungültiger Wert "a" für alpha: ID muss eine ganze Zahl ≥ 0 sein`; ce.Message != want {
+			t.Fatalf("message = %q, want %q", ce.Message, want)
+		}
 	}
 }

@@ -429,9 +429,11 @@ func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, l
 		}
 		// null positions with --replace-items: an error whether Prune
 		// dropped the null or kept it (nullable on update), never a
-		// silent []
-		if v, ok := pr.Body[key]; key != "" && replace && ((ok && v == nil) || slices.Contains(pr.DroppedNulls, key)) {
-			return nil, bodyInfo{}, clierr.New(clierr.CodeValidation, key+": null ist nicht erlaubt – für leere Positionsliste [] angeben", "")
+		// silent []; positions per --item/--items win like every flag
+		// over --input
+		itemFlags := ws.items != nil && (c.Flags().Changed("items") || c.Flags().Changed(ws.items.Flag))
+		if v, ok := pr.Body[key]; key != "" && replace && !itemFlags && ((ok && v == nil) || slices.Contains(pr.DroppedNulls, key)) {
+			return nil, bodyInfo{}, clierr.New(clierr.CodeValidation, key+": null ist nicht erlaubt – für leere Positionsliste [] angeben oder Positionen per --item/--items setzen", "")
 		}
 		a.pruneHints(pr)
 		body, removed, moved = pr.Body, pr.Removed, pr.Moved
