@@ -20,9 +20,10 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          # go.mod declares 1.26.0 as the minimum; CI builds with the same
-          # toolchain line as local development.
-          go-version: '1.27.x'
+          # go.mod declares 1.26.0 as the minimum; CI and release build with
+          # the toolchain line of .go-version (1.27.x, as local development),
+          # the only source (scripts/check-go-version.sh).
+          go-version-file: .go-version
       - run: go build ./...
       # -race needs cgo; the windows runners ship gcc (mingw), macOS/Linux have a C compiler.
       - run: go test -race ./...
@@ -64,7 +65,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.27.x'
+          go-version-file: .go-version
       # Linux has no Secret Service on the runner: start a private D-Bus session
       # and gnome-keyring for the duration of the test. Unlocking with a NON-empty
       # password makes the daemon create the default "login" collection (an empty
@@ -89,7 +90,10 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.27.x'
+          go-version-file: .go-version
+      # the downloaded modules match go.sum (before anything builds them)
+      - name: go mod verify
+        run: go mod verify
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.14.0
@@ -99,6 +103,9 @@ jobs:
       # comment (.github/dependabot.yml keeps them current)
       - name: actions pinned to commit SHAs
         run: sh scripts/check-action-pins.sh
+      # every setup-go step reads .go-version, none sets go-version itself
+      - name: go version from .go-version only
+        run: sh scripts/check-go-version.sh
       # self-test on a copy: quoted keys and blanks before the colon are
       # valid YAML that Actions reads as uses, so they are checked too
       - name: action pin check sees quoted keys
@@ -144,7 +151,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.27.x'
+          go-version-file: .go-version
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser

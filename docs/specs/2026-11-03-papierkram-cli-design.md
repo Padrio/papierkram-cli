@@ -467,7 +467,9 @@ Coverage-Ziel ≥ 80 % ohne `internal/api/gen`.
 
 ### 12.1 CI (GitHub Actions)
 - Matrix `ubuntu-latest`, `macos-latest`, `windows-latest`: `go build`, `go test -race ./...`, Keychain-Integrationstest (Linux mit `dbus-run-session` + `gnome-keyring-daemon --unlock`).
-- Einmalig: `golangci-lint`, `govulncheck`, `go generate` ohne Diff, Coverage-Report mit Schwelle, `goreleaser release --snapshot --clean`.
+- Einmalig: `go mod verify`, `golangci-lint`, `govulncheck`, `go generate` ohne Diff, Coverage-Report mit Schwelle, `goreleaser release --snapshot --clean`.
+- Go-Version aus einer Quelle: `.go-version` (eine Zeile, `1.27.x`); jeder `actions/setup-go`-Schritt in CI, E2E und Release liest sie per `go-version-file: .go-version`, keiner setzt `go-version` selbst (`scripts/check-go-version.sh`). `go.mod` nennt davon getrennt die Mindestversion (`go 1.26.0`).
+- Dependabot hält die per Commit-SHA gepinnten Actions (`github-actions`) und die Go-Module (`gomod`) wöchentlich aktuell.
 
 ### 12.2 Release (GoReleaser v2)
 - Ziele: darwin/linux/windows × amd64/arm64, `CGO_ENABLED=0`, Checksums, SBOM optional.

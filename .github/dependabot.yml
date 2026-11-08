@@ -1,8 +1,13 @@
 # Keeps the SHA-pinned actions of .github/workflows current (pin plus tag
-# comment are updated together).
+# comment are updated together) and the Go modules of go.mod.
 version: 2
 updates:
   - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # Go modules of go.mod (dependencies and tool directives)
+  - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
