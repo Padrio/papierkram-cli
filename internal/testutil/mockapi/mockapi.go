@@ -204,11 +204,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Consumed-Quota", defaultConsumedQuota)
 
 	if err != nil {
-		s.violate(w, r, fmt.Errorf("Body der Anfrage nicht lesbar: %w", err))
+		s.violate(w, r, fmt.Errorf("nicht lesbarer Body der Anfrage: %w", err))
 		return
 	}
 	if !hasBearer(r.Header.Get("Authorization")) {
-		s.violate(w, r, errors.New(`Header "Authorization: Bearer <Token>" fehlt oder ist leer`))
+		s.violate(w, r, errors.New(`fehlender oder leerer Header "Authorization: Bearer <Token>"`))
 		return
 	}
 

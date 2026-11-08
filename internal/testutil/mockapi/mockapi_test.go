@@ -647,7 +647,7 @@ func TestViolationTextsGerman(t *testing.T) {
 	for name, tc := range map[string]struct {
 		method, path, auth, want string
 	}{
-		"Authorization": {http.MethodGet, "/info", "", `GET /api/v1/info: Header "Authorization: Bearer <Token>" fehlt oder ist leer`},
+		"Authorization": {http.MethodGet, "/info", "", `GET /api/v1/info: fehlender oder leerer Header "Authorization: Bearer <Token>"`},
 		"query":         {http.MethodGet, "/income/invoices?colour=red", "Bearer " + testToken, `GET /api/v1/income/invoices?colour=red: Query-Parameter "colour" ist für ListInvoices nicht definiert`},
 		"unknown path":  {http.MethodGet, "/nope", "Bearer " + testToken, "GET /api/v1/nope: Pfad/Methode nicht in der API-Spec"},
 	} {
