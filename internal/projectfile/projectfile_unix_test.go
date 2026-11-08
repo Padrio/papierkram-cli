@@ -71,3 +71,32 @@ func TestLoad_ReadErrorIsCLIError(t *testing.T) {
 		t.Errorf("message = %q, cause = %v", ce.Message, ce.Cause)
 	}
 }
+
+// Review T18-M1: Save of an existing file it cannot read returns the
+// plain error (no *clierr.Error, which only Load builds), so local init
+// reports it as "Projektdatei nicht geschrieben: …"; nothing is written.
+func TestSave_ReadErrorStaysPlain(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads files without read permission")
+	}
+	p := filepath.Join(t.TempDir(), FileName)
+	if err := os.WriteFile(p, []byte("project = 34\n"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(p, 0o600) })
+	project := int64(35)
+	res, err := Save(p, Changes{Project: &project})
+	var ce *clierr.Error
+	if err == nil || errors.As(err, &ce) || !errors.Is(err, os.ErrPermission) || res.Changed {
+		t.Fatalf("Save = %+v, %#v", res, err)
+	}
+	if want := p + " lesen: permission denied"; err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
+	}
+	if err := os.Chmod(p, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(p); string(data) != "project = 34\n" {
+		t.Errorf("file changed: %q", data)
+	}
+}

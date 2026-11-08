@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/projectfile"
 )
 
@@ -502,5 +504,27 @@ func TestLocalInitWarnsFileOfOtherContext(t *testing.T) {
 		if _, errs := bufs(app); strings.Contains(errs, "Warnung") {
 			t.Errorf("%v: unexpected warning: %s", tc.args, errs)
 		}
+	}
+}
+
+// Review T18-M1: when Save cannot read the existing project file (it
+// became unreadable after local init loaded it), the error is "Projektdatei
+// nicht geschrieben: …" (exit 1) like any other failure of the write.
+func TestSaveProjectFileReadError(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs Unix permissions that also bind the user")
+	}
+	app, _ := localApp(t)
+	path := writeProjectFile(t, app, "project = 34\n")
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	project := int64(35)
+	_, err := app.saveProjectFile(path, projectfile.Changes{Project: &project})
+	ce := clierr.From(err)
+	if ce.Code != clierr.CodeError || ce.Message != "Projektdatei nicht geschrieben: "+path+" lesen: permission denied" ||
+		ce.Hint != "Schreibrechte im Verzeichnis prüfen" || !errors.Is(err, os.ErrPermission) {
+		t.Errorf("saveProjectFile = %+v", ce)
 	}
 }

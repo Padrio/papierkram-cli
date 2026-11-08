@@ -84,7 +84,7 @@ func gitRoot(dir string) (string, bool) {
 func Load(path string) (*File, error) {
 	data, err := readRegular(path, true)
 	if err != nil {
-		return nil, err
+		return nil, readErr(path, err)
 	}
 	m, err := decode(path, data)
 	if err != nil {

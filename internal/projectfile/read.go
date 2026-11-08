@@ -34,12 +34,23 @@ func readRegular(path string, follow bool) ([]byte, error) {
 			fmt.Sprintf("Projektdatei %s ist zu groß (mehr als %d KiB)", output.Printable(path), MaxSize>>10),
 			"Die Projektdatei enthält nur wenige IDs und Aliase; Datei prüfen")
 	}
-	// found but not readable (permissions, I/O): an error of the CLI
-	// (exit 1) whose hint names the file (L81)
-	e := clierr.New(clierr.CodeError, fileErr(path, "lesen", err).Error(),
-		fmt.Sprintf("Projektdatei %s prüfen oder entfernen", output.Printable(path)))
+	// found but not readable (permissions, I/O): a plain error, which the
+	// caller maps (Load: readErr; Save: local init's "Projektdatei nicht
+	// geschrieben: …", review T18-M1)
+	return nil, fileErr(path, "lesen", err)
+}
+
+// readErr is the error of Load for a project file it found but could not
+// read (readRegular): a usage error of readRegular as it is, any other an
+// error of the CLI (exit 1) whose hint names the file (L81).
+func readErr(path string, err error) error {
+	var ce *clierr.Error
+	if errors.As(err, &ce) {
+		return err
+	}
+	e := clierr.New(clierr.CodeError, err.Error(), fmt.Sprintf("Projektdatei %s prüfen oder entfernen", output.Printable(path)))
 	e.Cause = err
-	return nil, e
+	return e
 }
 
 // notRegular is the usage error for a project file that is no regular
