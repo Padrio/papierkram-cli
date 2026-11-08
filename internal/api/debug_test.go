@@ -15,6 +15,7 @@ import (
 	"testing"
 	"testing/iotest"
 	"time"
+	"unicode/utf8"
 )
 
 // debugClient returns a client whose debug log goes to the returned buffer.
@@ -332,6 +333,73 @@ func TestDebugUnreadableRequestBody(t *testing.T) {
 }
 
 // A Latin-1 error page from a proxy is shown as text, not hidden as binary.
+// L118: invalid UTF-8 at the 4 KB limit is replaced before the cut, and
+// the cut never splits the replacement character (or any other rune):
+// the line stays valid UTF-8, the marker counts the bytes received.
+func TestDebugTruncatesInvalidUTF8AtLimit(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body string
+		kept int // bytes of "a" before the marker
+	}{
+		"invalid byte across the limit": {strings.Repeat("a", 4095) + "\xff" + strings.Repeat("b", 100), 4095},
+		"invalid byte after the limit":  {strings.Repeat("a", 4096) + "\xff" + strings.Repeat("b", 100), 4096},
+		"run of invalid bytes":          {strings.Repeat("a", 4094) + "\xff\xfe\xfd" + strings.Repeat("b", 100), 4094},
+		"truncated rune at the limit":   {strings.Repeat("a", 4095) + "\xc3" + strings.Repeat("b", 100), 4095},
+		"valid rune across the limit":   {strings.Repeat("a", 4095) + "ä" + strings.Repeat("b", 100), 4095},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := &recorder{header: map[string]string{"Content-Type": "text/plain"}, body: tc.body}
+			c, buf := debugClient(t, rec, nil)
+			if _, err := c.CallRaw(context.Background(), http.MethodGet, "/income/invoices", nil, "", nil); err != nil {
+				t.Fatalf("CallRaw: %v", err)
+			}
+			out := buf.String()
+			if !utf8.ValidString(out) {
+				t.Errorf("debug output is no valid UTF-8:\n%q", out)
+			}
+			want := "< " + strings.Repeat("a", tc.kept) + fmt.Sprintf("… (gekürzt, %d Bytes)\n", len(tc.body))
+			if !strings.Contains(out, want) {
+				t.Errorf("debug output lacks %q…:\n%s", want[:20], out)
+			}
+		})
+	}
+}
+
+// L118: the token is masked also when an invalid byte stands right next
+// to it (redaction runs on the repaired text, before the cut), in the
+// request and the response body, and at the 4 KB limit, where the cut may
+// shorten the mask but never leaves a part of the token.
+func TestDebugRedactsTokenNextToInvalidByte(t *testing.T) {
+	const token = "test-token-utf8"
+	for name, tc := range map[string]struct{ body, shown string }{
+		"both sides":   {"\xff" + token + "\xfe", "\uFFFD***\uFFFD\n"},
+		"before":       {"x\xc3" + token, "x\uFFFD***\n"},
+		"after":        {token + "\xe2\x82", "***\uFFFD\n"},
+		"at the limit": {strings.Repeat("a", 4090) + "\xff" + token + "\xff" + strings.Repeat("b", 100), "a\uFFFD***… (gekürzt, 4207 Bytes)\n"},
+		"mask cut":     {strings.Repeat("a", 4092) + "\xff" + token, "a\uFFFD*… (gekürzt, 4108 Bytes)\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := &recorder{header: map[string]string{"Content-Type": "text/html"}, body: tc.body}
+			c, buf := debugClient(t, rec, func(o *Options) { o.Token = token })
+			if _, err := c.CallRaw(context.Background(), http.MethodPost, "/income/invoices", nil, "application/json", strings.NewReader(tc.body)); err != nil {
+				t.Fatalf("CallRaw: %v", err)
+			}
+			out := buf.String()
+			if strings.Contains(out, "test-") || strings.Contains(out, "token-utf8") {
+				t.Fatalf("debug output contains (part of) the token:\n%s", out)
+			}
+			// request (>) and response (<) body end the same way
+			for _, dir := range []string{"> ", "< "} {
+				line := out[strings.LastIndex(out, "\n"+dir)+1:]
+				line = line[:strings.Index(line, "\n")+1]
+				if !strings.HasSuffix(line, tc.shown) {
+					t.Errorf("%sbody ends %q, want …%q", dir, line[max(0, len(line)-40):], tc.shown)
+				}
+			}
+		})
+	}
+}
+
 func TestDebugLatin1ErrorBodyAsText(t *testing.T) {
 	rec := &recorder{
 		status: http.StatusBadGateway,
