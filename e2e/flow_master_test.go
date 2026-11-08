@@ -17,12 +17,14 @@ import (
 // unarchive runs after an archive that may have archived the object
 // (exit 0, 1 or 12; mayBeArchived), so every object is active again
 // afterwards: later tests use them (TimeFlow and Carries the task,
-// VoucherFlow the supplier, Carries the estimate). After any other exit
-// (an API error such as 4xx, 429, or nothing sent) it is skipped and the
-// MESSUNG says so: no second error, no request after a 429. A failed
-// unarchive logs one line "Fixture <res> <id> womöglich noch archiviert –
-// Folgefehler möglich", so later failures can be traced back to it. In a
-// full run every object exists already (fixtures of earlier tests).
+// Carries the estimate). After a 429 the subtest skips (quotaSkip). After
+// any other exit (an API error such as 4xx, or nothing sent) unarchive is
+// skipped and the MESSUNG says so: no second error. A failed unarchive,
+// and an archive whose unarchive was skipped (the object may already have
+// been archived before, e.g. exit 5), log one line "Fixture <res> <id>
+// womöglich noch archiviert – Folgefehler möglich", so later failures can
+// be traced back to it. In a full run every object exists already
+// (fixtures of earlier tests).
 func TestE2E_MasterDataArchive(t *testing.T) {
 	s := live(t)
 	idf := func(f func(*testing.T) map[string]any) func(*testing.T) int64 {
@@ -45,15 +47,18 @@ func TestE2E_MasterDataArchive(t *testing.T) {
 			s.need(t, 2)
 			a := s.run(t, "", c.resource, "archive", id, "-o", "json")
 			if a.code != 0 {
+				s.quotaSkip(t, a, []string{c.resource, "archive"})
 				s.errorf(t, "%s archive %s: Exit %d\n%s", c.resource, id, a.code, a.stderr)
 			}
 			if !mayBeArchived(a.code) {
 				s.measuref(t, c.resource+" archive", "archive: %s; unarchive übersprungen (Objekt nicht archiviert)", archiveAnswer(a))
+				s.logf(t, "Fixture %s %s womöglich noch archiviert – Folgefehler möglich", c.resource, id)
 				return
 			}
 			u := s.run(t, "", c.resource, "unarchive", id, "-o", "json")
 			s.measuref(t, c.resource+" archive", "archive: %s; unarchive: %s", archiveAnswer(a), archiveAnswer(u))
 			if u.code != 0 {
+				s.quotaSkip(t, u, []string{c.resource, "unarchive"})
 				s.errorf(t, "%s unarchive %s: Exit %d\n%s", c.resource, id, u.code, u.stderr)
 				s.logf(t, "Fixture %s %s womöglich noch archiviert – Folgefehler möglich", c.resource, id)
 			}
@@ -170,6 +175,7 @@ func (s *liveSuite) bankRead(t *testing.T, resource, getOp, none string) {
 	s.need(t, 1)
 	r := s.run(t, "", resource, "list", "--limit", "1", "-o", "json")
 	if r.code != 0 {
+		s.quotaSkip(t, r, []string{resource, "list"})
 		s.fatalf(t, "%s list: Exit %d (%s)", resource, r.code, errorCode(r.stderr))
 	}
 	m := tryDecode(r.stdout)
@@ -192,6 +198,7 @@ func (s *liveSuite) bankRead(t *testing.T, resource, getOp, none string) {
 	}
 	s.need(t, 1)
 	if d := s.run(t, "", resource, "describe", ids(id), "-o", "json"); d.code != 0 {
+		s.quotaSkip(t, d, []string{resource, "describe"})
 		s.errorf(t, "%s describe (erster Eintrag): Exit %d (%s)", resource, d.code, errorCode(d.stderr))
 	}
 }

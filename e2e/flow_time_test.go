@@ -80,6 +80,7 @@ func TestE2E_TimeFlow(t *testing.T) {
 		s.logf(t, "angelegt: time %d (%s)", logged, logComment)
 	}
 	if r.code != 0 || logged == 0 {
+		s.quotaSkip(t, r, []string{"time", "log"})
 		s.fatalf(t, "time log: Exit %d, Eintrag %d\n%s", r.code, logged, r.stderr)
 	}
 
@@ -88,6 +89,7 @@ func TestE2E_TimeFlow(t *testing.T) {
 	s.need(t, 1)
 	r = s.runIn(t, dir, clock(30), "", "time", "list", "--since", "heute", "--until", "heute", "--limit", "100", "-o", "json")
 	if r.code != 0 {
+		s.quotaSkip(t, r, []string{"time", "list"})
 		s.fatalf(t, "time list --since heute --until heute: Exit %d\n%s", r.code, r.stderr)
 	}
 	found := false
@@ -101,8 +103,10 @@ func TestE2E_TimeFlow(t *testing.T) {
 	// 3. archive, unarchive (2), hard exit 0
 	s.need(t, 2)
 	if a := s.run(t, "", "time", "archive", ids(logged), "-o", "json"); a.code != 0 {
+		s.quotaSkip(t, a, []string{"time", "archive"})
 		s.errorf(t, "time archive: Exit %d\n%s", a.code, a.stderr)
 	} else if u := s.run(t, "", "time", "unarchive", ids(logged), "-o", "json"); u.code != 0 {
+		s.quotaSkip(t, u, []string{"time", "unarchive"})
 		s.errorf(t, "time unarchive: Exit %d\n%s", u.code, u.stderr)
 	}
 
@@ -129,6 +133,7 @@ func TestE2E_TimeFlow(t *testing.T) {
 		s.logf(t, "angelegt: time %d (%s)", stop, timerComment)
 	}
 	if r.code != 0 || stop == 0 {
+		s.quotaSkip(t, r, []string{"time", "stop"})
 		s.fatalf(t, "time stop: Exit %d, Eintrag %d\n%s", r.code, stop, r.stderr)
 	}
 	stopped(clock(8), "time stop")

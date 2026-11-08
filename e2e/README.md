@@ -29,9 +29,10 @@ gegenzubuchen (ob die API das zulässt, wird gemessen).
 `TestE2E_MasterDataArchive` archiviert eigene Stammdaten (Lieferant, Projekt,
 Aufgabe, Artikel, Datenfeld) und ein eigenes Angebot und holt sie gleich
 danach wieder aus dem Archiv, sofern `archive` sie archiviert haben kann (Exit
-0, 1 oder 12; nach einer Ablehnung oder 429 kein `unarchive`). Scheitert
-`unarchive`, steht „Fixture <ressource> <id> womöglich noch archiviert –
-Folgefehler möglich“ im Log. Bankverbindungen und Bankumsätze liest die Suite
+0, 1 oder 12; nach einer Ablehnung kein `unarchive`, nach 429 wird der
+Untertest übersprungen). Scheitert `unarchive` oder entfällt es nach einer
+Ablehnung von `archive`, steht „Fixture <ressource> <id> womöglich noch
+archiviert – Folgefehler möglich“ im Log. Bankverbindungen und Bankumsätze liest die Suite
 nur.
 
 ## Ausführen

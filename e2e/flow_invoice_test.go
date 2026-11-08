@@ -39,6 +39,7 @@ func TestE2E_InvoiceFlow(t *testing.T) {
 	s.need(t, 2)
 	r := s.run(t, "", "invoice", "deliver", id, "--via", "pdf", "--yes", "-o", "json")
 	if r.code != 0 {
+		s.quotaSkip(t, r, []string{"invoice", "deliver"})
 		s.errorf(t, "invoice deliver --via pdf: Exit %d\n%s", r.code, r.stderr)
 	} else {
 		d := s.decode(t, r.stdout)
@@ -53,6 +54,7 @@ func TestE2E_InvoiceFlow(t *testing.T) {
 	if x := lastExchange(r, "GET", "/pdf"); x != nil {
 		s.measuref(t, "invoice pdf", "HTTP %d, Content-Type %q, %d Bytes", x.Status, x.RespHeader.Get("Content-Type"), len(x.RespBody))
 	}
+	s.quotaSkip(t, r, []string{"invoice", "pdf"})
 	data, err := os.ReadFile(file)
 	switch {
 	case r.code != 0:
@@ -72,11 +74,13 @@ func TestE2E_InvoiceFlow(t *testing.T) {
 	// 5. archive, describe, unarchive (3), hard exit 0
 	s.need(t, 3)
 	if a := s.run(t, "", "invoice", "archive", id, "-o", "json"); a.code != 0 {
+		s.quotaSkip(t, a, []string{"invoice", "archive"})
 		s.errorf(t, "invoice archive: Exit %d\n%s", a.code, a.stderr)
 	} else {
 		m = s.ok(t, "", "invoice", "describe", id)
 		s.measuref(t, "invoice archive", "nach archive: record_state %q", str(m["record_state"]))
 		if u := s.run(t, "", "invoice", "unarchive", id, "-o", "json"); u.code != 0 {
+			s.quotaSkip(t, u, []string{"invoice", "unarchive"})
 			s.errorf(t, "invoice unarchive: Exit %d\n%s", u.code, u.stderr)
 		}
 	}

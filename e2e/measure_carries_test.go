@@ -47,6 +47,7 @@ func TestE2E_Carries(t *testing.T) {
 		s.need(t, 3)
 		desc := s.run(t, "", "invoice", "describe", ids(inv), "-o", "json")
 		if desc.code != 0 {
+			s.quotaSkip(t, desc, []string{"invoice", "describe"})
 			s.fatalf(t, "invoice describe: Exit %d\n%s", desc.code, desc.stderr)
 		}
 		before := s.decode(t, desc.stdout)
@@ -60,6 +61,7 @@ func TestE2E_Carries(t *testing.T) {
 				str(get(body, "customer", "id")), str(get(body, "customer", "contact_person", "id")), str(get(body, "customer", "project", "id")))
 		}
 		if r.code != 0 {
+			s.quotaSkip(t, r, []string{"invoice", "update"})
 			s.fatalf(t, "describe | update --input -: Exit %d\n%s", r.code, r.stderr)
 		}
 		after := s.ok(t, "", "invoice", "describe", ids(inv))
@@ -83,11 +85,13 @@ func TestE2E_Carries(t *testing.T) {
 		s.need(t, 3)
 		desc := s.run(t, "", "estimate", "describe", ids(est), "-o", "json")
 		if desc.code != 0 {
+			s.quotaSkip(t, desc, []string{"estimate", "describe"})
 			s.fatalf(t, "estimate describe: Exit %d\n%s", desc.code, desc.stderr)
 		}
 		r := s.run(t, desc.stdout, "estimate", "update", ids(est), "--input", "-", "-o", "json")
 		x := lastExchange(r, "PUT", "/income/estimates/"+ids(est))
 		if x == nil {
+			s.quotaSkip(t, r, []string{"estimate", "update"})
 			s.fatalf(t, "nicht geprüft: kein PUT gesendet (Exit %d)\n%s", r.code, r.stderr)
 		}
 		body := s.decode(t, string(x.ReqBody))
@@ -99,6 +103,7 @@ func TestE2E_Carries(t *testing.T) {
 			s.errorf(t, "nicht geprüft: der PUT enthielt nicht sent_on: null und sent_to: null")
 		}
 		if r.code != 0 {
+			s.quotaSkip(t, r, []string{"estimate", "update"})
 			s.errorf(t, "PUT mit sent_on/sent_to null abgelehnt: Exit %d\n%s", r.code, r.stderr)
 			return
 		}
@@ -113,6 +118,7 @@ func TestE2E_Carries(t *testing.T) {
 		s.need(t, 2)
 		r := s.run(t, `{"entertainment_persons":[]}`, "voucher", "update", ids(v), "--input", "-", "-o", "json")
 		if r.code != 0 {
+			s.quotaSkip(t, r, []string{"voucher", "update"})
 			s.errorf(t, "PUT mit entertainment_persons [] abgelehnt: Exit %d\n%s", r.code, r.stderr)
 			return
 		}
@@ -183,6 +189,7 @@ func TestE2E_Carries(t *testing.T) {
 		file := filepath.Join(t.TempDir(), "angebot.pdf")
 		r := s.run(t, "", "estimate", "pdf", ids(est), "-O", file, "-o", "json")
 		x := lastExchange(r, "GET", "/pdf")
+		s.quotaSkip(t, r, []string{"estimate", "pdf"})
 		if x == nil {
 			s.fatalf(t, "kein PDF-Request: Exit %d\n%s", r.code, r.stderr)
 		}
@@ -293,6 +300,7 @@ func TestE2E_Carries(t *testing.T) {
 				sent = fmt.Sprintf("%v", tryDecode(string(x.ReqBody))["ended_at_time"])
 			}
 			if r.code != 0 || m == nil {
+				s.quotaSkip(t, r, []string{"time", "log"})
 				s.errorf(t, "time log --from 23:00 --to %s: Exit %d, erwartet 0 (gesendet ended_at_time %s)\n%s", end, r.code, sent, r.stderr)
 				continue
 			}
@@ -332,6 +340,7 @@ func TestE2E_Carries(t *testing.T) {
 			s.measuref(t, "Rechnung gleicher Kunde", "gesendet Schlüssel %s", keyShape(lastBody(x)))
 		}
 		if r.code != 0 {
+			s.quotaSkip(t, r, []string{"invoice", "update"})
 			s.fatalf(t, "invoice update --customer (gleicher Kunde): Exit %d\n%s", r.code, r.stderr)
 		}
 		after := s.ok(t, "", "invoice", "describe", ids(inv))

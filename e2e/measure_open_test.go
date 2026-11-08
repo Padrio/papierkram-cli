@@ -130,6 +130,7 @@ func TestE2E_OpenMeasurements(t *testing.T) {
 		}
 		desc := s.run(t, "", "invoice", "describe", ids(inv), "-o", "json")
 		if desc.code != 0 {
+			s.quotaSkip(t, desc, []string{"invoice", "describe"})
 			s.fatalf(t, "invoice describe: Exit %d\n%s", desc.code, desc.stderr)
 		}
 		got := s.decode(t, desc.stdout)["supply_date"]

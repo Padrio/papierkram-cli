@@ -67,6 +67,7 @@ func TestE2E_VoucherFlow(t *testing.T) {
 		s.measuref(t, "voucher pdf", "HTTP %d, Content-Type %q, %d Bytes", x.Status, x.RespHeader.Get("Content-Type"), len(x.RespBody))
 	}
 	if r.code != 0 {
+		s.quotaSkip(t, r, []string{"voucher", "pdf"})
 		s.errorf(t, "voucher pdf: Exit %d\n%s", r.code, r.stderr)
 	} else if data, err := os.ReadFile(out); err != nil {
 		s.errorf(t, "voucher pdf: Datei nicht lesbar: %v", err)
@@ -78,6 +79,7 @@ func TestE2E_VoucherFlow(t *testing.T) {
 	if doc != 0 {
 		s.need(t, 1)
 		if d := s.run(t, "", "voucher", "document", "delete", id, ids(doc), "--yes", "-o", "json"); d.code != 0 {
+			s.quotaSkip(t, d, []string{"voucher", "document"})
 			s.errorf(t, "voucher document delete: Exit %d\n%s", d.code, d.stderr)
 		}
 	}
@@ -85,8 +87,10 @@ func TestE2E_VoucherFlow(t *testing.T) {
 	// 5. archive, unarchive (2), hard exit 0
 	s.need(t, 2)
 	if a := s.run(t, "", "voucher", "archive", id, "-o", "json"); a.code != 0 {
+		s.quotaSkip(t, a, []string{"voucher", "archive"})
 		s.errorf(t, "voucher archive: Exit %d\n%s", a.code, a.stderr)
 	} else if u := s.run(t, "", "voucher", "unarchive", id, "-o", "json"); u.code != 0 {
+		s.quotaSkip(t, u, []string{"voucher", "unarchive"})
 		s.errorf(t, "voucher unarchive: Exit %d\n%s", u.code, u.stderr)
 	}
 
