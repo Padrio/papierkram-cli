@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -32,16 +33,20 @@ func TestNoticesUpToDate(t *testing.T) {
 	if normalize(string(got)) != want {
 		t.Errorf("%s ist veraltet: go run ./tools/gennotices ausführen", output)
 	}
-	// the carries of task 45 name these explicitly
-	for _, s := range []string{
-		"| `github.com/cpuguy83/go-md2man/v2` | v2.0.6 | MIT |",
-		"| `github.com/russross/blackfriday/v2` | v2.1.0 | BSD-2-Clause |",
-		"| `github.com/rogpeppe/go-internal` | v1.16.0 | BSD-3-Clause |",
-		"papierkram-mcp-server",
+	// the carries of task 45 name these explicitly (module and license;
+	// the version follows go.mod, so a dependency update keeps this test)
+	for _, m := range []struct{ path, license string }{
+		{"github.com/cpuguy83/go-md2man/v2", "MIT"},
+		{"github.com/russross/blackfriday/v2", "BSD-2-Clause"},
+		{"github.com/rogpeppe/go-internal", "BSD-3-Clause"},
 	} {
-		if !strings.Contains(want, s) {
-			t.Errorf("%q fehlt", s)
+		re := regexp.MustCompile("\\| `" + regexp.QuoteMeta(m.path) + "` \\| v[^ |]+ \\| " + regexp.QuoteMeta(m.license) + " \\|")
+		if !re.MatchString(want) {
+			t.Errorf("Zeile für %s (%s) fehlt", m.path, m.license)
 		}
+	}
+	if !strings.Contains(want, "papierkram-mcp-server") {
+		t.Errorf("%q fehlt", "papierkram-mcp-server")
 	}
 }
 
