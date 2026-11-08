@@ -175,8 +175,13 @@ func TestCommandsJSONMatchesContract(t *testing.T) {
 		"Grenze bei Schalter": {func(d map[string]any) { flagOf(d, "invoice list", "all")["maximum"] = 1.0 }, `any schema from "anyOf"`,
 			flagItem.AllOf[2].Value, func(d map[string]any) any { return flagOf(d, "invoice list", "all") }},
 		"globaler shorthand null": {func(d map[string]any) { globalFlag(d, "output")["shorthand"] = nil }, "Value is not nullable", nil, nil},
-		"unbekannte Klasse":       {func(d map[string]any) { cmdOf(d, "version")["class"] = "write" }, "value is not one of the allowed values", nil, nil},
-		"Operation ohne Methode":  {func(d map[string]any) { delete(cmdOf(d, "invoice create"), "method") }, `property "method" is missing`, nil, nil},
+		// R3-M2: the enum of class itself rejects the value; want is its
+		// whole message with the complete list of classes (before, an
+		// anyOf branch of a oneOf matched the generic text)
+		"unbekannte Klasse": {func(d map[string]any) { cmdOf(d, "version")["class"] = "write" },
+			`value is not one of the allowed values ["read_only","create","update","archive","destructive","send","local","per_request"]`,
+			cmdItem.Properties["class"].Value, func(d map[string]any) any { return cmdOf(d, "version")["class"] }},
+		"Operation ohne Methode": {func(d map[string]any) { delete(cmdOf(d, "invoice create"), "method") }, `property "method" is missing`, nil, nil},
 		"lokal mit Credits": {func(d map[string]any) { cmdOf(d, "version")["credits"] = 1.0 }, `"/credits"`,
 			branch(1), func(d map[string]any) any { return cmdOf(d, "version") }},
 		"per_request mit Credits": {func(d map[string]any) { cmdOf(d, "api")["credits"] = 1.0 }, `"/credits"`,

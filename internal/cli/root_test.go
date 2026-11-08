@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -99,10 +100,13 @@ func TestVersionText(t *testing.T) {
 	if code := Run(app, []string{"version"}); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
-	for _, want := range []string{"papierkram", buildinfo.Version, buildinfo.Commit, buildinfo.Date} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("Ausgabe enthält %q nicht: %s", want, out.String())
-		}
+	// L37: the exact line, not only its parts
+	want := "papierkram " + buildinfo.Version + " (Commit " + buildinfo.Commit + ", Build " + buildinfo.Date + ", " + runtime.Version() + ")\n"
+	if out.String() != want {
+		t.Errorf("Ausgabe = %q, erwartet %q", out.String(), want)
+	}
+	if want != "papierkram dev (Commit none, Build unknown, "+runtime.Version()+")\n" {
+		t.Errorf("Standardwerte von buildinfo geändert: %q", want)
 	}
 }
 
@@ -383,6 +387,11 @@ func TestFlagErrorsFullyGerman(t *testing.T) {
 	app, _, errb = newTestApp(t)
 	Run(app, []string{"---x"})
 	if errb.String() != "Fehler: ungültige Flag-Syntax: ---x\nHinweis: Verwendung: papierkram [Optionen]\n" {
+		t.Errorf("stderr = %q", errb.String())
+	}
+	app, _, errb = newTestApp(t)
+	Run(app, []string{"-x"})
+	if errb.String() != "Fehler: unbekanntes Kurz-Flag: 'x' in -x\nHinweis: Verwendung: papierkram [Optionen]\n" {
 		t.Errorf("stderr = %q", errb.String())
 	}
 	app, _, errb = newTestApp(t)
