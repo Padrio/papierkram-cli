@@ -7,6 +7,8 @@ Kontaktperson anzeigen.
 
 Kosten: 1 Credit je Anfrage.
 
+Ohne --company gilt PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (anlegen: papierkram local init).
+
 Verwendung:
   papierkram person describe <id> [Optionen]
 
@@ -15,7 +17,7 @@ Beispiele:
   papierkram person describe 1063 --company 2862 -o yaml
 
 Optionen:
-      --company Zahl   ID des übergeordneten Objekts (company_id, Pflicht)
+      --company Zahl   ID des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)
   -h, --help           Hilfe zu describe
 
 Globale Optionen:

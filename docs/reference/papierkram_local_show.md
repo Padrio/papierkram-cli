@@ -3,7 +3,7 @@
 Wirksame Werte mit Herkunft anzeigen
 
 ```text
-Zeigt Kontext, Firma, Projekt, Aufgabe und Benutzer, wie sie in diesem Verzeichnis gelten, mit Herkunft: flag, env, projectfile, config (active_context), context (Standard des Kontexts, nur user) oder default (nicht gesetzt). Gilt die Projektdatei für einen anderen Kontext als den wirksamen, werden ihre Werte ignoriert; das steht in der Ausgabe. Sendet keine Anfrage.
+Zeigt Kontext, Firma (genutzt von person … --company), Projekt, Aufgabe und Benutzer, wie sie in diesem Verzeichnis gelten, mit Herkunft: flag, env, projectfile, config (active_context), context (Standard des Kontexts, nur user) oder default (nicht gesetzt). Gilt die Projektdatei für einen anderen Kontext als den wirksamen, werden ihre Werte ignoriert; das steht in der Ausgabe. Sendet keine Anfrage.
 
 Verwendung:
   papierkram local show [Optionen]

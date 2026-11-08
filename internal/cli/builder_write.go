@@ -172,9 +172,10 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 	}
 }
 
-// runWrite sends create or update (spec 6, 6.3a). Order (plan): arguments
-// and flag combinations (exit 2), configuration and read-only gate
-// (mutationClient, exit 9, before anything is read), body (buildBodyFrom:
+// runWrite sends create or update (spec 6, 6.3a). Order (plan): arguments,
+// flag combinations and a preset path flag (exit 2), configuration and
+// read-only gate (mutationClient, exit 9, before anything is read), body
+// (buildBodyFrom:
 // exit 2/5), --dry-run and confirmation (beforeMutation), then the request. Output is the API object; an empty
 // response prints {"id":N,"ok":true} on update and {"ok":true} with a
 // warning on create.
@@ -212,10 +213,6 @@ type writeSteps struct {
 
 // runWriteThen is runWrite with the steps s.
 func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s writeSteps) error {
-	params, err := pathValues(c, e, args)
-	if err != nil {
-		return err
-	}
 	isUpdate := e.Action == "update"
 	ws := newWriteSpec(e)
 	if ws.err != nil {
@@ -228,6 +225,14 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 		if err := s.from.check(c, ws); err != nil {
 			return err
 		}
+	}
+	// after the flag checks, before the read-only gate (exit 2 first): a
+	// preset path flag (person create --company) reads environment,
+	// project file and configuration, whose errors must not hide a flag
+	// error
+	params, err := a.pathValues(c, e, args)
+	if err != nil {
+		return err
 	}
 	up := s.up
 	run, extras := e, sendExtras{}

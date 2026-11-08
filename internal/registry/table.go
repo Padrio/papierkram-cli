@@ -403,6 +403,7 @@ var table = []Entry{
 			"papierkram person list --company 2843",
 			"papierkram person list --company 2843 -o json",
 		},
+		Preset: "company",
 	},
 	{
 		Resource: "person", Action: "create", OperationID: "CreatePerson",
@@ -413,6 +414,7 @@ var table = []Entry{
 			"papierkram person create --company 2843 --first-name Anna --last-name Groß --email anna@example.org",
 			"papierkram person create --company 2843 --first-name Jörg --last-name Weiß --default",
 		},
+		Preset: "company",
 	},
 	{
 		Resource: "person", Action: "describe", OperationID: "GetPerson",
@@ -423,6 +425,7 @@ var table = []Entry{
 			"papierkram person describe 1063 --company 2862",
 			"papierkram person describe 1063 --company 2862 -o yaml",
 		},
+		Preset: "company",
 	},
 	{
 		Resource: "person", Action: "update", OperationID: "UpdatePerson",
@@ -433,6 +436,7 @@ var table = []Entry{
 			"papierkram person update 1063 --company 2862 --position Einkauf",
 			"papierkram person update 1063 --company 2862 --flagged=false",
 		},
+		Preset: "company",
 	},
 	{
 		Resource: "person", Action: "delete", OperationID: "DeletePerson",
@@ -442,6 +446,7 @@ var table = []Entry{
 			"papierkram person delete 1063 --company 2862",
 			"papierkram person delete 1063 --company 2862 --yes",
 		},
+		Preset: "company",
 	},
 	// 17–29
 	{

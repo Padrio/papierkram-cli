@@ -117,7 +117,7 @@ func (a *App) newPayCmd(e registry.Entry) *cobra.Command {
 // --yes), then the request. Output is the API object (the voucher); an
 // empty answer prints {"id":N,"ok":true}.
 func (a *App) runPay(c *cobra.Command, e registry.Entry, args []string) error {
-	params, err := pathValues(c, e, args)
+	params, err := a.pathValues(c, e, args)
 	if err != nil {
 		return err
 	}

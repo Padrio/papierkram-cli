@@ -44,11 +44,13 @@ type Filter struct {
 // is empty for a resource that is a command itself (info). Custom marks
 // commands with their own handler instead of the generic builder.
 //
-// Preset names a project file key (spec 9.8: "project") whose value the
-// command uses when it is not given: the positional ID of describe, which
-// becomes optional, or the list filter flag or create field flag of that
-// name. A flag (or the ID) always wins, then PAPIERKRAM_<KEY>, then the
-// project file.
+// Preset names a project file key (spec 9.8: "project", "company") whose
+// value the command uses when it is not given: the positional ID of
+// describe when the key is the entry's own resource (project describe),
+// which becomes optional; the path flag of that name (person … --company,
+// open point 27), which stays required but may come from the preset; or
+// the list filter flag or create field flag of that name. A flag (or the
+// ID) always wins, then PAPIERKRAM_<KEY>, then the project file.
 type Entry struct {
 	Resource, Action, OperationID, Method, Path string
 	Class                                       Class

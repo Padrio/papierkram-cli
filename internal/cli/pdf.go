@@ -65,7 +65,7 @@ type pdfSaved struct {
 // partial file and an existing file untouched. A device (/dev/null) is
 // written directly.
 func (a *App) runPDF(c *cobra.Command, e registry.Entry, args []string) error {
-	params, err := pathValues(c, e, args)
+	params, err := a.pathValues(c, e, args)
 	if err != nil {
 		return err
 	}

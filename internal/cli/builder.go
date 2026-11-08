@@ -12,6 +12,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/output"
+	"github.com/Padrio/papierkram-cli/internal/projectfile"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 )
 
@@ -150,7 +151,7 @@ func (a *App) newEntryCmd(e registry.Entry) *cobra.Command {
 	}
 	positional := len(params) > 0 && params[len(params)-1].flag == ""
 	switch {
-	case positional && kind == kindDescribe && e.Preset != "":
+	case positional && kind == kindDescribe && presetsID(e):
 		// spec 9.8: without ID the preset (project file) decides
 		cmd.Use += " [<id>]"
 		cmd.Args = optionalIDArgs
@@ -161,7 +162,15 @@ func (a *App) newEntryCmd(e registry.Entry) *cobra.Command {
 		cmd.Args = noArgs
 	}
 	for _, p := range params {
-		if p.flag != "" {
+		switch {
+		case p.flag != "" && p.flag == e.Preset:
+			// open point 27: required, but PAPIERKRAM_<KEY> or the project
+			// file may give it (pathValues, before the configuration is
+			// resolved: no context default)
+			cmd.Flags().Int64(p.flag, 0, fmt.Sprintf("ID des übergeordneten Objekts (%s); ohne Angabe %s (Pflicht)", p.name, presetNote(e.Preset)))
+			markRequired(cmd.Flags(), p.flag)
+			markPreset(cmd.Flags(), p.flag, e.Preset, false)
+		case p.flag != "":
 			cmd.Flags().Int64(p.flag, 0, fmt.Sprintf("ID des übergeordneten Objekts (%s, Pflicht)", p.name))
 			markRequired(cmd.Flags(), p.flag)
 		}
@@ -226,7 +235,7 @@ func entryLong(e registry.Entry) string {
 	long += "."
 	if e.Preset != "" {
 		given := "--" + e.Preset
-		if e.Action == "describe" {
+		if presetsID(e) {
 			given = "die ID"
 		}
 		long += fmt.Sprintf("\n\nOhne %s gilt %s (anlegen: papierkram local init).", given, presetNote(e.Preset))
@@ -310,14 +319,40 @@ func optionalIDArgs(c *cobra.Command, args []string) error {
 	return idArgs(c, args)
 }
 
+// presetsID reports whether the preset of e is the positional ID of its
+// describe (spec 9.8: project describe without ID); any other preset sets
+// a flag (see pathValues, presetQuery, presetBody) and keeps the ID
+// required.
+func presetsID(e registry.Entry) bool {
+	return e.Preset != "" && e.Preset == e.Resource && e.Action == "describe"
+}
+
 // pathValues collects the path parameter values of e in template order:
-// required flags for all but the positional ID, which is args[0].
-func pathValues(c *cobra.Command, e registry.Entry, args []string) ([]int64, error) {
+// required flags for all but the positional ID, which is args[0]. The
+// flag of e's preset (person … --company, open point 27) comes, when not
+// given, from the preset like the other presets: PAPIERKRAM_<KEY>, then
+// the project file (presetFile), no context default; its hint is queued
+// for flushPresetHints. Without a value it is a usage error (exit 2).
+func (a *App) pathValues(c *cobra.Command, e registry.Entry, args []string) ([]int64, error) {
 	params := pathParamsOf(e)
 	values := make([]int64, len(params))
 	for i, p := range params {
 		if p.flag == "" {
 			values[i], _ = parseID(args[0]) // checked by idArgs
+			continue
+		}
+		if !c.Flags().Changed(p.flag) && p.flag == e.Preset {
+			pr, err := a.preset(e.Preset)
+			if err != nil {
+				return nil, err
+			}
+			if pr.Source == "" {
+				return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("Pflichtangabe --%s fehlt", p.flag),
+					fmt.Sprintf("--%[1]s angeben oder voreinstellen: %[2]s oder %[1]s in %[3]s (papierkram local init --%[1]s <id>)",
+						e.Preset, presetEnv(e.Preset), projectfile.FileName))
+			}
+			a.presetHint(e.Preset, pr)
+			values[i] = pr.ID
 			continue
 		}
 		if !c.Flags().Changed(p.flag) {

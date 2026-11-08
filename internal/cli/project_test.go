@@ -500,7 +500,8 @@ func TestTaskCreateUsesProjectFile(t *testing.T) {
 }
 
 // Every preset of the registry is a flag of its built command (create
-// field flag, list filter) or the optional ID of describe.
+// field flag, list filter, path flag) or the optional ID of describe of
+// its own resource (project describe).
 func TestPresetFlagsExist(t *testing.T) {
 	app, _ := apiApp(t)
 	root := NewRootCmd(app)
@@ -515,10 +516,10 @@ func TestPresetFlagsExist(t *testing.T) {
 			t.Errorf("%s %s: Befehl fehlt", e.Resource, e.Action)
 			continue
 		}
-		if !strings.Contains(cmd.Long, "PAPIERKRAM_PROJECT oder project aus der Projektdatei") {
+		if !strings.Contains(cmd.Long, presetNote(e.Preset)) {
 			t.Errorf("%s %s: Hilfe nennt die Voreinstellung nicht: %q", e.Resource, e.Action, cmd.Long)
 		}
-		if e.Action == "describe" {
+		if presetsID(e) {
 			if !strings.Contains(cmd.Use, "[<id>]") {
 				t.Errorf("%s describe: Use = %q", e.Resource, cmd.Use)
 			}

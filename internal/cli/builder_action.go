@@ -29,7 +29,7 @@ func (a *App) runDescribe(c *cobra.Command, e registry.Entry, args []string) err
 	if err != nil {
 		return err
 	}
-	params, err := pathValues(c, e, args)
+	params, err := a.pathValues(c, e, args)
 	if err != nil {
 		return err
 	}
@@ -46,14 +46,15 @@ func (a *App) runDescribe(c *cobra.Command, e registry.Entry, args []string) err
 }
 
 // runSimpleAction sends delete, archive, unarchive, cancel or reverse for
-// one object. Order: arguments (exit 2), configuration and read-only gate
-// (mutationClient, exit 9), --dry-run and confirmation (beforeMutation),
-// then the request. delete prints {"id":N,"deleted":true}; another action prints
+// one object. Order: arguments and a preset path flag (exit 2),
+// configuration and read-only gate (mutationClient, exit 9), the preset
+// hint, --dry-run and confirmation (beforeMutation), then the request.
+// delete prints {"id":N,"deleted":true}; another action prints
 // the API object, or {"id":N,"ok":true} when the body is empty (R03: an
 // empty 2xx body is never an error). Without --fields, table and wide show
 // a German sentence instead.
 func (a *App) runSimpleAction(c *cobra.Command, e registry.Entry, args []string) error {
-	params, err := pathValues(c, e, args)
+	params, err := a.pathValues(c, e, args)
 	if err != nil {
 		return err
 	}
@@ -61,6 +62,7 @@ func (a *App) runSimpleAction(c *cobra.Command, e registry.Entry, args []string)
 	if err != nil {
 		return err
 	}
+	a.flushPresetHints()
 	if proceed, err := a.beforeMutation(c, e, client, params, nil); !proceed || err != nil {
 		return err
 	}

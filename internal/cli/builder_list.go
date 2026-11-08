@@ -308,11 +308,14 @@ func (a *App) datetimeValue(cc spec.CoerceContext, field spec.Field, end bool, r
 // runList lists one page, or with --all every page merged into one
 // envelope (spec 10.3).
 func (a *App) runList(c *cobra.Command, e registry.Entry) error {
-	params, err := pathValues(c, e, nil)
+	lr, err := a.parseListFlags(c, e)
 	if err != nil {
 		return err
 	}
-	lr, err := a.parseListFlags(c, e)
+	// after the flags, like the preset filter: resolving a preset path
+	// flag (person list --company) reads environment, project file and
+	// configuration, whose errors must not hide a flag error (exit 2)
+	params, err := a.pathValues(c, e, nil)
 	if err != nil {
 		return err
 	}

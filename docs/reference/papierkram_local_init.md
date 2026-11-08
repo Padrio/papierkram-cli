@@ -7,6 +7,8 @@ Schreibt Werte in die Projektdatei .papierkram.toml: in die gefundene Datei, son
 
 Im Terminal ohne Flags fragt der Befehl jeden Wert ab (Enter behält den bisherigen). Ohne Terminal oder mit --no-input sind Flags nötig. --context nennt hier den Kontext, für den die Datei gilt. Unter PAPIERKRAM_READ_ONLY ist der Befehl gesperrt.
 
+Die Werte belegen Flags vor: company (genutzt von person … --company), project (task list|create, time list, project describe ohne ID), task und user (time log, time start).
+
 Verwendung:
   papierkram local init [Optionen]
 

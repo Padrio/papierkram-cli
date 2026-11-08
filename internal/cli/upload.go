@@ -82,7 +82,7 @@ func idsArgs(n int) cobra.PositionalArgs {
 // (beforeSend), then the request. Output is the API object (the document);
 // an empty answer prints {"id":N,"ok":true} with the voucher ID.
 func (a *App) runUpload(c *cobra.Command, e registry.Entry, args []string) error {
-	params, err := pathValues(c, e, args)
+	params, err := a.pathValues(c, e, args)
 	if err != nil {
 		return err
 	}

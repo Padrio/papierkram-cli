@@ -7,6 +7,8 @@ Kontaktpersonen einer Firma auflisten.
 
 Kosten: 1 Credit je Anfrage (mit --all je geladener Seite; ab 10 Seiten fragt --all im Terminal nach).
 
+Ohne --company gilt PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (anlegen: papierkram local init).
+
 Verwendung:
   papierkram person list [Optionen]
 
@@ -16,7 +18,7 @@ Beispiele:
 
 Optionen:
       --all              alle Seiten laden und zusammenführen (1 Anfrage je Seite)
-      --company Zahl     ID des übergeordneten Objekts (company_id, Pflicht)
+      --company Zahl     ID des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)
       --desc             absteigend sortieren (nur mit --sort)
   -h, --help             Hilfe zu list
       --limit Zahl       Einträge pro Seite, 1–100 (--all ohne --limit: 100) (Standard: 25)

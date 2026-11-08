@@ -63,7 +63,9 @@ func newLocalInitCmd(app *App) *cobra.Command {
 			"Nur die angegebenen Schlüssel ändern sich; andere Schlüssel und [tasks] bleiben, Kommentare und Formatierung gehen beim Schreiben verloren.\n\n" +
 			"Im Terminal ohne Flags fragt der Befehl jeden Wert ab (Enter behält den bisherigen). " +
 			"Ohne Terminal oder mit --no-input sind Flags nötig. --context nennt hier den Kontext, für den die Datei gilt. " +
-			"Unter PAPIERKRAM_READ_ONLY ist der Befehl gesperrt.",
+			"Unter PAPIERKRAM_READ_ONLY ist der Befehl gesperrt.\n\n" +
+			"Die Werte belegen Flags vor: company (genutzt von person … --company), project (task list|create, time list, project describe ohne ID), " +
+			"task und user (time log, time start).",
 		Example: "  papierkram local init --project 4963 --task 545\n" +
 			"  papierkram local init --context firma-gmbh --company 3352 --user 1\n" +
 			"  papierkram local init --task tickets",
@@ -337,7 +339,7 @@ func newLocalShowCmd(app *App) *cobra.Command {
 		Use:         "show",
 		Annotations: readsOnly(),
 		Short:       "Wirksame Werte mit Herkunft anzeigen",
-		Long: "Zeigt Kontext, Firma, Projekt, Aufgabe und Benutzer, wie sie in diesem Verzeichnis gelten, mit Herkunft: " +
+		Long: "Zeigt Kontext, Firma (genutzt von person … --company), Projekt, Aufgabe und Benutzer, wie sie in diesem Verzeichnis gelten, mit Herkunft: " +
 			"flag, env, projectfile, config (active_context), context (Standard des Kontexts, nur user) oder default (nicht gesetzt). " +
 			"Gilt die Projektdatei für einen anderen Kontext als den wirksamen, werden ihre Werte ignoriert; das steht in der Ausgabe. Sendet keine Anfrage.",
 		Example: "  papierkram local show\n  papierkram local show --context firma-gmbh -o json",

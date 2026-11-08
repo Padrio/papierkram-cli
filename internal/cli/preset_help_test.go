@@ -8,12 +8,13 @@ import (
 )
 
 // Review M3: the flag help names the preset sources exactly once, from
-// one text (presetNote), for list filters and create fields alike.
+// one text (presetNote), for list filters, create fields and path flags
+// (person … --company) alike.
 func TestPresetFlagHelpFromOneText(t *testing.T) {
 	app, _ := apiApp(t)
 	root := NewRootCmd(app)
 	for _, e := range registry.Entries() {
-		if e.Preset == "" || e.Action == "describe" {
+		if e.Preset == "" || presetsID(e) {
 			continue
 		}
 		for _, f := range e.Filters {

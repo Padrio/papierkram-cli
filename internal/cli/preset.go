@@ -245,11 +245,13 @@ func withPresetHint(err error, key string) error {
 	return &ce
 }
 
-// presetArgs returns args with the positional ID of a describe entry with
-// a preset filled in when it is missing (spec 9.8: project describe
-// without ID). Without a preset value it is a usage error (exit 2).
+// presetArgs returns args with the positional ID of a describe entry
+// whose preset is its own resource filled in when it is missing (spec
+// 9.8: project describe without ID; presetsID). Without a preset value it
+// is a usage error (exit 2). Another preset (person describe: company)
+// sets its flag in pathValues; the ID stays required.
 func (a *App) presetArgs(c *cobra.Command, e registry.Entry, args []string) ([]string, error) {
-	if len(args) > 0 || e.Preset == "" {
+	if len(args) > 0 || !presetsID(e) {
 		return args, nil
 	}
 	p, err := a.preset(e.Preset)

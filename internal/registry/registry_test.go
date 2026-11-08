@@ -829,11 +829,13 @@ func TestProjectTaskCustomAttributeColumns(t *testing.T) {
 }
 
 // Spec 9.8: project describe without ID, task list, task create and time
-// list take the project from the project file; no other command has a
-// registry preset (time log and the timer are custom commands that
-// resolve task and user themselves).
+// list take the project from the project file, the person commands their
+// --company (open point 27); no other command has a registry preset
+// (time log and the timer are custom commands that resolve task and user
+// themselves).
 func TestProjectFilePresets(t *testing.T) {
-	want := map[string]string{"project describe": "project", "task list": "project", "task create": "project", "time list": "project"}
+	want := map[string]string{"project describe": "project", "task list": "project", "task create": "project", "time list": "project",
+		"person list": "company", "person create": "company", "person describe": "company", "person update": "company", "person delete": "company"}
 	for _, e := range Entries() {
 		name := strings.TrimSpace(e.Resource + " " + e.Action)
 		if e.Preset != want[name] {
@@ -843,8 +845,10 @@ func TestProjectFilePresets(t *testing.T) {
 }
 
 // A preset is a project file key (spec 9.8) and only exists where the
-// builder applies it: the positional ID of describe, a list filter flag of
-// that name, or create (whose field flag the CLI tests check).
+// builder applies it: a path flag of that name ({company_id} → --company,
+// any action), the positional ID of describe of its own resource, a list
+// filter flag of that name, or create (whose field flag the CLI tests
+// check).
 func TestPresetsAreApplicable(t *testing.T) {
 	keys := []string{"company", "project", "task", "user"}
 	for _, e := range Entries() {
@@ -855,8 +859,14 @@ func TestPresetsAreApplicable(t *testing.T) {
 		if !slices.Contains(keys, e.Preset) {
 			t.Errorf("%s: Preset %q is no project file key %v", name, e.Preset, keys)
 		}
+		if strings.Contains(e.Path, "{"+e.Preset+"_id}") {
+			continue // the path flag
+		}
 		switch e.Action {
 		case "describe":
+			if e.Preset != e.Resource {
+				t.Errorf("%s: Preset %q on describe of another resource", name, e.Preset)
+			}
 			if !strings.HasSuffix(e.Path, "{id}") {
 				t.Errorf("%s: Preset on describe without positional {id}", name)
 			}

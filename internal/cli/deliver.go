@@ -114,7 +114,7 @@ func deliverModes(e registry.Entry) []string {
 // readback decides: sent_on today → exit 0 with a warning, else exit 12 (R37,
 // see deliverUnknown).
 func (a *App) runDeliver(c *cobra.Command, e registry.Entry, args []string) error {
-	params, err := pathValues(c, e, args)
+	params, err := a.pathValues(c, e, args)
 	if err != nil {
 		return err
 	}
