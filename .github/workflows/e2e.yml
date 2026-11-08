@@ -43,6 +43,14 @@ jobs:
           PAPIERKRAM_E2E_SUBDOMAIN: ${{ secrets.PAPIERKRAM_E2E_SUBDOMAIN }}
           PAPIERKRAM_E2E_SANDBOX_CONFIRM: ${{ inputs.sandbox_confirm }}
         run: |
+          # a secret saved with a line break (or blanks) never equals the
+          # input, and the suite compares exactly as well: name the cause
+          case "$PAPIERKRAM_E2E_SUBDOMAIN" in
+            *[[:space:]]*)
+              echo "Secret PAPIERKRAM_E2E_SUBDOMAIN enthält einen Zeilenumbruch oder Leerraum: ohne ihn neu speichern." >&2
+              exit 1
+              ;;
+          esac
           if [ -z "$PAPIERKRAM_E2E_SUBDOMAIN" ] || [ "$PAPIERKRAM_E2E_SANDBOX_CONFIRM" != "$PAPIERKRAM_E2E_SUBDOMAIN" ]; then
             echo "Bestätigung stimmt nicht mit dem Secret PAPIERKRAM_E2E_SUBDOMAIN überein (oder Secret fehlt)." >&2
             exit 1
@@ -59,11 +67,14 @@ jobs:
           go test -count=1 -timeout 25m -tags e2e -v ./e2e/... 2>&1 | tee e2e.log
       # The suite redacts the token; this check is the second line of
       # defence before the log leaves the runner (the repository is
-      # public, so are its artifacts). The sandbox subdomain is replaced
-      # by <sandbox> (fixed string, any case; perl reads it from the
-      # environment), then neither token nor subdomain may be left. Both
-      # go to grep as a pattern file (process substitution), never as an
-      # argument. An empty secret cannot be checked: log deleted.
+      # public, so are its artifacts). The token is looked for before and
+      # after the sandbox subdomain is replaced by <sandbox> (fixed string,
+      # any case; perl reads it from the environment): a token that
+      # contains the subdomain would be cut by the replacement. Then
+      # neither token nor subdomain may be left. Both go to grep as a
+      # pattern file (process substitution), never as an argument. An
+      # empty secret cannot be checked, a grep or sed error proves nothing:
+      # log deleted, step failed.
       - name: token check
         id: tokencheck
         if: always()
@@ -72,52 +83,67 @@ jobs:
           PAPIERKRAM_E2E_TOKEN: ${{ secrets.PAPIERKRAM_E2E_TOKEN }}
           PAPIERKRAM_E2E_SUBDOMAIN: ${{ secrets.PAPIERKRAM_E2E_SUBDOMAIN }}
         run: |
+          stripped=""
+          # delete the log, name the reason, fail the step (no summary, no upload)
+          reject() {
+            rm -f e2e.log ${stripped:+"$stripped"}
+            echo "$1: Log gelöscht, kein Upload" >&2
+            exit 1
+          }
+          # look NAME PATTERN FILE [-i]: rejects on a hit (grep exit 0) and
+          # on a grep error (exit 2); only exit 1 means nothing was found
+          look() {
+            local rc=0
+            grep -qF "${@:4}" -f <(printf '%s\n' "$2") -- "$3" || rc=$?
+            case "$rc" in
+              0) reject "$1 im Log gefunden" ;;
+              1) ;;
+              *) reject "Log nicht auf $1 geprüft (grep-Fehler)" ;;
+            esac
+          }
           if [ ! -f e2e.log ]; then
             echo "clean=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ -z "$PAPIERKRAM_E2E_TOKEN" ]; then
-            rm -f e2e.log
-            echo "Token-Secret leer: Log gelöscht, kein Upload" >&2
-            exit 1
+          # trailing line breaks (CR, LF) of the secret are no part of the
+          # token: an empty last pattern line would match every log line
+          token="$PAPIERKRAM_E2E_TOKEN"
+          while [[ $token == *[$'\r\n'] ]]; do token="${token%?}"; done
+          [ -n "$token" ] || reject "Token-Secret leer"
+          if [[ $token == *[$'\r\n']* ]]; then
+            reject "Token-Secret enthält einen Zeilenumbruch"
           fi
           # the suite logs the subdomain trimmed and in lower case
           SANDBOX_SUB="${PAPIERKRAM_E2E_SUBDOMAIN//[[:space:]]/}"
-          if [ -z "$SANDBOX_SUB" ]; then
-            rm -f e2e.log
-            echo "Subdomain-Secret leer: Log gelöscht, kein Upload" >&2
-            exit 1
-          fi
+          [ -n "$SANDBOX_SUB" ] || reject "Subdomain-Secret leer"
           export SANDBOX_SUB
+          look Token "$token" e2e.log
           if ! perl -i -pe 'BEGIN { $s = $ENV{SANDBOX_SUB}; die "leer\n" if $s eq "" } s/\Q$s\E/<sandbox>/gi' e2e.log; then
-            rm -f e2e.log
-            echo "Subdomain nicht geschwärzt: Log gelöscht, kein Upload" >&2
-            exit 1
+            reject "Subdomain nicht geschwärzt"
           fi
-          hits="$(grep -cFf <(printf '%s\n' "$PAPIERKRAM_E2E_TOKEN") e2e.log || true)"
-          if [ "$hits" != "0" ]; then
-            rm -f e2e.log
-            echo "Token im Log gefunden: Log gelöscht, kein Upload" >&2
-            exit 1
-          fi
-          # without the placeholders, so a subdomain such as "box" still passes
-          hits="$(sed 's/<sandbox>//g' e2e.log | grep -ciFf <(printf '%s\n' "$SANDBOX_SUB") || true)"
-          if [ "$hits" != "0" ]; then
-            rm -f e2e.log
-            echo "Subdomain im Log gefunden: Log gelöscht, kein Upload" >&2
-            exit 1
-          fi
+          look Token "$token" e2e.log
+          # without the placeholders, so a subdomain such as "box" still
+          # passes; through a file, so a failing sed cannot look clean
+          stripped="$(mktemp "$RUNNER_TEMP/e2e-check.XXXXXX")" || reject "Prüfdatei nicht angelegt"
+          sed 's/<sandbox>//g' e2e.log > "$stripped" || reject "Log ohne Platzhalter nicht gelesen (sed-Fehler)"
+          look Subdomain "$SANDBOX_SUB" "$stripped" -i
+          rm -f "$stripped"
           echo "clean=true" >> "$GITHUB_OUTPUT"
       - name: summary
         if: always() && steps.tokencheck.outputs.clean == 'true'
         shell: bash
         run: |
+          lines="$(grep -E 'ABDECKUNG|ABWEICHUNG|Credits:' e2e.log || true)"
+          # the fence is longer than every run of backticks in the lines,
+          # so no log line can close the block
+          fence='````'
+          while [[ $lines == *"$fence"* ]]; do fence="$fence\`"; done
           {
             echo '## E2E-Ergebnis'
             echo
-            echo '```text'
-            grep -E 'ABDECKUNG|ABWEICHUNG|Credits:' e2e.log || true
-            echo '```'
+            echo "${fence}text"
+            if [ -n "$lines" ]; then printf '%s\n' "$lines"; fi
+            echo "$fence"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: log artifact
         if: always() && steps.tokencheck.outputs.clean == 'true'
