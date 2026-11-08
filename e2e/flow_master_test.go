@@ -14,11 +14,15 @@ import (
 // and unarchive (2), hard exit 0; measured: what each answer is (the
 // record_state of the object, or the empty answer {"id":N,"ok":true}).
 //
-// unarchive runs even after a failed archive (an exit 12 may have
-// archived the object), so every object is active again afterwards:
-// later tests use them (TimeFlow and Carries the task, VoucherFlow the
-// supplier, Carries the estimate). In a full run every object exists
-// already (fixtures of earlier tests).
+// unarchive runs after an archive that may have archived the object
+// (exit 0, 1 or 12; mayBeArchived), so every object is active again
+// afterwards: later tests use them (TimeFlow and Carries the task,
+// VoucherFlow the supplier, Carries the estimate). After any other exit
+// (an API error such as 4xx, 429, or nothing sent) it is skipped and the
+// MESSUNG says so: no second error, no request after a 429. A failed
+// unarchive logs one line "Fixture <res> <id> womöglich noch archiviert –
+// Folgefehler möglich", so later failures can be traced back to it. In a
+// full run every object exists already (fixtures of earlier tests).
 func TestE2E_MasterDataArchive(t *testing.T) {
 	s := live(t)
 	idf := func(f func(*testing.T) map[string]any) func(*testing.T) int64 {
@@ -40,17 +44,28 @@ func TestE2E_MasterDataArchive(t *testing.T) {
 			id := ids(c.id(t)) // creates the object if needed
 			s.need(t, 2)
 			a := s.run(t, "", c.resource, "archive", id, "-o", "json")
-			u := s.run(t, "", c.resource, "unarchive", id, "-o", "json")
-			s.measuref(t, c.resource+" archive", "archive: %s; unarchive: %s", archiveAnswer(a), archiveAnswer(u))
 			if a.code != 0 {
 				s.errorf(t, "%s archive %s: Exit %d\n%s", c.resource, id, a.code, a.stderr)
 			}
+			if !mayBeArchived(a.code) {
+				s.measuref(t, c.resource+" archive", "archive: %s; unarchive übersprungen (Objekt nicht archiviert)", archiveAnswer(a))
+				return
+			}
+			u := s.run(t, "", c.resource, "unarchive", id, "-o", "json")
+			s.measuref(t, c.resource+" archive", "archive: %s; unarchive: %s", archiveAnswer(a), archiveAnswer(u))
 			if u.code != 0 {
-				s.errorf(t, "%s unarchive %s: Exit %d (Objekt womöglich noch archiviert)\n%s", c.resource, id, u.code, u.stderr)
+				s.errorf(t, "%s unarchive %s: Exit %d\n%s", c.resource, id, u.code, u.stderr)
+				s.logf(t, "Fixture %s %s womöglich noch archiviert – Folgefehler möglich", c.resource, id)
 			}
 		})
 	}
 }
+
+// mayBeArchived reports whether an archive that ended with code may have
+// archived the object: exit 0 (done), 1 (unexpected error or 5xx, or
+// only the output failed) and 12 (outcome unknown). Every other exit
+// means the API refused it (4xx, 429) or nothing was sent.
+func mayBeArchived(code int) bool { return code == 0 || code == 1 || code == 12 }
 
 // archiveAnswer is what an archive or unarchive run shows: the HTTP
 // status, then the record_state of the object in its output, the empty

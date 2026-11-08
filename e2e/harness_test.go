@@ -161,9 +161,16 @@ func (s *liveSuite) runIn(t *testing.T, dir string, now func() time.Time, stdin 
 	t.Helper()
 	r := s.execAt(dir, now, stdin, args...)
 	if s.red.Contains(r.stdout) || s.red.Contains(r.stderr) {
-		s.errorf(t, "CLI-Ausgabe von %q enthält das Token", strings.Join(args, " "))
+		// only the command (resource and action): no ids or values
+		s.errorf(t, "CLI-Ausgabe von %q enthält das Token", commandOf(args))
 	}
 	return r
+}
+
+// commandOf is the command of a CLI run: its first two arguments
+// (resource and action, e.g. "invoice describe"), never its ids or values.
+func commandOf(args []string) string {
+	return strings.Join(args[:min(2, len(args))], " ")
 }
 
 // ok runs args with -o json, requires exit 0 and decodes stdout.
