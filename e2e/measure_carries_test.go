@@ -269,30 +269,38 @@ func TestE2E_Carries(t *testing.T) {
 		}
 	})
 
-	// 12. Time entry ending at midnight ("00:00" or "24:00" after 23:00):
-	// accepted, and as one hour? The CLI rejects it today (exit 2);
-	// measured through papierkram api (no local check).
+	// 12. Time entry ending at midnight (open point 22, decided): time log
+	// --from 23:00 --to 00:00 and --to 24:00 send ended_at_time "24:00".
+	// Hard: exit 0 and duration 3600 in the answer of time log (the API
+	// object, no further request); measured: ended_at and the sent end.
+	// Run 2 (through papierkram api) measured both ends as accepted, each
+	// with duration 3600 and ended_at 00:00 of the next day.
 	t.Run("12_MidnightEnd", func(t *testing.T) {
 		task, user := s.task(t), s.user(t)
 		for _, end := range []string{"00:00", "24:00"} {
 			s.need(t, 11)
 			comment := s.prefix + "mitternacht-" + strings.ReplaceAll(end, ":", "")
-			body := fmt.Sprintf(`{"entry_date":%q,"started_at_time":"23:00","ended_at_time":%q,"task":{"id":%d},"user":{"id":%d},"comments":%q}`,
-				normalDay, end, task, user, comment)
-			r := s.run(t, body, "api", "POST", "/tracker/time_entries", "--input", "-", "-o", "json")
-			x := lastExchange(r, "POST", "/tracker/time_entries")
-			if r.code != 0 || x == nil {
-				status, msg := 0, strings.TrimSpace(r.stderr)
-				if x != nil {
-					status, msg = x.Status, apiMessage(x.RespBody)
-				}
-				s.measuref(t, "Ende um Mitternacht", "23:00–%s abgelehnt: Exit %d, HTTP %d: %s", end, r.code, status, msg)
+			r := s.run(t, "", "time", "log", "--task", ids(task), "--user", ids(user), "--date", normalDay,
+				"--from", "23:00", "--to", end, "-m", comment, "-o", "json")
+			m := tryDecode(r.stdout)
+			if id := idOf(m); id != 0 {
+				// registered before a failure too
+				s.track(object{resource: "time", id: id, name: comment})
+				s.logf(t, "angelegt: time %d (%s)", id, comment)
+			}
+			sent := "nicht gesendet"
+			if x := lastExchange(r, "POST", "/tracker/time_entries"); x != nil {
+				sent = fmt.Sprintf("%v", tryDecode(string(x.ReqBody))["ended_at_time"])
+			}
+			if r.code != 0 || m == nil {
+				s.errorf(t, "time log --from 23:00 --to %s: Exit %d, erwartet 0 (gesendet ended_at_time %s)\n%s", end, r.code, sent, r.stderr)
 				continue
 			}
-			m := s.decode(t, r.stdout)
-			s.track(object{resource: "time", id: idOf(m), name: comment})
-			s.measuref(t, "Ende um Mitternacht", "23:00–%s akzeptiert: duration %v, started_at %v, ended_at %v",
-				end, m["duration"], m["started_at"], m["ended_at"])
+			s.measuref(t, "Ende um Mitternacht", "time log --from 23:00 --to %s: gesendet ended_at_time %s, duration %v, started_at %v, ended_at %v",
+				end, sent, m["duration"], m["started_at"], m["ended_at"])
+			if str(m["duration"]) != "3600" {
+				s.errorf(t, "time log --from 23:00 --to %s: duration %v, erwartet 3600", end, m["duration"])
+			}
 		}
 	})
 

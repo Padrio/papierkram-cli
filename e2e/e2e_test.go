@@ -95,7 +95,9 @@
 //	  PUT with sent_on/sent_to null), 4 (voucher PUT with
 //	  entertainment_persons []),
 //	  8 (PDF download Accept/Content-Type), 9 (price_gross 0.0 with
-//	  gross=false), 11 (duration = wall clock difference on a normal day);
+//	  gross=false), 11 (duration = wall clock difference on a normal day),
+//	  12 (time log --from 23:00 --to 00:00 and --to 24:00: exit 0 and
+//	  duration 3600; ended_at and the sent end measured);
 //	  invoice flow: deliver --via pdf, pdf (%PDF file), archive and
 //	  unarchive exit 0; voucher flow: create --file (exit 0, upload
 //	  2xx), exactly one document, pdf, document delete, archive and
@@ -118,7 +120,7 @@
 //	  6 (billable_duration on create and update; run 1: the create
 //	  stored duration instead), 7 (sent_on after deliver pdf), 10 (pay body with value null and a
 //	  transaction that does not exist: the suite never pays),
-//	  12 (end 00:00/24:00), 13 (structure of GET /info); open points
+//	  13 (structure of GET /info); open points
 //	  28 (invoice create without document_date), 10 (due_date through
 //	  api PUT), 13 (supply_date format and round trip), 12
 //	  (entertainment_persons set, then []: cleared or unchanged); the
