@@ -2,9 +2,11 @@ package config
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -89,6 +91,66 @@ func TestSaveOverwritesExistingWithLoosePerms(t *testing.T) {
 	fi, _ := os.Stat(p)
 	if fi.Mode().Perm() != 0o600 {
 		t.Fatalf("perm %v", fi.Mode().Perm())
+	}
+}
+
+// L77: Save flushes the temporary file before the rename and, except on
+// Windows, the directory after it, so a crash leaves the old or the new
+// file. A failed file sync keeps the old file; a failed directory sync is
+// no error (the new file is in place, callers must not roll back).
+func TestSaveSyncsFileThenDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "papierkram", "config.toml")
+	origFile, origDir := syncFile, syncDir
+	t.Cleanup(func() { syncFile, syncDir = origFile, origDir })
+	var calls []string
+	syncFile = func(f *os.File) error {
+		if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("file synced after the rename: %v", err)
+		}
+		calls = append(calls, "file")
+		return origFile(f)
+	}
+	syncDir = func(dir string) error {
+		if dir != filepath.Dir(path) {
+			t.Errorf("synced directory %q, want %q", dir, filepath.Dir(path))
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("directory synced before the rename: %v", err)
+		}
+		calls = append(calls, "dir")
+		return origDir(dir)
+	}
+	if err := (&Config{ActiveContext: "alt"}).Save(path); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"file", "dir"}
+	if runtime.GOOS == "windows" {
+		want = want[:1]
+	}
+	if !slices.Equal(calls, want) {
+		t.Errorf("syncs = %v, want %v", calls, want)
+	}
+	old, _ := os.ReadFile(path)
+
+	syncFile = func(*os.File) error { return errors.New("E/A-Fehler") }
+	err := (&Config{ActiveContext: "neu"}).Save(path)
+	if err == nil || !strings.Contains(err.Error(), "E/A-Fehler") {
+		t.Errorf("failed file sync: %v", err)
+	}
+	if now, _ := os.ReadFile(path); string(now) != string(old) {
+		t.Errorf("file replaced although the sync failed:\n%s", now)
+	}
+	if es, _ := os.ReadDir(filepath.Dir(path)); len(es) != 1 {
+		t.Errorf("leftovers: %v", es)
+	}
+
+	syncFile = origFile
+	syncDir = func(string) error { return errors.New("nicht unterstützt") }
+	if err := (&Config{ActiveContext: "neu"}).Save(path); err != nil {
+		t.Errorf("failed directory sync: %v", err)
+	}
+	if c, err := Load(path); err != nil || c.ActiveContext != "neu" {
+		t.Errorf("after a failed directory sync: %+v, %v", c, err)
 	}
 }
 

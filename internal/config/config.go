@@ -76,8 +76,27 @@ func Load(path string) (*Config, error) {
 	return c, nil
 }
 
-// Save writes the config atomically (temp file in the same directory, then
-// rename) with mode 0600; the directory is created with 0700.
+// syncFile flushes the temporary file of Save to disk; tests record it.
+var syncFile = (*os.File).Sync
+
+// syncDir flushes the directory dir, so the rename of Save survives a
+// crash; tests record it. Not called on Windows, where a directory cannot
+// be opened for syncing.
+var syncDir = func(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
+	return d.Sync()
+}
+
+// Save writes the config atomically (temp file in the same directory,
+// synced, then rename) with mode 0600; the directory is created with 0700.
+// After the rename the directory is synced too (not on Windows). That sync
+// is best effort: the new file is in place either way, and an error here
+// would make callers undo work (context rename moves the token back)
+// although the new configuration is already written.
 func (c *Config) Save(path string) error {
 	data, err := toml.Marshal(c)
 	if err != nil {
@@ -100,11 +119,18 @@ func (c *Config) Save(path string) error {
 		_ = tmp.Close()
 		return fmt.Errorf("config: Konfiguration schreiben: %w", err)
 	}
+	if err := syncFile(tmp); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("config: Konfiguration schreiben: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("config: Konfiguration schreiben: %w", err)
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("config: Konfiguration schreiben: %w", err)
+	}
+	if runtime.GOOS != "windows" {
+		_ = syncDir(dir) // best effort, see above
 	}
 	return nil
 }
