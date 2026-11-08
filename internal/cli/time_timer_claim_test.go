@@ -520,9 +520,18 @@ func TestTimerErrNotReleased(t *testing.T) {
 	left := fmt.Errorf("%w: x", timer.ErrClaimLeft)
 	ce := clierr.From(errNotReleased(path, left, cause))
 	if ce.Code != clierr.CodeOutcomeUnknown || ce.Message != "Verbindung abgebrochen" ||
-		ce.Hint != "Ergebnis unbekannt – vor Wiederholung per describe/list prüfen. Außerdem die Datei "+printable(timer.StoppingPath(path))+
-			" von Hand löschen (die Timer-Datei ist wiederhergestellt; sonst brechen time start und time stop mit Exit 7 ab)" {
+		ce.Hint != "Zuerst die Datei "+printable(timer.StoppingPath(path))+
+			" von Hand löschen (die Timer-Datei ist wiederhergestellt; sonst brechen time start und time stop mit Exit 7 ab), dann: "+
+			"Ergebnis unbekannt – vor Wiederholung per describe/list prüfen." {
 		t.Errorf("claim left: %+v", ce)
+	}
+	// review of task 11: the claim comes first, as a time stop the hint
+	// of the stop may name ends with exit 7 while it is there
+	bare := clierr.New(clierr.CodeServer, "HTTP 503", "")
+	if ce := clierr.From(errNotReleased(path, left, bare)); ce.Code != clierr.CodeServer ||
+		ce.Hint != "Zuerst die Datei "+printable(timer.StoppingPath(path))+
+			" von Hand löschen (die Timer-Datei ist wiederhergestellt; sonst brechen time start und time stop mit Exit 7 ab)" {
+		t.Errorf("claim left without hint: %+v", ce)
 	}
 	if cause.Hint != "Ergebnis unbekannt – vor Wiederholung per describe/list prüfen." {
 		t.Errorf("cause changed: %+v", cause)

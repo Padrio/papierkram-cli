@@ -494,7 +494,9 @@ const claimedHint = "Nichts gesendet. Mit papierkram time status prüfen, ob er 
 
 // errNotReleased is the failure rerr to put the claim of path back after
 // the stop failed with cause. When only the claim could not be removed
-// (timer.ErrClaimLeft), it is cause with a hint to delete the claim.
+// (timer.ErrClaimLeft), it is cause with a hint to delete the claim
+// first: while it is there, the time stop the hint of cause may name ends
+// with exit 7.
 // Otherwise it is exit 1: the claim stays, so time start and
 // time stop refuse until it is renamed back or discarded. The hint keeps
 // what went wrong before, also an unknown outcome.
@@ -503,8 +505,12 @@ func errNotReleased(path string, rerr, cause error) error {
 		// the timer runs again, only the claim is left over: the error of
 		// the stop stays (its code tells what happened to the entry)
 		ce := *clierr.From(cause)
-		ce.Hint = strings.TrimSuffix(ce.Hint, ".") + ". Außerdem die Datei " + printable(timer.StoppingPath(path)) +
+		hint := "Zuerst die Datei " + printable(timer.StoppingPath(path)) +
 			" von Hand löschen (die Timer-Datei ist wiederhergestellt; sonst brechen time start und time stop mit Exit 7 ab)"
+		if ce.Hint != "" {
+			hint += ", dann: " + ce.Hint
+		}
+		ce.Hint = hint
 		return &ce
 	}
 	prev := clierr.From(cause)

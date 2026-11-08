@@ -616,12 +616,12 @@ func TestClaimBetweenCreateAndRemove(t *testing.T) {
 	newer.Task = 777
 	for _, tc := range []struct {
 		name   string
-		after  func(path string)
+		after  func(t *testing.T, path string)
 		remove func(path string) func(string) error
 		check  func(t *testing.T, err error, path string)
 	}{
 		{name: "replaced",
-			after: func(path string) {
+			after: func(t *testing.T, path string) {
 				if err := Delete(path); err != nil {
 					t.Error(err)
 				}
@@ -638,7 +638,7 @@ func TestClaimBetweenCreateAndRemove(t *testing.T) {
 				}
 			}},
 		{name: "symlink swapped in",
-			after: func(path string) {
+			after: func(t *testing.T, path string) {
 				if err := Delete(path); err != nil {
 					t.Error(err)
 				}
@@ -655,7 +655,7 @@ func TestClaimBetweenCreateAndRemove(t *testing.T) {
 				}
 			}},
 		{name: "removed",
-			after: func(path string) {
+			after: func(t *testing.T, path string) {
 				if err := Delete(path); err != nil {
 					t.Error(err)
 				}
@@ -691,7 +691,9 @@ func TestClaimBetweenCreateAndRemove(t *testing.T) {
 			}
 			var after func()
 			if tc.after != nil {
-				after = func() { tc.after(path) }
+				// the hook reports to the subtest it runs in (t.Skipf of
+				// the parent would end the wrong test)
+				after = func() { tc.after(t, path) }
 			}
 			var remove func(string) error
 			if tc.remove != nil {
