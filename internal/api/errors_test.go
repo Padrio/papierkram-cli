@@ -179,6 +179,11 @@ func TestTransportReasonDNS(t *testing.T) {
 	if ce.Code != clierr.CodeNetwork || ce.Message != "Papierkram-API nicht erreichbar (Adresse nicht auflösbar (firma.papierkram.de))" {
 		t.Errorf("code %s message %q", ce.Code, ce.Message)
 	}
+	// L104: without a name no empty "()"
+	err = &url.Error{Op: "Get", URL: "https://firma.papierkram.de/api/v1/x", Err: &net.DNSError{Err: "no such host", IsNotFound: true}}
+	if ce := transportError(http.MethodGet, "/api/v1/x", false, err); ce.Message != "Papierkram-API nicht erreichbar (Adresse nicht auflösbar)" {
+		t.Errorf("ohne Name: message %q", ce.Message)
+	}
 }
 
 func TestTLSCertificateErrorIsNetwork(t *testing.T) {

@@ -158,6 +158,8 @@ func transportReason(err error) string {
 		return "abgebrochen"
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
 		return "Verbindung vom Server geschlossen"
+	case errors.As(err, &dns) && dns.Name == "":
+		return "Adresse nicht auflösbar"
 	case errors.As(err, &dns):
 		return fmt.Sprintf("Adresse nicht auflösbar (%s)", dns.Name)
 	case isCertificateError(err):
