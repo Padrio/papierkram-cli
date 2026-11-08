@@ -63,5 +63,6 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 - Timer: Wird die Timer-Datei während des Lesens durch eine andere ersetzt (gleichzeitiger `time stop` und `time start`), gilt das als Wettlauf: Die Befehle lesen neu, der Anspruch von `time stop` endet mit Exit 7 statt mit Exit 1 („Timer-Datei … ist ungültig“), auch unter Windows.
 - Windows: Projektdatei und Timer werden auch unter Pfaden ab 260 Zeichen gelesen, und ein untergeschobenes Verzeichnis gilt als „keine reguläre Datei“ statt als Zugriffsfehler.
 - Workflow „E2E (Sandbox)“: Die Log-Prüfung meldete „Token im Log gefunden“ bei jedem Log, wenn das Token-Secret mit Leerraum oder Zeilenumbruch endete, oder übersah ein Token ohne diesen Leerraum. Eine Logzeile mit Backticks beendet den Codeblock der Zusammenfassung nicht mehr (die Begrenzung ist länger als jede Backtick-Folge darin).
+- Strg+C vor dem Senden einer Anfrage (Exit 10, „Abgebrochen: Anfrage durch Unterbrechung beendet“) behält den Hinweis des Befehls; `time stop` nennt so weiter „Der Timer läuft weiter …“ mit dem Befehl zum Buchen von Hand.
 
 [Unreleased]: https://github.com/Padrio/papierkram-cli/commits/main

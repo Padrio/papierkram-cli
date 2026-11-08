@@ -283,8 +283,10 @@ func executeContext(ctx context.Context, app *App, root *cobra.Command, args []s
 		ce = &withHint
 	}
 	if ce.Code == clierr.CodeNetwork && ctx.Err() != nil && errors.Is(err, context.Canceled) {
-		// The request did not fail, it was interrupted (Ctrl+C).
-		ce = &clierr.Error{Code: ce.Code, Message: "Abgebrochen: Anfrage durch Unterbrechung beendet", Cause: err}
+		// The request did not fail, it was interrupted (Ctrl+C). The hint
+		// stays: a command may have added how to go on (time stop: the
+		// timer stays, review B-M1).
+		ce = &clierr.Error{Code: ce.Code, Message: "Abgebrochen: Anfrage durch Unterbrechung beendet", Hint: ce.Hint, Cause: err}
 	}
 	// The format of the error output is the resolved one (context output
 	// value) when the configuration was resolved, otherwise the flag.

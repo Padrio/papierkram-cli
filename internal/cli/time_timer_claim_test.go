@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -540,5 +541,34 @@ func TestTimerErrNotReleased(t *testing.T) {
 	if ce.Code != clierr.CodeError || ce.Message != "Timer-Datei nicht zurückgestellt: kaputt" ||
 		!strings.Contains(ce.Hint, "Zuvor gescheitert: Verbindung abgebrochen. Ergebnis unbekannt") {
 		t.Errorf("not released: %+v", ce)
+	}
+}
+
+// Ctrl+C before time stop sent its request (review B-M1): the message
+// says the request was interrupted, and the hint still says that the
+// timer stays and how to go on.
+func TestTimerStopInterruptedBeforeSendKeepsHint(t *testing.T) {
+	app, srv := logApp(t, nine(t))
+	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 0)
+	before := timerFile(t, app, "")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the interrupt arrives before the request
+	app.Now = func() time.Time { return morning(t) }
+	app.Out.(*bytes.Buffer).Reset()
+	app.Err.(*bytes.Buffer).Reset()
+	wantExit(t, app, executeContext(ctx, app, NewRootCmd(app), []string{"time", "stop", "-o", "json"}), 10)
+	if n := posts(srv); n != 0 {
+		t.Errorf("%d POST, want 0", n)
+	}
+	if after := timerFile(t, app, ""); !bytes.Equal(after, before) {
+		t.Errorf("state changed: %s → %s", before, after)
+	}
+	msg, hint := jsonError(t, app)
+	if msg != "Abgebrochen: Anfrage durch Unterbrechung beendet" {
+		t.Errorf("message %q", msg)
+	}
+	if !strings.Contains(hint, "Der Timer läuft weiter: erneut papierkram time stop oder von Hand buchen mit "+
+		"papierkram time log --task 545 --user 1 --date 2026-11-04 --from 09:00 --to 10:47, danach papierkram time discard") {
+		t.Errorf("hint %q", hint)
 	}
 }
