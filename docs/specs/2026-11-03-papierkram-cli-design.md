@@ -304,6 +304,7 @@ Bei jeder Mutation (inkl. `api` mit Nicht-GET): validiert lokal, zeigt Method, U
 - Klasse `send`: Bestätigung oder `--yes`.
 - Leerer 2xx-Body = Erfolg. Danach wird der Beleg per `describe` nachgelesen; Ausgabe: `id`, `invoice_no`/`estimate_no`, `state`, `sent_on`, `sent_via`, `sent_to`.
 - Scheitert nur das Nachlesen: Exit 0, Ergebnis `{"id":…,"delivered":true,"warnings":["Versand erfolgreich, Nachlesen fehlgeschlagen: … – NICHT erneut ausführen"]}`.
+- Antwortet die API auf den Versand mit 5xx oder einem unerwarteten Status, lautet der Hinweis „Papierkram-Fehler – der Versand kann trotzdem erfolgt sein: vor Wiederholung per describe prüfen: papierkram <ressource> describe <id>“ (auch bei `api` auf den deliver-Pfad). Ein lokaler Fehler, bevor die Anfrage gesendet wurde (z. B. eine nicht lesbare Basis-URL), behält Meldung und Hinweis ohne diesen Zusatz.
 
 ### 9.2 `… pdf <id> [-O datei.pdf]`
 Ohne `-O` und mit TTY auf stdout: Fehler mit Hinweis (kein Binärmüll ins Terminal). `-O -` schreibt nach stdout. Ohne `-O` und ohne TTY: nach stdout. Standard-Dateiname bei `-O` ohne Wert ist nicht vorgesehen. **[Call]** Ausgabe auf stderr bzw. bei `-o json`: `{"path":…,"bytes":…}`.
@@ -314,7 +315,7 @@ Ohne `-O` und mit TTY auf stdout: Fehler mit Hinweis (kein Binärmüll ins Termi
 - `voucher create … --file beleg.pdf`: erst Beleg anlegen (50 Credits), dann hochladen (10 Credits). Scheitert der Upload, bleibt der Beleg bestehen; **Exit 11 (`partial`)**, Ausgabe enthält die Beleg-ID, `"completed":["create"]`, `"failed":["upload"]` und den Befehl zum Nachholen (`papierkram voucher upload <id> <datei>`). Kein automatisches Löschen. Gleiches Muster für `invoice create --from-estimate` (Lesen gescheitert → nichts angelegt, normaler Fehler) und `time stop` (Anlegen gescheitert → Timer bleibt erhalten, normaler Fehler). **[Call]**
 
 ### 9.4 `invoice create --from-estimate <id>`
-Liest das Angebot und baut daraus den Rechnungs-Body: `name`, `description`, `customer` (`id`, ggf. `contact_person`, `project`), `billing`, `gross`, alle Positionen (`name`, `description`, `quantity`, `unit`, `price`, `price_gross`, `discount_*`, `proposition:{id}` falls gesetzt, `type_of`, `vat_rate` aus `"19%"` normalisiert). `--payment-term` bleibt Pflicht (Angebote haben keine Zahlungsbedingung). Alle anderen Flags überschreiben. Mit `--dry-run` sieht man den Body vor dem Anlegen (50 Credits). **[Builder]**: genaue Feldliste gegen `EstimateWithDetailedEmbeds` und das Rechnungs-Request-Schema abgleichen; Felder, die nicht übertragbar sind, in der Hilfe nennen.
+Liest das Angebot und baut daraus den Rechnungs-Body: `name`, `description`, `customer` (`id`, ggf. `contact_person`, `project`), `billing`, `gross`, alle Positionen (`name`, `description`, `quantity`, `unit`, `price`, `price_gross`, `discount_*`, `proposition:{id}` falls gesetzt, `type_of`, `vat_rate` aus `"19%"` normalisiert). `--payment-term` bleibt Pflicht (Angebote haben keine Zahlungsbedingung). Alle anderen Flags überschreiben. Leere Werte (null) des Angebots, die die Rechnung nicht annimmt, werden weggelassen und im Hinweis „null ignoriert (Feld bleibt unverändert): …“ genannt, außer ein Flag setzt das Feld (bzw. `--item`/`--items` die Positionen). Mit `--dry-run` sieht man den Body vor dem Anlegen (50 Credits). **[Builder]**: genaue Feldliste gegen `EstimateWithDetailedEmbeds` und das Rechnungs-Request-Schema abgleichen; Felder, die nicht übertragbar sind, in der Hilfe nennen.
 
 ### 9.4a `invoice update <id>`: Zahlungsbedingung erhalten (Ruling E2E-A)
 Ohne `--payment-term` und ohne `payment_term` im fertigen Body (nach `--input` und Flags; ein `null` gilt als fehlend) liest `invoice update` die Rechnung vorher (`GET /income/invoices/{id}`, 1 Credit) und sendet `payment_term: {id: <aktuelle payment_term.id>}` mit; ein Hinweis auf stderr nennt die ID. Das Lesen läuft nach Schreibschutz-Gate, Flag- und Body-Prüfung (Fehler dort kosten kein Lesen) und wie bei `--from-estimate` (9.4): derselbe `describe`-Eintrag, ein gescheitertes Lesen behält seinen Code und ändert nichts, eine Antwort ohne `payment_term.id` endet mit Exit 1 (nichts gesendet, Hinweis auf `--payment-term`). `--dry-run` liest ebenfalls und weist das Lesen als `read` aus; `credits` ist dann 2, mit `--payment-term` 1. `commands --json` nennt für `invoice update` 2 Credits. Nur Rechnungen: beim Angebot zeigte Lauf 3 keine solche Änderung.
@@ -351,6 +352,7 @@ maintenance = 58
 - Priorität: Flag > Env (`PAPIERKRAM_PROJECT`, `PAPIERKRAM_TASK`, …) > Projektdatei > Kontext-Defaults > eingebauter Default.
 - Genutzt von `time log|start|stop|list`, `task list|create`, `project describe` ohne ID **[Call]**, `person list|create|describe|update|delete` (`--company`; offener Punkt 27, entschieden: Pfad-Flag, bleibt Pflicht, Person-ID bleibt Pflicht, Quellen Flag > `PAPIERKRAM_COMPANY` > `company` der Projektdatei, kein Kontext-Default; `default_from` in `commands --json`). `--task` akzeptiert ID oder Alias aus `[tasks]`.
 - Enthält keine Secrets; unbekannte Schlüssel → Warnung, kein Fehler.
+- Ist die gefundene Datei nicht lesbar (Rechte, E/A-Fehler), Exit 1 (`error`) mit dem Hinweis „Projektdatei <pfad> prüfen oder entfernen“ (Pfad ohne Steuerzeichen).
 - `papierkram local show` zeigt die wirksamen Werte mit Herkunft.
 
 ## 10. Konfiguration, Auth, Ausgabe
@@ -374,6 +376,7 @@ read_only = true
 - Kontextauswahl: `--context` > `PAPIERKRAM_CONTEXT` > `context` aus Projektdatei > `active_context`. Unabhängig davon gilt `PAPIERKRAM_READ_ONLY=1` immer (8.3).
 - Direktbetrieb ohne Config: `PAPIERKRAM_TOKEN` + `PAPIERKRAM_SUBDOMAIN` (haben Vorrang vor dem Kontext-Token, `auth status` zeigt die Quelle). `PAPIERKRAM_BASE_URL` überschreibt die komplette Basis-URL (Tests, Mock-Server). `PAPIERKRAM_READ_ONLY=1` erzwingt den Schutzmodus.
 - `context delete` löscht auch den Keychain-Eintrag.
+- Ist der Schlüsselbund nicht verfügbar, warnen `context create` („Schlüsselbund nicht verfügbar, ein dort gespeichertes Token von "<name>" wurde nicht entfernt.“, wie `auth logout`) und `context rename` („… von "<neu>" wurde nicht geprüft.“ und „… Token von "<alt>" wurde nicht verschoben.“) auf stderr; der Exit-Code bleibt 0.
 
 ### 10.2 Secrets
 - Token im OS-Schlüsselbund über `zalando/go-keyring`: Service `papierkram-cli`, Account = Kontextname.
@@ -408,6 +411,8 @@ read_only = true
   - `delete`: `{"id":N,"deleted":true}`.
   - Optionale `warnings[]` nur bei Aktionen, die Warnungen erzeugen.
   - Schemas in `docs/schemas/` (OpenAPI-3-Schema-Objekte, strikt, `additionalProperties: false`, per Vertragstest gegen die echte Ausgabe geprüft): `list.json` (Envelope, auch `--all`, lokaler Filter und `api --paginate`), `ok.json` (leere Antwort: `{"id":N,"ok":true}` bzw. `{"ok":true}`), `delete.json`, `dry-run.json`, `deliver.json`, `partial.json`, `auth-status.json` (`auth status -o json`), `version.json` (`version -o json`), `error.json` (10.4) und `commands.json` (`commands --json`).
+- Tabellen bleiben einzeilig je Eintrag: Zeilenumbrüche, Tabs, Steuer- und unsichtbare Formatzeichen sowie U+2028 und U+2029 werden zu Leerzeichen (ebenso in Meldungen, dort bleibt nur `\n`); eine Zelle nur aus Leerraum ist leer, eine Zeile ohne Inhalt zeigt „-“ in der ersten Spalte. Die `--jq`-Ausgabe ist auf 64 MiB begrenzt; geprüft wird je Ergebnis, bevor es gepuffert wird (Exit 1).
+- `auth status`: Scheitert der Aufruf (kein Token, 401/403: Exit 3; 404: Exit 4) und zusätzlich die Ausgabe (`--jq`-Laufzeitfehler, Schreibfehler), bleibt der Code des Aufrufs; der Ausgabefehler erscheint als Warnung „Ausgabe fehlgeschlagen: …“ auf stderr.
 - Ohne TTY auf stdout: keine Farben, keine Spinner. Ohne TTY auf stdin oder mit `--no-input`: keine Prompts. `NO_COLOR` wird beachtet.
 - Hinweise und Warnungen immer auf stderr, Nutzdaten auf stdout.
 

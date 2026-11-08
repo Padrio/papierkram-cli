@@ -11,7 +11,7 @@ Kosten: 50 Credits je Anfrage.
 
 Alle anderen Flags überschreiben die Werte des Angebots; --item/--items ersetzen alle Positionen. Nennt --customer einen anderen Kunden als das Angebot, werden contact_person und project des Angebots nicht übernommen (Hinweis auf stderr); sie lassen sich per --contact-person bzw. --customer-project setzen. --input ist zusammen mit --from-estimate nicht möglich.
 
-Nicht übernommen werden: document_date (Rechnungsdatum per --document-date), custom_template (Angebotsvorlagen gelten nicht für Rechnungen; --custom-template), document_charges und je Position document_charge, document_charge_gross und position_in_group. supply_date, flagged und start_new_item_group hat das Angebot nicht. Leere Werte (null) des Angebots werden übernommen, wo die Rechnung sie erlaubt, sonst weggelassen und auf stderr genannt.
+Nicht übernommen werden: document_date (Rechnungsdatum per --document-date), custom_template (Angebotsvorlagen gelten nicht für Rechnungen; --custom-template), document_charges und je Position document_charge, document_charge_gross und position_in_group. supply_date, flagged und start_new_item_group hat das Angebot nicht. Leere Werte (null) des Angebots werden übernommen, wo die Rechnung sie erlaubt, sonst weggelassen und auf stderr genannt, außer ein Flag setzt das Feld.
 
 --dry-run liest das Angebot ebenfalls (1 Credit) und zeigt den Body, ohne die Rechnung anzulegen. Scheitert das Lesen, wird nichts angelegt.
 
