@@ -1,0 +1,38 @@
+{
+  "title": "papierkram … list (-o json)",
+  "description": "Ausgabe von list mit -o json auf stdout (Vertrag für Agents, Spezifikation 10.3): der Envelope der API unverändert. Mit --all (und bei papierkram api --paginate) alle Einträge der geladenen Seiten zusammengeführt, page 1, has_more false (true nur, wenn --max-pages Seiten auslässt), total_pages und total_entries wie von der API geliefert. Mit einem lokalen Filter (z. B. company list --type) sind page, page_size, total_pages und total_entries für die passenden Einträge neu berechnet. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "page", "page_size", "total_pages", "total_entries", "has_more", "entries"],
+  "properties": {
+    "type": {
+      "description": "Typ des Envelopes laut API (list).",
+      "type": "string"
+    },
+    "page": {
+      "description": "Nummer der Seite; mit --all 1.",
+      "type": "integer"
+    },
+    "page_size": {
+      "description": "Einträge je Seite.",
+      "type": "integer"
+    },
+    "total_pages": {
+      "description": "Anzahl der Seiten laut API (mit --all unverändert).",
+      "type": "integer"
+    },
+    "total_entries": {
+      "description": "Anzahl aller Einträge laut API.",
+      "type": "integer"
+    },
+    "has_more": {
+      "description": "Gibt es weitere Seiten? Mit --all false, außer --max-pages hat Seiten ausgelassen.",
+      "type": "boolean"
+    },
+    "entries": {
+      "description": "Die Einträge, wie die API sie liefert (Form je Ressource: papierkram schema <ressource> list).",
+      "type": "array",
+      "items": {"type": "object"}
+    }
+  }
+}

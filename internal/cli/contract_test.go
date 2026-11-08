@@ -362,6 +362,99 @@ func TestDeliverContract(t *testing.T) {
 	}
 }
 
+// listPages answers the invoice list with two pages of one entry each, so
+// --all merges them (page 1, has_more false, total_pages as sent).
+func listPages(w http.ResponseWriter, r *http.Request) {
+	page := r.URL.Query().Get("page")
+	if page == "" {
+		page = "1"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = fmt.Fprintf(w, `{"type":"list","page":%s,"page_size":1,"total_pages":2,"total_entries":2,"has_more":%t,"entries":[{"id":%s,"name":"Beratung"}]}`,
+		page, page == "1", page)
+}
+
+// outputRuns cover the plain JSON outputs of spec 10.3 with their
+// contract: list (API envelope, --all, local filter, api --paginate), the
+// empty answer of an action and of create, auth status and version.
+var outputRuns = []struct {
+	schema string
+	contractRun
+}{
+	{"list", contractRun{name: "list", args: []string{"invoice", "list", "-o", "json"}}},
+	{"list", contractRun{name: "list --all", setup: func(_ *testing.T, srv *mockapi.Server) []string {
+		srv.OnFunc("GET", "/income/invoices", listPages)
+		return nil
+	}, args: []string{"invoice", "list", "--all", "-o", "json"}}},
+	{"list", contractRun{name: "list lokal gefiltert", args: []string{"company", "list", "--type", "customer", "-o", "json"}}},
+	{"list", contractRun{name: "api --paginate", setup: func(_ *testing.T, srv *mockapi.Server) []string {
+		srv.OnFunc("GET", "/income/invoices", listPages)
+		return nil
+	}, args: []string{"api", "GET", "/income/invoices", "--paginate", "-o", "json"}}},
+	{"ok", contractRun{name: "archive leer", setup: func(_ *testing.T, srv *mockapi.Server) []string {
+		srv.On("POST", "/contact/companies/12/archive", http.StatusOK, nil)
+		return nil
+	}, args: []string{"company", "archive", "12", "-o", "json"}}},
+	{"ok", contractRun{name: "create leer", setup: func(_ *testing.T, srv *mockapi.Server) []string {
+		srv.On("POST", "/contact/companies", http.StatusCreated, nil)
+		return nil
+	}, args: []string{"company", "create", "--name", "Muster GmbH", "--contact-type", "customer", "-o", "json"}}},
+	{"auth-status", contractRun{name: "auth status", setup: func(_ *testing.T, srv *mockapi.Server) []string {
+		srv.On("GET", "/info", http.StatusOK, []byte(`{}`), "X-Remaining-Quota", "8000", "X-Consumed-Quota", "1")
+		return nil
+	}, args: []string{"auth", "status", "-o", "json"}}},
+	{"auth-status", contractRun{name: "auth status ohne Kontingent", env: map[string]string{"PAPIERKRAM_READ_ONLY": "1"},
+		setup: func(_ *testing.T, srv *mockapi.Server) []string {
+			srv.On("GET", "/info", http.StatusOK, []byte(`{}`), "X-Remaining-Quota", "", "X-Consumed-Quota", "")
+			return nil
+		}, args: []string{"auth", "status", "-o", "json"}}},
+	// without a token auth status still prints what it knows (exit 3)
+	{"auth-status", contractRun{name: "auth status ohne Token", exit: 3, env: map[string]string{"PAPIERKRAM_TOKEN": ""},
+		args: []string{"auth", "status", "-o", "json"}}},
+	{"version", contractRun{name: "version", args: []string{"version", "-o", "json"}}},
+}
+
+// The JSON outputs of list, an empty answer, auth status and version
+// satisfy their contracts in docs/schemas/ (spec 10.3).
+func TestOutputContract(t *testing.T) {
+	for _, c := range outputRuns {
+		t.Run(c.name, func(t *testing.T) {
+			out, _ := c.run(t)
+			wantContract(t, c.schema, []byte(out))
+			var doc map[string]any
+			if err := json.Unmarshal([]byte(out), &doc); err != nil {
+				t.Fatal(err)
+			}
+			switch c.name {
+			case "list --all", "api --paginate":
+				if doc["page"] != 1.0 || doc["has_more"] != false || len(doc["entries"].([]any)) != 2 {
+					t.Errorf("nicht zusammengeführt: %s", out)
+				}
+			case "archive leer":
+				if doc["id"] != 12.0 {
+					t.Errorf("id fehlt: %s", out)
+				}
+			case "create leer":
+				if _, ok := doc["id"]; ok {
+					t.Errorf("id bei create: %s", out)
+				}
+			case "auth status":
+				if q := objOf(doc, "quota"); q["known"] != true || q["request_cost"] != 1.0 || doc["token_source"] != "env" {
+					t.Errorf("Kontingent oder Token-Quelle fehlt: %s", out)
+				}
+			case "auth status ohne Kontingent":
+				if q := objOf(doc, "quota"); q["known"] != false || q["request_cost"] != nil || doc["read_only_source"] != "env" {
+					t.Errorf("Kontingent bekannt oder Schreibschutz fehlt: %s", out)
+				}
+			case "auth status ohne Token":
+				if doc["token_source"] != "" {
+					t.Errorf("Token-Quelle ohne Token: %s", out)
+				}
+			}
+		})
+	}
+}
+
 // contractMutation changes a valid document so that its contract must
 // reject it; want is part of the error kin-openapi reports for the rule.
 // An empty want marks a variant the contract must still accept.
@@ -480,6 +573,52 @@ func TestContractSchemasStrict(t *testing.T) {
 					}
 					d["delivered"], d["warnings"] = false, []any{"x"}
 				}, "value is not one of the allowed values"},
+			}},
+		{"list", `{"type":"list","page":1,"page_size":2,"total_pages":3,"total_entries":5,"has_more":true,"entries":[{"id":441,"name":"Beratung","billing":{"company":"Muster GmbH"}}]}`,
+			map[string]contractMutation{
+				"unbekanntes Feld":       {func(d map[string]any) { d["next_page"] = 2.0 }, `property "next_page" is unsupported`},
+				"entries fehlt":          {func(d map[string]any) { delete(d, "entries") }, `property "entries" is missing`},
+				"total_pages fehlt":      {func(d map[string]any) { delete(d, "total_pages") }, `property "total_pages" is missing`},
+				"has_more als Text":      {func(d map[string]any) { d["has_more"] = "false" }, "value must be a boolean"},
+				"page als Text":          {func(d map[string]any) { d["page"] = "1" }, "value must be an integer"},
+				"page_size null":         {func(d map[string]any) { d["page_size"] = nil }, "Value is not nullable"},
+				"Eintrag kein Objekt":    {func(d map[string]any) { d["entries"] = []any{441.0} }, "value must be an object"},
+				"entries leer":           {func(d map[string]any) { d["entries"] = []any{} }, ""},
+				"Eintrag beliebige Form": {func(d map[string]any) { d["entries"] = []any{map[string]any{"x": nil}} }, ""},
+			}},
+		{"ok", `{"id":12,"ok":true}`,
+			map[string]contractMutation{
+				"unbekanntes Feld": {func(d map[string]any) { d["deleted"] = true }, `property "deleted" is unsupported`},
+				"ok false":         {func(d map[string]any) { d["ok"] = false }, "value is not one of the allowed values"},
+				"ok fehlt":         {func(d map[string]any) { delete(d, "ok") }, `property "ok" is missing`},
+				"id als Text":      {func(d map[string]any) { d["id"] = "12" }, "value must be an integer"},
+				"id negativ":       {func(d map[string]any) { d["id"] = -1.0 }, "number must be at least 0"},
+				"id null":          {func(d map[string]any) { d["id"] = nil }, "Value is not nullable"},
+				"ohne id":          {func(d map[string]any) { delete(d, "id") }, ""},
+			}},
+		{"auth-status", `{"context":"firma-gmbh","context_source":"config","subdomain":"firma-gmbh","base_url":"https://firma-gmbh.papierkram.de/api/v1",` +
+			`"token_source":"keychain","read_only":false,"read_only_source":"","quota":{"remaining":8000,"request_cost":1,"known":true}}`,
+			map[string]contractMutation{
+				"unbekanntes Feld":           {func(d map[string]any) { d["token"] = "test-token-x" }, `property "token" is unsupported`},
+				"unbekanntes Kontingentfeld": {func(d map[string]any) { objOf(d, "quota")["used"] = 2.0 }, `property "used" is unsupported`},
+				"quota fehlt":                {func(d map[string]any) { delete(d, "quota") }, `property "quota" is missing`},
+				"request_cost fehlt":         {func(d map[string]any) { delete(objOf(d, "quota"), "request_cost") }, `property "request_cost" is missing`},
+				"request_cost null":          {func(d map[string]any) { objOf(d, "quota")["request_cost"] = nil }, ""},
+				"remaining null":             {func(d map[string]any) { objOf(d, "quota")["remaining"] = nil }, "Value is not nullable"},
+				"read_only als Text":         {func(d map[string]any) { d["read_only"] = "false" }, "value must be a boolean"},
+				"unbekannte Token-Quelle":    {func(d map[string]any) { d["token_source"] = "flag" }, "value is not one of the allowed values"},
+				"unbekannte Kontext-Quelle":  {func(d map[string]any) { d["context_source"] = "keychain" }, "value is not one of the allowed values"},
+				"unbekannte Schutz-Quelle":   {func(d map[string]any) { d["read_only_source"] = "config" }, "value is not one of the allowed values"},
+				"ohne Kontext": {func(d map[string]any) {
+					d["context"], d["context_source"], d["token_source"] = "", "", "env"
+				}, ""},
+				"Schreibschutz aus env": {func(d map[string]any) { d["read_only"], d["read_only_source"] = true, "env" }, ""},
+			}},
+		{"version", `{"version":"dev","commit":"none","date":"unknown","go_version":"go1.27.1"}`,
+			map[string]contractMutation{
+				"unbekanntes Feld": {func(d map[string]any) { d["os"] = "darwin" }, `property "os" is unsupported`},
+				"commit fehlt":     {func(d map[string]any) { delete(d, "commit") }, `property "commit" is missing`},
+				"version als Zahl": {func(d map[string]any) { d["version"] = 1.0 }, "value must be a string"},
 			}},
 	}
 	for _, c := range cases {

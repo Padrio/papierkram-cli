@@ -1,0 +1,61 @@
+{
+  "title": "papierkram auth status (-o json)",
+  "description": "Ausgabe von auth status mit -o json auf stdout (Vertrag für Agents, Spezifikation 10.1 und 10.3): wirksamer Kontext mit Herkunft, Subdomain, Basis-URL, Quelle des Tokens (das Token selbst nie), Schreibschutz mit Herkunft und das Restkontingent aus GET /info (1 Credit). Fehlt das Token oder lehnt die API es ab, steht dieselbe Form auf stdout und der Befehl endet mit Exit 3. Unbekannte Angaben sind leere Texte. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["context", "context_source", "subdomain", "base_url", "token_source", "read_only", "read_only_source", "quota"],
+  "properties": {
+    "context": {
+      "description": "Name des wirksamen Kontexts; leer im Direktbetrieb ohne Kontext.",
+      "type": "string"
+    },
+    "context_source": {
+      "description": "Herkunft des Kontexts: flag (--context), env (PAPIERKRAM_CONTEXT), projectfile (.papierkram.toml), config (active_context); leer ohne Kontext.",
+      "type": "string",
+      "enum": ["", "flag", "env", "projectfile", "config"]
+    },
+    "subdomain": {
+      "description": "Subdomain des Accounts (PAPIERKRAM_SUBDOMAIN oder Kontext); leer, wenn keine gesetzt ist.",
+      "type": "string"
+    },
+    "base_url": {
+      "description": "Basis-URL der API (PAPIERKRAM_BASE_URL oder aus der Subdomain), ohne Zugangsdaten; leer, wenn keine bekannt ist.",
+      "type": "string"
+    },
+    "token_source": {
+      "description": "Quelle des Tokens: env (PAPIERKRAM_TOKEN), keychain (Schlüsselbund), config (Klartext in config.toml); leer ohne Token.",
+      "type": "string",
+      "enum": ["", "env", "keychain", "config"]
+    },
+    "read_only": {
+      "description": "Ist der Schreibschutz aktiv?",
+      "type": "boolean"
+    },
+    "read_only_source": {
+      "description": "Herkunft des Schreibschutzes: env (PAPIERKRAM_READ_ONLY), context (read_only im Kontext); leer ohne Schreibschutz.",
+      "type": "string",
+      "enum": ["", "env", "context"]
+    },
+    "quota": {
+      "description": "Kontingent laut Antwort auf GET /info.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["remaining", "request_cost", "known"],
+      "properties": {
+        "remaining": {
+          "description": "Verbleibende Credits des Monats (X-Remaining-Quota); 0, wenn known false ist.",
+          "type": "integer"
+        },
+        "request_cost": {
+          "description": "Kosten genau dieser Statusabfrage (X-Consumed-Quota), kein Monatsverbrauch; null, wenn die API den Header nicht sendet.",
+          "type": "integer",
+          "nullable": true
+        },
+        "known": {
+          "description": "Hat die API das Restkontingent gemeldet? Bei false ist remaining ohne Aussage.",
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

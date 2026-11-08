@@ -1,0 +1,30 @@
+{
+  "title": "papierkram … leere Antwort (-o json)",
+  "description": "Ausgabe auf stdout mit -o json, wenn die API auf eine Änderung mit leerem Body antwortet (Vertrag für Agents, Spezifikation 10.3): bei update und Aktionen (archive, unarchive, cancel, pay, upload, …) {\"id\":N,\"ok\":true} mit der ID des Objekts; bei create {\"ok\":true} mit einer Warnung auf stderr (das angelegte Objekt per list suchen); bei papierkram api {\"ok\":true}. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok"],
+  "oneOf": [
+    {
+      "description": "update und Aktionen: mit der ID des Objekts.",
+      "required": ["id", "ok"]
+    },
+    {
+      "description": "create und papierkram api: ohne ID (die API lieferte keine).",
+      "required": ["ok"],
+      "not": {"required": ["id"]}
+    }
+  ],
+  "properties": {
+    "id": {
+      "description": "ID des geänderten Objekts (bei voucher upload und voucher pay die ID des Belegs).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "ok": {
+      "description": "Immer true: die API hat die Änderung mit 2xx bestätigt.",
+      "type": "boolean",
+      "enum": [true]
+    }
+  }
+}

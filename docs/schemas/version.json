@@ -1,0 +1,25 @@
+{
+  "title": "papierkram version (-o json)",
+  "description": "Ausgabe von version mit -o json auf stdout (Vertrag für Agents, Spezifikation 10.3): Version, Commit und Build-Datum des CLI und die Go-Version, mit der es gebaut wurde. Ohne Release-Build dev, none und unknown. Sendet keine Anfrage. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "commit", "date", "go_version"],
+  "properties": {
+    "version": {
+      "description": "Version des CLI (dev ohne Release-Build).",
+      "type": "string"
+    },
+    "commit": {
+      "description": "Commit des Builds (none ohne Release-Build).",
+      "type": "string"
+    },
+    "date": {
+      "description": "Build-Datum (unknown ohne Release-Build).",
+      "type": "string"
+    },
+    "go_version": {
+      "description": "Go-Version des Builds (runtime.Version()).",
+      "type": "string"
+    }
+  }
+}
