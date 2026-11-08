@@ -161,6 +161,7 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 			}
 		}
 		markEnum(fs, f.Flag, f.Enum)
+		markSchemaBounds(fs, f.Flag, f.Schema)
 		if f.Flag == e.Preset {
 			// presetBody runs after the configuration is resolved
 			markPreset(fs, f.Flag, e.Preset, true)

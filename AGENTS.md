@@ -22,7 +22,7 @@ papierkram schema invoice create
 papierkram schema voucher --jq '.actions | keys'
 ```
 
-`papierkram commands --json` liefert alle Befehle (Vertrag: [docs/schemas/commands.json](docs/schemas/commands.json), `version` 1): je Befehl `command`, `usage`, `aliases`, `short`, `class`, `credits`, `blocked_by_read_only`, ggf. `operation_id`, `method`, `path`, die Flags (`name`, `shorthand`, `type`, `required`, `alternatives`, `repeatable`, `enum`, `env`, `default_from`, `credits`, `local_filter`, `description`) und `examples`; die globalen Flags stehen einmal unter `global_flags`. Die Klassen:
+`papierkram commands --json` liefert alle Befehle (Vertrag: [docs/schemas/commands.json](docs/schemas/commands.json), `version` 1): je Befehl `command`, `usage`, `aliases`, `short`, `class`, `credits`, `blocked_by_read_only`, ggf. `operation_id`, `method`, `path`, die Flags (`name`, `shorthand`, `type`, `required`, `alternatives`, `repeatable`, `enum`, `env`, `default_from`, `credits`, `local_filter`, `default`, `minimum`, `maximum`, `description`) und `examples`; die globalen Flags stehen einmal unter `global_flags`. `default` ist der Standardwert wie „(Standard: …)“ in der Hilfe (fehlt beim Nullwert: leerer Text, `false`, 0), z. B. `--limit` „25“ und `--timeout` „30s“; ein Kontext (`output`, `timeout`) kann ihn ändern. `minimum`/`maximum` sind die eingeschlossenen Grenzen, die das CLI vor jeder Anfrage prüft (`--limit` 1–100, `--page` und `--max-pages` ab 1; sonst Exit 2); bei Feld- und Filter-Flags kämen sie aus der API-Spezifikation, die heute keine nennt. Die Klassen:
 
 | `class` | Bedeutung | Bestätigung |
 |---|---|---|

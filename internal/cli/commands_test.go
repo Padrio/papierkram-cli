@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"sort"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/spec"
@@ -75,6 +77,9 @@ type flgInfo struct {
 	Env          string   `json:"env"`
 	Alternatives []string `json:"alternatives"`
 	Credits      *int     `json:"credits"`
+	Default      *string  `json:"default"`
+	Minimum      *float64 `json:"minimum"`
+	Maximum      *float64 `json:"maximum"`
 }
 
 func decodeCommands(t *testing.T, raw []byte) cmdDoc {
@@ -158,8 +163,17 @@ func TestCommandsJSONMatchesContract(t *testing.T) {
 			branch(2), func(d map[string]any) any { return cmdOf(d, "api") }},
 		"Mutation nicht blockiert": {func(d map[string]any) { cmdOf(d, "invoice create")["blocked_by_read_only"] = false }, `any schema from "anyOf"`,
 			branch(0), func(d map[string]any) any { return cmdOf(d, "invoice create") }},
-		"Flag-Credits 0":          {func(d map[string]any) { flagOf(d, "voucher create", "file")["credits"] = 0.0 }, "number must be at least 1", nil, nil},
-		"Flag-Credits Text":       {func(d map[string]any) { flagOf(d, "voucher create", "file")["credits"] = "10" }, "value must be an integer", nil, nil},
+		"Flag-Credits 0":    {func(d map[string]any) { flagOf(d, "voucher create", "file")["credits"] = 0.0 }, "number must be at least 1", nil, nil},
+		"Flag-Credits Text": {func(d map[string]any) { flagOf(d, "voucher create", "file")["credits"] = "10" }, "value must be an integer", nil, nil},
+		"default leer":      {func(d map[string]any) { flagOf(d, "invoice list", "limit")["default"] = "" }, "minimum string length is 1", nil, nil},
+		"default als Zahl":  {func(d map[string]any) { flagOf(d, "invoice list", "limit")["default"] = 25.0 }, "value must be a string", nil, nil},
+		"default null":      {func(d map[string]any) { globalFlag(d, "timeout")["default"] = nil }, "Value is not nullable", nil, nil},
+		"minimum als Text":  {func(d map[string]any) { flagOf(d, "invoice list", "limit")["minimum"] = "1" }, "value must be a number", nil, nil},
+		"maximum null":      {func(d map[string]any) { flagOf(d, "invoice list", "limit")["maximum"] = nil }, "Value is not nullable", nil, nil},
+		"Grenze bei Dauer": {func(d map[string]any) { globalFlag(d, "timeout")["minimum"] = 1.0 }, `any schema from "anyOf"`,
+			flagItem.AllOf[2].Value, func(d map[string]any) any { return globalFlag(d, "timeout") }},
+		"Grenze bei Schalter": {func(d map[string]any) { flagOf(d, "invoice list", "all")["maximum"] = 1.0 }, `any schema from "anyOf"`,
+			flagItem.AllOf[2].Value, func(d map[string]any) any { return flagOf(d, "invoice list", "all") }},
 		"globaler shorthand null": {func(d map[string]any) { globalFlag(d, "output")["shorthand"] = nil }, "Value is not nullable", nil, nil},
 		"unbekannte Klasse":       {func(d map[string]any) { cmdOf(d, "version")["class"] = "write" }, "value is not one of the allowed values", nil, nil},
 		"Operation ohne Methode":  {func(d map[string]any) { delete(cmdOf(d, "invoice create"), "method") }, `property "method" is missing`, nil, nil},
@@ -808,5 +822,124 @@ func TestCommandsJSONExtraCredits(t *testing.T) {
 	}
 	if n != 2 {
 		t.Errorf("%d Flags mit credits, erwartet 2", n)
+	}
+}
+
+// default is the pflag default unless it is the zero value of its type
+// (like "(Standard: …)" in the help); minimum and maximum are the bounds
+// the list and api checks use (spec 7.2).
+func TestCommandsJSONDefaultsAndBounds(t *testing.T) {
+	d := decodeCommands(t, runCommandsJSON(t, "--json"))
+	num := func(v float64) *float64 { return &v }
+	str := func(v string) *string { return &v }
+	type want struct {
+		def      *string
+		min, max *float64
+	}
+	check := func(where string, f flgInfo, w want) {
+		t.Helper()
+		if !reflect.DeepEqual(f.Default, w.def) || !reflect.DeepEqual(f.Minimum, w.min) || !reflect.DeepEqual(f.Maximum, w.max) {
+			t.Errorf("%s: default %v minimum %v maximum %v, erwartet %v %v %v", where,
+				show(f.Default), show(f.Minimum), show(f.Maximum), show(w.def), show(w.min), show(w.max))
+		}
+	}
+	il := d.find(t, "invoice list")
+	check("invoice list --limit", il.flag(t, "limit"), want{str("25"), num(1), num(100)})
+	check("invoice list --page", il.flag(t, "page"), want{nil, num(1), nil})
+	check("invoice list --max-pages", il.flag(t, "max-pages"), want{nil, num(1), nil})
+	check("invoice list --all (Schalter)", il.flag(t, "all"), want{})
+	check("invoice list --sort (leerer Text)", il.flag(t, "sort"), want{})
+	check("invoice list --company (ID 0)", il.flag(t, "company"), want{})
+	check("company list --limit", d.find(t, "company list").flag(t, "limit"), want{str("25"), num(1), num(100)})
+	check("api --max-pages", d.find(t, "api").flag(t, "max-pages"), want{nil, num(1), nil})
+	check("api --paginate (Schalter)", d.find(t, "api").flag(t, "paginate"), want{})
+	check("invoice create --flagged (Schalter)", d.find(t, "invoice create").flag(t, "flagged"), want{})
+	check("invoice create --item (Liste)", d.find(t, "invoice create").flag(t, "item"), want{})
+	globals := map[string]want{"timeout": {def: str("30s")}, "output": {def: str("table")}}
+	for _, f := range d.GlobalFlags {
+		check("--"+f.Name, f, globals[f.Name])
+	}
+
+	// default exactly where and as the help names it: "(Standard: …)"
+	// after the flag text, bounds only where a check uses them
+	app, _ := apiApp(t)
+	root := NewRootCmd(app)
+	help := map[string]map[string]string{} // command, flag: help text
+	walk(root, func(c *cobra.Command) {
+		rows := map[string]string{}
+		for _, r := range germanFlagRows(c.LocalNonPersistentFlags()) {
+			name, _, _ := strings.Cut(r.flag[strings.Index(r.flag, "--")+2:], " ")
+			rows[name] = r.usage
+		}
+		help[strings.TrimPrefix(c.CommandPath(), "papierkram ")] = rows
+	})
+	globalHelp := map[string]string{}
+	for _, r := range germanFlagRows(root.PersistentFlags()) {
+		name, _, _ := strings.Cut(r.flag[strings.Index(r.flag, "--")+2:], " ")
+		globalHelp[name] = r.usage
+	}
+	helpOf := func(where string, f flgInfo, got string) {
+		t.Helper()
+		suffix := ""
+		switch {
+		case f.Default != nil && f.Type == "string":
+			suffix = fmt.Sprintf(" (Standard: %q)", *f.Default)
+		case f.Default != nil:
+			suffix = " (Standard: " + *f.Default + ")"
+		}
+		if got != f.Description+suffix {
+			t.Errorf("%s: default %v, Hilfe %q", where, show(f.Default), got)
+		}
+	}
+	for _, f := range d.GlobalFlags {
+		helpOf("--"+f.Name, f, globalHelp[f.Name])
+	}
+	bounded := []string{"limit", "page", "max-pages"}
+	for _, c := range d.Commands {
+		for _, f := range c.Flags {
+			helpOf(c.Command+" --"+f.Name, f, help[c.Command][f.Name])
+			if (f.Minimum != nil || f.Maximum != nil) && !slices.Contains(bounded, f.Name) {
+				t.Errorf("%s --%s: unerwartete Grenzen %v–%v", c.Command, f.Name, show(f.Minimum), show(f.Maximum))
+			}
+		}
+	}
+}
+
+// show prints a pointer value for test messages ("–" for nil).
+func show[T any](p *T) string {
+	if p == nil {
+		return "–"
+	}
+	return fmt.Sprint(*p)
+}
+
+// Bounds of a spec schema become minimum and maximum of the flag; a bound
+// made exclusive (OpenAPI 3.0: exclusiveMinimum true) is left out. The
+// embedded spec names none today (spec-driven, prepared).
+func TestMarkSchemaBounds(t *testing.T) {
+	lo, hi := 0.0, 99.5
+	yes, no := true, false
+	cases := map[string]struct {
+		s        *openapi3.Schema
+		min, max *float64
+	}{
+		"ohne Schema":    {nil, nil, nil},
+		"ohne Grenzen":   {&openapi3.Schema{}, nil, nil},
+		"beide":          {&openapi3.Schema{Min: &lo, Max: &hi}, &lo, &hi},
+		"exklusiv unten": {&openapi3.Schema{Min: &lo, Max: &hi, ExclusiveMin: openapi3.ExclusiveBound{Bool: &yes}}, nil, &hi},
+		"exklusiv oben":  {&openapi3.Schema{Min: &lo, Max: &hi, ExclusiveMax: openapi3.ExclusiveBound{Bool: &yes}}, &lo, nil},
+		"exklusiv false": {&openapi3.Schema{Min: &lo, ExclusiveMin: openapi3.ExclusiveBound{Bool: &no}}, &lo, nil},
+	}
+	for name, tc := range cases {
+		fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
+		fs.Var(&rawValue{typ: "number"}, "amount", "Betrag")
+		markSchemaBounds(fs, "amount", tc.s)
+		infos, err := flagInfos(fs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f := infos[0]; !reflect.DeepEqual(f.Minimum, tc.min) || !reflect.DeepEqual(f.Maximum, tc.max) {
+			t.Errorf("%s: minimum %v maximum %v, erwartet %v %v", name, show(f.Minimum), show(f.Maximum), show(tc.min), show(tc.max))
+		}
 	}
 }

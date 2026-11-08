@@ -82,6 +82,7 @@ func newAPICmd(app *App) *cobra.Command {
 	fs.String("input", "", "Body als JSON-Datei oder - für die Standardeingabe; -f/-F überschreiben einzelne Felder")
 	fs.Bool("paginate", false, "bei GET alle Seiten einer Liste laden und zusammenführen (1 Anfrage je Seite)")
 	fs.Int("max-pages", 0, "mit --paginate höchstens so viele Seiten laden")
+	markBounds(fs, "max-pages", bound(minMaxPages), nil) // as list --max-pages
 	fs.Bool("validate", false, "Body vor dem Senden gegen das Request-Schema der Spec prüfen")
 	return cmd
 }
@@ -224,8 +225,8 @@ func (a *App) checkAPIFlags(c *cobra.Command, args []string) (*apiCall, error) {
 		return usage("--paginate gilt nur für GET", "")
 	case fs.Changed("max-pages") && !call.paginate:
 		return usage("--max-pages gilt nur zusammen mit --paginate", "")
-	case fs.Changed("max-pages") && call.maxPages < 1:
-		return usage(fmt.Sprintf("ungültiger Wert %d für --max-pages: mindestens 1", call.maxPages), "")
+	case fs.Changed("max-pages") && call.maxPages < minMaxPages:
+		return usage(fmt.Sprintf("ungültiger Wert %d für --max-pages: mindestens %d", call.maxPages, minMaxPages), "")
 	case call.paginate && !call.target.isList():
 		return usage("--paginate braucht eine Liste der API-Spec (Seiten mit page/page_size und entries)",
 			"ohne --paginate eine Seite laden oder einen Listenpfad wie /income/invoices angeben")

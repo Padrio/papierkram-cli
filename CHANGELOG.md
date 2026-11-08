@@ -24,6 +24,7 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 - Schutz: Aktionsklassen mit Bestätigung für `delete`, `cancel`, `reverse`, `pay`, `document delete` und `deliver`; `--dry-run` für jede Änderung; harter Schreibschutz per `PAPIERKRAM_READ_ONLY` und Kontext-Option `read_only`.
 - Ausgabe als `table`, `wide`, `json` und `yaml`, mit `--fields` und `--jq`; strukturierte Fehler auf stderr und die Exit-Codes 0–12, darunter `partial` (11) und `outcome_unknown` (12).
 - Maschinenlesbare Selbstbeschreibung: `commands --json` (Klasse, Credits, Flags, Beispiele) und `schema <ressource> [aktion]`; JSON-Schemas der Ausgaben in `docs/schemas/`.
+- `commands --json` nennt je Flag optional `default` (Standardwert wie in der Hilfe, z. B. `--limit` „25“, `--timeout` „30s“; fehlt beim Nullwert) sowie `minimum` und `maximum` (die geprüften Grenzen: `--limit` 1–100, `--page` und `--max-pages` ab 1). Additiv, `version` bleibt 1.
 - Strikte JSON-Schemas auch für die Liste (`list.json`, auch mit `--all`), die leere Antwort (`ok.json`: `{"id":N,"ok":true}` bzw. `{"ok":true}`), `auth status` (`auth-status.json`) und `version` (`version.json`), per Vertragstest gegen die echte Ausgabe geprüft.
 - `api <METHOD> <pfad>` als direkter Zugang zur API (wie `gh api`), mit denselben Schutzregeln wie die übrigen Befehle.
 - Credit-Kosten in Hilfe, `commands --json` und `--dry-run`; Warnung bei `--all` ab 10 Seiten und bei weniger als 100 verbleibenden Credits.

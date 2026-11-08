@@ -27,7 +27,13 @@ const (
 	// so --all needs as few pages (credits) as possible.
 	defaultLimit = 25
 	allPageSize  = 100
-	maxLimit     = 100
+	// minLimit and maxLimit bound --limit, firstPage --page and
+	// minMaxPages --max-pages (list and api --paginate); the checks and
+	// commands --json (minimum, maximum) both use them.
+	minLimit    = 1
+	maxLimit    = 100
+	firstPage   = 1
+	minMaxPages = 1
 	// warnPages is the number of pages from which --all warns and, in a
 	// terminal, asks before loading more (spec 8.5).
 	warnPages = 10
@@ -61,7 +67,8 @@ func loadAllFlags(e registry.Entry) string {
 // runList parses. The filter of e's preset names the preset sources.
 func addListFlags(cmd *cobra.Command, e registry.Entry) {
 	f := cmd.Flags()
-	page, limit := "nur diese Seite laden (ab 1)", "Einträge pro Seite, 1–100 (--all ohne --limit: 100)"
+	page := fmt.Sprintf("nur diese Seite laden (ab %d)", firstPage)
+	limit := fmt.Sprintf("Einträge pro Seite, %d–%d (--all ohne --limit: %d)", minLimit, maxLimit, allPageSize)
 	if local := strings.Join(localFlags(e), "/"); local != "" {
 		// with a local filter all pages are loaded; both apply to the result
 		page += "; mit " + local + ": diese Seite des gefilterten Ergebnisses ausgeben"
@@ -71,6 +78,9 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 	f.Int("limit", defaultLimit, limit)
 	f.Bool("all", false, "alle Seiten laden und zusammenführen (1 Anfrage je Seite)")
 	f.Int("max-pages", 0, "mit "+loadAllFlags(e)+" höchstens so viele Seiten laden")
+	markBounds(f, "page", bound(firstPage), nil)
+	markBounds(f, "limit", bound(minLimit), bound(maxLimit))
+	markBounds(f, "max-pages", bound(minMaxPages), nil)
 	f.String("sort", "", "nach diesem Feld sortieren (setzt order_by und order_direction)")
 	f.Bool("desc", false, "absteigend sortieren (nur mit --sort)")
 	for _, flt := range e.Filters {
@@ -92,6 +102,7 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 			f.String(flt.Flag, "", help)
 		}
 		markEnum(f, flt.Flag, values)
+		markSchemaBounds(f, flt.Flag, filterSchema(e, flt))
 		if flt.Kind == "date" {
 			annotate(f, flt.Flag, flagValueType, "date") // parsed like a date field
 		}
@@ -110,12 +121,7 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 // billing_state), the list entry property of "local_enum". The flag help
 // and the check in filterValue both use it, so they name the same values.
 func filterEnum(e registry.Entry, flt registry.Filter) (*openapi3.Schema, []string) {
-	var s *openapi3.Schema
-	if flt.Kind == localKind {
-		s = spec.ListEntryProperty(e.OperationID, flt.Param)
-	} else if p := spec.QueryParams(e.OperationID)[flt.Param]; p != nil && p.Schema != nil {
-		s = p.Schema.Value
-	}
+	s := filterSchema(e, flt)
 	if s == nil {
 		return nil, nil
 	}
@@ -126,6 +132,19 @@ func filterEnum(e registry.Entry, flt registry.Filter) (*openapi3.Schema, []stri
 		}
 	}
 	return s, values
+}
+
+// filterSchema is the spec schema of a filter: the list entry property of
+// "local_enum", the query parameter of every other kind; nil when the spec
+// has none.
+func filterSchema(e registry.Entry, flt registry.Filter) *openapi3.Schema {
+	if flt.Kind == localKind {
+		return spec.ListEntryProperty(e.OperationID, flt.Param)
+	}
+	if p := spec.QueryParams(e.OperationID)[flt.Param]; p != nil && p.Schema != nil {
+		return p.Schema.Value
+	}
+	return nil
 }
 
 // listRequest is a validated list invocation.
@@ -162,16 +181,16 @@ func (a *App) parseListFlags(c *cobra.Command, e registry.Entry) (*listRequest, 
 	sort, _ := f.GetString("sort")
 	desc, _ := f.GetBool("desc")
 	switch {
-	case lr.pageSize < 1 || lr.pageSize > maxLimit:
-		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --limit: erlaubt ist 1–100", lr.pageSize))
-	case f.Changed("page") && lr.page < 1:
-		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --page: Seiten beginnen bei 1", lr.page))
+	case lr.pageSize < minLimit || lr.pageSize > maxLimit:
+		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --limit: erlaubt ist %d–%d", lr.pageSize, minLimit, maxLimit))
+	case f.Changed("page") && lr.page < firstPage:
+		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --page: Seiten beginnen bei %d", lr.page, firstPage))
 	case f.Changed("page") && lr.all:
 		return nil, listUsage(c, "--page und --all schließen sich aus")
 	case f.Changed("max-pages") && !lr.all && !lr.hasLocal:
 		return nil, listUsage(c, "--max-pages gilt nur zusammen mit "+loadAllFlags(e))
-	case f.Changed("max-pages") && lr.maxPages < 1:
-		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --max-pages: mindestens 1", lr.maxPages))
+	case f.Changed("max-pages") && lr.maxPages < minMaxPages:
+		return nil, listUsage(c, fmt.Sprintf("ungültiger Wert %d für --max-pages: mindestens %d", lr.maxPages, minMaxPages))
 	case f.Changed("sort") && strings.TrimSpace(sort) == "":
 		return nil, listUsage(c, "--sort braucht einen Feldnamen")
 	case desc && sort == "":

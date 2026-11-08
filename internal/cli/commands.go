@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -59,6 +60,8 @@ const (
 	flagValueType   = "pk:type"         // the contract type when the pflag type says less (date filters are text flags)
 	flagAlternative = "pk:alternatives" // other flags that satisfy the same requirement (--items for --item)
 	flagCredits     = "pk:credits"      // credits of the further request the flag sends (--file: the upload)
+	flagMinimum     = "pk:minimum"      // smallest value the check accepts (inclusive)
+	flagMaximum     = "pk:maximum"      // largest value the check accepts (inclusive)
 )
 
 // annotate sets a flag annotation; a flag that does not exist is a
@@ -84,6 +87,44 @@ func addAlternatives(fs *pflag.FlagSet, name string, alts ...string) {
 // markCredits records the credits of the further request a flag sends.
 func markCredits(fs *pflag.FlagSet, name string, credits int) {
 	annotate(fs, name, flagCredits, strconv.Itoa(credits))
+}
+
+// markBounds records the inclusive bounds of a numeric flag; nil leaves
+// one out. Callers pass the constants their check uses (parseListFlags,
+// checkAPIFlags), so the contract cannot name other bounds.
+func markBounds(fs *pflag.FlagSet, name string, minimum, maximum *float64) {
+	if minimum != nil {
+		annotate(fs, name, flagMinimum, strconv.FormatFloat(*minimum, 'g', -1, 64))
+	}
+	if maximum != nil {
+		annotate(fs, name, flagMaximum, strconv.FormatFloat(*maximum, 'g', -1, 64))
+	}
+}
+
+// markSchemaBounds records minimum and maximum of the spec schema of a
+// field or filter flag (spec-driven; the embedded spec names none today).
+// For fields the body check (spec.Validate, kin-openapi) enforces the same
+// values; filters go to the API as query parameters, which checks them.
+// A minimum made exclusive (OpenAPI 3.0: exclusiveMinimum true) is no
+// inclusive bound and is left out, a maximum likewise.
+func markSchemaBounds(fs *pflag.FlagSet, name string, s *openapi3.Schema) {
+	if s == nil {
+		return
+	}
+	minimum, maximum := s.Min, s.Max
+	if s.ExclusiveMin.IsTrue() {
+		minimum = nil
+	}
+	if s.ExclusiveMax.IsTrue() {
+		maximum = nil
+	}
+	markBounds(fs, name, minimum, maximum)
+}
+
+// bound is a pointer to v for markBounds.
+func bound(v int) *float64 {
+	f := float64(v)
+	return &f
 }
 
 // markEnum records the allowed values of a flag (nothing without values).
@@ -131,7 +172,9 @@ type commandInfo struct {
 	Examples    []string   `json:"examples"`
 }
 
-// flagInfo is one flag; Shorthand is omitted when the flag has none.
+// flagInfo is one flag; Shorthand is omitted when the flag has none,
+// Default when the help shows none (defaultIsZero), Minimum and Maximum
+// without a bound annotation.
 type flagInfo struct {
 	Name         string   `json:"name"`
 	Shorthand    string   `json:"shorthand,omitempty"`
@@ -145,6 +188,9 @@ type flagInfo struct {
 	Env          string   `json:"env,omitempty"`
 	Alternatives []string `json:"alternatives,omitempty"`
 	Credits      *int     `json:"credits,omitempty"`
+	Default      string   `json:"default,omitempty"`
+	Minimum      *float64 `json:"minimum,omitempty"`
+	Maximum      *float64 `json:"maximum,omitempty"`
 }
 
 // commandMeta is what a command sends: its registry entry (op false
@@ -365,6 +411,9 @@ func flagInfos(fs *pflag.FlagSet) ([]flagInfo, error) {
 			Env:          strings.Join(f.Annotations[flagEnv], ""),
 			Alternatives: slices.Clone(f.Annotations[flagAlternative]),
 			Credits:      flagCost(f),
+			Default:      flagDefault(f),
+			Minimum:      flagBound(f, flagMinimum),
+			Maximum:      flagBound(f, flagMaximum),
 		})
 	})
 	return out, err
@@ -383,6 +432,28 @@ func flagCost(f *pflag.Flag) *int {
 	return &n
 }
 
+// flagDefault is the default of f as the help shows it, "" when the help
+// shows none (the zero value of its type, defaultIsZero).
+func flagDefault(f *pflag.Flag) string {
+	if defaultIsZero(f) {
+		return ""
+	}
+	return f.DefValue
+}
+
+// flagBound is the bound annotation key of f, nil without one.
+func flagBound(f *pflag.Flag, key string) *float64 {
+	v := f.Annotations[key]
+	if len(v) != 1 {
+		return nil
+	}
+	n, err := strconv.ParseFloat(v[0], 64)
+	if err != nil {
+		panic(err) // set by markBounds
+	}
+	return &n
+}
+
 // commandsColumns are the columns of commands without --json.
 var commandsColumns = output.Columns{Table: []output.Column{
 	{Header: "COMMAND", Path: "command"},
@@ -393,7 +464,7 @@ var commandsColumns = output.Columns{Table: []output.Column{
 
 const commandsLong = `Listet alle Befehle mit Klasse (Spec 8.1), Credits je Aufruf (bei deliver mit Nachlesen, bei invoice update mit dem Lesen der Rechnung; Flags wie --file und --from-estimate sowie --all kosten zusätzlich) und Kurzhilfe.
 
-Mit --json (oder -o json|yaml, --jq) kommt die maschinenlesbare Liste für Agents: je Befehl Verwendungszeile mit Positionsargumenten, Aliase, Kurzhilfe, Klasse, Credits, Operation (operation_id, method, path), Flags mit Kurzform, Typ, Pflicht (mit gleichwertigen Flags unter alternatives), Wiederholbarkeit, erlaubten Werten und Hilfetext sowie Beispiele; die globalen Flags stehen einmal unter global_flags. Vertrag: docs/schemas/commands.json (Version 1).
+Mit --json (oder -o json|yaml, --jq) kommt die maschinenlesbare Liste für Agents: je Befehl Verwendungszeile mit Positionsargumenten, Aliase, Kurzhilfe, Klasse, Credits, Operation (operation_id, method, path), Flags mit Kurzform, Typ, Pflicht (mit gleichwertigen Flags unter alternatives), Wiederholbarkeit, erlaubten Werten, Standardwert wie „Standard:“ in der Hilfe und geprüften Grenzen (Felder default, minimum, maximum) und Hilfetext sowie Beispiele; die globalen Flags stehen einmal unter global_flags. Vertrag: docs/schemas/commands.json (Version 1).
 
 Klassen außer denen der Spec: local wirkt nur lokal (Konfiguration, Schlüsselbund, Projektdatei, Timer) und kostet nichts, außer der Befehl nennt eine Operation (auth login prüft das Token per GET /info); per_request entscheidet sich je Anfrage (papierkram api), credits ist dann null. blocked_by_read_only sagt, ob der Befehl unter PAPIERKRAM_READ_ONLY mit Exit 9 abbricht.
 

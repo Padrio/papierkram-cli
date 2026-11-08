@@ -118,6 +118,10 @@
                 {"anyOf": [
                   {"description": "env gesetzt", "required": ["env"]},
                   {"description": "keine Quelle env", "properties": {"default_from": {"type": "array", "items": {"type": "string", "not": {"enum": ["env"]}}}}}
+                ]},
+                {"anyOf": [
+                  {"description": "ohne minimum und maximum", "not": {"anyOf": [{"required": ["minimum"]}, {"required": ["maximum"]}]}},
+                  {"description": "minimum und maximum nur bei Zahlen-Flags", "properties": {"type": {"type": "string", "enum": ["integer", "number", "id"]}}}
                 ]}
               ],
               "properties": {
@@ -185,6 +189,19 @@
                   "description": "Umgebungsvariable, die den Wert setzt, wenn das Flag fehlt.",
                   "type": "string",
                   "pattern": "^PAPIERKRAM_[A-Z_]+$"
+                },
+                "default": {
+                  "description": "Standardwert des Flags als Text, wie ihn die Hilfe mit „(Standard: …)“ nennt (z. B. „25“, „30s“, „table“); fehlt, wenn er der Nullwert des Typs ist (leerer Text, false, 0, leere Liste). Den wirksamen Wert ohne Flag können ein Kontext (output, timeout) oder andere Flags ändern; solche Fälle nennt description (--limit mit --all: 100).",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minimum": {
+                  "description": "Kleinster erlaubter Wert, einschließlich; fehlt ohne Untergrenze. --limit, --page und --max-pages prüft das CLI vor jeder Anfrage (sonst Exit 2); bei Feld- und Filter-Flags kommt er aus der API-Spezifikation (heute nennt sie keinen).",
+                  "type": "number"
+                },
+                "maximum": {
+                  "description": "Größter erlaubter Wert, einschließlich; fehlt ohne Obergrenze (--limit: 100). Herkunft wie minimum.",
+                  "type": "number"
                 }
               }
             }
@@ -215,6 +232,10 @@
           {"anyOf": [
             {"description": "env gesetzt", "required": ["env"]},
             {"description": "keine Quelle env", "properties": {"default_from": {"type": "array", "items": {"type": "string", "not": {"enum": ["env"]}}}}}
+          ]},
+          {"anyOf": [
+            {"description": "ohne minimum und maximum", "not": {"anyOf": [{"required": ["minimum"]}, {"required": ["maximum"]}]}},
+            {"description": "minimum und maximum nur bei Zahlen-Flags", "properties": {"type": {"type": "string", "enum": ["integer", "number", "id"]}}}
           ]}
         ],
         "properties": {
@@ -282,6 +303,19 @@
             "description": "Umgebungsvariable, die den Wert setzt, wenn das Flag fehlt.",
             "type": "string",
             "pattern": "^PAPIERKRAM_[A-Z_]+$"
+          },
+          "default": {
+            "description": "Standardwert des Flags als Text, wie ihn die Hilfe mit „(Standard: …)“ nennt (z. B. „25“, „30s“, „table“); fehlt, wenn er der Nullwert des Typs ist (leerer Text, false, 0, leere Liste). Den wirksamen Wert ohne Flag können ein Kontext (output, timeout) oder andere Flags ändern; solche Fälle nennt description (--limit mit --all: 100).",
+            "type": "string",
+            "minLength": 1
+          },
+          "minimum": {
+            "description": "Kleinster erlaubter Wert, einschließlich; fehlt ohne Untergrenze. --limit, --page und --max-pages prüft das CLI vor jeder Anfrage (sonst Exit 2); bei Feld- und Filter-Flags kommt er aus der API-Spezifikation (heute nennt sie keinen).",
+            "type": "number"
+          },
+          "maximum": {
+            "description": "Größter erlaubter Wert, einschließlich; fehlt ohne Obergrenze (--limit: 100). Herkunft wie minimum.",
+            "type": "number"
           }
         }
       }

@@ -91,6 +91,7 @@ func (a *App) newPayCmd(e registry.Entry) *cobra.Command {
 		}
 		fs.Var(&rawValue{typ: flagType(f)}, pf.flag, pf.help+spec.HelpSuffix(f)+note)
 		markEnum(fs, pf.flag, f.Enum)
+		markSchemaBounds(fs, pf.flag, f.Schema)
 	}
 	fs.String("input", "", "Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder")
 	// either one of payOneOf: each is required with the others and --input
