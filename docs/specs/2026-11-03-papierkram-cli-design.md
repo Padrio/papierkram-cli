@@ -470,7 +470,7 @@ Coverage-Ziel ≥ 80 % ohne `internal/api/gen`.
 - Matrix `ubuntu-latest`, `macos-latest`, `windows-latest`: `go build`, `go test -race ./...`, Keychain-Integrationstest (Linux mit `dbus-run-session` + `gnome-keyring-daemon --unlock`).
 - Einmalig: `go mod verify`, `golangci-lint`, `govulncheck`, `go generate` ohne Diff, Coverage-Report mit Schwelle, `goreleaser release --snapshot --clean`.
 - Go-Version aus einer Quelle: `.go-version` (eine Zeile, `1.27.x`); jeder `actions/setup-go`-Schritt in CI, E2E und Release liest sie per `go-version-file: .go-version`, keiner setzt `go-version` selbst. `go.mod` nennt davon getrennt die Mindestversion (`go 1.26.0`, README „Go 1.26 oder neuer“); `scripts/check-go-version.sh` prüft beides, ein Update darf die Mindestversion nicht still anheben.
-- Dependabot hält die per Commit-SHA gepinnten Actions (`github-actions`) und die direkten Go-Module (`gomod`) wöchentlich aktuell. Ausgenommen ist `github.com/speakeasy-api/openapi` (in `go.mod` gepinnt, nur zusammen mit oapi-codegen anheben); indirekte Module, darunter das Tool oapi-codegen, bekommen keine Pull Requests.
+- Dependabot hält die per Commit-SHA gepinnten Actions (`github-actions`) und die direkten Go-Module (`gomod`) wöchentlich aktuell. Ausgenommen ist `github.com/speakeasy-api/openapi` (in `go.mod` gepinnt, nur zusammen mit oapi-codegen anheben); indirekte Module, darunter das Tool oapi-codegen, bekommen keine Pull Requests (Versions-Updates).
 
 ### 12.2 Release (GoReleaser v2)
 - Ziele: darwin/linux/windows × amd64/arm64, `CGO_ENABLED=0`, Checksums, SBOM optional.
