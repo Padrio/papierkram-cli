@@ -3,7 +3,7 @@
 Timer verwerfen, ohne zu buchen
 
 ```text
-Löscht den Timer des wirksamen Kontexts, ohne einen Zeiteintrag anzulegen: die erfasste Zeit geht verloren. Im Terminal fragt der Befehl nach (Enter = nein); ohne Terminal oder mit --no-input ist --yes nötig (sonst Exit 8). Verwirft auch eine beschädigte Timer-Datei. Auch unter Schreibschutz erlaubt, da nur lokal. Der Timer ist lokal (eine Datei je Kontext im Cache-Verzeichnis, PAPIERKRAM_CACHE_DIR); Papierkram kennt ihn nicht.
+Löscht den Timer des wirksamen Kontexts, ohne einen Zeiteintrag anzulegen: die erfasste Zeit geht verloren. Im Terminal fragt der Befehl nach (Enter = nein); ohne Terminal oder mit --no-input ist --yes nötig (sonst Exit 8). Verwirft auch eine beschädigte Timer-Datei und die Datei eines nicht abgeschlossenen time stop (<datei>.stopping). Auch unter Schreibschutz erlaubt, da nur lokal. Der Timer ist lokal (eine Datei je Kontext im Cache-Verzeichnis, PAPIERKRAM_CACHE_DIR); Papierkram kennt ihn nicht.
 
 Verwendung:
   papierkram time discard [Optionen]

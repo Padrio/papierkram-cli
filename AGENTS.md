@@ -114,7 +114,7 @@ papierkram voucher create --name "Büromaterial" --provenance domestic --credito
 | 4 | `not_found` | 404 | ID und Kontext prüfen (`list`); nicht raten |
 | 5 | `validation` | lokale Prüfung, 400, 422; nicht angewendet | Body nach `message` korrigieren (`schema <ressource> <aktion>`), Datum `YYYY-MM-DD`, Steuersatz `0.19` |
 | 6 | `quota` | 429, Monatskontingent erschöpft | **nicht wiederholen**, abbrechen und melden |
-| 7 | `conflict` | 409 oder Timer läuft schon | Zustand lesen (`describe`, `time status`) |
+| 7 | `conflict` | 409, Timer läuft schon oder wird gerade gestoppt | Zustand lesen (`describe`, `time status`) |
 | 8 | `confirmation_required` | Bestätigung fehlt; nichts gesendet | Menschen fragen; `--yes` nur mit Freigabe |
 | 9 | `read_only` | Schreibschutz; nichts gesendet | abbrechen und melden; den Schutz nie umgehen (kein anderer Kontext, keine Variable ändern) |
 | 10 | `network` | Netzwerkfehler beim Lesen oder **bevor** eine Änderung gesendet wurde | später erneut versuchen; die Änderung ist nicht angekommen |
@@ -139,6 +139,8 @@ Immer zuerst `error.hint` (bzw. `Hinweis:`) und `error.message` lesen; die Texte
 
 **`deliver`, Exit 12:** Das CLI hat schon einmal nachgelesen; der Hinweis enthält „Ergebnis unbekannt – vor Wiederholung per describe prüfen: papierkram invoice describe N“. `sent_on`, `state` und die Nummer prüfen und den Menschen entscheiden lassen. `deliver` nie selbst wiederholen. Bei `--via pdf` setzt die API weder `sent_on` noch `sent_via` (gemessen: beide `null`, `state` z. B. `sent`); ein abgebrochener PDF-Versand endet deshalb immer mit Exit 12, und `state` allein beweist keinen Versand (der Beleg kann schon früher versendet worden sein).
 
+**`time stop`, Exit 7:** `time stop` beansprucht den Timer direkt vor dem Senden atomar (die Timer-Datei wird in `….stopping` umbenannt). „Timer wird bereits von einem anderen papierkram time stop gebucht“ (Hinweis „Nichts gesendet. Mit papierkram time status prüfen, ob er noch läuft“): Ein anderer `time stop` bucht gerade; nichts wurde gesendet, **nicht** wiederholen, sondern `time status` und danach `time list --since heute` lesen. „Ein time stop wurde nicht abgeschlossen (Timer seit …)“ (auch bei `time start`; `time status` zeigt dann eine Warnung): Ein früherer `time stop` brach nach dem Beanspruchen ab, sein Eintrag kann existieren. Genau wie der Hinweis sagt vorgehen: erst `time list --since <Startdatum>` prüfen; war der Eintrag angelegt, `time discard --yes` (mit Freigabe); sonst `time discard --yes` und den genannten `time log`-Befehl mit der richtigen Endzeit. Scheitert nach einem Fehler das Zurückbenennen, endet `time stop` mit Exit 1 „Timer-Datei nicht zurückgestellt“; den Menschen fragen.
+
 **`time stop`, Exit 12 (oder Exit 1 mit `server_error`):** Der Hinweis enthält „Der Timer läuft weiter: erst mit papierkram time list prüfen, ob der Eintrag angelegt wurde; wenn ja, den Timer mit papierkram time discard verwerfen, sonst erneut papierkram time stop“ (bei Exit 12 steht davor „Ergebnis unbekannt – vor Wiederholung per describe/list prüfen.“; bei `server_error` folgt zusätzlich der Befehl zum Buchen von Hand). Genau so vorgehen; `time discard` braucht ohne Terminal `--yes`.
 
 ## Verbotene Muster
@@ -162,7 +164,7 @@ Immer zuerst `error.hint` (bzw. `Hinweis:`) und `error.message` lesen; die Texte
 | `create`, `time log`, `upload` | **nicht** idempotent: jeder Aufruf legt ein neues Objekt an | nach Exit 12 per `list` suchen (Name, Datum) |
 | `voucher create --file` | nicht wiederholen | nach Exit 11: Hinweis lesen; bei unsicherem Upload erst `voucher describe`, dann höchstens `retry_command`; ohne ID per `voucher list` suchen |
 | `invoice create --from-estimate` | wie `create`; scheitert das Lesen des Angebots, wurde nichts angelegt | `invoice list` |
-| `time stop` | der Timer wird erst nach dem Anlegen gelöscht | nach Exit 12 `time list --since heute`; war der Eintrag angelegt, `time discard --yes` statt erneut `time stop`; nach Exit 11 ist er angelegt: nie erneut `time stop` |
+| `time stop` | der Timer wird erst nach dem Anlegen gelöscht; ein paralleler zweiter Stopp endet mit Exit 7 ohne Anfrage | nach Exit 12 `time list --since heute`; war der Eintrag angelegt, `time discard --yes` statt erneut `time stop`; nach Exit 11 ist er angelegt: nie erneut `time stop` |
 | `deliver` | **nie** | `describe`: `sent_on`, `state`, Nummer |
 | `pay` | **nie**; eine Zahlung lässt sich per API nicht zurücknehmen | `voucher describe` |
 | `cancel`, `reverse` | Statuswechsel; eine Wiederholung lehnt die API in der Regel ab (422, Exit 5) | `describe` |

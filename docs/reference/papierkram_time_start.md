@@ -7,7 +7,7 @@ Startet den Timer für den wirksamen Kontext: Startzeit (jetzt), Aufgabe, Benutz
 
 Aufgabe und Benutzer werden jetzt bestimmt wie bei time log: Flag, sonst PAPIERKRAM_TASK bzw. PAPIERKRAM_USER, sonst task bzw. user aus der Projektdatei .papierkram.toml (anlegen: papierkram local init), beim Benutzer zuletzt user des Kontexts. --task nimmt auch einen Alias aus [tasks] der Projektdatei.
 
-Läuft schon ein Timer, bricht der Befehl ab (Exit 7). Unter Schreibschutz ist er gesperrt (Exit 9), weil time stop nicht buchen könnte. Sendet keine Anfrage. Der Timer ist lokal (eine Datei je Kontext im Cache-Verzeichnis, PAPIERKRAM_CACHE_DIR); Papierkram kennt ihn nicht.
+Läuft schon ein Timer oder wurde ein time stop nicht abgeschlossen, bricht der Befehl ab (Exit 7). Unter Schreibschutz ist er gesperrt (Exit 9), weil time stop nicht buchen könnte. Sendet keine Anfrage. Der Timer ist lokal (eine Datei je Kontext im Cache-Verzeichnis, PAPIERKRAM_CACHE_DIR); Papierkram kennt ihn nicht.
 
 Verwendung:
   papierkram time start [Optionen]
