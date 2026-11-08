@@ -41,7 +41,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 26 | Person `default` als String | Request `"true"`/`"false"`; Antwort Boolean (gemessen) | `TestE2E_PersonDefaultIsString` | hart |
 | 27 | **Entscheidung offen (Pascal):** `PAPIERKRAM_COMPANY`/`company` aus der Projektdatei als Default für `person … --company`? | keine Voreinstellung; nur Anzeige in `local show` | – | keine API-Frage, nicht gemessen |
 | 28 | `document_date` Pflicht beim Anlegen | Angebot: Pflicht (gemessen); Rechnung: nicht Pflicht | `TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate` (Rechnung); Angebot indirekt in `TestE2E_DeliverPdfEmptyBody` | Messung |
-| 29 | `invoice update --customer X` ohne Kontaktperson/Projekt | sendet `customer` nur mit `id`; die API leert dann `contact_person` und `project` (gemessen) | – (Lauf 2, Rundlauf) | **offen**, Verhalten unverändert |
+| 29 | `invoice update --customer X` ohne Kontaktperson/Projekt | gleicher Kunde: Kontaktperson und Projekt aus der gelesenen Rechnung mitgesendet; anderer Kunde: entfallen (Hinweis) | `TestE2E_Carries/14_InvoiceUpdateSameCustomer` | entschieden und umgesetzt (Task 8); hart |
 
 ## Punkte im Einzelnen
 
@@ -247,5 +247,5 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 ### 29. `invoice update --customer X` leert Kontaktperson und Projekt
 
 - **Gemessen 2026-11-04 (Lauf 2):** Ein Rechnungs-`PUT` mit `customer` ohne `contact_person`/`project` leert beide, auch beim selben Kunden (damals im Rundlauf, der `customer` als `{id}` sendete).
-- **Stand des CLI:** `invoice update --customer X` ohne `--contact-person`/`--customer-project` sendet genau das, `customer: {id: X}`, und leert damit Kontaktperson und Projekt. Das Verhalten bestand schon vor den E2E-Fixes und bleibt vorerst unverändert; beim Kundenwechsel ist es meist gewollt (die alten Referenzen gehören zum alten Kunden), beim selben Kunden nicht.
-- **Offen:** Ob `invoice update --customer` (selber Kunde) die Referenzen per Lesen erhalten oder warnen soll, braucht eine Entscheidung. Bis dahin Kontaktperson und Projekt per `--contact-person`/`--customer-project` mitgeben.
+- **Entschieden und umgesetzt (Task 8):** `invoice update --customer X` ohne `--contact-person`/`--customer-project` nutzt das Lesen der Zahlungsbedingung (Spec 9.4a), einmal für beide Zwecke. Ist X der Kunde der Rechnung, sendet es deren Kontaktperson und Projekt als `{id}` unter `customer` mit (Hinweis „Kontaktperson <id> und Projekt <id> der Rechnung mitgesendet (gleicher Kunde; ohne sie leert die API beide)“); bei einem anderen Kunden entfallen sie wie beim Rundlauf (Hinweis „Kunde X statt Y aus der Rechnung: … nicht übernommen“). Ein gesetztes Flag gewinnt. Das Lesen kostet 1 Credit, auch mit `--payment-term`.
+- **Live-Prüfung:** `TestE2E_Carries/14_InvoiceUpdateSameCustomer` (hart, 4 Credits): `invoice describe`, `invoice update <id> --customer <eigener Kunde>`, `invoice describe`; Kontaktperson und Projekt müssen unverändert sein.
