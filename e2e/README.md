@@ -18,21 +18,21 @@ normalen CI mit (ohne Variablen, nur Kompilieren und Überspringen).
 
 Ob der Account wirklich eine Sandbox ist, kann die Suite nicht prüfen. Das
 liegt bei dir: Trage nie Subdomain und Token der echten Buchhaltung ein. Die
-Suite legt Firmen, Kontaktpersonen, Projekte, Aufgaben, Zeiteinträge
-(darunter zwei von heute aus `TestE2E_TimeFlow`: einen per `time log`,
-einen per `time stop` aus dem lokalen Timer), Artikel, ein Datenfeld, zwei
-Angebote, zwei Rechnungen (drei, wenn die API in
+Suite legt Firmen, Kontaktpersonen, Projekte, Aufgaben, Zeiteinträge (darunter
+zwei von heute aus `TestE2E_TimeFlow`: einen per `time log`, einen nicht
+abrechenbaren per `time stop` aus dem lokalen Timer), Artikel, ein Datenfeld,
+zwei Angebote, zwei Rechnungen (drei, wenn die API in
 `TestE2E_OpenMeasurements` eine Rechnung ohne Rechnungsdatum annimmt) und zwei
-Belege an,
-lädt Dateien hoch, versendet ein Angebot und eine Rechnung als PDF und
-versucht, beide zu stornieren und einen Beleg zu stornieren und gegenzubuchen
-(ob die API das zulässt, wird gemessen). `TestE2E_MasterDataArchive`
-archiviert eigene Stammdaten (Lieferant, Projekt, Aufgabe, Artikel,
-Datenfeld) und ein eigenes Angebot und holt sie gleich danach wieder aus dem
-Archiv, sofern `archive` sie archiviert haben kann (Exit 0, 1 oder 12; nach
-einer Ablehnung oder 429 kein `unarchive`). Scheitert `unarchive`, steht
-„Fixture <ressource> <id> womöglich noch archiviert – Folgefehler möglich“
-im Log. Bankverbindungen und Bankumsätze liest die Suite nur.
+Belege an, lädt Dateien hoch, versendet ein Angebot und eine Rechnung als PDF
+und versucht, beide zu stornieren und einen Beleg zu stornieren und
+gegenzubuchen (ob die API das zulässt, wird gemessen).
+`TestE2E_MasterDataArchive` archiviert eigene Stammdaten (Lieferant, Projekt,
+Aufgabe, Artikel, Datenfeld) und ein eigenes Angebot und holt sie gleich
+danach wieder aus dem Archiv, sofern `archive` sie archiviert haben kann (Exit
+0, 1 oder 12; nach einer Ablehnung oder 429 kein `unarchive`). Scheitert
+`unarchive`, steht „Fixture <ressource> <id> womöglich noch archiviert –
+Folgefehler möglich“ im Log. Bankverbindungen und Bankumsätze liest die Suite
+nur.
 
 ## Ausführen
 

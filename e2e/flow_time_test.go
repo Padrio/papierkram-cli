@@ -12,11 +12,13 @@ import (
 // list --since heute, archive, unarchive) and the local timer (start,
 // status, stop, discard). Hard: every step; the timer commands other than
 // stop send nothing (0 credits), stop without a timer is exit 2, and the
-// stopped entry spans 11:00 to 11:02 of today with duration 120.
+// stopped entry spans 11:00 to 11:02 of today with duration 120 and is
+// unbillable (time start --unbillable, task 12).
 //
-// The timer runs share one directory (its state file lies below
-// <dir>/cache/papierkram/) and a clock set to today in s.loc (execAt), so
-// the flow never waits a minute and never crosses midnight.
+// All runs share one directory (the state file of the timer lies below
+// <dir>/cache/papierkram/) and a clock set to today in s.loc (execAt):
+// heute of time log and time list is the date of the timer steps, so the
+// flow never waits a minute and never crosses midnight (review of task 5).
 func TestE2E_TimeFlow(t *testing.T) {
 	s := live(t)
 
@@ -50,17 +52,29 @@ func TestE2E_TimeFlow(t *testing.T) {
 		}
 	}
 
-	// 1. time log (10), hard exit 0
+	// 1. time log at 08:30 (10), hard exit 0
 	logComment := s.prefix + "zeit-log"
 	s.need(t, 10)
-	logged := idOf(s.create(t, object{resource: "time", name: logComment},
-		"time", "log", "--task", ids(task), "--user", ids(user), "--date", "heute",
-		"--from", "08:00", "--to", "08:30", "-m", logComment))
+	r := s.runIn(t, dir, clock(8, 30), "", "time", "log", "--task", ids(task), "--user", ids(user), "--date", "heute",
+		"--from", "08:00", "--to", "08:30", "-m", logComment, "-o", "json")
+	logged := idOf(tryDecode(r.stdout))
+	if logged != 0 {
+		// registered before the hard check, like the entry of time stop
+		s.track(object{resource: "time", id: logged, name: logComment})
+		s.logf(t, "angelegt: time %d (%s)", logged, logComment)
+	}
+	if r.code != 0 || logged == 0 {
+		s.fatalf(t, "time log: Exit %d, Eintrag %d\n%s", r.code, logged, r.stderr)
+	}
 
-	// 2. time list --since heute (1), hard: the entry of 1 is listed
+	// 2. time list --since heute at 08:30 (1), hard: the entry of 1 is listed
 	s.need(t, 1)
+	r = s.runIn(t, dir, clock(8, 30), "", "time", "list", "--since", "heute", "--until", "heute", "--limit", "100", "-o", "json")
+	if r.code != 0 {
+		s.fatalf(t, "time list --since heute --until heute: Exit %d\n%s", r.code, r.stderr)
+	}
 	found := false
-	for _, e := range entries(s.ok(t, "", "time", "list", "--since", "heute", "--until", "heute", "--limit", "100")) {
+	for _, e := range entries(s.decode(t, r.stdout)) {
 		found = found || idOf(e) == logged
 	}
 	if !found {
@@ -75,15 +89,15 @@ func TestE2E_TimeFlow(t *testing.T) {
 		s.errorf(t, "time unarchive: Exit %d\n%s", u.code, u.stderr)
 	}
 
-	// 4. time start at 11:00 and time status (0), hard
+	// 4. time start --unbillable at 11:00 and time status (0), hard
 	timerComment := s.prefix + "zeit-timer"
-	r := local(clock(11, 0), "time", "start", "--task", ids(task), "--user", ids(user), "-m", timerComment, "-o", "json")
+	r = local(clock(11, 0), "time", "start", "--task", ids(task), "--user", ids(user), "-m", timerComment, "--unbillable", "-o", "json")
 	if r.code != 0 {
 		s.fatalf(t, "time start: Exit %d\n%s", r.code, r.stderr)
 	}
 	r = local(clock(11, 0), "time", "status", "-o", "json")
-	if m := tryDecode(r.stdout); r.code != 0 || m == nil || m["running"] != true || str(m["task"]) != ids(task) {
-		s.errorf(t, "time status nach time start: Exit %d, %s, erwartet running true und task %d\n%s",
+	if m := tryDecode(r.stdout); r.code != 0 || m == nil || m["running"] != true || str(m["task"]) != ids(task) || m["unbillable"] != true {
+		s.errorf(t, "time status nach time start: Exit %d, %s, erwartet running true, task %d und unbillable true\n%s",
 			r.code, strings.TrimSpace(r.stdout), task, r.stderr)
 	}
 
@@ -106,7 +120,8 @@ func TestE2E_TimeFlow(t *testing.T) {
 		s.errorf(t, "zweites time stop: Exit %d, erwartet 2 („Kein Timer läuft“)\n%s", r.code, r.stderr)
 	}
 
-	// 6. time describe (1), hard: 11:00 to 11:02 of today, duration 120
+	// 6. time describe (1), hard: 11:00 to 11:02 of today, duration 120,
+	// unbillable (from time start --unbillable)
 	s.need(t, 1)
 	m := s.ok(t, "", "time", "describe", ids(stop))
 	for _, f := range []struct {
@@ -119,6 +134,9 @@ func TestE2E_TimeFlow(t *testing.T) {
 	}
 	if str(m["duration"]) != "120" {
 		s.errorf(t, "time describe %d: duration %v, erwartet 120", stop, m["duration"])
+	}
+	if m["unbillable"] != true {
+		s.errorf(t, "time describe %d: unbillable %v, erwartet true (time start --unbillable)", stop, m["unbillable"])
 	}
 
 	// 7. time start at 12:00 and time discard (0), hard
