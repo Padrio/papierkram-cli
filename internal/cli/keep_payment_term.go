@@ -75,10 +75,15 @@ func (a *App) addKeepPaymentTerm(e registry.Entry, cmd *cobra.Command) {
 // --customer leaves out references of the invoice (needRefs), once for
 // both, and sets its current payment_term.id and its references of the
 // same customer; it returns the read for --dry-run (nil without a read).
-// The body is validated again with the values of the invoice.
-func (k *keepPaymentTerm) apply(c *cobra.Command, a *App, client *api.Client, params []int64, ws writeSpec, body map[string]any) (*ReadInfo, error) {
+// foreignInput (bodyInfo) says that --customer changes the customer of
+// --input: then the references need no read. The body is validated again
+// with the values of the invoice.
+func (k *keepPaymentTerm) apply(c *cobra.Command, a *App, client *api.Client, params []int64, ws writeSpec, body map[string]any, foreignInput bool) (*ReadInfo, error) {
 	_, given := body["payment_term"]
-	needTerm, needRefs := !given, needCustomerRefs(c, ws, body)
+	// a customer change against --input: its references belong to the old
+	// customer (dropped by dropForeignRefs), and so do those of the
+	// invoice, so a read could take over nothing
+	needTerm, needRefs := !given, !foreignInput && needCustomerRefs(c, ws, body)
 	if !needTerm && !needRefs {
 		return nil, nil
 	}

@@ -179,8 +179,8 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
 ## Credit-Budget
 
 Ein voller Lauf kostet nach den dokumentierten Preisen (Abschnitt 4.3) etwa
-**683 Credits** (Tests 655, Aufräumen 28; eingerechnet sind die geplanten
-Tests, im Kopf von `e2e_test.go` mit „(geplant, Task N)“ markiert); das
+**683 Credits** (Tests 655, Aufräumen 28; jede Zeile im Kopf von
+`e2e_test.go` gehört zu einem vorhandenen Test, keine ist mehr geplant); das
 Budget je Lauf ist **760** (Zielwert unter 800, die Aufschlüsselung steht
 im Kopf von `e2e_test.go`). Jede gesendete Anfrage
 zählt, auch eine abgelehnte (4xx/5xx): Die API berechnet z. B. ein mit 422

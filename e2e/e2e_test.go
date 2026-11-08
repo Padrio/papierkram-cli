@@ -12,8 +12,8 @@
 // Documented cost (registry.ExpectedCredits, spec 4.3) of every request of
 // a full run without leftovers, by test in execution order (files
 // alphabetically, source order within a file); a fixture counts where it
-// is used first. Rows marked "(geplant, Task N)" are planned: task N
-// replaces them by their breakdown, the amount stays.
+// is used first. No row is planned any more: every amount is the
+// breakdown of tests that exist.
 //
 //	CleanupLeftovers: 1 list page per 100 entries of 9 resources
 //	  (all pages; more with leftovers), at least                    9

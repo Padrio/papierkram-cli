@@ -301,6 +301,16 @@ func TestInvoiceUpdateRefFlagsWin(t *testing.T) {
 		}
 	}
 
+	// a customer change against --input needs no read for the
+	// references: they belong to the old customer (dry run: 1 credit)
+	app, srv = apiApp(t)
+	app.In = strings.NewReader(`{"customer":{"id":3214},"payment_term":{"id":7}}`)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--input", "-", "--customer", "99", "--dry-run", "-o", "json"}), 0)
+	wantRequests(t, srv, 0)
+	if out := mustOut(app); !strings.Contains(out, `"credits": 1`) || strings.Contains(out, `"read"`) {
+		t.Errorf("stdout = %s", out)
+	}
+
 	// references in --input count as given
 	app, srv = apiApp(t)
 	app.In = strings.NewReader(`{"customer":{"id":3214,"contact_person":{"id":55},"project":{"id":66}}}`)

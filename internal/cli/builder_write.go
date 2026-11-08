@@ -258,7 +258,7 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 			return err
 		}
 	}
-	body, _, err := a.buildBodyFrom(c, e, isUpdate, load)
+	body, info, err := a.buildBodyFrom(c, e, isUpdate, load)
 	if err != nil {
 		if s.from != nil && s.from.loaded {
 			return s.from.bodyErr(err)
@@ -266,7 +266,7 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 		return err
 	}
 	if s.keep != nil {
-		read, err := s.keep.apply(c, a, client, params, ws, body)
+		read, err := s.keep.apply(c, a, client, params, ws, body, info.foreignInput)
 		if err != nil {
 			return err
 		}
@@ -370,8 +370,9 @@ func errUnavailable(err error) error {
 // created as needed, maps merged) → --attr into custom_attributes → line
 // items (--items pruned like --input, or --item) → CoerceValue → the
 // preset field of create when still unset (spec 9.8) → Validate.
-// It returns the body and the response-only fields removed from --input and
-// --items.
+// It returns the body and what it learned on the way (bodyInfo): the
+// response-only fields removed from --input and --items, and whether
+// --customer names another customer than --input.
 //
 // --attr values are sent as strings: converting by the attribute's
 // data_type would need the definition, which costs a request (spec 6.1:
@@ -387,19 +388,20 @@ func errUnavailable(err error) error {
 // flags and line items are checked (their errors cost no read), then the
 // flags and positions override the base like they override --input, and
 // the base goes through the same coercion and validation.
-func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, load func() (map[string]any, error)) (map[string]any, []string, error) {
+func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, load func() (map[string]any, error)) (map[string]any, bodyInfo, error) {
 	ws := newWriteSpec(e)
 	if ws.err != nil {
-		return nil, nil, errUnavailable(ws.err)
+		return nil, bodyInfo{}, errUnavailable(ws.err)
 	}
 	resp := spec.ResourceResponseSchema(e.OperationID)
 	replace := flagBool(c, "replace-items")
 	body := map[string]any{}
 	var removed, moved []string
+	var foreign bool
 	if load == nil && c.Flags().Changed("input") {
 		in, err := a.readInput(flagString(c, "input"))
 		if err != nil {
-			return nil, nil, err
+			return nil, bodyInfo{}, err
 		}
 		key := itemsKey(ws)
 		if _, ok := in[key]; ok && key != "" && isUpdate && !replace {
@@ -410,36 +412,36 @@ func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, l
 		}
 		pr, err := spec.Prune(in, ws.req, resp)
 		if err != nil {
-			return nil, nil, prefixErr("--input: ", err)
+			return nil, bodyInfo{}, prefixErr("--input: ", err)
 		}
 		// null positions with --replace-items: an error whether Prune
 		// dropped the null or kept it (nullable on update), never a
 		// silent []
 		if v, ok := pr.Body[key]; key != "" && replace && ((ok && v == nil) || slices.Contains(pr.DroppedNulls, key)) {
-			return nil, nil, clierr.New(clierr.CodeValidation, key+": null ist nicht erlaubt – für leere Positionsliste [] angeben", "")
+			return nil, bodyInfo{}, clierr.New(clierr.CodeValidation, key+": null ist nicht erlaubt – für leere Positionsliste [] angeben", "")
 		}
 		a.pruneHints(pr)
 		body, removed, moved = pr.Body, pr.Removed, pr.Moved
 		// the moved references belong to the customer of the input, like
 		// those of an estimate to its customer (--from-estimate)
-		a.dropForeignRefs(c, ws, body, "--input", movedCustomerRefs(moved))
+		foreign = a.dropForeignRefs(c, ws, body, "--input", movedCustomerRefs(moved))
 	}
 
 	sets, err := a.flagSets(c, e.Resource, ws)
 	if err != nil {
-		return nil, nil, err
+		return nil, bodyInfo{}, err
 	}
 	var items []any
 	if ws.items != nil {
 		var gone []string
 		if items, gone, err = a.lineItems(c, ws, resp); err != nil {
-			return nil, nil, err
+			return nil, bodyInfo{}, err
 		}
 		removed = append(removed, gone...)
 	}
 	if load != nil {
 		if body, err = load(); err != nil {
-			return nil, nil, err
+			return nil, bodyInfo{}, err
 		}
 	}
 	for _, fs := range sets {
@@ -455,13 +457,13 @@ func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, l
 		}
 	}
 	if isUpdate && len(body) == 0 {
-		return nil, nil, clierr.New(clierr.CodeUsage, "keine Änderungen angegeben",
+		return nil, bodyInfo{}, clierr.New(clierr.CodeUsage, "keine Änderungen angegeben",
 			"mindestens ein Feld-Flag, --input oder --replace-items angeben; Verwendung: "+useLine(c))
 	}
 
 	v, err := spec.CoerceValue(ws.req, body, "")
 	if err != nil {
-		return nil, nil, err
+		return nil, bodyInfo{}, err
 	}
 	body, _ = v.(map[string]any)
 	// spec 9.8: the preset field (task create --project) after --input and
@@ -469,15 +471,25 @@ func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, l
 	// validation that needs it
 	presetMissing, err := a.presetBody(c, e, ws, body)
 	if err != nil {
-		return nil, nil, err
+		return nil, bodyInfo{}, err
 	}
 	if err := spec.Validate(body, ws.req); err != nil {
 		if presetMissing {
 			err = withPresetHint(err, e.Preset)
 		}
-		return nil, nil, err
+		return nil, bodyInfo{}, err
 	}
-	return body, removed, nil
+	return body, bodyInfo{removed: removed, foreignInput: foreign}, nil
+}
+
+// bodyInfo is what buildBodyFrom reports besides the body: removed are the
+// response-only fields removed from --input and --items; foreignInput says
+// that --input brought a customer and --customer names another one
+// (dropForeignRefs), so the references of --input belong to the old
+// customer.
+type bodyInfo struct {
+	removed      []string
+	foreignInput bool
 }
 
 // fieldSet is the value of a field flag at its body path.

@@ -224,18 +224,19 @@ var customerRefs = []string{"contact_person", "project"}
 // still set them; for the others a hint names what was dropped, where it
 // came from (src: "dem Angebot" for --from-estimate, "--input" for the
 // references Prune moved there) and the flags that set it. The same
-// customer keeps them.
-func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]any, src string, refs []string) {
+// customer keeps them. It reports whether --customer names another
+// customer than base.
+func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]any, src string, refs []string) bool {
 	flag := fieldFlag(ws, "customer")
 	cust, ok := base["customer"].(map[string]any)
 	if flag == "" || !c.Flags().Changed(flag) || !ok {
-		return
+		return false
 	}
 	given := strings.TrimSpace(rawText(c, flag))
 	newID, okNew := parseID(given)
 	oldID, okOld := parseID(fmt.Sprint(cust["id"]))
 	if okNew && okOld && newID == oldID {
-		return
+		return false
 	}
 	var dropped, flags []string
 	for _, k := range refs {
@@ -254,6 +255,7 @@ func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]an
 		_, _ = fmt.Fprintf(a.Err, "Hinweis: Kunde %s statt %v aus %s: %s nicht übernommen (setzen per %s)\n",
 			given, cust["id"], src, strings.Join(dropped, " und "), strings.Join(flags, " bzw. "))
 	}
+	return true
 }
 
 // fieldFlag is the flag of the field at path, "" without one.

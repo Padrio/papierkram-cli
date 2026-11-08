@@ -287,22 +287,16 @@ func TestIncomeRoundTripOtherCustomerDropsMovedRefs(t *testing.T) {
 			app, srv := apiApp(t)
 			app.In = strings.NewReader(described)
 			wantExit(t, app, Run(app, append([]string{"invoice", "update", "459", "--input", "-", "-o", "json"}, tc.extra...)), 0)
-			// another customer leaves out the dropped references: invoice
-			// update reads the invoice for them (open point 29, task 8)
-			// and drops them again (its customer is 3214)
-			n := 1
-			if tc.dropHint != "" {
-				n = 2
-			}
-			reqs := wantRequests(t, srv, n)
-			body := decodeBody(t, reqs[n-1].Body)
+			// no read for the references (open point 29): those of another
+			// customer than the input's are dropped, not read
+			body := decodeBody(t, wantRequests(t, srv, 1)[0].Body)
 			raw, _ := json.Marshal(body["customer"])
 			if got := canonJSON(t, raw); got != tc.want {
 				t.Errorf("customer = %s, erwartet %s", got, tc.want)
 			}
 			_, errs := bufs(app)
-			if tc.dropHint != "" && !strings.Contains(errs, "Hinweis: "+tc.dropHint+"\n") {
-				t.Errorf("Hinweis %q fehlt: %q", tc.dropHint, errs)
+			if tc.dropHint != "" && strings.Count(errs, "Hinweis: "+tc.dropHint+"\n") != 1 || strings.Count(errs, " statt ") > 1 {
+				t.Errorf("Hinweis %q nicht genau einmal: %q", tc.dropHint, errs)
 			}
 			if tc.dropHint == "" && strings.Contains(errs, "statt") {
 				t.Errorf("unerwarteter Hinweis: %q", errs)
