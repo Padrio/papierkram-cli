@@ -85,3 +85,58 @@ func TestDecideReadsOnlyItsVariables(t *testing.T) {
 		}
 	}
 }
+
+// Only a run without -run, -skip and -list is a full run (the coverage
+// gate of TestMain applies only then).
+func TestFullRun(t *testing.T) {
+	tests := []struct {
+		name  string
+		flags map[string]string
+		want  bool
+	}{
+		{"no flag", map[string]string{}, true},
+		{"flags empty", map[string]string{"test.run": "", "test.skip": "", "test.list": ""}, true},
+		{"run", map[string]string{"test.run": "TestE2E_TimeFlow"}, false},
+		{"skip", map[string]string{"test.skip": "TestE2E_Carries"}, false},
+		{"list", map[string]string{"test.list": "."}, false},
+		{"other flag", map[string]string{"test.v": "true"}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FullRun(envOf(tc.flags)); got != tc.want {
+				t.Errorf("FullRun(%v) = %v, want %v", tc.flags, got, tc.want)
+			}
+		})
+	}
+}
+
+// A CLI run hit the quota when it ended with exit 6 or any of its
+// requests was answered with 429 (a CLI that maps it differently, or a
+// 429 on an earlier step of a multi-step command).
+func TestQuotaHit(t *testing.T) {
+	tests := []struct {
+		name   string
+		code   int
+		status []int
+		want   bool
+	}{
+		{"success", 0, []int{200}, false},
+		{"no request", 2, nil, false},
+		{"exit 6", 6, []int{429}, true},
+		{"exit 6 without exchange", 6, nil, true},
+		{"429 on an earlier step", 11, []int{201, 429}, true},
+		{"other error", 5, []int{422}, false},
+		{"unknown outcome", 12, nil, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			xs := make([]Exchange, 0, len(tc.status))
+			for _, s := range tc.status {
+				xs = append(xs, Exchange{Method: "GET", Path: "/api/v1/info", Status: s})
+			}
+			if got := QuotaHit(tc.code, xs); got != tc.want {
+				t.Errorf("QuotaHit(%d, %v) = %v, want %v", tc.code, tc.status, got, tc.want)
+			}
+		})
+	}
+}

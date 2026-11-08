@@ -89,3 +89,27 @@ func typeProperty(s *openapi3.Schema) *openapi3.Schema {
 	}
 	return nil
 }
+
+// IsFollowUpType accepts exactly the type of a resource with cancel or
+// reverse; remove relies on it besides the only place that registers a
+// follow-up.
+func TestIsFollowUpType(t *testing.T) {
+	tests := []struct {
+		resource, typ string
+		want          bool
+	}{
+		{"voucher", "expense_voucher", true},
+		{"invoice", "invoice", true},
+		{"estimate", "estimate", true},
+		{"voucher", "invoice", false},
+		{"invoice", "", false},
+		{"company", "", false},
+		{"company", "company", false},
+		{"", "", false},
+	}
+	for _, tc := range tests {
+		if got := IsFollowUpType(tc.resource, tc.typ); got != tc.want {
+			t.Errorf("IsFollowUpType(%q, %q) = %v, want %v", tc.resource, tc.typ, got, tc.want)
+		}
+	}
+}

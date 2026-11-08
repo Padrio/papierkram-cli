@@ -288,4 +288,16 @@ func TestCoverageNil(t *testing.T) {
 	c.Record("GET", "/api/v1/info", 200)
 	c.BeginCleanup()
 	c.NotApplicable("GetInfo", "x")
+	plan := map[string]Expectation{
+		"GetInfo":   {Test: "TestE2E_InfoCreditCost", Mode: ModeSuccess},
+		"ListUsers": {Test: "TestE2E_QuotaHeadersPresent", Mode: ModeSuccess, Pending: 3},
+	}
+	r := c.Report(plan)
+	if len(r.Covered) != 0 || len(r.NotApplicable) != 0 || !slices.Equal(r.Missing, []string{"GetInfo"}) || !slices.Equal(r.Pending, []string{"ListUsers"}) {
+		t.Errorf("Report of nil = %+v; want only GetInfo missing, ListUsers pending", r)
+	}
+	want := "ABDECKUNG: abgedeckt 0/2 (davon 0 nur mit Fehlerantwort, 0 nur im Aufräumen), nicht anwendbar 0, ausstehend 1, fehlend 1"
+	if len(r.Lines) == 0 || r.Lines[0] != want {
+		t.Errorf("Lines %q; want first %q", r.Lines, want)
+	}
 }

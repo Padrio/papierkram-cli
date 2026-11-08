@@ -53,7 +53,16 @@ func JudgeFollowUp(resource string, target int64, answer []byte) (FollowUp, bool
 	f := FollowUp{ID: id}
 	f.Name, _ = m["name"].(string)
 	f.Type, _ = m["type"].(string)
-	want, known := followUpTypes[resource]
-	f.Track = known && f.Type == want
+	f.Track = IsFollowUpType(resource, f.Type)
 	return f, true
+}
+
+// IsFollowUpType reports whether typ is the type of the answer objects of
+// resource, a resource with cancel or reverse: only an object of that
+// type lies in the ID space of resource. JudgeFollowUp sets Track with it,
+// and the cleanup of the live suite checks it again before it touches a
+// follow-up.
+func IsFollowUpType(resource, typ string) bool {
+	want, known := followUpTypes[resource]
+	return known && typ == want
 }

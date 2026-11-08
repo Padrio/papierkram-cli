@@ -34,3 +34,33 @@ func Decide(getenv func(string) string) (run bool, reason string) {
 	}
 	return true, ""
 }
+
+// FullRun reports whether the test binary runs every test: none of the
+// flags test.run, test.skip and test.list is set (flag returns the value
+// of a flag, "" when it is missing). Only then does the coverage gate of
+// TestMain apply; -test.list runs no test at all.
+func FullRun(flag func(name string) string) bool {
+	for _, name := range []string{"test.run", "test.skip", "test.list"} {
+		if flag(name) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// QuotaHit reports whether a CLI run hit the monthly quota: it ended with
+// exit 6 (quota, HTTP 429), or one of its requests xs was answered with
+// 429 (also an earlier step of a multi-step command that ended
+// otherwise). After that every further request fails as well (AGENTS.md
+// rule 7: never retry a 429).
+func QuotaHit(code int, xs []Exchange) bool {
+	if code == 6 {
+		return true
+	}
+	for _, x := range xs {
+		if x.Status == 429 {
+			return true
+		}
+	}
+	return false
+}
