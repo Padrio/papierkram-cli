@@ -147,6 +147,66 @@ func Save(path string, s State) error {
 	return safefile.CreateAtomic(path, append(data, '\n'), 0o600)
 }
 
+// ErrClaimed reports that the state file cannot be claimed: another
+// time stop has claimed it (its claim is there) or has already removed
+// it.
+var ErrClaimed = errors.New("timer already claimed by another time stop")
+
+// StoppingPath is the claim of the state file at path: the name time stop
+// renames it to before it sends the entry (task 11, C2).
+func StoppingPath(path string) string { return path + ".stopping" }
+
+// Claim takes the state file at path for one time stop by renaming it to
+// StoppingPath(path). The rename of one file succeeds once, so of two
+// concurrent stops one gets the claim and the other fs.ErrNotExist, which
+// is ErrClaimed. A claim already there (also a symbolic link) is
+// ErrClaimed before anything is renamed: os.Rename replaces an existing
+// target on every platform (on Windows with MOVEFILE_REPLACE_EXISTING),
+// so without this check a stop could take a new state file over the
+// claim of another. A symbolic link at path is renamed itself, never
+// its target. Other errors are those of the file system.
+func Claim(path string) error {
+	if _, err := os.Lstat(StoppingPath(path)); err == nil {
+		return ErrClaimed
+	}
+	if err := os.Rename(path, StoppingPath(path)); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return ErrClaimed
+		}
+		return err
+	}
+	return nil
+}
+
+// Release puts the claim of path back (the stop failed, the timer keeps
+// running). It never replaces a state file at path (also a symbolic
+// link): one there is an error matching fs.ErrExist, and the claim
+// stays. Without a claim the error matches fs.ErrNotExist.
+func Release(path string) error {
+	if _, err := os.Lstat(StoppingPath(path)); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return fmt.Errorf("Timer-Datei %s ist schon vorhanden: %w", output.Printable(path), fs.ErrExist)
+	}
+	return os.Rename(StoppingPath(path), path)
+}
+
+// LoadStopping reads the claim of path with the rules of Load: nil
+// without one, an error (exit 1) naming the claim and time discard when
+// it cannot be used.
+func LoadStopping(path string) (*State, error) { return Load(StoppingPath(path)) }
+
+// Equal reports whether s and o are the same timer: all fields equal, the
+// start as the same instant (its zone may differ).
+func (s State) Equal(o State) bool {
+	if !s.StartedAt.Equal(o.StartedAt) {
+		return false
+	}
+	o.StartedAt = s.StartedAt
+	return s == o
+}
+
 // Delete removes the state file at path (a symbolic link itself, never
 // its target); without a file it does nothing.
 func Delete(path string) error {

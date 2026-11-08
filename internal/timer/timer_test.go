@@ -237,3 +237,216 @@ func TestLoadWithFileInPathIsNoTimer(t *testing.T) {
 		t.Errorf("Load = %+v, %v", st, err)
 	}
 }
+
+// Task 11 (C2): time stop claims the state file by renaming it to
+// StoppingPath before it sends the entry. Of two stops only one claim
+// succeeds; the other gets ErrClaimed, as does a stop that finds a claim
+// left behind. Release puts the claim back, never over a new state file.
+func TestClaimRelease(t *testing.T) {
+	path := Path(t.TempDir(), "firma")
+	if got := StoppingPath(path); got != path+".stopping" {
+		t.Errorf("StoppingPath = %q", got)
+	}
+	// no timer: nothing to claim
+	if err := Claim(path); !errors.Is(err, ErrClaimed) {
+		t.Errorf("Claim without file = %v, want ErrClaimed", err)
+	}
+	if st, err := LoadStopping(path); st != nil || err != nil {
+		t.Errorf("LoadStopping without claim = %+v, %v", st, err)
+	}
+	want := state(t)
+	if err := Save(path, want); err != nil {
+		t.Fatal(err)
+	}
+	if err := Claim(path); err != nil {
+		t.Fatalf("Claim = %v", err)
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("state file left after Claim: %v", err)
+	}
+	if st, err := Load(path); st != nil || err != nil {
+		t.Errorf("Load after Claim = %+v, %v", st, err)
+	}
+	got, err := LoadStopping(path)
+	if err != nil || got == nil || !got.Equal(want) {
+		t.Fatalf("LoadStopping = %+v, %v", got, err)
+	}
+	// a second claim: the first one is there
+	if err := Claim(path); !errors.Is(err, ErrClaimed) {
+		t.Errorf("second Claim = %v, want ErrClaimed", err)
+	}
+	// a new state file next to the claim is not taken either (the claim
+	// is checked first, so no rename replaces it, also on Windows)
+	other := want
+	other.Task = 999
+	if err := Save(path, other); err != nil {
+		t.Fatal(err)
+	}
+	if err := Claim(path); !errors.Is(err, ErrClaimed) {
+		t.Errorf("Claim with a claim present = %v, want ErrClaimed", err)
+	}
+	if st, _ := LoadStopping(path); st == nil || st.Task != 545 {
+		t.Errorf("claim replaced: %+v", st)
+	}
+	// Release never replaces a state file
+	if err := Release(path); !errors.Is(err, fs.ErrExist) {
+		t.Errorf("Release over a state file = %v, want fs.ErrExist", err)
+	}
+	if st, _ := Load(path); st == nil || st.Task != 999 {
+		t.Errorf("state file replaced by Release: %+v", st)
+	}
+	if st, _ := LoadStopping(path); st == nil || st.Task != 545 {
+		t.Errorf("claim lost by a failed Release: %+v", st)
+	}
+	if err := Delete(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := Release(path); err != nil {
+		t.Fatalf("Release = %v", err)
+	}
+	if st, err := Load(path); err != nil || st == nil || !st.Equal(want) {
+		t.Errorf("Load after Release = %+v, %v", st, err)
+	}
+	if _, err := os.Lstat(StoppingPath(path)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("claim left after Release: %v", err)
+	}
+	// nothing to release
+	if err := Release(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Release without claim = %v, want fs.ErrNotExist", err)
+	}
+}
+
+// Of concurrent claims of one state file exactly one succeeds.
+func TestClaimConcurrent(t *testing.T) {
+	path := Path(t.TempDir(), "firma")
+	for range 20 {
+		if err := Save(path, state(t)); err != nil {
+			t.Fatal(err)
+		}
+		const n = 8
+		errs := make(chan error, n)
+		start := make(chan struct{})
+		for range n {
+			go func() {
+				<-start
+				errs <- Claim(path)
+			}()
+		}
+		close(start)
+		won := 0
+		for range n {
+			switch err := <-errs; {
+			case err == nil:
+				won++
+			case !errors.Is(err, ErrClaimed) && runtime.GOOS != "windows":
+				// Windows may refuse a rename of a file that another
+				// rename holds open (sharing violation): still a loser
+				t.Errorf("Claim = %v", err)
+			}
+		}
+		if won != 1 {
+			t.Fatalf("%d claims succeeded, want 1", won)
+		}
+		if err := Delete(StoppingPath(path)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// The claim follows the rules of the state file: LoadStopping rejects
+// what Load rejects and names the claim; a symbolic link is renamed and
+// released as a link, never followed, and a link at the claim path
+// blocks a claim.
+func TestClaimSymlinkRule(t *testing.T) {
+	dir := t.TempDir()
+	valid := filepath.Join(dir, "valid.json")
+	if err := Save(valid, state(t)); err != nil {
+		t.Fatal(err)
+	}
+	path := Path(dir, "firma")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(valid, path); err != nil {
+		t.Skipf("no symlinks: %v", err)
+	}
+	if err := Claim(path); err != nil {
+		t.Fatalf("Claim of a link = %v", err)
+	}
+	if fi, err := os.Lstat(StoppingPath(path)); err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+		t.Errorf("claim is no link: %v, %v", fi, err)
+	}
+	st, err := LoadStopping(path)
+	var ce *clierr.Error
+	if st != nil || !errors.As(err, &ce) || ce.Exit() != 1 || !strings.Contains(ce.Message, ".stopping") ||
+		!strings.Contains(ce.Hint, "papierkram time discard") {
+		t.Errorf("LoadStopping of a link = %+v, %v", st, err)
+	}
+	if err := Release(path); err != nil {
+		t.Fatalf("Release of a link = %v", err)
+	}
+	if fi, err := os.Lstat(path); err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+		t.Errorf("released file is no link: %v, %v", fi, err)
+	}
+	if _, err := Load(valid); err != nil {
+		t.Errorf("link target changed: %v", err)
+	}
+
+	// a (dangling) link at the claim path blocks the claim
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(path, state(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "nirgends"), StoppingPath(path)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Claim(path); !errors.Is(err, ErrClaimed) {
+		t.Errorf("Claim with a link at the claim = %v, want ErrClaimed", err)
+	}
+	if st, err := Load(path); err != nil || st == nil {
+		t.Errorf("state file moved: %+v, %v", st, err)
+	}
+}
+
+// LoadStopping applies the checks of Load to the claim.
+func TestLoadStoppingRejectsInvalidClaim(t *testing.T) {
+	path := Path(t.TempDir(), "firma")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(StoppingPath(path), []byte(`{"context":"firma","task":1,"user":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := LoadStopping(path)
+	var ce *clierr.Error
+	if st != nil || !errors.As(err, &ce) || ce.Exit() != 1 || !strings.Contains(ce.Message, "Startzeit fehlt") ||
+		!strings.Contains(ce.Message, "timer-firma.json.stopping") {
+		t.Errorf("LoadStopping = %+v, %v", st, err)
+	}
+}
+
+// State.Equal compares all fields, the start as an instant.
+func TestStateEqual(t *testing.T) {
+	a := state(t)
+	b := a
+	b.StartedAt = a.StartedAt.UTC()
+	if !a.Equal(b) {
+		t.Error("same instant in another zone is not equal")
+	}
+	for name, mod := range map[string]func(*State){
+		"context": func(s *State) { s.Context = "x" },
+		"start":   func(s *State) { s.StartedAt = s.StartedAt.Add(time.Second) },
+		"task":    func(s *State) { s.Task++ },
+		"user":    func(s *State) { s.User++ },
+		"comment": func(s *State) { s.Comment = "x" },
+		"base":    func(s *State) { s.BaseURL = "x" },
+	} {
+		c := a
+		mod(&c)
+		if a.Equal(c) {
+			t.Errorf("%s: equal", name)
+		}
+	}
+}
