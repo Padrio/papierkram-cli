@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/Padrio/papierkram-cli/internal/redact"
+	"github.com/Padrio/papierkram-cli/internal/timer"
 )
 
 // Task 12: time start --unbillable stores the checked value in the timer
@@ -214,5 +217,60 @@ func TestTimerHelpNamesUnbillable(t *testing.T) {
 				t.Errorf("%s: Hilfe ohne %q:\n%s", args, w, out.String())
 			}
 		}
+	}
+}
+
+// Review T12-M3: the order of the checks of time start with --unbillable.
+// The value is checked before the running timer is loaded (exit 5, not
+// 7; the timer stays), and after the task and user (a missing task is
+// exit 2, not 5). Neither sends a request.
+func TestTimerStartUnbillableCheckOrder(t *testing.T) {
+	app, srv := logApp(t, nine(t))
+	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 0)
+	before := timerFile(t, app, "")
+	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1", "--unbillable=vielleicht", "-o", "json"), 5)
+	wantStderr(t, app, `"vielleicht"`, "--unbillable", "Timer nicht gestartet", `"code":"validation"`)
+	if _, errs := bufs(app); strings.Contains(errs, "läuft bereits") {
+		t.Errorf("running timer named before the value: %s", errs)
+	}
+	if !bytes.Equal(timerFile(t, app, ""), before) {
+		t.Error("running timer changed")
+	}
+
+	app, srv2 := logApp(t, nine(t))
+	wantExit(t, app, at(app, nine(t), "time", "start", "--user", "1", "--unbillable=vielleicht", "-o", "json"), 2)
+	wantStderr(t, app, "--task", `"code":"usage"`)
+	if _, errs := bufs(app); strings.Contains(errs, "vielleicht") {
+		t.Errorf("value checked before the task: %s", errs)
+	}
+	if timerFile(t, app, "") != nil {
+		t.Error("state saved")
+	}
+	wantRequests(t, srv, 0)
+	wantRequests(t, srv2, 0)
+}
+
+// The time log command in the hint of a claim left by a time stop
+// (errStopUnfinished) books what the timer would, --unbillable included.
+func TestTimerStopUnfinishedHintNamesUnbillable(t *testing.T) {
+	for _, tc := range []struct {
+		flag      []string
+		msg, want string
+	}{
+		{[]string{"--unbillable"}, strings.TrimSuffix(unfinishedMsg, ")") + ", nicht abrechenbar)", " --to HH:MM --unbillable"},
+		{[]string{"--unbillable=nein"}, unfinishedMsg, " --to HH:MM --unbillable=false"},
+		{nil, unfinishedMsg, " --to HH:MM"},
+	} {
+		app, srv := logApp(t, nine(t))
+		wantExit(t, app, at(app, nine(t), append([]string{"time", "start", "--task", "545", "--user", "1"}, tc.flag...)...), 0)
+		leaveClaim(t, timer.Path(app.CacheDir, ""))
+		for _, cmd := range [][]string{{"time", "stop"}, {"time", "start", "--task", "545", "--user", "1"}} {
+			wantExit(t, app, at(app, morning(t), append(slices.Clone(cmd), "-o", "json")...), 7)
+			msg, hint := jsonError(t, app)
+			if msg != tc.msg || hint != unfinishedHint[:strings.LastIndex(unfinishedHint, " --to HH:MM")]+tc.want {
+				t.Errorf("%v %v: %q / %q", tc.flag, cmd, msg, hint)
+			}
+		}
+		wantRequests(t, srv, 0)
 	}
 }
