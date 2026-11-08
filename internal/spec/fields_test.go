@@ -379,7 +379,7 @@ func TestFieldsPatternFormatHelp(t *testing.T) {
 		switch f.Flag {
 		case "started-at-time", "ended-at-time":
 			n++
-			want := map[string]string{"started-at-time": " (HH:MM)", "ended-at-time": " (HH:MM (bis 24:00))"}[f.Flag]
+			want := map[string]string{"started-at-time": " (HH:MM)", "ended-at-time": " (HH:MM oder 24:00)"}[f.Flag]
 			if !strings.HasSuffix(f.Help, want) {
 				t.Errorf("--%s: help %q", f.Flag, f.Help)
 			}

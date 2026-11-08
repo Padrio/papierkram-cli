@@ -692,7 +692,7 @@ actions:
   - target: $.paths['/tracker/time_entries'].post.requestBody.content['application/json'].schema.properties.ended_at_time
     update:
       pattern: '^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$'
-      x-cli-pattern-format: 'HH:MM (bis 24:00)'
+      x-cli-pattern-format: 'HH:MM oder 24:00'
   - target: $.paths['/tracker/time_entries/{id}'].put.requestBody.content['application/json'].schema.properties.started_at_time
     update:
       pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
@@ -700,7 +700,7 @@ actions:
   - target: $.paths['/tracker/time_entries/{id}'].put.requestBody.content['application/json'].schema.properties.ended_at_time
     update:
       pattern: '^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$'
-      x-cli-pattern-format: 'HH:MM (bis 24:00)'
+      x-cli-pattern-format: 'HH:MM oder 24:00'
 
   # ---------------------------------------------------------------------------
   # 15. Unit of billable_duration in time entry bodies

@@ -164,9 +164,9 @@ func TestTimeCreateRejectsTimesOtherThanHHMM(t *testing.T) {
 		{[]string{"--started-at-time", "9:00", "--ended-at-time", "10:30"}, `started_at_time: ungültiger Wert "9:00", erwartet HH:MM`, "HH:MM"},
 		{[]string{"--started-at-time", "24:00", "--ended-at-time", "24:00"}, `started_at_time: ungültiger Wert "24:00", erwartet HH:MM`, "HH:MM"},
 		{[]string{"--started-at-time", "09:00", "--ended-at-time", "2026-11-04T10:30:00+01:00"},
-			`ended_at_time: ungültiger Wert "2026-11-04T10:30:00+01:00", erwartet HH:MM (bis 24:00)`, "HH:MM (bis 24:00)"},
+			`ended_at_time: ungültiger Wert "2026-11-04T10:30:00+01:00", erwartet HH:MM oder 24:00`, "HH:MM oder 24:00"},
 		// the end may be 24:00 (open point 22), not later
-		{[]string{"--started-at-time", "09:00", "--ended-at-time", "24:01"}, `ended_at_time: ungültiger Wert "24:01", erwartet HH:MM (bis 24:00)`, "HH:MM (bis 24:00)"},
+		{[]string{"--started-at-time", "09:00", "--ended-at-time", "24:01"}, `ended_at_time: ungültiger Wert "24:01", erwartet HH:MM oder 24:00`, "HH:MM oder 24:00"},
 	} {
 		for _, extra := range [][]string{nil, {"--dry-run"}} {
 			app, srv := apiApp(t)
@@ -195,7 +195,7 @@ func TestTimeCreateRejectsTimesOtherThanHHMM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for flag, form := range map[string]string{"started-at-time": "(HH:MM)", "ended-at-time": "(HH:MM (bis 24:00))"} {
+	for flag, form := range map[string]string{"started-at-time": "(HH:MM)", "ended-at-time": "(HH:MM oder 24:00)"} {
 		if u := cmd.Flags().Lookup(flag).Usage; !strings.Contains(u, form) {
 			t.Errorf("--%s usage = %q", flag, u)
 		}

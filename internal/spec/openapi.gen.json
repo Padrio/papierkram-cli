@@ -25295,7 +25295,7 @@
                     "nullable": false,
                     "pattern": "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$",
                     "type": "string",
-                    "x-cli-pattern-format": "HH:MM (bis 24:00)"
+                    "x-cli-pattern-format": "HH:MM oder 24:00"
                   },
                   "entry_date": {
                     "format": "date",
@@ -25753,7 +25753,7 @@
                     "nullable": false,
                     "pattern": "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$",
                     "type": "string",
-                    "x-cli-pattern-format": "HH:MM (bis 24:00)"
+                    "x-cli-pattern-format": "HH:MM oder 24:00"
                   },
                   "entry_date": {
                     "format": "date",

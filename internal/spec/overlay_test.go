@@ -676,8 +676,8 @@ func TestUploadFileRequired(t *testing.T) {
 // also be 24:00, the end of the day (open point 22, measured E2E run 2).
 func TestTimeEntryTimesHHMM(t *testing.T) {
 	format := map[string]string{
-		"CreateTimeEntry.started_at_time": "HH:MM", "CreateTimeEntry.ended_at_time": "HH:MM (bis 24:00)",
-		"UpdateTimeEntry.started_at_time": "HH:MM", "UpdateTimeEntry.ended_at_time": "HH:MM (bis 24:00)",
+		"CreateTimeEntry.started_at_time": "HH:MM", "CreateTimeEntry.ended_at_time": "HH:MM oder 24:00",
+		"UpdateTimeEntry.started_at_time": "HH:MM", "UpdateTimeEntry.ended_at_time": "HH:MM oder 24:00",
 	}
 	want := slices.Sorted(maps.Keys(format))
 	got := extensionPaths(t, "x-cli-pattern-format")
