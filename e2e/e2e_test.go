@@ -150,6 +150,7 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -356,6 +357,10 @@ func (s *liveSuite) checkListContract(t *testing.T, resource, stdout string) {
 	var schema openapi3.Schema
 	if err := json.Unmarshal(raw, &schema); err != nil {
 		s.errorf(t, "Vertrag %s ist kein Schema-Objekt: %v", listContract, err)
+		return
+	}
+	if err := schema.Validate(context.Background()); err != nil {
+		s.errorf(t, "Vertrag %s ist kein gültiges OpenAPI-3-Schema: %v", listContract, err)
 		return
 	}
 	var doc any
