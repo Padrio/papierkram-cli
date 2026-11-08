@@ -8,6 +8,7 @@ package safefile
 import (
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -24,13 +25,24 @@ var (
 	ErrNotRegular = errors.New("not a regular file")
 	// ErrTooLarge reports a file larger than the limit of ReadRegular.
 	ErrTooLarge = errors.New("file too large")
+	// ErrSwapped reports a file at the path replaced by another regular
+	// file between the check of the path and the open: a concurrent
+	// writer, no file that must be refused. It matches ErrNotRegular for
+	// callers that do not tell the two apart.
+	ErrSwapped = fmt.Errorf("file replaced while it was opened: %w", ErrNotRegular)
 )
+
+// beforeOpen runs between the check of the path and the open in
+// ReadRegular; tests swap the file there.
+var beforeOpen = func(string) {}
 
 // ReadRegular reads the file at path when it is a regular file of at most
 // limit bytes. A device (a checked-in link to /dev/zero), a FIFO (would
 // block) or a directory is ErrNotRegular before it is opened; the opened
 // handle is checked again, so a file swapped in between is never read
-// beyond limit+1 bytes (ErrTooLarge). With follow a symbolic link to a
+// beyond limit+1 bytes (ErrTooLarge): one that is no regular file is
+// ErrNotRegular, another regular file ErrSwapped (a concurrent writer;
+// reading again sees the new file). With follow a symbolic link to a
 // regular file is read; without, a link is ErrSymlink and, where the
 // platform allows, the open does not follow one either. Other errors are
 // those of the file system (*fs.PathError, fs.ErrNotExist).
@@ -49,6 +61,7 @@ func ReadRegular(path string, follow bool, limit int64) ([]byte, error) {
 	if !st.Mode().IsRegular() {
 		return nil, ErrNotRegular
 	}
+	beforeOpen(path)
 	f, err := openRead(path, follow)
 	if err != nil {
 		return nil, err
@@ -58,8 +71,12 @@ func ReadRegular(path string, follow bool, limit int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !fst.Mode().IsRegular() || !os.SameFile(st, fst) {
+	if !fst.Mode().IsRegular() {
 		return nil, ErrNotRegular
+	}
+	if !os.SameFile(st, fst) {
+		// another regular file took the name since the check
+		return nil, ErrSwapped
 	}
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {

@@ -302,3 +302,69 @@ func TestExtendedPath(t *testing.T) {
 		}
 	}
 }
+
+// A file replaced by another regular file between the check of the path
+// and the open is ErrSwapped (a concurrent writer: the claim of time stop
+// removes the timer file, time start creates a new one), which callers
+// that do not tell it apart still see as ErrNotRegular. A file that is
+// gone by then is fs.ErrNotExist; a directory swapped in stays
+// ErrNotRegular, not ErrSwapped.
+func TestReadRegularSwapped(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "timer.json")
+	swap := func(fn func()) {
+		t.Helper()
+		old := beforeOpen
+		t.Cleanup(func() { beforeOpen = old })
+		beforeOpen = func(string) { fn(); beforeOpen = old }
+	}
+	write := func(p, s string) {
+		t.Helper()
+		if err := os.WriteFile(p, []byte(s), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, follow := range []bool{false, true} {
+		write(path, "alt")
+		swap(func() {
+			// a new file under the name, as CreateAtomic links it there
+			write(path+".new", "neu")
+			if err := os.Remove(path); err != nil {
+				t.Error(err)
+			}
+			if err := os.Rename(path+".new", path); err != nil {
+				t.Error(err)
+			}
+		})
+		if _, err := ReadRegular(path, follow, 100); !errors.Is(err, ErrSwapped) || !errors.Is(err, ErrNotRegular) {
+			t.Errorf("follow=%v: replaced = %v, want ErrSwapped", follow, err)
+		}
+		// unchanged afterwards: read as usual
+		if data, err := ReadRegular(path, follow, 100); err != nil || string(data) != "neu" {
+			t.Errorf("follow=%v: after the swap = %q, %v", follow, data, err)
+		}
+
+		swap(func() {
+			if err := os.Remove(path); err != nil {
+				t.Error(err)
+			}
+		})
+		if _, err := ReadRegular(path, follow, 100); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("follow=%v: removed = %v, want fs.ErrNotExist", follow, err)
+		}
+	}
+	if runtime.GOOS != "windows" { // a directory there cannot be opened like a file on every platform
+		write(path, "alt")
+		swap(func() {
+			if err := os.Remove(path); err != nil {
+				t.Error(err)
+			}
+			if err := os.Mkdir(path, 0o700); err != nil {
+				t.Error(err)
+			}
+		})
+		if _, err := ReadRegular(path, false, 100); !errors.Is(err, ErrNotRegular) || errors.Is(err, ErrSwapped) {
+			t.Errorf("directory swapped in = %v, want ErrNotRegular", err)
+		}
+	}
+}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
+	"github.com/Padrio/papierkram-cli/internal/safefile"
 )
 
 func TestPath(t *testing.T) {
@@ -775,5 +776,87 @@ func TestReleaseErrors(t *testing.T) {
 	}
 	if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("state file created: %v", err)
+	}
+}
+
+// CI run 42453374759: a state file replaced while it is read (a parallel
+// claim removes it, a time start creates a new one) made Load and Claim
+// report "keine reguläre Datei" (exit 1). That is a race, no unusable
+// file: Load reads again and sees the new state or none; Claim ends with
+// ErrChanged or ErrClaimed and claims nothing.
+func TestLoadAndClaimOfSwappedFile(t *testing.T) {
+	old := state(t)
+	newer := old
+	newer.Task = 777
+	// swapping returns ErrSwapped from the first read after doing swap
+	swapping := func(t *testing.T, times int, swap func(path string)) {
+		t.Helper()
+		orig := readFile
+		t.Cleanup(func() { readFile = orig })
+		n := 0
+		readFile = func(p string, follow bool, limit int64) ([]byte, error) {
+			if n < times {
+				n++
+				if n == 1 && swap != nil {
+					swap(p)
+				}
+				return nil, safefile.ErrSwapped
+			}
+			return orig(p, follow, limit)
+		}
+	}
+	replace := func(p string) {
+		if err := Delete(p); err != nil {
+			t.Error(err)
+		}
+		if err := Save(p, newer); err != nil {
+			t.Error(err)
+		}
+	}
+	remove := func(p string) {
+		if err := Delete(p); err != nil {
+			t.Error(err)
+		}
+	}
+	for _, tc := range []struct {
+		name      string
+		swap      func(string)
+		times     int
+		wantLoad  *State // nil: no timer
+		loadErr   bool
+		wantClaim error
+	}{
+		{"replaced", replace, 1, &newer, false, ErrChanged},
+		{"removed", remove, 1, nil, false, ErrClaimed},
+		{"swapped on every read", nil, 1 << 30, nil, true, ErrChanged},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, op := range []string{"load", "claim"} {
+				path := Path(t.TempDir(), "firma")
+				if err := Save(path, old); err != nil {
+					t.Fatal(err)
+				}
+				swapping(t, tc.times, tc.swap)
+				if op == "load" {
+					st, err := Load(path)
+					var ce *clierr.Error
+					switch {
+					case tc.loadErr && (!errors.As(err, &ce) || ce.Exit() != 1 || !strings.Contains(ce.Message, "beim Lesen ersetzt")):
+						t.Errorf("Load = %+v, %v", st, err)
+					case !tc.loadErr && err != nil:
+						t.Errorf("Load = %v", err)
+					case tc.wantLoad == nil && st != nil, tc.wantLoad != nil && (st == nil || !st.Equal(*tc.wantLoad)):
+						t.Errorf("Load = %+v, want %+v", st, tc.wantLoad)
+					}
+					continue
+				}
+				if err := Claim(path, old); !errors.Is(err, tc.wantClaim) {
+					t.Errorf("Claim = %v, want %v", err, tc.wantClaim)
+				}
+				if _, err := os.Lstat(StoppingPath(path)); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("claim created: %v", err)
+				}
+			}
+		})
 	}
 }

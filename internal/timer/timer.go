@@ -79,9 +79,24 @@ func Load(path string) (*State, error) {
 
 // load is Load that also returns the bytes of the file the state was read
 // from (nil without one).
+//
+// A file replaced by another while it is read (safefile.ErrSwapped: a
+// claim removed it, a time start created a new one) is a race, not an
+// unusable file: it is read again, up to swapReads times, and the new
+// state or none is the result. Only a file swapped on every read is an
+// error; it wraps safefile.ErrSwapped, which Claim turns into ErrChanged.
 func load(path string) (*State, []byte, error) {
-	data, err := safefile.ReadRegular(path, false, MaxSize)
+	data, err := readFile(path, false, MaxSize)
+	for i := 1; i < swapReads && errors.Is(err, safefile.ErrSwapped); i++ {
+		data, err = readFile(path, false, MaxSize)
+	}
 	switch {
+	case errors.Is(err, safefile.ErrSwapped):
+		e := clierr.New(clierr.CodeError,
+			fmt.Sprintf("Timer-Datei %s wurde beim Lesen ersetzt (läuft gleichzeitig ein anderer time-Befehl?)", output.Printable(path)),
+			"Nichts geändert. Erneut versuchen, wenn kein anderer time-Befehl mehr läuft")
+		e.Cause = err
+		return nil, nil, e
 	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
 		// ENOTDIR: a file blocks the cache directory; there is no timer
 		// (start then fails to save and names the directory, review M4)
@@ -106,6 +121,13 @@ func load(path string) (*State, []byte, error) {
 	}
 	return &s, data, nil
 }
+
+// readFile is safefile.ReadRegular; tests swap the file while it is read.
+var readFile = safefile.ReadRegular
+
+// swapReads is how often load reads a file that is replaced while it is
+// read.
+const swapReads = 3
 
 // validate is the check of a state that Load and Save share, so a state
 // Save writes is one Load accepts: positive task and user, a start, a
@@ -188,6 +210,8 @@ func StoppingPath(path string) string { return path + ".stopping" }
 func Claim(path string, want State) error {
 	st, data, err := load(path)
 	switch {
+	case errors.Is(err, safefile.ErrSwapped):
+		return ErrChanged // replaced on every read: certainly not want
 	case err != nil:
 		return err
 	case st == nil:
@@ -217,7 +241,7 @@ func Claim(path string, want State) error {
 // with other content or no regular file (also a symbolic link swapped in)
 // ErrChanged; other errors are German and wrap the cause.
 func removeIfSame(path string, data []byte) error {
-	now, err := safefile.ReadRegular(path, false, MaxSize)
+	now, err := readFile(path, false, MaxSize) // ErrSwapped matches ErrNotRegular: ErrChanged
 	switch {
 	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
 		return ErrClaimed
