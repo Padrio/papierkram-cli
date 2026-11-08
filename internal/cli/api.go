@@ -336,7 +336,8 @@ func (a *App) runAPI(c *cobra.Command, args []string) error {
 		}
 		lr := &listRequest{query: query, all: true, maxPages: call.maxPages, via: "--paginate"}
 		merged, err := a.fetchPages(c, e.Credits, lr, func(q url.Values) (*api.Response, error) {
-			return client.CallRaw(c.Context(), "GET", raw.path, q, "", nil)
+			resp, err := client.CallRaw(c.Context(), "GET", raw.path, q, "", nil)
+			return resp, pageTooLarge(err, hintAPIListTooLarge)
 		})
 		if err != nil {
 			return err
@@ -357,6 +358,9 @@ func (a *App) runAPI(c *cobra.Command, args []string) error {
 	if err != nil {
 		if e.Class == registry.ClassSend {
 			return deliverFailed(e, lastID(call.target.ids), err) // like deliver
+		}
+		if call.target.isList() {
+			return pageTooLarge(err, hintAPIListTooLarge)
 		}
 		return err
 	}

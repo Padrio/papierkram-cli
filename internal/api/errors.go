@@ -27,7 +27,9 @@ const (
 	// hintServerMutation replaces hintServer for POST, PUT and DELETE: the
 	// server may have booked or sent before failing.
 	hintServerMutation = "Papierkram-Serverfehler – die Änderung kann trotzdem ausgeführt worden sein: vor Wiederholung per describe/list prüfen"
-	hintTooLarge       = "mit --fields/--limit kleinere Antworten anfordern"
+	// hintTooLarge gives no size advice: which flag asks for less is known
+	// only to the command (ruling T15-A; list sets its own hint).
+	hintTooLarge       = "Antwort zu groß für das CLI; Ergebnis nicht verwertbar"
 	hintTooLargeChange = "NICHT wiederholen; Ergebnis per describe/list prüfen"
 )
 

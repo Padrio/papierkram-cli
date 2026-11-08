@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -333,7 +334,7 @@ func (a *App) runList(c *cobra.Command, e registry.Entry) error {
 		}
 		resp, err := client.Call(c.Context(), e.OperationID, params, lr.query, nil)
 		if err != nil {
-			return err
+			return pageTooLarge(err, hintListTooLarge)
 		}
 		return a.render(c, resp.Body, e.Columns)
 	}
@@ -373,8 +374,27 @@ type pageFunc func(query url.Values) (*api.Response, error)
 // fetchAll is fetchPages for the list operation of e.
 func (a *App) fetchAll(c *cobra.Command, e registry.Entry, client *api.Client, params []int64, lr *listRequest) (*mergedList, error) {
 	return a.fetchPages(c, e.Credits, lr, func(q url.Values) (*api.Response, error) {
-		return client.Call(c.Context(), e.OperationID, params, q, nil)
+		resp, err := client.Call(c.Context(), e.OperationID, params, q, nil)
+		return resp, pageTooLarge(err, hintListTooLarge)
 	})
+}
+
+// Hints for a list page longer than api.MaxResponseSize (ruling T15-A):
+// list and api each name their own way to ask for smaller pages.
+const (
+	hintListTooLarge    = "mit --limit kleinere Seiten anfordern"
+	hintAPIListTooLarge = "mit kleinerem page_size kleinere Seiten anfordern (z. B. -f page_size=25)"
+)
+
+// pageTooLarge replaces the neutral hint of a list answer longer than
+// api.MaxResponseSize with hint; every other error stays as it is.
+func pageTooLarge(err error, hint string) error {
+	if !errors.Is(err, api.ErrResponseTooLarge) {
+		return err
+	}
+	ce := *clierr.From(err)
+	ce.Hint = hint
+	return &ce
 }
 
 // fetchPages loads page 1, decides from total_pages how many pages to load

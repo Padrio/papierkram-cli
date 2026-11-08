@@ -131,3 +131,34 @@ func TestTimerStopTooLarge(t *testing.T) {
 		t.Error("claim left")
 	}
 }
+
+// Reads above the limit (ruling T15-A): list names --limit, api on a list
+// names page_size, every other read gets no size advice.
+func TestReadTooLargeHints(t *testing.T) {
+	const neutral = "Hinweis: Antwort zu groß für das CLI; Ergebnis nicht verwertbar"
+	for _, tc := range []struct {
+		name, path string
+		args       []string
+		hint       string
+	}{
+		{"list", "/income/invoices", []string{"invoice", "list", "-o", "json"}, "Hinweis: mit --limit kleinere Seiten anfordern"},
+		{"list --all", "/income/invoices", []string{"invoice", "list", "--all", "-o", "json"}, "Hinweis: mit --limit kleinere Seiten anfordern"},
+		{"api list", "/income/invoices", []string{"api", "GET", "/income/invoices", "-o", "json"},
+			"Hinweis: mit kleinerem page_size kleinere Seiten anfordern (z. B. -f page_size=25)"},
+		{"api --paginate", "/income/invoices", []string{"api", "GET", "/income/invoices", "--paginate", "-o", "json"},
+			"Hinweis: mit kleinerem page_size kleinere Seiten anfordern (z. B. -f page_size=25)"},
+		{"describe", "/income/invoices/{id}", []string{"invoice", "describe", "459", "-o", "json"}, neutral},
+		{"api describe", "/income/invoices/{id}", []string{"api", "GET", "/income/invoices/459", "-o", "json"}, neutral},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, srv := apiApp(t)
+			srv.OnFunc("GET", tc.path, tooLarge(http.StatusOK, "application/json"))
+			wantExit(t, app, Run(app, tc.args), 1)
+			wantRequests(t, srv, 1)
+			wantStderr(t, app, "Fehler: Antwort größer als 64 MiB, abgebrochen", tc.hint, `"code":"error"`)
+			if _, errs := bufs(app); strings.Contains(errs, "--fields") {
+				t.Errorf("stderr = %s", errs)
+			}
+		})
+	}
+}

@@ -61,7 +61,7 @@ func TestResponseTooLargeGet(t *testing.T) {
 	if ce.Message != "Antwort größer als 64 MiB, abgebrochen" {
 		t.Errorf("message = %q", ce.Message)
 	}
-	if ce.Hint != "mit --fields/--limit kleinere Antworten anfordern" {
+	if ce.Hint != "Antwort zu groß für das CLI; Ergebnis nicht verwertbar" {
 		t.Errorf("hint = %q", ce.Hint)
 	}
 	if ce.HTTPStatus != http.StatusOK {
