@@ -328,12 +328,12 @@ func TestFlagErrorsFullyGerman(t *testing.T) {
 	}
 	app, _, errb = newTestApp(t)
 	Run(app, []string{"---x"})
-	if errb.String() != "Fehler: ungültige Flag-Syntax: ---x\n" {
+	if errb.String() != "Fehler: ungültige Flag-Syntax: ---x\nHinweis: Verwendung: papierkram [Optionen]\n" {
 		t.Errorf("stderr = %q", errb.String())
 	}
 	app, _, errb = newTestApp(t)
 	Run(app, []string{"-y=maybe"})
-	if !strings.Contains(errb.String(), `ungültiger Wert "maybe" für -y, --yes: ungültige Syntax`) {
+	if !strings.Contains(errb.String(), `ungültiger Wert "maybe" für -y, --yes: Wahrheitswert erwartet (true oder false)`) {
 		t.Errorf("stderr = %q", errb.String())
 	}
 }
@@ -393,7 +393,7 @@ func TestUnknownFlagOutput(t *testing.T) {
 	if code := Run(app, []string{"--nope"}); code != 2 {
 		t.Errorf("exit = %d", code)
 	}
-	if errb.String() != "Fehler: unbekanntes Flag: --nope\n" {
+	if errb.String() != "Fehler: unbekanntes Flag: --nope\nHinweis: Verwendung: papierkram [Optionen]\n" {
 		t.Errorf("stderr = %q", errb.String())
 	}
 }

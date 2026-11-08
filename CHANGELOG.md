@@ -41,4 +41,8 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 - Antworten der API werden höchstens bis 64 MiB gelesen. Ist eine 2xx-Antwort länger, endet ein Lesebefehl mit Exit 1 „Antwort größer als 64 MiB, abgebrochen“ (ohne Wiederholung; `pdf -O` speichert nichts; bei `list` mit dem Hinweis auf ein kleineres `--limit`), eine Änderung mit Exit 1 „Antwort größer als 64 MiB; die Änderung wurde ausgeführt“ und dem Hinweis „NICHT wiederholen; Ergebnis per describe/list prüfen“; bei einem Fehlerstatus entscheidet weiter der Status. `voucher create --file` endet dann mit Exit 11, `time stop` lässt den Timer laufen und verweist erst auf `time list`. `--debug` zeigt „gekürzt nach 64 MiB“.
 - Dokumentation: README, AGENTS.md für KI-Agents, Claude-Code-Skill (`skills/papierkram`), aus der Hilfe generierte Befehlsreferenz (`docs/reference`), offene Punkte der API, Hinweise zu Drittsoftware.
 
+### Geändert
+
+- Jeder Usage-Fehler (Exit 2) hat einen Hinweis: Flag- und Argumentfehler die Verwendungszeile (`Verwendung: papierkram invoice list [Optionen]`), ein unbekannter Befehl `Befehle anzeigen: <befehl> --help`. Ein falscher Zahlen- oder Wahrheitswert eines Flags nennt, was erwartet wird („ganze Zahl erwartet“, „Wahrheitswert erwartet (true oder false)“), statt „ungültige Syntax“.
+
 [Unreleased]: https://github.com/Padrio/papierkram-cli/commits/main

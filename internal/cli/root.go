@@ -23,16 +23,24 @@ import (
 // run even when a subcommand defines its own persistent hooks.
 func init() { cobra.EnableTraverseRunHooks = true }
 
+// usageErr is a usage error (exit 2) without its own hint: executeContext
+// adds the usage line of the command that failed (usageHint).
 func usageErr(msg string) error { return clierr.New(clierr.CodeUsage, msg, "") }
 
-func unknownCommand(root *cobra.Command, name string) error {
-	return usageErr(fmt.Sprintf("unbekannter Befehl %q für %q", name, root.CommandPath()))
+// usageHint is the hint of a flag or argument error of c.
+func usageHint(c *cobra.Command) string { return "Verwendung: " + useLine(c) }
+
+// unknownCommand is the usage error of an unknown subcommand name of
+// group, with the help of group as hint.
+func unknownCommand(group *cobra.Command, name string) error {
+	return clierr.New(clierr.CodeUsage, fmt.Sprintf("unbekannter Befehl %q für %q", name, group.CommandPath()),
+		"Befehle anzeigen: "+group.CommandPath()+" --help")
 }
 
 // noArgs rejects positional arguments with a German usage error.
 func noArgs(c *cobra.Command, args []string) error {
 	if len(args) > 0 {
-		return usageErr(fmt.Sprintf("unerwartetes Argument %q für %q", args[0], c.CommandPath()))
+		return clierr.New(clierr.CodeUsage, fmt.Sprintf("unerwartetes Argument %q für %q", args[0], c.CommandPath()), usageHint(c))
 	}
 	return nil
 }
@@ -42,9 +50,9 @@ func exactArgs(n int) cobra.PositionalArgs {
 	return func(c *cobra.Command, args []string) error {
 		switch {
 		case len(args) < n:
-			return clierr.New(clierr.CodeUsage, fmt.Sprintf("zu wenige Argumente für %q (erwartet: %d, erhalten: %d)", c.CommandPath(), n, len(args)), "Verwendung: "+useLine(c))
+			return clierr.New(clierr.CodeUsage, fmt.Sprintf("zu wenige Argumente für %q (erwartet: %d, erhalten: %d)", c.CommandPath(), n, len(args)), usageHint(c))
 		case len(args) > n:
-			return clierr.New(clierr.CodeUsage, fmt.Sprintf("unerwartetes Argument %q für %q", args[n], c.CommandPath()), "Verwendung: "+useLine(c))
+			return clierr.New(clierr.CodeUsage, fmt.Sprintf("unerwartetes Argument %q für %q", args[n], c.CommandPath()), usageHint(c))
 		}
 		return nil
 	}
@@ -55,7 +63,7 @@ func exactArgs(n int) cobra.PositionalArgs {
 func minArgs(n int) cobra.PositionalArgs {
 	return func(c *cobra.Command, args []string) error {
 		if len(args) < n {
-			return clierr.New(clierr.CodeUsage, fmt.Sprintf("zu wenige Argumente für %q (erwartet: mindestens %d, erhalten: %d)", c.CommandPath(), n, len(args)), "Verwendung: "+useLine(c))
+			return clierr.New(clierr.CodeUsage, fmt.Sprintf("zu wenige Argumente für %q (erwartet: mindestens %d, erhalten: %d)", c.CommandPath(), n, len(args)), usageHint(c))
 		}
 		return nil
 	}
@@ -70,21 +78,52 @@ var (
 	missingUnitRe = regexp.MustCompile(`time: missing unit in duration (".*")`)
 	englishCauses = strings.NewReplacer(
 		"time: invalid duration", "ungültige Dauer",
-		"invalid syntax", "ungültige Syntax",
+		"invalid syntax", "ungültiges Format",
 		"value out of range", "Wert außerhalb des Bereichs",
 	)
 )
 
-// germanCause translates the cause part of a pflag "invalid argument" error.
-func germanCause(s string) string {
+// expectedValue names what a flag of pflag type typ takes, for a value
+// strconv rejects ("invalid syntax"); "" for other types.
+func expectedValue(typ string) string {
+	switch {
+	case typ == "bool":
+		return "Wahrheitswert erwartet (true oder false)"
+	case strings.HasPrefix(typ, "int") || strings.HasPrefix(typ, "uint"):
+		return "ganze Zahl erwartet"
+	case strings.HasPrefix(typ, "float"):
+		return "Zahl erwartet (z. B. 12.5)"
+	}
+	return ""
+}
+
+// germanCause translates the cause part of a pflag "invalid argument"
+// error of a flag of pflag type typ.
+func germanCause(s, typ string) string {
+	if strings.HasSuffix(s, ": invalid syntax") && expectedValue(typ) != "" {
+		return expectedValue(typ)
+	}
 	s = strconvPrefix.ReplaceAllString(s, "")
 	s = unknownUnitRe.ReplaceAllString(s, "ungültige Dauer $2: unbekannte Einheit $1 (erlaubt: ms, s, m, h)")
 	s = missingUnitRe.ReplaceAllString(s, "ungültige Dauer $1: Einheit fehlt (z. B. 30s)")
 	return englishCauses.Replace(s)
 }
 
-// germanFlagError translates pflag error messages into German usage errors.
-func germanFlagError(_ *cobra.Command, err error) error {
+// flagTypeOf is the pflag type of the flag named in a pflag error
+// ("--page" or "-p, --page"), "" when c has no such flag.
+func flagTypeOf(c *cobra.Command, named string) string {
+	if c == nil {
+		return ""
+	}
+	if f := c.Flags().Lookup(named[strings.LastIndex(named, "--")+2:]); f != nil {
+		return f.Value.Type()
+	}
+	return ""
+}
+
+// germanFlagError translates pflag error messages into German usage errors
+// with the usage line of c as hint.
+func germanFlagError(c *cobra.Command, err error) error {
 	msg := err.Error()
 	switch {
 	case strings.HasPrefix(msg, "unknown flag: "):
@@ -97,9 +136,9 @@ func germanFlagError(_ *cobra.Command, err error) error {
 		msg = "ungültige Flag-Syntax: " + strings.TrimPrefix(msg, "bad flag syntax: ")
 	case invalidValueRe.MatchString(msg):
 		m := invalidValueRe.FindStringSubmatch(msg)
-		msg = fmt.Sprintf("ungültiger Wert %s für %s: %s", m[1], m[2], germanCause(m[3]))
+		msg = fmt.Sprintf("ungültiger Wert %s für %s: %s", m[1], m[2], germanCause(m[3], flagTypeOf(c, m[2])))
 	}
-	return usageErr(msg)
+	return clierr.New(clierr.CodeUsage, msg, usageHint(c))
 }
 
 // outputFormats are the values accepted by -o/--output (spec 10.3).
@@ -230,11 +269,18 @@ func executeContext(ctx context.Context, app *App, root *cobra.Command, args []s
 		app.registerCompletions(root)
 	}
 	root.SetArgs(args)
-	err := root.ExecuteContext(ctx)
+	cmd, err := root.ExecuteContextC(ctx)
 	if err == nil {
 		return 0
 	}
 	ce := clierr.From(err)
+	if ce.Code == clierr.CodeUsage && ce.Hint == "" && cmd != nil {
+		// every usage error names the way out (task 17): the usage line
+		// of the command whose flags or arguments were wrong
+		withHint := *ce
+		withHint.Hint = usageHint(cmd)
+		ce = &withHint
+	}
 	if ce.Code == clierr.CodeNetwork && ctx.Err() != nil && errors.Is(err, context.Canceled) {
 		// The request did not fail, it was interrupted (Ctrl+C).
 		ce = &clierr.Error{Code: ce.Code, Message: "Abgebrochen: Anfrage durch Unterbrechung beendet", Cause: err}
