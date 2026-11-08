@@ -146,6 +146,16 @@ func TestCoveragePlanMasterDataAndReads(t *testing.T) {
 	}
 }
 
+// Task 7 (round 2) closes the plan: every operation is expected by a
+// full run, none is pending for a later task any more.
+func TestCoveragePlanComplete(t *testing.T) {
+	for _, id := range slices.Sorted(maps.Keys(CoveragePlan)) {
+		if e := CoveragePlan[id]; e.Pending != 0 {
+			t.Errorf("%s: Pending %d, want 0 (expected by a full run)", id, e.Pending)
+		}
+	}
+}
+
 func TestCoverageRecord(t *testing.T) {
 	plan := map[string]Expectation{
 		"DeliverInvoice": {Test: "TestA"},

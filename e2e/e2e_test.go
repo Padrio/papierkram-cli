@@ -47,7 +47,11 @@
 //	Carries: 13 subtests 37 (2 time entries of 10 in no. 12,
 //	  describe, update, describe in no. 6), no. 14 (geplant,
 //	  Task 8) 4                                                    41
-//	OpenMeasurements (geplant, Task 7)                             62
+//	OpenMeasurements (4 subtests): no. 28 invoice create without
+//	  document_date 50; no. 10 describe, api PUT, describe 3;
+//	  no. 13 read + update, describe, round trip update,
+//	  describe 5; no. 12 voucher update, describe, update,
+//	  describe 4                                                   62
 //	final cleanup: 1 delete per object (7 documents and 12 other
 //	  objects = 19); each of up to 3 final documents costs up to 3
 //	  more (cancel, delete, archive)                               28
@@ -114,15 +118,21 @@
 //	  6 (billable_duration on create and update; run 1: the create
 //	  stored duration instead), 7 (sent_on after deliver pdf), 10 (pay body with value null and a
 //	  transaction that does not exist: the suite never pays),
-//	  12 (end 00:00/24:00), 13 (structure of GET /info), the answer
-//	  of archive and unarchive (record_state or empty), the number
+//	  12 (end 00:00/24:00), 13 (structure of GET /info); open points
+//	  28 (invoice create without document_date), 10 (due_date through
+//	  api PUT), 13 (supply_date format and round trip), 12
+//	  (entertainment_persons set, then []: cleared or unchanged); the
+//	  answer of archive and unarchive (record_state or empty), the number
 //	  (total_entries) and key shape of bank connections and bank
 //	  transactions (never their values; without an entry the read by
 //	  id is reported not applicable).
 //	A measurement that differs from what the CLI assumes (GET /info cost
 //	  vs. registry, due_time_unit other than "day", billable_duration
 //	  not stored as sent, a cancel or reverse answering with another
-//	  object) is logged as
+//	  object, an invoice without document_date rejected with 422, a
+//	  due_date changed by PUT, supply_date not stored as sent or changed
+//	  by the round trip, a failed step of that round trip, [] rejected
+//	  for entertainment_persons) is logged as
 //	  ABWEICHUNG and listed again in a summary at the end of the run;
 //	  it does not fail the run.
 package e2e
