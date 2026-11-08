@@ -498,7 +498,9 @@ const claimedHint = "Nichts gesendet. Mit papierkram time status prüfen, ob er 
 // first: while it is there, the time stop the hint of cause may name ends
 // with exit 7.
 // Otherwise it is exit 1: the claim stays, so time start and
-// time stop refuse until it is renamed back or discarded. The hint keeps
+// time stop refuse until it is renamed back or discarded; when a state
+// file exists again (fs.ErrExist) the hint says to check both files
+// instead of renaming. The hint keeps
 // what went wrong before, also an unknown outcome.
 func errNotReleased(path string, rerr, cause error) error {
 	if errors.Is(rerr, timer.ErrClaimLeft) {
@@ -518,9 +520,16 @@ func errNotReleased(path string, rerr, cause error) error {
 	if prev.Hint != "" {
 		before += ". " + prev.Hint
 	}
-	ce := clierr.New(clierr.CodeError, "Timer-Datei nicht zurückgestellt: "+printable(rerr.Error()),
-		fmt.Sprintf("Die Datei %s in %s umbenennen (dann läuft der Timer weiter) oder papierkram time discard. Zuvor gescheitert: %s",
-			printable(timer.StoppingPath(path)), printable(path), before))
+	hint := fmt.Sprintf("Die Datei %s in %s umbenennen (dann läuft der Timer weiter) oder papierkram time discard. Zuvor gescheitert: %s",
+		printable(timer.StoppingPath(path)), printable(path), before)
+	if errors.Is(rerr, fs.ErrExist) {
+		// a state file exists again: renaming would replace it (review
+		// B-M2)
+		hint = fmt.Sprintf("Beide Dateien prüfen, nicht umbenennen (das ersetzte die vorhandene Timer-Datei): "+
+			"%s ist der Timer dieses time stop, %s wurde seither angelegt. Zuvor gescheitert: %s",
+			printable(timer.StoppingPath(path)), printable(path), before)
+	}
+	ce := clierr.New(clierr.CodeError, "Timer-Datei nicht zurückgestellt: "+printable(rerr.Error()), hint)
 	ce.Cause = rerr
 	return ce
 }
@@ -804,7 +813,10 @@ func (a *App) loadTimer(r *config.Resolved) (string, *timer.State, error) {
 
 // readTimers reads the claim of an unfinished time stop of the context of
 // r and, without one, its state file; stopping reports that st is the
-// claim. Errors as loadTimer.
+// claim. Without a state file the claim is read once more: another time
+// stop may have claimed the timer between the two reads (it creates the
+// claim before it removes the state file), which is no "no timer"
+// (review B-M2). Errors as loadTimer.
 func (a *App) readTimers(r *config.Resolved) (path string, st *timer.State, stopping bool, err error) {
 	path, err = a.timerPath(r)
 	if err != nil {
@@ -813,19 +825,22 @@ func (a *App) readTimers(r *config.Resolved) (path string, st *timer.State, stop
 	if st, err = a.timerState(r, path, true); err != nil || st != nil {
 		return path, st, st != nil, err
 	}
-	st, err = a.timerState(r, path, false)
-	return path, st, false, err
+	if st, err = a.timerState(r, path, false); err != nil || st != nil {
+		return path, st, false, err
+	}
+	st, err = a.timerState(r, path, true)
+	return path, st, st != nil, err
 }
 
 // timerState reads the state file at path, or its claim with stopping,
 // for the context of r: nil without one; one of another context is an
 // error like an unusable one (exit 1, naming the file and time discard).
 func (a *App) timerState(r *config.Resolved, path string, stopping bool) (*timer.State, error) {
-	load, shown := timer.Load, path
+	shown := path
 	if stopping {
-		load, shown = timer.LoadStopping, timer.StoppingPath(path)
+		shown = timer.StoppingPath(path)
 	}
-	st, err := load(path)
+	st, err := loadTimerFile(shown)
 	if err != nil || st == nil {
 		return nil, err
 	}
@@ -837,6 +852,10 @@ func (a *App) timerState(r *config.Resolved, path string, stopping bool) (*timer
 	}
 	return st, nil
 }
+
+// loadTimerFile reads a state file or claim (timer.Load); a variable so a
+// test can let another invocation act between two reads.
+var loadTimerFile = timer.Load
 
 // contextLabel names a context in texts; "" is direct mode.
 func contextLabel(name string) string {

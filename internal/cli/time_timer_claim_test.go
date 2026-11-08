@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -322,7 +323,8 @@ func TestTimerStopReleasesClaimOnFailure(t *testing.T) {
 }
 
 // A claim that cannot be put back (a new state file is in its place) is
-// exit 1 naming the rename and time discard; neither file is touched.
+// exit 1 naming both files and not to rename (renaming would replace the
+// new state file, review B-M2); neither file is touched.
 func TestTimerStopReleaseFailure(t *testing.T) {
 	app, srv := logApp(t, nine(t))
 	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 0)
@@ -339,8 +341,8 @@ func TestTimerStopReleaseFailure(t *testing.T) {
 	if !strings.HasPrefix(msg, "Timer-Datei nicht zurückgestellt: ") {
 		t.Errorf("message %q", msg)
 	}
-	for _, w := range []string{"Die Datei " + printable(timer.StoppingPath(path)) + " in " + printable(path) + " umbenennen",
-		"papierkram time discard", "Aufgabe abgeschlossen"} {
+	for _, w := range []string{"Beide Dateien prüfen, nicht umbenennen", printable(timer.StoppingPath(path)) + " ist der Timer dieses time stop, " +
+		printable(path) + " wurde seither angelegt", "Aufgabe abgeschlossen"} {
 		if !strings.Contains(hint, w) {
 			t.Errorf("hint without %q: %s", w, hint)
 		}
@@ -542,6 +544,17 @@ func TestTimerErrNotReleased(t *testing.T) {
 		!strings.Contains(ce.Hint, "Zuvor gescheitert: Verbindung abgebrochen. Ergebnis unbekannt") {
 		t.Errorf("not released: %+v", ce)
 	}
+	// a state file exists again (a time start after the claim, review
+	// B-M2): renaming the claim would replace that timer, so the hint
+	// says to check both files and not to rename
+	exists := fmt.Errorf("Timer-Datei %s ist schon vorhanden: %w", path, fs.ErrExist)
+	ce = clierr.From(errNotReleased(path, exists, cause))
+	if ce.Code != clierr.CodeError || !strings.HasPrefix(ce.Message, "Timer-Datei nicht zurückgestellt: ") ||
+		ce.Hint != "Beide Dateien prüfen, nicht umbenennen (das ersetzte die vorhandene Timer-Datei): "+printable(timer.StoppingPath(path))+
+			" ist der Timer dieses time stop, "+printable(path)+" wurde seither angelegt. Zuvor gescheitert: Verbindung abgebrochen. "+
+			"Ergebnis unbekannt – vor Wiederholung per describe/list prüfen." {
+		t.Errorf("state file exists: %+v", ce)
+	}
 }
 
 // Ctrl+C before time stop sent its request (review B-M1): the message
@@ -570,5 +583,42 @@ func TestTimerStopInterruptedBeforeSendKeepsHint(t *testing.T) {
 	if !strings.Contains(hint, "Der Timer läuft weiter: erneut papierkram time stop oder von Hand buchen mit "+
 		"papierkram time log --task 545 --user 1 --date 2026-11-04 --from 09:00 --to 10:47, danach papierkram time discard") {
 		t.Errorf("hint %q", hint)
+	}
+}
+
+// Another time stop claims the timer between the two reads of readTimers
+// (claim missing, then the state file missing): the claim is read again,
+// so time start refuses with exit 7 instead of starting a second timer
+// while the first one is being booked (review B-M2).
+func TestTimerReadSeesClaimTakenBetweenReads(t *testing.T) {
+	app, _ := logApp(t, nine(t))
+	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 0)
+	path := timer.Path(app.CacheDir, "")
+	orig := loadTimerFile
+	t.Cleanup(func() { loadTimerFile = orig })
+	claimed := false
+	loadTimerFile = func(p string) (*timer.State, error) {
+		if p == path && !claimed {
+			// the other stop: claim, then the state file is gone
+			claimed = true
+			st, err := timer.Load(path)
+			if err != nil || st == nil {
+				t.Fatalf("Load = %+v, %v", st, err)
+			}
+			if err := timer.Claim(path, *st); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return orig(p)
+	}
+	wantExit(t, app, at(app, morning(t), "time", "start", "--task", "545", "--user", "1", "-o", "json"), 7)
+	if msg, _ := jsonError(t, app); msg != unfinishedMsg {
+		t.Errorf("message %q", msg)
+	}
+	if !claimed {
+		t.Fatal("state file not read")
+	}
+	if timerFile(t, app, "") != nil {
+		t.Error("a second timer was started")
 	}
 }
