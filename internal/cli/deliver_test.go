@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -567,5 +568,31 @@ func TestDeliverConfirmationSanitized(t *testing.T) {
 		if !strings.Contains(errs, want) {
 			t.Errorf("stderr ohne %q: %q", want, errs)
 		}
+	}
+}
+
+// L280: the hint "der Versand kann trotzdem erfolgt sein" belongs to an
+// answer of the deliver POST only. A local error before sending (here a
+// base URL that cannot be parsed, so no request is built) keeps its
+// message and hint without it; nothing was sent. The same holds for
+// papierkram api on the deliver path.
+func TestDeliverLocalErrorWithoutSentHint(t *testing.T) {
+	for _, args := range [][]string{
+		{"invoice", "deliver", "459", "--via", "pdf", "--yes"},
+		{"api", "POST", "/income/invoices/459/deliver", "-F", "send_via=pdf", "--yes"},
+	} {
+		app, _, errb := newTestApp(t)
+		app.Env = envMap(map[string]string{"PAPIERKRAM_BASE_URL": "http://[::1", "PAPIERKRAM_TOKEN": "test-token-local"})
+		var sent int
+		app.HTTPClient = &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+			sent++
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
+		})}
+		code := Run(app, args)
+		errs := errb.String()
+		if code != 1 || sent != 0 || !strings.Contains(errs, "ungültige Basis-URL") || strings.Contains(errs, "trotzdem erfolgt") {
+			t.Errorf("%v: exit %d, %d requests, stderr = %q", args, code, sent, errs)
+		}
+		assertNoToken(t, app)
 	}
 }

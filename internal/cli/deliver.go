@@ -136,9 +136,9 @@ func (a *App) runDeliver(c *cobra.Command, e registry.Entry, args []string) erro
 	if proceed, err := a.beforeMutation(c, run, client, params, body); !proceed || err != nil {
 		return err
 	}
-	_, sendErr := client.Call(c.Context(), e.OperationID, params, nil, body)
+	resp, sendErr := client.Call(c.Context(), e.OperationID, params, nil, body)
 	if sendErr != nil && clierr.From(sendErr).Code != clierr.CodeOutcomeUnknown {
-		return deliverFailed(e, lastID(params), sendErr)
+		return deliverFailed(e, lastID(params), resp, sendErr)
 	}
 	doc, readErr := a.readBack(c, e, client, params)
 	o := a.outputOptions(c.Context(), a.outputFormat(r))
@@ -180,10 +180,12 @@ func moreCredits(n int) string {
 // the hint names the describe command to check before repeating; client
 // errors (422: broken placeholder, 404, …) keep theirs, nothing was sent.
 // A 2xx answer too long to read (api.ErrResponseTooLarge) keeps its hint
-// too: the document was sent.
-func deliverFailed(e registry.Entry, id int64, err error) error {
+// too: the document was sent. Without an answer (resp nil: a local error
+// before sending, such as a request that cannot be built) nothing was
+// sent either, and err stays as it is (L280).
+func deliverFailed(e registry.Entry, id int64, resp *api.Response, err error) error {
 	ce := clierr.From(err)
-	if ce.Code != clierr.CodeServer && ce.Code != clierr.CodeError || errors.Is(err, api.ErrResponseTooLarge) {
+	if resp == nil || ce.Code != clierr.CodeServer && ce.Code != clierr.CodeError || errors.Is(err, api.ErrResponseTooLarge) {
 		return err
 	}
 	out := *ce

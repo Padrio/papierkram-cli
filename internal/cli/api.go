@@ -358,7 +358,7 @@ func (a *App) runAPI(c *cobra.Command, args []string) error {
 	resp, err := client.CallRaw(c.Context(), call.method, raw.path, query, contentType, rd)
 	if err != nil {
 		if e.Class == registry.ClassSend {
-			return deliverFailed(e, lastID(call.target.ids), err) // like deliver
+			return deliverFailed(e, lastID(call.target.ids), resp, err) // like deliver
 		}
 		if call.target.isList() {
 			return pageTooLarge(err, hintAPIListTooLarge)
