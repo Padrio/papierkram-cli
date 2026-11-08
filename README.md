@@ -183,7 +183,7 @@ papierkram time log --date gestern --from 13:00 --duration 45m --unbillable
 ```
 
 - Zeitraum: `--from` und `--to` (`H:MM` oder `HH:MM`) oder `--duration` (`1h30m`, `90m`, `1:30`); ohne `--from` endet der Eintrag jetzt.
-- Ein Zeiteintrag hat nur ein Datum: Einträge über Mitternacht lehnt das CLI ab (Exit 2); sie werden als zwei Einträge erfasst.
+- Ein Zeiteintrag hat nur ein Datum: Ein Ende genau um Mitternacht ist erlaubt (`--to 24:00` oder `--to 00:00`, gesendet als `24:00`; ebenso `time stop` in der ersten Minute nach Mitternacht). Andere Einträge über Mitternacht lehnt das CLI ab (Exit 2); sie werden als zwei Einträge erfasst (bis `24:00` und ab `00:00` am Folgetag).
 - `heute` und `gestern` folgen einer Regel: Zeiterfassung (`time …`): Tag der Rechneruhr; Belege, Zahlungen, Datumsfilter: Berliner Tag (Europe/Berlin, auch auf einem Rechner in UTC). Zur Zeiterfassung gehören `time create`/`time update --entry-date`, `time log --date`, `time stop` und `time list --since`/`--until`, wie die Uhrzeiten der Einträge; `time list --since heute` findet so den Eintrag, den `time log` oder `time stop` gerade gebucht hat. `--since`/`--until` beginnen bzw. enden um 00:00:00 bzw. 23:59:59 Uhr Ortszeit des Rechners.
 - Im Terminal zeigt `time log` vorher eine Zusammenfassung mit Firma, Projekt, Aufgabe und Benutzer und fragt nach (Enter = ja). Jeder Name kostet beim ersten Mal 1 Credit und bleibt 60 Sekunden im Cache. `--yes`, `--no-input` und Aufrufe ohne Terminal senden ohne Rückfrage.
 

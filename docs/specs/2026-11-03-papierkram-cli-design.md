@@ -106,7 +106,7 @@ Kein klassisches Rate-Limit, sondern Monats-Credits (Paket M 10 000, L 20 000); 
 | Project | `name`, `customer` |
 | CustomAttribute | `attributable_type` (`Contact::Company|Project`), `name`, `data_type` (`string|text|date|integer|decimal|boolean`) |
 | Task | `name`, `project` |
-| TimeEntry | `entry_date` (`YYYY-MM-DD`), `started_at_time`, `ended_at_time` (`HH:MM`), `task`, `user` |
+| TimeEntry | `entry_date` (`YYYY-MM-DD`), `started_at_time`, `ended_at_time` (`HH:MM`; das Ende auch `24:00`), `task`, `user` |
 | deliver | `send_via` (`email|pdf`); bei `email` zusätzlich `email:{recipient, subject, body}` |
 | pay | `banking_transaction:{id}` oder `value`; optional `payment_date`, `difference_reason` (`sonstige|mahnung|teilzahlung|skonto|schmaelerung`) |
 
@@ -323,9 +323,9 @@ Ohne `--payment-term` und ohne `payment_term` im fertigen Body (nach `--input` u
 Flags `--amount` (→ `value`), `--transaction` (→ `banking_transaction:{id}`), `--date` (→ `payment_date`), `--reason` (→ `difference_reason`). Mindestens `--amount` oder `--transaction` Pflicht (Exit 2).
 
 ### 9.6 Zeiterfassung: `time log`, Timer, Projektdatei
-- `time log [--task <id|alias>] [--date] (--from HH:MM --to HH:MM | --duration 1h30m [--from]) [-m Kommentar] [--unbillable]` legt einen Zeiteintrag an. `task`, `user` kommen aus Flag > Env > Projektdatei > Kontext; fehlen sie → Exit 2 mit Hinweis auf `papierkram local init`. Ohne `--from` bei `--duration` endet der Eintrag jetzt. Body: `entry_date`, `started_at_time`, `ended_at_time` (`HH:MM`), `task:{id}`, `user:{id}`, `comments`, `unbillable`.
+- `time log [--task <id|alias>] [--date] (--from HH:MM --to HH:MM | --duration 1h30m [--from]) [-m Kommentar] [--unbillable]` legt einen Zeiteintrag an. `task`, `user` kommen aus Flag > Env > Projektdatei > Kontext; fehlen sie → Exit 2 mit Hinweis auf `papierkram local init`. Ohne `--from` bei `--duration` endet der Eintrag jetzt. Body: `entry_date`, `started_at_time`, `ended_at_time` (`HH:MM`, Ende um Mitternacht `24:00`), `task:{id}`, `user:{id}`, `comments`, `unbillable`.
 - Mit TTY zeigt `time log` vor dem Senden eine Zusammenfassung mit aufgelösten Namen (Firma, Projekt, Aufgabe, Nutzer; je 1 Credit, gecacht wie Completion) und fragt nach (Enter = ja). Ohne TTY wird ohne Nachfrage gesendet (Klasse `create`). `--yes` überspringt die Nachfrage. **[Call]**
-- Einträge über Mitternacht werden abgelehnt (Exit 2) **[Call]**, weil der Body nur ein Datum kennt.
+- Ein Ende genau um Mitternacht ist erlaubt (offener Punkt 22, entschieden; ersetzt Ruling E2E-Mitternacht): `--to 24:00` und, bei Beginn nach 00:00, `--to 00:00` enden um Mitternacht am Ende des Datums, ebenso `--from` plus `--duration` bis genau Mitternacht (`--from 23:00 --duration 1h`); gesendet wird `ended_at_time` `"24:00"` (eindeutig als Tagesende; die API nimmt `00:00` und `24:00` gleich an, `duration` 3600 für 23:00–24:00, gemessen Lauf 2). `24:00` ist immer das Tagesende (`--from 00:00 --to 24:00` ist der ganze Tag), `--from 00:00 --to 00:00` bleibt Dauer 0 (Exit 2), `--from 24:00` bleibt ungültig (Exit 2). `time stop` bucht einen Timer, der in der ersten Minute des Folgetags (00:00:00–00:00:59) stoppt, bis `24:00` des Starttags. Alle anderen Einträge über Mitternacht werden abgelehnt (Exit 2) **[Call]**, weil der Body nur ein Datum kennt; der Hinweis nennt die zwei Einträge (bis `24:00` und ab `00:00` am Folgetag). Das Overlay (Abschnitt 14) erlaubt `24:00` nur für `ended_at_time`, sodass `time create|update --ended-at-time 24:00` gesendet wird; eine eigene Zeitraumprüfung haben `time create|update` nicht.
 - Timer: `time start [--task] [-m]` speichert Startzeit und Parameter in `os.UserCacheDir()/papierkram/timer-<kontext>.json`; `time status` zeigt laufende Dauer; `time stop [-m]` ruft intern `time log` auf und löscht den State erst nach Erfolg; `time discard` verwirft. Läuft schon ein Timer → Exit 7. Kein serverseitiger Timer.
 
 ### 9.7 `company list --type customer|supplier`

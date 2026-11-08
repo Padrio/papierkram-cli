@@ -34,7 +34,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 19 | `voucher pay`: `value: null` mit Bankumsatz | wird akzeptiert | `TestE2E_Carries/10_VoucherPayValueNull` | Messung |
 | 20 | `voucher pay`: Betrag und Bankumsatz zusammen | beide werden gesendet | – | **bewusst nicht gemessen** |
 | 21 | Dauer an Tagen der Zeitumstellung | Wanduhr-Differenz | `TestE2E_Carries/11_DurationWallClock` (nur normaler Tag) | hart; Umstellungstag **bewusst nicht gemessen** |
-| 22 | Ende um Mitternacht (`00:00`, `24:00`) | vom CLI abgelehnt (Exit 2) | `TestE2E_Carries/12_MidnightEnd` | Messung |
+| 22 | Ende um Mitternacht (`00:00`, `24:00`) | erlaubt: `time log --to 00:00`/`24:00` und `time stop` in der ersten Minute nach Mitternacht senden `24:00`; andere Einträge über Mitternacht Exit 2 | `TestE2E_Carries/12_MidnightEnd` | entschieden und umgesetzt (Task 10); hart |
 | 23 | Antwort von `GET /info` ohne Schema | JSON wird unverändert ausgegeben | `TestE2E_Carries/13_InfoStructure` | Messung |
 | 24 | `deliver` antwortet mit leerem Body | leerer 2xx-Body ist Erfolg | `TestE2E_DeliverPdfEmptyBody` | hart (2xx, Exit 0); Body: Messung |
 | 25 | Quota-Header `X-Remaining-Quota`, `X-Consumed-Quota` | vorhanden und ganzzahlig | `TestE2E_QuotaHeadersPresent` | hart |
@@ -196,10 +196,10 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 ### 22. Ende um Mitternacht
 
-- **Offen:** Nimmt die API `ended_at_time` `"00:00"` oder `"24:00"` nach einem Beginn um 23:00 an, und als eine Stunde?
-- **Annahme:** Das CLI lehnt Einträge über Mitternacht ab (Exit 2), auch ein Ende um 00:00.
-- **E2E:** `TestE2E_Carries/12_MidnightEnd` (Messung, über `papierkram api` ohne lokale Prüfung).
-- **Gemessen 2026-11-04 (Lauf 2):** Die API nimmt beide an: 23:00–00:00 und 23:00–24:00 ergeben je `duration` 3600 und `ended_at` 00:00 des Folgetags. Das CLI lehnt ein Ende um Mitternacht weiter mit Exit 2 ab. **Ruling E2E-Mitternacht:** bleibt Exit 2 (Spec-Regel, kein Datenverlust); das Lockern ist geparkt.
+- **Frage:** Nimmt die API `ended_at_time` `"00:00"` oder `"24:00"` nach einem Beginn um 23:00 an, und als eine Stunde?
+- **Gemessen 2026-11-04 (Lauf 2, über `papierkram api`):** Die API nimmt beide an: 23:00–00:00 und 23:00–24:00 ergeben je `duration` 3600 und `ended_at` 00:00 des Folgetags. Damals lehnte das CLI ein Ende um Mitternacht mit Exit 2 ab (Ruling E2E-Mitternacht, inzwischen ersetzt).
+- **Entschieden und umgesetzt (Task 10):** Ein Ende genau um Mitternacht ist erlaubt. `time log --to 24:00` und, bei Beginn nach 00:00, `--to 00:00` enden um Mitternacht am Ende des Datums, ebenso `--from 23:00 --duration 1h`; gesendet wird `ended_at_time` `"24:00"` (eindeutig als Tagesende). `--from 00:00 --to 24:00` ist der ganze Tag, `--from 00:00 --to 00:00` bleibt Dauer 0 und `--from 24:00` ungültig (je Exit 2). `time stop` bucht einen Timer, der zwischen 00:00:00 und 00:00:59 des Folgetags stoppt, bis `24:00` des Starttags. Andere Einträge über Mitternacht bleiben Exit 2; der Hinweis nennt die zwei Einträge (bis `24:00` und ab `00:00` am Folgetag). Das Overlay (Abschnitt 14) erlaubt `24:00` nur für `ended_at_time` (POST und PUT), sodass auch `time create|update --ended-at-time 24:00` gesendet wird; `--started-at-time 24:00` ist Exit 5.
+- **E2E:** `TestE2E_Carries/12_MidnightEnd` (hart, 22 Credits): `time log --date 2026-06-10 --from 23:00 --to 00:00` und `--to 24:00` müssen mit Exit 0 enden und in ihrer Antwort `duration` 3600 haben; `ended_at` und das gesendete `ended_at_time` stehen als Messung im Log.
 
 ### 23. Antwort von `GET /info`
 

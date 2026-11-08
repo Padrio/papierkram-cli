@@ -137,6 +137,8 @@ papierkram time log --task tickets --date gestern --from 14:00 --duration 1h30m 
 papierkram time log --task tickets --date gestern --from 14:00 --duration 1h30m -o json --no-input
 ```
 
+Ein Eintrag hat nur ein Datum: Ein Ende genau um Mitternacht geht mit `--to 24:00` (oder `--to 00:00`); andere Einträge über Mitternacht enden mit Exit 2 und werden als zwei Einträge gebucht (bis `24:00`, ab `00:00` am Folgetag mit `--date`).
+
 Timer (lokal, kostet erst beim Stoppen 10 Credits):
 
 ```sh
