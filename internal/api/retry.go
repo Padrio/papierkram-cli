@@ -17,6 +17,10 @@ import (
 // the number of retries (spec 5.5: twice, exponential backoff).
 var retryBackoff = []time.Duration{500 * time.Millisecond, time.Second}
 
+// MaxResponseSize is the largest response body read (spec 5.5): 64 MiB.
+// A longer body is cut there; see send for what that means per status.
+const MaxResponseSize = 64 << 20
+
 // do sets the standard headers and sends req. It is the single path of
 // every request. Only GET is retried, and only after a network error or a
 // 5xx: never mutations (credits, double booking), never 429 (monthly quota).
@@ -50,8 +54,9 @@ func retryable(err error) bool {
 }
 
 // send performs one attempt with the per-request timeout and reads the whole
-// body. A trace records whether the request was completely written, which
-// decides between network and outcome_unknown on failure.
+// body, at most MaxResponseSize bytes. A trace records whether the request
+// was completely written, which decides between network and
+// outcome_unknown on failure.
 func (c *Client) send(ctx context.Context, req *http.Request, attempt int) (*Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.opts.Timeout)
 	defer cancel()
@@ -84,20 +89,31 @@ func (c *Client) send(ctx context.Context, req *http.Request, attempt int) (*Res
 	if quota.Known && c.opts.OnQuota != nil {
 		c.opts.OnQuota(quota)
 	}
-	data, err := io.ReadAll(hr.Body)
-	c.debugResponse(hr, data, quota, time.Since(start), err)
+	// One byte more than the limit tells a cut body from one of exactly
+	// MaxResponseSize bytes.
+	data, err := io.ReadAll(io.LimitReader(hr.Body, MaxResponseSize+1))
+	tooLarge := len(data) > MaxResponseSize
+	if tooLarge {
+		data = data[:MaxResponseSize]
+	}
+	c.debugResponse(hr, data, quota, time.Since(start), err, tooLarge)
 	resp := &Response{Status: hr.StatusCode, Header: hr.Header, Body: data, Quota: quota}
 	if isRedirect(hr.StatusCode) && !safeMethod(req.Method) {
 		return resp, redirectError(req.Method, req.URL.Path, hr.StatusCode)
 	}
 	if hr.StatusCode < 200 || hr.StatusCode > 299 {
-		// The status decides, even if the body was cut off: a truncated
-		// 429 must not turn into a retryable network error.
+		// The status decides, even if the body was cut off (read error or
+		// MaxResponseSize): a truncated 429 must not turn into a retryable
+		// network error.
 		return resp, statusError(req.Method, hr.StatusCode, data)
 	}
 	if err != nil {
 		// A 2xx body is the payload; the server has seen the request.
 		return nil, transportError(req.Method, req.URL.Path, true, err)
+	}
+	if tooLarge {
+		// A cut payload is never returned; no retry (code error).
+		return nil, tooLargeError(req.Method, hr.StatusCode)
 	}
 	return resp, nil
 }

@@ -71,8 +71,9 @@ func (c *Client) debugRequest(req *http.Request, attempt int) {
 }
 
 // debugResponse writes status, duration, quota and body of one attempt;
-// readErr is a failure while reading the body.
-func (c *Client) debugResponse(hr *http.Response, data []byte, q Quota, d time.Duration, readErr error) {
+// readErr is a failure while reading the body, cut reports a body cut at
+// MaxResponseSize.
+func (c *Client) debugResponse(hr *http.Response, data []byte, q Quota, d time.Duration, readErr error, cut bool) {
 	if c.opts.Debug == nil {
 		return
 	}
@@ -94,6 +95,9 @@ func (c *Client) debugResponse(hr *http.Response, data []byte, q Quota, d time.D
 		}
 	}
 	c.writeBody(&b, "< ", hr.Header.Get("Content-Type"), data)
+	if cut {
+		fmt.Fprintf(&b, "< gekürzt nach %d MiB\n", MaxResponseSize>>20)
+	}
 	if readErr != nil {
 		fmt.Fprintf(&b, "< Fehler beim Lesen: %v\n", readErr)
 	}

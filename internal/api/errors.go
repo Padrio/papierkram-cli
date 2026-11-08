@@ -27,7 +27,13 @@ const (
 	// hintServerMutation replaces hintServer for POST, PUT and DELETE: the
 	// server may have booked or sent before failing.
 	hintServerMutation = "Papierkram-Serverfehler – die Änderung kann trotzdem ausgeführt worden sein: vor Wiederholung per describe/list prüfen"
+	hintTooLarge       = "mit --fields/--limit kleinere Antworten anfordern"
+	hintTooLargeChange = "NICHT wiederholen; Ergebnis per describe/list prüfen"
 )
+
+// ErrResponseTooLarge is the cause of the error of a 2xx answer longer
+// than MaxResponseSize (tooLargeError); callers test it with errors.Is.
+var ErrResponseTooLarge = errors.New("api: Antwort größer als MaxResponseSize")
 
 // apiErrorBody is the API error body (spec 4.1):
 // {type:"error", error_type, message, correlation_id}.
@@ -78,6 +84,24 @@ func classifyStatus(status int) (clierr.Code, string, string) {
 	default:
 		return clierr.CodeError, "", fmt.Sprintf("Unerwartete Antwort der Papierkram-API (HTTP %d)", status)
 	}
+}
+
+// tooLargeError is the error of a 2xx answer longer than MaxResponseSize
+// (spec 5.5): exit 1 (code error, never retried). For a mutation the
+// server has made the change, so the hint says not to repeat it.
+func tooLargeError(method string, status int) *clierr.Error {
+	e := &clierr.Error{
+		Code:       clierr.CodeError,
+		Message:    "Antwort größer als 64 MiB, abgebrochen",
+		Hint:       hintTooLarge,
+		HTTPStatus: status,
+		Cause:      ErrResponseTooLarge,
+	}
+	if !safeMethod(method) {
+		e.Message = "Antwort größer als 64 MiB; die Änderung wurde ausgeführt"
+		e.Hint = hintTooLargeChange
+	}
+	return e
 }
 
 // isRedirect reports a 3xx status.
