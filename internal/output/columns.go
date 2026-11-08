@@ -91,7 +91,9 @@ func FmtDate(v any) string {
 // FmtIDNameList shows a list of referenced objects (e.g. the invoice
 // templates of GET /info) as "249 Invoice type 1, 250 Invoice type 2":
 // id and name per element, comma-separated, untruncated. Elements without
-// id or name show what they have; other values are shown as plain cells.
+// id or name show what they have, elements with neither (and nulls) are
+// left out, so no empty part (", ,") appears; other values are shown as
+// plain cells.
 func FmtIDNameList(v any) string {
 	list, ok := v.([]any)
 	if !ok {
@@ -99,18 +101,19 @@ func FmtIDNameList(v any) string {
 	}
 	parts := make([]string, 0, len(list))
 	for _, el := range list {
-		o, ok := el.(object)
-		if !ok {
-			parts = append(parts, plain(el))
-			continue
-		}
-		var words []string
-		for _, k := range []string{"id", "name"} {
-			if x, ok := o.get(k); ok && x != nil {
-				words = append(words, plain(x))
+		part := plain(el)
+		if o, ok := el.(object); ok {
+			var words []string
+			for _, k := range []string{"id", "name"} {
+				if x, ok := o.get(k); ok && x != nil {
+					words = append(words, plain(x))
+				}
 			}
+			part = strings.Join(words, " ")
 		}
-		parts = append(parts, strings.Join(words, " "))
+		if part != "" {
+			parts = append(parts, part)
+		}
 	}
 	return strings.Join(parts, ", ")
 }

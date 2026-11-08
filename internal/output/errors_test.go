@@ -151,3 +151,20 @@ func TestPrintableDropsHarmlessFormatCharacters(t *testing.T) {
 		t.Errorf("oneLine = %q", got)
 	}
 }
+
+// U+2028 and U+2029 (Unicode line and paragraph separator) break lines in
+// some terminals like \n: they become spaces like the other line
+// separators (\r, \v, \f), also in messages (L158).
+func TestPrintableLineSeparators(t *testing.T) {
+	for _, in := range []string{"a b", "a b"} {
+		if got := Printable(in); got != "a b" {
+			t.Errorf("Printable(%q) = %q", in, got)
+		}
+		if got := Message(in); got != "a b" {
+			t.Errorf("Message(%q) = %q", in, got)
+		}
+		if !Invisible([]rune(in)[1]) {
+			t.Errorf("Invisible(%q) = false", []rune(in)[1])
+		}
+	}
+}

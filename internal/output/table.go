@@ -219,7 +219,8 @@ func oneLine(s string) string {
 // writeRows aligns rows with two spaces between columns. Trailing spaces
 // of every line are removed: the padding of empty last cells, but also
 // trailing spaces inside the last cell's own text. A row whose cells are
-// all empty would thereby become a blank line, so its first cell shows "-".
+// all empty (or white space only, which counts as empty) would thereby
+// become a blank line, so its first cell shows "-".
 func writeRows(w io.Writer, rows [][]string) error {
 	if len(rows) == 0 {
 		return nil
@@ -227,8 +228,13 @@ func writeRows(w io.Writer, rows [][]string) error {
 	var b bytes.Buffer
 	tw := tabwriter.NewWriter(&b, 0, 4, 2, ' ', 0)
 	for _, r := range rows {
+		r = slices.Clone(r)
+		for i, c := range r {
+			if strings.TrimSpace(c) == "" {
+				r[i] = "" // white space only: an empty cell
+			}
+		}
 		if len(r) > 0 && !slices.ContainsFunc(r, func(c string) bool { return c != "" }) {
-			r = slices.Clone(r)
 			r[0] = "-"
 		}
 		_, _ = fmt.Fprintln(tw, strings.Join(r, "\t"))

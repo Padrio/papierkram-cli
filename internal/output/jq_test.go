@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -120,5 +121,30 @@ func TestJQPartialResultsNotPrintedOnError(t *testing.T) {
 func TestJQHaltStopsWithoutError(t *testing.T) {
 	if got := jq(t, "1, halt, 2", `{}`); got != "1\n" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// The output limit is checked per result before it is buffered: the first
+// result over the limit stops the run and is not added, so the buffer
+// never grows past the limit (L149).
+func TestJQOutputLimitCheckedBeforeBuffering(t *testing.T) {
+	old := jqOutputLimit
+	jqOutputLimit = 8
+	t.Cleanup(func() { jqOutputLimit = old })
+	var b bytes.Buffer
+	if err := appendResult(&b, "abc"); err != nil || b.String() != "abc\n" {
+		t.Fatalf("err = %v, buffer = %q", err, b.String())
+	}
+	err := appendResult(&b, []any{"abcdefgh"})
+	if ce := clierr.From(err); ce == nil || ce.Exit() != 1 || !strings.Contains(ce.Message, "größer als") {
+		t.Errorf("err = %+v", ce)
+	}
+	if b.String() != "abc\n" {
+		t.Errorf("buffer = %q, want the first result only", b.String())
+	}
+	// exactly at the limit is fine
+	b.Reset()
+	if err := appendResult(&b, "1234567"); err != nil || b.Len() != 8 {
+		t.Errorf("err = %v, len = %d", err, b.Len())
 	}
 }

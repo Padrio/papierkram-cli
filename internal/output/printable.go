@@ -6,8 +6,9 @@ import (
 )
 
 // Printable replaces control characters (line breaks, \r, tabs, the ESC
-// of ANSI sequences) and invisible format characters (bidi overrides,
-// zero-width spaces) with a space; ZWJ, soft hyphen and BOM are removed
+// of ANSI sequences), the Unicode line and paragraph separators and
+// invisible format characters (bidi overrides, zero-width spaces) with a
+// space; ZWJ, soft hyphen and BOM are removed
 // (see clean). Text from outside the CLI (API
 // objects, a project file of a cloned repository, its path) goes through
 // it before it reaches the terminal, so it cannot inject escape sequences
@@ -38,8 +39,9 @@ func clean(s string, keepNewline bool) string {
 	}, s)
 }
 
-// Invisible reports a control character or an invisible format character
-// (Unicode Cf).
+// Invisible reports a control character, an invisible format character
+// (Unicode Cf) or a Unicode line or paragraph separator (U+2028, U+2029,
+// categories Zl and Zp): some terminals break the line there like at \n.
 func Invisible(r rune) bool {
-	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r)
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029'
 }

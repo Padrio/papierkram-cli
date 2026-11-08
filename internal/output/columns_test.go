@@ -91,4 +91,13 @@ func TestFmtIDNameList(t *testing.T) {
 	if got := FmtIDNameList([]any{}); got != "" {
 		t.Errorf("empty list = %q, want empty", got)
 	}
+	// elements without id and name (and null elements) leave no empty
+	// part (L165)
+	v, err = decode([]byte(`[{"id":1,"name":"A"},{"type":"template"},{"id":null,"name":null},null,{"id":2}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := FmtIDNameList(v); got != "1 A, 2" {
+		t.Errorf("FmtIDNameList = %q, want %q", got, "1 A, 2")
+	}
 }

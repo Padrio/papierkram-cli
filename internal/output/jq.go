@@ -58,22 +58,33 @@ func renderJQ(o Options, raw []byte) error {
 			}
 			return outputErr(err.Error(), err)
 		}
-		if s, ok := r.(string); ok {
-			b.WriteString(s)
-		} else {
-			j, err := gojq.Marshal(r)
-			if err != nil {
-				return outputErr(err.Error(), err)
-			}
-			b.Write(j)
-		}
-		b.WriteByte('\n')
-		if b.Len() > jqOutputLimit {
-			return outputErr(fmt.Sprintf("jq-Ausgabe größer als %d MiB", jqOutputLimit>>20), nil)
+		if err := appendResult(&b, r); err != nil {
+			return err
 		}
 	}
 	_, err = o.Out.Write(b.Bytes())
 	return err
+}
+
+// appendResult adds one result r to the output b as one line. The limit
+// is checked before: the first result that would take b over
+// jqOutputLimit stops the run and is not added.
+func appendResult(b *bytes.Buffer, r any) error {
+	s, isString := r.(string)
+	var j []byte
+	if !isString {
+		var err error
+		if j, err = gojq.Marshal(r); err != nil {
+			return outputErr(err.Error(), err)
+		}
+	}
+	if b.Len()+len(s)+len(j)+1 > jqOutputLimit {
+		return outputErr(fmt.Sprintf("jq-Ausgabe größer als %d MiB", jqOutputLimit>>20), nil)
+	}
+	b.WriteString(s)
+	b.Write(j)
+	b.WriteByte('\n')
+	return nil
 }
 
 // jqOutputLimit caps the buffered --jq output (e.g. range(1e9)).

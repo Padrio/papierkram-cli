@@ -233,3 +233,13 @@ func TestTableColumnFallback(t *testing.T) {
 		t.Errorf("--fields = %q, erwartet %q", out, want)
 	}
 }
+
+// A cell of white space only (a name " ", a comment "\n") is an empty
+// cell: trimmed, a row of such cells would become a blank line (L158).
+func TestTableWhitespaceCellIsEmpty(t *testing.T) {
+	out, _ := renderCols(t, Options{Format: FormatTable}, `[{"a":"x","b":"y"},{"a":" ","b":"\n\t"},{"a":"z","b":"  "},{"a":"      ","b":"w"}]`, Columns{Table: []Column{{Path: "a"}, {Path: "b"}}})
+	// the blank cell does not widen its column either
+	if want := "A  B\nx  y\n-\nz\n   w\n"; out != want {
+		t.Errorf("got\n%q\nwant\n%q", out, want)
+	}
+}
