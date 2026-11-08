@@ -553,6 +553,32 @@ func TestInvoiceFromEstimateDroppedNullsHint(t *testing.T) {
 	}
 }
 
+// Review T18-M2: a reference flag sets only its own path and its id, not
+// what lies below the reference. The contact person of the estimate (top
+// level there) becomes customer.contact_person of the invoice, so the
+// body is "customer":{"id":1,"contact_person":{"id":null}}: --customer 1
+// (the same customer, its references stay) does not set contact_person,
+// its null id is named; --contact-person sets it and hides the hint.
+func TestInvoiceFromEstimateRefFlagNullHint(t *testing.T) {
+	const est = `{"name":"A","customer":{"id":1},"contact_person":{"id":null},"line_items":[{"name":"X","quantity":1,"unit":"x","vat_rate":"19%"}]}`
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--customer", "1"}, "Hinweis: null ignoriert (Feld bleibt unverändert): customer.contact_person.id\n"},
+		{[]string{"--customer", "1", "--contact-person", "5"}, ""},
+		{nil, "Hinweis: null ignoriert (Feld bleibt unverändert): customer.contact_person.id\n"},
+	} {
+		app, srv := apiApp(t)
+		estimateJSON(srv, est)
+		wantExit(t, app, Run(app, fromEstimateCmd(append(slices.Clone(tc.args), "-o", "json")...)), 0)
+		wantRequests(t, srv, 2)
+		if _, errs := bufs(app); errs != tc.want {
+			t.Errorf("%v: stderr = %q, erwartet %q", tc.args, errs, tc.want)
+		}
+	}
+}
+
 // Errors found after the read name the estimate they come from.
 func TestInvoiceFromEstimateErrorOrigin(t *testing.T) {
 	// a value of the estimate that cannot be sent

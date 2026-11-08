@@ -222,7 +222,10 @@ func itemsReplaced(c *cobra.Command, ws writeSpec) bool {
 // unsetNulls are the nulls left out of the estimate (paths as Prune names
 // them, positions as line_items[]) whose field no changed flag sets: a
 // flag at the path or above it, or the positions per --item/--items. The
-// hint would otherwise name a field the flag fills (L310).
+// hint would otherwise name a field the flag fills (L310). A reference
+// flag ({"id": n}) sets only its path and the id there: --customer does
+// not set customer.contact_person.id, which lies below the customer but
+// is the field of --contact-person (review T18-M2).
 func unsetNulls(c *cobra.Command, ws writeSpec, nulls []string) []string {
 	return slices.DeleteFunc(nulls, func(null string) bool {
 		path := strings.Split(strings.ReplaceAll(null, "[]", ""), ".")
@@ -230,12 +233,26 @@ func unsetNulls(c *cobra.Command, ws writeSpec, nulls []string) []string {
 			return true
 		}
 		for _, f := range ws.fields {
-			if f.Flag != "" && len(f.Path) <= len(path) && slices.Equal(f.Path, path[:len(f.Path)]) && c.Flags().Changed(f.Flag) {
+			if f.Flag != "" && setsPath(f, path) && c.Flags().Changed(f.Flag) {
 				return true
 			}
 		}
 		return false
 	})
+}
+
+// setsPath reports whether the flag of field f sets the value at path:
+// path is f.Path or below it; for a reference only f.Path and its id.
+func setsPath(f spec.Field, path []string) bool {
+	if len(f.Path) > len(path) || !slices.Equal(f.Path, path[:len(f.Path)]) {
+		return false
+	}
+	switch f.Kind {
+	case spec.KindRef, spec.KindNestedRef, spec.KindRefList:
+		rest := path[len(f.Path):]
+		return len(rest) == 0 || len(rest) == 1 && rest[0] == "id"
+	}
+	return true
 }
 
 // customerRefs are the references below customer that belong to the
