@@ -102,7 +102,8 @@ func markBounds(fs *pflag.FlagSet, name string, minimum, maximum *float64) {
 }
 
 // markSchemaBounds records minimum and maximum of the spec schema of a
-// field or filter flag (spec-driven; the embedded spec names none today).
+// field or filter flag (spec-driven; the embedded spec names none today;
+// a filter passes its schema through filterBounds).
 // For fields the body check (spec.Validate, kin-openapi) enforces the same
 // values; filters go to the API as query parameters, which checks them.
 // A minimum made exclusive (OpenAPI 3.0: exclusiveMinimum true) is no

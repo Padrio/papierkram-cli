@@ -949,6 +949,36 @@ func TestMarkSchemaBounds(t *testing.T) {
 	}
 }
 
+// Review T16-M3: only a filter that takes a number shows the bounds of
+// its schema: an id filter, or one of type integer or number; a date,
+// datetime or text filter never does.
+func TestFilterBounds(t *testing.T) {
+	lo := 1.0
+	str := &openapi3.Schema{Type: &openapi3.Types{"string"}, Min: &lo}
+	num := &openapi3.Schema{Type: &openapi3.Types{"number"}, Min: &lo}
+	integer := &openapi3.Schema{Type: &openapi3.Types{"integer"}, Min: &lo}
+	for i, tc := range []struct {
+		kind string
+		s    *openapi3.Schema
+		want *openapi3.Schema
+	}{
+		{"id", integer, integer},
+		{"id", str, str},
+		{"id", nil, nil},
+		{"enum", integer, integer},
+		{localKind, num, num},
+		{"date", str, nil},
+		{"datetime_from", str, nil},
+		{"enum", str, nil},
+		{localKind, str, nil},
+		{"date", &openapi3.Schema{Min: &lo}, nil},
+	} {
+		if got := filterBounds(registry.Filter{Kind: tc.kind}, tc.s); got != tc.want {
+			t.Errorf("Fall %d (%s): %p, erwartet %p", i, tc.kind, got, tc.want)
+		}
+	}
+}
+
 // The --json sentence of commands --help lists the flag details once,
 // without a double "und" (task 17, T16-M4).
 func TestCommandsLongWording(t *testing.T) {

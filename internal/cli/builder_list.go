@@ -102,7 +102,7 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 			f.String(flt.Flag, "", help)
 		}
 		markEnum(f, flt.Flag, values)
-		markSchemaBounds(f, flt.Flag, filterSchema(e, flt))
+		markSchemaBounds(f, flt.Flag, filterBounds(flt, filterSchema(e, flt)))
 		if flt.Kind == "date" {
 			annotate(f, flt.Flag, flagValueType, "date") // parsed like a date field
 		}
@@ -114,6 +114,19 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 			markPreset(f, flt.Flag, e.Preset, false)
 		}
 	}
+}
+
+// filterBounds is the schema s of the filter flt when its minimum and
+// maximum may describe the flag (markSchemaBounds), else nil: only for an
+// id filter (an integer flag) or a schema of type integer or number. A
+// date, datetime or text filter takes text; a bound of its schema (none
+// in the embedded spec today) would name no value the flag takes
+// (review T16-M3).
+func filterBounds(flt registry.Filter, s *openapi3.Schema) *openapi3.Schema {
+	if s == nil || flt.Kind != "id" && !s.Type.Is("integer") && !s.Type.Is("number") {
+		return nil
+	}
+	return s
 }
 
 // filterEnum returns the schema and the values (without null) of an enum
