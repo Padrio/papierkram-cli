@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 
@@ -312,23 +311,14 @@ func (a *App) writeResult(c *cobra.Command, e registry.Entry, r *config.Resolved
 	if len(bytes.TrimSpace(body)) > 0 {
 		return a.render(c, body, e.Columns)
 	}
-	o := a.outputOptions(c.Context(), a.outputFormat(r))
-	var result any = struct {
-		OK bool `json:"ok"`
-	}{true}
-	text := e.Resource + " angelegt.\n"
 	if isUpdate {
-		id := params[len(params)-1]
-		result = okJSON{ID: id, OK: true}
-		text = fmt.Sprintf("%s %d aktualisiert.\n", e.Resource, id)
-	} else {
-		output.Warn(a.Err, "API lieferte kein Objekt; angelegtes Objekt per list prüfen")
+		id := lastID(params)
+		return a.emptyOK(c, r, okJSON{ID: id, OK: true}, fmt.Sprintf("%s %d aktualisiert.", e.Resource, id))
 	}
-	if ownText(o) {
-		_, err := io.WriteString(a.Out, text)
-		return afterRequest(err)
-	}
-	return afterRequest(output.RenderValue(o, result, output.Columns{}))
+	output.Warn(a.Err, "API lieferte kein Objekt; angelegtes Objekt per list prüfen")
+	return a.emptyOK(c, r, struct {
+		OK bool `json:"ok"`
+	}{true}, e.Resource+" angelegt.")
 }
 
 // flagString is the value of a string flag, "" when the command has none.

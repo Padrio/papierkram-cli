@@ -107,12 +107,7 @@ func (a *App) runUpload(c *cobra.Command, e registry.Entry, args []string) error
 		return a.render(c, resp.Body, e.Columns)
 	}
 	id := lastID(params)
-	o := a.outputOptions(c.Context(), a.outputFormat(r))
-	if ownText(o) {
-		_, err := fmt.Fprintf(a.Out, "%s %d: Datei hochgeladen.\n", e.Resource, id)
-		return afterRequest(err)
-	}
-	return afterRequest(output.RenderValue(o, okJSON{ID: id, OK: true}, output.Columns{}))
+	return a.emptyOK(c, r, okJSON{ID: id, OK: true}, fmt.Sprintf("%s %d: Datei hochgeladen.", e.Resource, id))
 }
 
 // newDocumentCmd builds the group of the sub-object and its action from
@@ -163,12 +158,7 @@ func (a *App) runDocumentDelete(c *cobra.Command, e registry.Entry, args []strin
 	if _, err := client.Call(c.Context(), e.OperationID, params, nil, nil); err != nil {
 		return err
 	}
-	o := a.outputOptions(c.Context(), a.outputFormat(r))
-	if ownText(o) {
-		_, err := fmt.Fprintf(a.Out, "%s %d: Datei %d gelöscht.\n", e.Resource, voucher, doc)
-		return afterRequest(err)
-	}
-	return afterRequest(output.RenderValue(o, deletedJSON{ID: doc, Deleted: true}, output.Columns{}))
+	return a.emptyOK(c, r, deletedJSON{ID: doc, Deleted: true}, fmt.Sprintf("%s %d: Datei %d gelöscht.", e.Resource, voucher, doc))
 }
 
 // uploadFile is a checked file of an upload, open for reading, with the

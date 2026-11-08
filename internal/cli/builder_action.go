@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 )
 
@@ -70,7 +69,7 @@ func (a *App) runSimpleAction(c *cobra.Command, e registry.Entry, args []string)
 	if err != nil {
 		return err
 	}
-	id := params[len(params)-1]
+	id := lastID(params)
 	var result any
 	switch {
 	case e.Action == "delete":
@@ -80,10 +79,5 @@ func (a *App) runSimpleAction(c *cobra.Command, e registry.Entry, args []string)
 	default:
 		return a.render(c, resp.Body, e.Columns)
 	}
-	o := a.outputOptions(c.Context(), a.outputFormat(r))
-	if ownText(o) {
-		_, err := fmt.Fprintf(a.Out, "%s %d %s.\n", e.Resource, id, simpleActions[e.Action])
-		return afterRequest(err)
-	}
-	return afterRequest(output.RenderValue(o, result, output.Columns{}))
+	return a.emptyOK(c, r, result, fmt.Sprintf("%s %d %s.", e.Resource, id, simpleActions[e.Action]))
 }

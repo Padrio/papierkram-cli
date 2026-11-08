@@ -151,11 +151,7 @@ func (a *App) runDeliver(c *cobra.Command, e registry.Entry, args []string) erro
 	if readErr != nil {
 		warning := "Versand erfolgreich, Nachlesen fehlgeschlagen: " + clierr.From(readErr).Message + " – NICHT erneut ausführen"
 		output.Warn(a.Err, warning)
-		if ownText(o) {
-			_, err := fmt.Fprintf(a.Out, "%s %d versendet.\n", e.Resource, id)
-			return afterRequest(err)
-		}
-		return afterRequest(output.RenderValue(o, deliveredJSON{ID: id, Delivered: true, Warnings: []string{warning}}, output.Columns{}))
+		return a.emptyOK(c, r, deliveredJSON{ID: id, Delivered: true, Warnings: []string{warning}}, fmt.Sprintf("%s %d versendet.", e.Resource, id))
 	}
 	return afterRequest(output.Render(o, doc.result(cols, nil), cols))
 }
@@ -499,17 +495,12 @@ func missingMail(mail any) []mailField {
 // schema (exit 5).
 func (a *App) deliverBody(c *cobra.Command, e registry.Entry) (map[string]any, error) {
 	req := spec.RequestSchema(e.OperationID)
+	pr, given, err := a.prunedInput(c, req, nil)
+	if err != nil {
+		return nil, err
+	}
 	body := map[string]any{}
-	if c.Flags().Changed("input") {
-		in, err := a.readInput(flagString(c, "input"))
-		if err != nil {
-			return nil, err
-		}
-		pr, err := spec.Prune(in, req, nil)
-		if err != nil {
-			return nil, prefixErr("--input: ", err)
-		}
-		a.pruneHints(pr)
+	if given {
 		body = pr.Body
 		// "email": null (a copied GET answer) is no mail; the request
 		// does not allow null, and --via pdf must not see a mail
@@ -519,7 +510,6 @@ func (a *App) deliverBody(c *cobra.Command, e registry.Entry) (map[string]any, e
 	}
 	var text string
 	if c.Flags().Changed("body-file") {
-		var err error
 		if text, err = a.readText("--body-file", flagString(c, "body-file")); err != nil {
 			return nil, err
 		}

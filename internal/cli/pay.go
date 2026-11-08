@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
-	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/spec"
 )
@@ -148,12 +147,7 @@ func (a *App) runPay(c *cobra.Command, e registry.Entry, args []string) error {
 		return a.render(c, resp.Body, e.Columns)
 	}
 	id := lastID(params)
-	o := a.outputOptions(c.Context(), a.outputFormat(r))
-	if ownText(o) {
-		_, err := fmt.Fprintf(a.Out, "%s %d: Zahlung erfasst.\n", e.Resource, id)
-		return afterRequest(err)
-	}
-	return afterRequest(output.RenderValue(o, okJSON{ID: id, OK: true}, output.Columns{}))
+	return a.emptyOK(c, r, okJSON{ID: id, OK: true}, fmt.Sprintf("%s %d: Zahlung erfasst.", e.Resource, id))
 }
 
 // payMissing is the error when neither a payment amount nor a bank
@@ -186,17 +180,12 @@ func checkPayFlags(c *cobra.Command) error {
 // are those of payFields.
 func (a *App) payBody(c *cobra.Command, e registry.Entry, fields map[string]spec.Field) (map[string]any, error) {
 	req := spec.RequestSchema(e.OperationID)
+	pr, given, err := a.prunedInput(c, req, spec.ResourceResponseSchema(e.OperationID))
+	if err != nil {
+		return nil, err
+	}
 	body := map[string]any{}
-	if c.Flags().Changed("input") {
-		in, err := a.readInput(flagString(c, "input"))
-		if err != nil {
-			return nil, err
-		}
-		pr, err := spec.Prune(in, req, spec.ResourceResponseSchema(e.OperationID))
-		if err != nil {
-			return nil, prefixErr("--input: ", err)
-		}
-		a.pruneHints(pr)
+	if given {
 		body = pr.Body
 	}
 	cc := a.dayContext(e.Resource)
