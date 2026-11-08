@@ -68,5 +68,6 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 - Hinweise mit einem Befehl (`auth login`, `auth logout`, kein Token, `context create`) setzen einen Kontextnamen, den die Shell sonst anders läse (z. B. `a;b`), in einfache Anführungszeichen wie schon die Hinweise des Timers.
 - `update --input` mit `--customer`: Hat `customer` im Input keine lesbare `id`, gilt das nicht mehr als Kundenwechsel; Kontaktperson und Projekt des Inputs werden gesendet (bisher entfielen sie mit dem Hinweis „Kunde 99 statt <nil> aus --input“).
 - Fehlervertrag: Der Fehler einer 2xx-Antwort über 64 MiB (Exit 1, auch Exit 11 von `voucher create --file`) hat kein `http_status` mehr; bisher stand dort der 2xx-Status, den `docs/schemas/error.json` nicht zulässt. Die Meldung sagt weiter, ob die Änderung ausgeführt wurde.
+- Fehlerformat: Scheitert das Parsen eines Flags vor `-o json`, `-o yaml` oder `--jq` (z. B. `--bogus -o json`, `--limit abc -o json`), endet stderr trotzdem mit dem strukturierten Fehler; bisher fehlte er, weil die späteren Flags nicht mehr gelesen wurden.
 
 [Unreleased]: https://github.com/Padrio/papierkram-cli/commits/main

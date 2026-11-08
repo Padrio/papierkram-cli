@@ -82,6 +82,11 @@ type App struct {
 	// then); execute uses its output format for the error output.
 	resolved *config.Resolved
 
+	// flagParseFailed is set when the flags could not be parsed: the
+	// flags after the bad one are unset, so execute takes the error
+	// format from the raw arguments (errorFormatFromArgs, review C-I2).
+	flagParseFailed bool
+
 	// pfile is the project file of this invocation (see projectFile).
 	pfile projectFileCache
 

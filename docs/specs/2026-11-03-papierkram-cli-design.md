@@ -421,6 +421,7 @@ read_only = true
 ### 10.4 Fehler und Exit-Codes
 - Text: `Fehler: <message>` + `Hinweis: <hint>` + ggf. `Correlation-ID: …`.
 - Bei `-o json|yaml` zusätzlich strukturiert auf stderr: `{"error":{"code":"not_found","message":"…","hint":"…","http_status":404,"correlation_id":"…","exit_code":4}}`.
+- Lässt sich ein Flag nicht parsen (unbekanntes Flag, falscher Wert), bleiben die Flags danach ungesetzt; das Format des Fehlers kommt dann aus den rohen Argumenten bis `--` (`-o X`, `-oX`, `-o=X`, `--output X`, `--output=X`, `--jq X`, `--jq=X`; das letzte gilt, ein ungültiges `-o` zählt nicht), sodass auch `--bogus -o json` mit der JSON-Fehlerzeile endet.
 
 | Exit | Code | Auslöser | Hinweis (Beispiel) |
 |---|---|---|---|

@@ -205,7 +205,10 @@ func NewRootCmd(app *App) *cobra.Command {
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
-	root.SetFlagErrorFunc(germanFlagError)
+	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		app.flagParseFailed = true
+		return germanFlagError(c, err)
+	})
 	root.SetOut(app.Out)
 	root.SetErr(app.Err)
 	root.SetIn(app.In)
@@ -265,6 +268,7 @@ func execute(app *App, root *cobra.Command, args []string) int {
 
 // executeContext runs root with ctx as the command context (cmd.Context()).
 func executeContext(ctx context.Context, app *App, root *cobra.Command, args []string) int {
+	app.flagParseFailed = false
 	if isCompletionRequest(args) {
 		app.registerCompletions(root)
 	}
@@ -288,10 +292,56 @@ func executeContext(ctx context.Context, app *App, root *cobra.Command, args []s
 		// timer stays, review B-M1).
 		ce = &clierr.Error{Code: ce.Code, Message: "Abgebrochen: Anfrage durch Unterbrechung beendet", Hint: ce.Hint, Cause: err}
 	}
+	if app.flagParseFailed {
+		app.errorFormatFromArgs(args)
+	}
 	// The format of the error output is the resolved one (context output
 	// value) when the configuration was resolved, otherwise the flag.
 	output.WriteError(app.outputOptions(context.Background(), app.outputFormat(app.resolved)), ce)
 	return ce.Exit()
+}
+
+// errorFormatFromArgs sets -o/--output and --jq from the raw arguments
+// after a flag could not be parsed: pflag stops at the bad flag, so a
+// later -o json or --jq would be lost and the error would have no JSON
+// line (AGENTS contract, review C-I2). It reads -o X, -oX, -o=X,
+// --output X, --output=X, --jq X and --jq=X up to a "--"; the last one
+// wins as in a full parse, and an -o value that is no format is ignored
+// (the format then stays as parsed).
+func (a *App) errorFormatFromArgs(args []string) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			return
+		}
+		next := func() (string, bool) {
+			if i+1 < len(args) {
+				i++
+				return args[i], true
+			}
+			return "", false
+		}
+		var out, jq string
+		var hasOut, hasJQ bool
+		switch {
+		case arg == "-o" || arg == "--output":
+			out, hasOut = next()
+		case strings.HasPrefix(arg, "--output="):
+			out, hasOut = strings.TrimPrefix(arg, "--output="), true
+		case strings.HasPrefix(arg, "-o") && !strings.HasPrefix(arg, "--"):
+			out, hasOut = strings.TrimPrefix(strings.TrimPrefix(arg, "-o"), "="), true
+		case arg == "--jq":
+			jq, hasJQ = next()
+		case strings.HasPrefix(arg, "--jq="):
+			jq, hasJQ = strings.TrimPrefix(arg, "--jq="), true
+		}
+		if hasOut && slices.Contains(outputFormats, out) {
+			a.Flags.Output, a.Flags.OutputSet = out, true
+		}
+		if hasJQ {
+			a.Flags.JQ = jq
+		}
+	}
 }
 
 // completeArgsErr is err of cmd, but for cobra's own __complete command
