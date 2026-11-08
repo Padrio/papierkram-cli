@@ -177,7 +177,7 @@ Eine Go-Tabelle beschreibt jedes API-Command: Ressource, Aktion, Method, Pfad-Te
 
 ### 5.5 HTTP-Client
 - Header: `Authorization: Bearer …`, `Accept: application/json`, `User-Agent: papierkram-cli/<version> (<os>/<arch>)`; `Content-Type` nur bei Body.
-- Timeout 30 s, überschreibbar per `--timeout` und Kontext-Option.
+- Timeout 30 s, überschreibbar per `--timeout` und Kontext-Option. Uploads (`voucher upload`, Upload-Schritt von `voucher create --file`) nutzen ohne `--timeout` je Versuch `max(wirksames Zeitlimit aus Kontext bzw. Standard 30 s, 120 s)` (`uploadTimeout`), mit `--timeout` genau diesen Wert; umgesetzt über eine Client-Kopie (`(*api.Client).WithTimeout`) nur für den Upload-Aufruf. Alle anderen Anfragen, auch das Anlegen bei `voucher create --file`, behalten das wirksame Zeitlimit.
 - **Leerer 2xx-Body = kein Inhalt** (nicht nur bei 204), nie ein Parse-Fehler.
 - Quota-Header werden bei jeder Antwort gelesen und im Ergebnis mitgeführt (für `--debug`, `auth status`, Warnungen).
 - Wiederholung **nur** bei GET nach Netzwerkfehler oder 5xx: zweimal mit exponentiellem Backoff. Nie bei POST/PUT/DELETE (Credits, Doppelbuchung), nie bei 429 (Monatskontingent). **[Call]**
@@ -309,6 +309,7 @@ Ohne `-O` und mit TTY auf stdout: Fehler mit Hinweis (kein Binärmüll ins Termi
 
 ### 9.3 `voucher upload <voucher-id> <datei>` und `voucher create --file`
 - Upload als `multipart/form-data`, Feld `file`, MIME-Typ aus Dateiendung. Erlaubte Typen **[Builder]**: per E2E ermitteln, bis dahin keine lokale Einschränkung.
+- Zeitlimit des Uploads (5.5): ohne `--timeout` je Versuch mindestens 120 s (ein größeres `timeout` des Kontexts gilt), mit `--timeout` genau dieser Wert. Bei Zeitüberschreitung endet der Hinweis mit „größere Dateien brauchen ein höheres --timeout (Uploads ohne --timeout: 120 s)“.
 - `voucher create … --file beleg.pdf`: erst Beleg anlegen (50 Credits), dann hochladen (10 Credits). Scheitert der Upload, bleibt der Beleg bestehen; **Exit 11 (`partial`)**, Ausgabe enthält die Beleg-ID, `"completed":["create"]`, `"failed":["upload"]` und den Befehl zum Nachholen (`papierkram voucher upload <id> <datei>`). Kein automatisches Löschen. Gleiches Muster für `invoice create --from-estimate` (Lesen gescheitert → nichts angelegt, normaler Fehler) und `time stop` (Anlegen gescheitert → Timer bleibt erhalten, normaler Fehler). **[Call]**
 
 ### 9.4 `invoice create --from-estimate <id>`

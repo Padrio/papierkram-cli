@@ -62,7 +62,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 ### 3. Maximale Upload-Dateigröße — bewusst nicht gemessen
 
 - **Offen:** Wie groß darf eine hochgeladene Datei sein?
-- **Annahme:** Keine lokale Grenze; die ganze Datei muss innerhalb von `--timeout` (Standard 30 s) übertragen sein. Lehnt die API eine Datei ab, kommt Exit 5 (bzw. bei `voucher create --file` Exit 11 mit dem Befehl zum Nachholen).
+- **Annahme:** Keine lokale Grenze; die ganze Datei muss innerhalb des Zeitlimits übertragen sein (ohne `--timeout` je Versuch mindestens 120 s, ein größeres `timeout` des Kontexts gilt; mit `--timeout` genau dieser Wert). Lehnt die API eine Datei ab, kommt Exit 5 (bzw. bei `voucher create --file` Exit 11 mit dem Befehl zum Nachholen).
 - **E2E:** Bewusst nicht gemessen: Das hieße, große Dateien in einen echten Account hochzuladen. Bleibt offen, bis Papierkram die Grenze dokumentiert.
 
 ### 4. `0.19` ergibt 19 %

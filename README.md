@@ -121,7 +121,7 @@ active_context = "firma-gmbh"
 subdomain = "firma-gmbh"
 read_only = false
 output = "table"            # Standardformat: table, wide, json oder yaml
-timeout = "30s"             # Zeitlimit je Anfrage
+timeout = "30s"             # Zeitlimit je Anfrage (Uploads mindestens 120 s)
 user = 1                    # Standard-Benutzer für Zeiteinträge
 completion_lookup = true    # IDs in der Vervollständigung per API laden
 
@@ -354,7 +354,7 @@ Live gemessen gegen einen Sandbox-Account (Stand 2026-11-04, Einzelheiten in [do
 - **Rechnung ändern:** Ein `PUT` ohne Zahlungsbedingung stellt eine Rechnung auf die Standard-Zahlungsbedingung des Accounts um und ändert das Fälligkeitsdatum. `invoice update` liest die Rechnung deshalb vorher und sendet ihre aktuelle Zahlungsbedingung mit (1 Credit mehr; nicht mit `--payment-term` oder `payment_term` in `--input`). Ebenso leert ein `PUT`, dessen Kunde keine Kontaktperson und kein Projekt nennt, beide, auch beim selben Kunden. `invoice update --customer` ohne `--contact-person`/`--customer-project` nutzt dasselbe Lesen: Beim Kunden der Rechnung sendet es Kontaktperson und Projekt mit, bei einem anderen Kunden entfallen sie (Hinweis auf stderr; neu setzen per `--contact-person`/`--customer-project`). `papierkram api PUT` tut beides nicht.
 - **`--billable-duration` ist wirkungslos:** Gemessen wurde 1800 Sekunden bei einem Eintrag von 90 Minuten; gespeichert war beim Anlegen und beim Ändern die Dauer (5400).
 - **PDF-Versand:** `deliver --via pdf` vergibt die Nummer und setzt den Status (z. B. `sent`), aber weder `sent_on` noch `sent_via`.
-- **Upload:** PDF, PNG und JPG werden angenommen; TXT lehnt die API mit HTTP 500 ab (Exit 1), andere Typen sind nicht gemessen. Das ist kein vorübergehender Fehler, also nicht wiederholen.
+- **Upload:** PDF, PNG und JPG werden angenommen; TXT lehnt die API mit HTTP 500 ab (Exit 1), andere Typen sind nicht gemessen. Das ist kein vorübergehender Fehler, also nicht wiederholen. Die ganze Datei muss innerhalb des Zeitlimits übertragen sein: `voucher upload` und das Hochladen bei `voucher create --file` warten ohne `--timeout` je Versuch mindestens 120 s (ein größeres `timeout` des Kontexts gilt); mit `--timeout` gilt genau dieser Wert, auch wenn er kleiner ist.
 
 ## Weitere Dokumentation
 
