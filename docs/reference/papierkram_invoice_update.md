@@ -7,7 +7,7 @@ Rechnung ändern.
 
 Kosten: 1 Credit je Anfrage.
 
-Ohne --payment-term und ohne payment_term in --input liest das CLI die Rechnung vorher (1 weiterer Credit) und sendet ihre aktuelle Zahlungsbedingung (payment_term.id) mit: Ein PUT ohne payment_term stellt die Rechnung sonst auf die Standard-Zahlungsbedingung des Accounts um und ändert das Fälligkeitsdatum (gemessen 2026-11-04). --dry-run liest ebenfalls und zeigt das Lesen. Scheitert das Lesen, wird nichts geändert. Mit --payment-term entfällt das Lesen.
+Ohne --payment-term und ohne payment_term in --input liest das CLI die Rechnung vorher (1 weiterer Credit) und sendet ihre aktuelle Zahlungsbedingung (payment_term.id) mit: Ein PUT ohne payment_term stellt die Rechnung sonst auf die Standard-Zahlungsbedingung des Accounts um und ändert das Fälligkeitsdatum (gemessen 2026-11-04). --dry-run liest ebenfalls und zeigt das Lesen. Scheitert das Lesen, wird nichts geändert. Mit --payment-term entfällt das Lesen. Mit --customer ohne --contact-person/--customer-project liest das CLI die Rechnung ebenfalls: beim gleichen Kunden werden Kontaktperson und Projekt mitgesendet, bei einem anderen entfallen sie (Hinweis auf stderr).
 
 Verwendung:
   papierkram invoice update <id> [Optionen]
@@ -40,7 +40,7 @@ Optionen:
       --item Texte                    Position als key=wert,key=wert (wiederholbar)
       --items Text                    Positionen als JSON-Array aus Datei oder - für die Standardeingabe
       --name Text                     Wert für name
-      --payment-term ID               ID für payment_term; spart das Lesen der Rechnung (1 Credit)
+      --payment-term ID               ID für payment_term; spart das Lesen der Rechnung (1 Credit), außer mit --customer ohne --contact-person/--customer-project
       --replace-items                 alle Positionen ersetzen (nötig für --item/--items; ohne Positionen werden alle gelöscht)
       --supply-date Text              Wert für supply_date
 

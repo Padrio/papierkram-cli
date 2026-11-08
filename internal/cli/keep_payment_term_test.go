@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/Padrio/papierkram-cli/internal/testutil/mockapi"
 )
 
 // Ruling E2E-A (live run 3, 2026-11-04): a PUT of an invoice without
@@ -186,4 +188,198 @@ func TestInvoiceUpdateKeepPaymentTermContract(t *testing.T) {
 	if strings.Contains(mustOut(app), "spart das Lesen") {
 		t.Error("estimate update nennt ein Lesen")
 	}
+}
+
+// Open point 29 (task 8): a PUT of an invoice whose customer lacks
+// contact_person and project clears both (measured 2026-11-04), also for
+// the same customer. invoice update --customer without --contact-person
+// and --customer-project therefore uses the read of the payment term: the
+// same customer keeps both, another one drops them (dropForeignRefs).
+
+// invoiceWithRefs answers GET /income/invoices/459 with customer 3214,
+// contact person 55, project 66 and payment term 31 (refs: the top-level
+// references of the answer, "" for none).
+func invoiceWithRefs(srv interface {
+	On(method, path string, status int, body []byte, header ...string)
+}, refs string) {
+	srv.On("GET", "/income/invoices/459", http.StatusOK,
+		[]byte(`{"id":459,"type":"invoice","name":"Beratung","payment_term":{"id":31,"name":"Bar"},`+
+			`"customer":{"type":"company","id":3214,"name":"Kunde"}`+refs+`}`))
+}
+
+const bothRefs = `,"contact_person":{"type":"person","id":55,"first_name":"Max"},"project":{"type":"project","id":66,"name":"P"}`
+
+func TestInvoiceUpdateSameCustomerKeepsRefs(t *testing.T) {
+	app, srv := apiApp(t)
+	invoiceWithRefs(srv, bothRefs)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "3214", "-o", "json"}), 0)
+	reqs := wantRequests(t, srv, 2)
+	if reqs[0].Method != "GET" || reqs[1].Method != "PUT" {
+		t.Fatalf("requests = %s, %s", reqs[0].Method, reqs[1].Method)
+	}
+	want := `{"customer":{"id":3214,"contact_person":{"id":55},"project":{"id":66}},"payment_term":{"id":31}}`
+	if got := canonJSON(t, reqs[1].Body); got != canonJSON(t, []byte(want)) {
+		t.Errorf("body = %s, want %s", got, want)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: Kontaktperson 55 und Projekt 66 der Rechnung mitgesendet (gleicher Kunde; ohne sie leert die API beide)\n") {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// only the references the invoice has are sent and named
+	app, srv = apiApp(t)
+	invoiceWithRefs(srv, `,"project":{"type":"project","id":66,"name":"P"}`)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "3214", "--payment-term", "7", "-o", "json"}), 0)
+	if reqs := wantRequests(t, srv, 2); canonJSON(t, reqs[1].Body) != canonJSON(t, []byte(`{"customer":{"id":3214,"project":{"id":66}},"payment_term":{"id":7}}`)) {
+		t.Errorf("body = %s", reqs[1].Body)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: Projekt 66 der Rechnung mitgesendet (gleicher Kunde; ohne sie leert die API beide)\n") || strings.Contains(errs, "Kontaktperson") {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// an invoice without both: nothing taken over, no hint
+	app, srv = apiApp(t)
+	invoiceWithRefs(srv, "")
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "3214", "--payment-term", "7", "-o", "json"}), 0)
+	if reqs := wantRequests(t, srv, 2); canonJSON(t, reqs[1].Body) != canonJSON(t, []byte(`{"customer":{"id":3214},"payment_term":{"id":7}}`)) {
+		t.Errorf("body = %s", reqs[1].Body)
+	}
+	if _, errs := bufs(app); strings.Contains(errs, "der Rechnung mitgesendet") || strings.Contains(errs, "nicht übernommen") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
+
+func TestInvoiceUpdateOtherCustomerDropsRefs(t *testing.T) {
+	app, srv := apiApp(t)
+	invoiceWithRefs(srv, bothRefs)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "99", "--payment-term", "7", "-o", "json"}), 0)
+	if reqs := wantRequests(t, srv, 2); canonJSON(t, reqs[1].Body) != canonJSON(t, []byte(`{"customer":{"id":99},"payment_term":{"id":7}}`)) {
+		t.Errorf("body = %s", reqs[1].Body)
+	}
+	_, errs := bufs(app)
+	if !strings.Contains(errs, "Hinweis: Kunde 99 statt 3214 aus der Rechnung: contact_person und project nicht übernommen (setzen per --contact-person bzw. --customer-project)\n") {
+		t.Errorf("stderr = %q", errs)
+	}
+	if strings.Contains(errs, "gleicher Kunde") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
+
+// A reference flag wins over the invoice; with both flags (or without
+// --customer) nothing is read for the references.
+func TestInvoiceUpdateRefFlagsWin(t *testing.T) {
+	app, srv := apiApp(t)
+	invoiceWithRefs(srv, bothRefs)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "3214", "--contact-person", "77", "--payment-term", "7", "-o", "json"}), 0)
+	if reqs := wantRequests(t, srv, 2); canonJSON(t, reqs[1].Body) != canonJSON(t, []byte(`{"customer":{"id":3214,"contact_person":{"id":77},"project":{"id":66}},"payment_term":{"id":7}}`)) {
+		t.Errorf("body = %s", reqs[1].Body)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: Projekt 66 der Rechnung mitgesendet") || strings.Contains(errs, "Kontaktperson 55") {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// another customer with one flag: the flag stays, the hint names the
+	// other reference only
+	app, srv = apiApp(t)
+	invoiceWithRefs(srv, bothRefs)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "99", "--contact-person", "77", "--payment-term", "7", "-o", "json"}), 0)
+	if reqs := wantRequests(t, srv, 2); canonJSON(t, reqs[1].Body) != canonJSON(t, []byte(`{"customer":{"id":99,"contact_person":{"id":77}},"payment_term":{"id":7}}`)) {
+		t.Errorf("body = %s", reqs[1].Body)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: Kunde 99 statt 3214 aus der Rechnung: project nicht übernommen (setzen per --customer-project)\n") {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	for _, args := range [][]string{
+		{"invoice", "update", "459", "--customer", "3214", "--contact-person", "77", "--customer-project", "88", "--payment-term", "7", "-o", "json"},
+		{"invoice", "update", "459", "--description", "Neu", "--payment-term", "7", "-o", "json"},
+		{"invoice", "update", "459", "--contact-person", "77", "--payment-term", "7", "-o", "json"},
+	} {
+		app, srv := apiApp(t)
+		wantExit(t, app, Run(app, args), 0)
+		if reqs := wantRequests(t, srv, 1); reqs[0].Method != "PUT" {
+			t.Errorf("%v: request = %s", args, reqs[0].Method)
+		}
+	}
+
+	// references in --input count as given
+	app, srv = apiApp(t)
+	app.In = strings.NewReader(`{"customer":{"id":3214,"contact_person":{"id":55},"project":{"id":66}}}`)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--input", "-", "--customer", "3214", "--payment-term", "7", "-o", "json"}), 0)
+	wantBody(t, srv, "PUT", "/income/invoices/459", `{"customer":{"id":3214,"contact_person":{"id":55},"project":{"id":66}},"payment_term":{"id":7}}`)
+}
+
+// One read for both purposes; --dry-run reads and shows it with 2
+// credits, also with --payment-term.
+func TestInvoiceUpdateRefsOneRead(t *testing.T) {
+	app, srv := apiApp(t)
+	invoiceWithRefs(srv, bothRefs)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "3214", "-o", "json"}), 0)
+	if n := countGET(srv.Requests()); n != 1 {
+		t.Errorf("%d GET, want 1", n)
+	}
+
+	for _, extra := range [][]string{nil, {"--payment-term", "7"}} {
+		app, srv := apiApp(t)
+		invoiceWithRefs(srv, bothRefs)
+		args := append([]string{"invoice", "update", "459", "--customer", "3214", "--dry-run", "-o", "json"}, extra...)
+		wantExit(t, app, Run(app, args), 0)
+		if r := wantRequests(t, srv, 1)[0]; r.Method != "GET" || r.Path != "/income/invoices/459" {
+			t.Errorf("request = %s %s", r.Method, r.Path)
+		}
+		var got struct {
+			Credits int             `json:"credits"`
+			Body    json.RawMessage `json:"body"`
+			Read    *ReadInfo       `json:"read"`
+		}
+		out := mustOut(app)
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+		term := "31"
+		if extra != nil {
+			term = "7"
+		}
+		want := `{"customer":{"id":3214,"contact_person":{"id":55},"project":{"id":66}},"payment_term":{"id":` + term + `}}`
+		if got.Credits != 2 || got.Read == nil || got.Read.Credits != 1 || canonJSON(t, got.Body) != canonJSON(t, []byte(want)) {
+			t.Errorf("%v: dry run = %s", extra, out)
+		}
+	}
+}
+
+func countGET(reqs []mockapi.Recorded) int {
+	n := 0
+	for _, r := range reqs {
+		if r.Method == "GET" {
+			n++
+		}
+	}
+	return n
+}
+
+// A failed read sends nothing (exit 4); read-only stops before the read.
+func TestInvoiceUpdateRefsReadFails(t *testing.T) {
+	app, srv := apiApp(t)
+	srv.On("GET", "/income/invoices/459", http.StatusNotFound,
+		[]byte(`{"type":"error","error_type":"not_found","message":"Rechnung nicht gefunden"}`))
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "3214", "--payment-term", "7", "-o", "json"}), 4)
+	wantRequests(t, srv, 1)
+	if _, errs := bufs(app); !strings.Contains(errs, "Rechnung 459 nicht gelesen, nichts geändert") {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// an answer that is no object, or one Prune cannot take (a field of
+	// neither schema), sends nothing either; the hint names the flags
+	for _, answer := range []string{`[]`, `{"id":459,"customer":{"id":3214},"neu":1}`} {
+		app, srv := apiApp(t)
+		srv.On("GET", "/income/invoices/459", http.StatusOK, []byte(answer))
+		wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "3214", "--payment-term", "7"}), 1)
+		wantRequests(t, srv, 1)
+		if _, errs := bufs(app); !strings.Contains(errs, "nichts geändert") || !strings.Contains(errs, "per --contact-person/--customer-project angeben") {
+			t.Errorf("%s: stderr = %q", answer, errs)
+		}
+	}
+
+	app, srv = mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-ro", "PAPIERKRAM_READ_ONLY": "1"})
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "3214", "--payment-term", "7"}), 9)
+	wantRequests(t, srv, 0)
 }

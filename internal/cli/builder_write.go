@@ -199,8 +199,11 @@ func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error 
 //     names the read; its credits are those of the create.
 //   - keep reads the invoice when the body of invoice update has no
 //     payment_term and sends its current one (keepPaymentTerm, ruling
-//     E2E-A). It runs after the body is built and validated, then counts
-//     its credits and shows the read in --dry-run like from.
+//     E2E-A); the same read, once, keeps contact person and project when
+//     --customer names the invoice's customer without their flags (open
+//     point 29) and drops them for another one. It runs after the body is
+//     built and validated, then counts its credits and shows the read in
+//     --dry-run like from.
 type writeSteps struct {
 	up   *createUpload
 	from *fromEstimate

@@ -287,7 +287,15 @@ func TestIncomeRoundTripOtherCustomerDropsMovedRefs(t *testing.T) {
 			app, srv := apiApp(t)
 			app.In = strings.NewReader(described)
 			wantExit(t, app, Run(app, append([]string{"invoice", "update", "459", "--input", "-", "-o", "json"}, tc.extra...)), 0)
-			body := decodeBody(t, wantRequests(t, srv, 1)[0].Body)
+			// another customer leaves out the dropped references: invoice
+			// update reads the invoice for them (open point 29, task 8)
+			// and drops them again (its customer is 3214)
+			n := 1
+			if tc.dropHint != "" {
+				n = 2
+			}
+			reqs := wantRequests(t, srv, n)
+			body := decodeBody(t, reqs[n-1].Body)
 			raw, _ := json.Marshal(body["customer"])
 			if got := canonJSON(t, raw); got != tc.want {
 				t.Errorf("customer = %s, erwartet %s", got, tc.want)
