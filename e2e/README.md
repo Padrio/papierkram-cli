@@ -264,6 +264,12 @@ für `GET /info` als in der Registry), steht sie mit `ABWEICHUNG:` im Log und
 am Ende des Laufs noch einmal in einer Zusammenfassung. Welche Prüfung zu welcher Gruppe gehört, steht im Kopf
 von `e2e_test.go`.
 
+`TestE2E_CleanupLeftovers` prüft nebenbei die erste Seite jeder Liste, die es
+ohnehin lädt, gegen den Vertrag
+[docs/schemas/list.json](../docs/schemas/list.json) (kein Credit mehr); eine
+Verletzung steht als `ABWEICHUNG` mit JSON-Pfad und Regel im Log, nie mit
+Werten der Einträge.
+
 `TestE2E_OpenMeasurements` misst vier offene Punkte (62 Credits je Lauf,
 siehe [docs/offene-punkte.md](../docs/offene-punkte.md)), alle als Messung:
 Nr. 28 legt eine Rechnung ohne `--document-date` an (angenommen: Aufräumen

@@ -150,6 +150,8 @@ package e2e
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -163,6 +165,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/Padrio/papierkram-cli/internal/e2eguard"
 	"github.com/Padrio/papierkram-cli/internal/registry"
@@ -258,6 +262,13 @@ var leftoverKinds = []struct{ resource, nameField string }{
 // no leftover is missed in a full sandbox.
 func (s *liveSuite) listAll(t *testing.T, resource string, extra ...string) []map[string]any {
 	t.Helper()
+	return s.listPages(t, resource, nil, extra...)
+}
+
+// listPages is listAll; first, when set, gets the output of the first
+// page that answered (exit 0).
+func (s *liveSuite) listPages(t *testing.T, resource string, first func(t *testing.T, resource, stdout string), extra ...string) []map[string]any {
+	t.Helper()
 	sorted := true
 	var out []map[string]any
 	for page := 1; ; page++ {
@@ -275,6 +286,9 @@ func (s *liveSuite) listAll(t *testing.T, resource string, extra ...string) []ma
 		if r.code != 0 {
 			s.fatalf(t, "%s list Seite %d: Exit %d\n%s", resource, page, r.code, r.stderr)
 		}
+		if first != nil && page == 1 {
+			first(t, resource, r.stdout)
+		}
 		m := s.decode(t, r.stdout)
 		es := entries(m)
 		out = append(out, es...)
@@ -288,12 +302,13 @@ func (s *liveSuite) listAll(t *testing.T, resource string, extra ...string) []ma
 
 // TestE2E_CleanupLeftovers removes objects of earlier runs: only those
 // whose name starts with pk-e2e- (never anything else), and not those of
-// this run (the cleanup at the end handles them).
+// this run (the cleanup at the end handles them). The first page of each
+// list is checked against docs/schemas/list.json (checkListContract).
 func TestE2E_CleanupLeftovers(t *testing.T) {
 	s := live(t)
 	removed, kept := 0, 0
 	for _, k := range leftoverKinds {
-		for _, e := range s.listAll(t, k.resource) {
+		for _, e := range s.listPages(t, k.resource, s.checkListContract) {
 			name := str(e[k.nameField])
 			if !e2eguard.Leftover(name, s.runID) {
 				continue
@@ -320,6 +335,44 @@ func TestE2E_CleanupLeftovers(t *testing.T) {
 		}
 	}
 	s.logf(t, "Reste früherer Läufe: %d entfernt, %d archiviert/übrig", removed, kept)
+}
+
+// listContract is the path of the contract of list -o json, relative to
+// the package directory.
+const listContract = "../docs/schemas/list.json"
+
+// checkListContract checks the first page of a list that
+// TestE2E_CleanupLeftovers loads anyway (no credit more) against
+// docs/schemas/list.json (review T13-M2): the envelope of the live API
+// as the CLI prints it. A violation is a measurement (ABWEICHUNG), naming
+// only the JSON path and the rule, never values of the entries.
+func (s *liveSuite) checkListContract(t *testing.T, resource, stdout string) {
+	t.Helper()
+	raw, err := os.ReadFile(listContract)
+	if err != nil {
+		s.errorf(t, "Vertrag %s nicht lesbar: %v", listContract, err)
+		return
+	}
+	var schema openapi3.Schema
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		s.errorf(t, "Vertrag %s ist kein Schema-Objekt: %v", listContract, err)
+		return
+	}
+	var doc any
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		s.deviatef(t, "%s list Seite 1: keine JSON-Ausgabe, Vertrag list.json nicht prüfbar", resource)
+		return
+	}
+	err = schema.VisitJSON(doc)
+	var se *openapi3.SchemaError
+	switch {
+	case err == nil:
+		s.logf(t, "%s list Seite 1 erfüllt list.json", resource)
+	case errors.As(err, &se):
+		s.deviatef(t, "%s list Seite 1 verletzt list.json bei /%s: %s", resource, strings.Join(se.JSONPointer(), "/"), se.Reason)
+	default:
+		s.deviatef(t, "%s list Seite 1 verletzt list.json (%T)", resource, err)
+	}
 }
 
 // leftoverPersons removes the persons of a leftover company of the suite
