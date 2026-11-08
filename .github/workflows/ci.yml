@@ -106,6 +106,24 @@ jobs:
       # every setup-go step reads .go-version, none sets go-version itself
       - name: go version from .go-version only
         run: sh scripts/check-go-version.sh
+      # self-test on a copy: quoted keys, blanks before the colon and flow
+      # maps set the version as well, so they are found too
+      - name: go version check sees quoted keys
+        run: |
+          # the key is assembled so that this file does not hold the forms
+          k=go-version
+          for line in "\"$k\": '1.25'" "'$k': '1.25'" "$k : '1.25'" "{$k: '1.25'}" "- with: {$k: '1.25'}"; do
+            dir="$(mktemp -d "$RUNNER_TEMP/gover.XXXXXX")"
+            mkdir -p "$dir/scripts"
+            cp -R .github .go-version go.mod "$dir/"
+            cp scripts/check-go-version.sh "$dir/scripts/"
+            printf 'jobs:\n  x:\n    steps:\n      %s\n' "$line" > "$dir/.github/workflows/x.yml"
+            if out="$(sh "$dir/scripts/check-go-version.sh" 2>&1)"; then echo "nicht erkannt: $line"; exit 1; fi
+            case "$out" in
+              *x.yml:*) ;;
+              *) echo "aus anderem Grund gescheitert: $out"; exit 1 ;;
+            esac
+          done
       # self-test on a copy: quoted keys and blanks before the colon are
       # valid YAML that Actions reads as uses, so they are checked too
       - name: action pin check sees quoted keys

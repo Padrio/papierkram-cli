@@ -1,13 +1,21 @@
 # Keeps the SHA-pinned actions of .github/workflows current (pin plus tag
-# comment are updated together) and the Go modules of go.mod.
+# comment are updated together) and the direct Go modules of go.mod.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-  # Go modules of go.mod (dependencies and tool directives)
+  # Direct requirements of go.mod only: no pull request for indirect
+  # modules, the tool oapi-codegen included (it is listed as indirect;
+  # bump it by hand, together with speakeasy-api/openapi).
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
+    allow:
+      - dependency-type: direct
+    ignore:
+      # pinned in go.mod: oapi-codegen v2.8.2 does not compile against
+      # newer versions; bump only together with oapi-codegen
+      - dependency-name: github.com/speakeasy-api/openapi

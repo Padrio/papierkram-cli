@@ -69,7 +69,8 @@ Ablauf des Workflows:
    Argument) und sucht danach Token und Subdomain erneut. Die erste Suche
    findet auch ein Token, das die Subdomain enthält (das Ersetzen würde es
    zerschneiden). Beide gehen `grep` als Musterdatei zu, nie als Argument;
-   abschließende Zeilenumbrüche des Token-Secrets zählen nicht zum Token.
+   Leerraum und Zeilenumbrüche am Anfang und Ende des Token-Secrets zählen
+   nicht zum Token.
    Ein Treffer löscht das Log und lässt den Schritt scheitern („Token im
    Log gefunden: Log gelöscht, kein Upload“ bzw. „Subdomain im Log
    gefunden: …“); ebenso ein leeres Secret („Token-Secret leer: Log

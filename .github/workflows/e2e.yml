@@ -105,10 +105,12 @@ jobs:
             echo "clean=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # trailing line breaks (CR, LF) of the secret are no part of the
-          # token: an empty last pattern line would match every log line
+          # blanks, tabs and line breaks around the secret are no part of
+          # the token: the check looks for the bare value (an empty last
+          # pattern line would also match every log line)
           token="$PAPIERKRAM_E2E_TOKEN"
-          while [[ $token == *[$'\r\n'] ]]; do token="${token%?}"; done
+          while [[ $token == [[:space:]]* ]]; do token="${token#?}"; done
+          while [[ $token == *[[:space:]] ]]; do token="${token%?}"; done
           [ -n "$token" ] || reject "Token-Secret leer"
           if [[ $token == *[$'\r\n']* ]]; then
             reject "Token-Secret enthält einen Zeilenumbruch"
@@ -133,7 +135,13 @@ jobs:
         if: always() && steps.tokencheck.outputs.clean == 'true'
         shell: bash
         run: |
-          lines="$(grep -E 'ABDECKUNG|ABWEICHUNG|Credits:' e2e.log || true)"
+          # grep exit 1 is "no line"; an error is no empty result
+          rc=0
+          lines="$(grep -E 'ABDECKUNG|ABWEICHUNG|Credits:' e2e.log)" || rc=$?
+          if [ "$rc" -gt 1 ]; then
+            echo "Log nicht gelesen (grep-Fehler): keine Zusammenfassung" >&2
+            exit 1
+          fi
           # the fence is longer than every run of backticks in the lines,
           # so no log line can close the block
           fence='````'
