@@ -16,12 +16,13 @@ import (
 // points 10, 13 and 12 of docs/offene-punkte.md, one subtest each. No. 28
 // is hard: the CLI must refuse an invoice without document_date locally
 // (measured live run 5, 2026-11-08: the API rejects it with 422; a
-// rejected create is charged in full, measured 2026-11-04). The others are measurements: a result that differs
-// from what the CLI assumes is logged as ABWEICHUNG (deviatef) and never
-// fails the run; only a read before the PUT of the round trip in no. 13
-// fails it (CLI behaviour, not a value of the API). A step that answers
-// with 429 (exit 6) ends its subtest without a further request and stops
-// all later tests (markQuota).
+// rejected create is charged in full, measured 2026-11-04). The others
+// are measurements: a result that differs from what the CLI assumes is
+// logged as ABWEICHUNG (deviatef) and never fails the run; only a read
+// before the PUT of the round trip in no. 13 fails it (CLI behaviour, not
+// a value of the API). A step that answers with 429 (exit 6) ends its
+// subtest without a further request and stops all later tests
+// (markQuota).
 func TestE2E_OpenMeasurements(t *testing.T) {
 	s := live(t)
 
