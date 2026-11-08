@@ -20,7 +20,7 @@ import (
 
 // fromEstimateArgs creates an invoice from estimate 349 (the spec example
 // the mock answers with).
-var fromEstimateArgs = []string{"invoice", "create", "--from-estimate", "349", "--payment-term", "1130"}
+var fromEstimateArgs = []string{"invoice", "create", "--from-estimate", "349", "--payment-term", "1130", "--document-date", "2026-11-04"}
 
 func fromEstimateCmd(extra ...string) []string {
 	return append(append([]string{}, fromEstimateArgs...), extra...)
@@ -79,13 +79,13 @@ func TestInvoiceFromEstimateExactValues(t *testing.T) {
 		   "total_net":29.99,"document_charge":0.0,"position_in_group":"1"},
 		  {"name":"Text","quantity":0,"unit":"","proposition":{"id":null},"vat_rate":"0%"},
 		  {"name":"Ohne","quantity":1,"unit":"x","proposition":null,"vat_rate":"19,0 %"}]}`)
-	wantExit(t, app, Run(app, []string{"invoice", "create", "--from-estimate", "5", "--payment-term", "1", "-o", "json"}), 0)
+	wantExit(t, app, Run(app, []string{"invoice", "create", "--from-estimate", "5", "--payment-term", "1", "--document-date", "2026-11-04", "-o", "json"}), 0)
 	reqs := wantRequests(t, srv, 2)
 	want := `{"billing":{"company":"Müller","email":null},"customer":{"id":0,"project":{"id":7}},"description":null,"line_items":[` +
 		`{"discount_percentage":null,"name":"Beratung","price":19.99,"price_gross":23.79,"proposition":{"id":9007199254740993},"quantity":1.5,"type_of":"position","unit":"Stunde","vat_rate":0.07},` +
 		`{"name":"Text","quantity":0,"unit":"","vat_rate":0},` +
 		`{"name":"Ohne","quantity":1,"unit":"x","vat_rate":0.19}],` +
-		`"name":"Angebot","payment_term":{"id":1}}`
+		`"name":"Angebot","payment_term":{"id":1},"document_date":"2026-11-04"}`
 	if got := canonJSON(t, reqs[1].Body); got != canonJSON(t, []byte(want)) {
 		t.Errorf("body = %s\nerwartet %s", got, want)
 	}
@@ -97,8 +97,8 @@ func TestInvoiceFromEstimateWithoutCustomer(t *testing.T) {
 	app, srv := apiApp(t)
 	estimateJSON(srv, `{"name":"A","customer":null,"contact_person":{"id":1},"project":{"id":2},
 		"line_items":[{"name":"X","quantity":1,"unit":"x","vat_rate":"19%"}]}`)
-	wantExit(t, app, Run(app, []string{"invoice", "create", "--from-estimate", "5", "--payment-term", "1", "-o", "json"}), 0)
-	want := `{"name":"A","payment_term":{"id":1},"line_items":[{"name":"X","quantity":1,"unit":"x","vat_rate":0.19}]}`
+	wantExit(t, app, Run(app, []string{"invoice", "create", "--from-estimate", "5", "--payment-term", "1", "--document-date", "2026-11-04", "-o", "json"}), 0)
+	want := `{"name":"A","payment_term":{"id":1},"document_date":"2026-11-04","line_items":[{"name":"X","quantity":1,"unit":"x","vat_rate":0.19}]}`
 	if got := canonJSON(t, wantRequests(t, srv, 2)[1].Body); got != canonJSON(t, []byte(want)) {
 		t.Errorf("body = %s\nerwartet %s", got, want)
 	}
@@ -225,7 +225,7 @@ func TestInvoiceFromEstimateReadFails(t *testing.T) {
 // R24: ID 0 is read, not dropped.
 func TestInvoiceFromEstimateIDZero(t *testing.T) {
 	app, srv := apiApp(t)
-	wantExit(t, app, Run(app, []string{"invoice", "create", "--from-estimate", "0", "--payment-term", "0", "-o", "json"}), 0)
+	wantExit(t, app, Run(app, []string{"invoice", "create", "--from-estimate", "0", "--payment-term", "0", "--document-date", "2026-11-04", "-o", "json"}), 0)
 	reqs := wantRequests(t, srv, 2)
 	if reqs[0].Path != "/income/estimates/0" || !strings.Contains(string(reqs[1].Body), `"payment_term":{"id":0}`) {
 		t.Errorf("read %s, body %s", reqs[0].Path, reqs[1].Body)
@@ -289,10 +289,10 @@ func TestInvoiceCreateWithoutFromEstimateUnchanged(t *testing.T) {
 			0, `{"name":"Rechnung","payment_term":{"id":4},"customer":{"id":12,"contact_person":{"id":7},"project":{"id":3}},
 			"billing":{"company":"Müller & Söhne","zip":"10115"},"document_date":"2026-11-04","gross":false,
 			"line_items":[{"name":"Beratung","quantity":2,"price":100,"vat_rate":0.19}]}`, ""},
-		{[]string{"--name", "R", "--payment-term", "4", "--item", item1 + ",proposition=2"},
-			0, `{"name":"R","payment_term":{"id":4},"line_items":[{"name":"Beratung","quantity":2,"price":100,"vat_rate":0.19,"proposition":{"id":2}}]}`, ""},
-		{[]string{"--name", "R", "--payment-term", "4"}, 5, "", "line_items"},
-		{[]string{"--name", "R", "--payment-term", "4", "--item", item1 + ",proposition=zwei"}, 5, "", "proposition"},
+		{[]string{"--name", "R", "--payment-term", "4", "--document-date", "2026-11-04", "--item", item1 + ",proposition=2"},
+			0, `{"name":"R","payment_term":{"id":4},"document_date":"2026-11-04","line_items":[{"name":"Beratung","quantity":2,"price":100,"vat_rate":0.19,"proposition":{"id":2}}]}`, ""},
+		{[]string{"--name", "R", "--payment-term", "4", "--document-date", "2026-11-04"}, 5, "", "line_items"},
+		{[]string{"--name", "R", "--payment-term", "4", "--document-date", "2026-11-04", "--item", item1 + ",proposition=zwei"}, 5, "", "proposition"},
 		{[]string{"--item", "nam=A", "--document-date", "nie"}, 2, "", `unbekannter Schlüssel "nam"`},
 		{[]string{"--name", "R", "--payment-term", "4", "--document-date", "nie", "--item", item1}, 5, "", "--document-date"},
 		{[]string{"--input", "-", "--items", "-"}, 2, "", "Standardeingabe"},
@@ -525,7 +525,7 @@ func TestInvoiceFromEstimateDroppedNullsHint(t *testing.T) {
 		"line_items":[{"name":"A","quantity":1,"unit":"x","price":null,"vat_rate":null,"proposition":null},
 		              {"name":"B","quantity":null,"unit":"x","vat_rate":"19%","proposition":{"id":null}}]}`)
 	wantExit(t, app, Run(app, fromEstimateCmd("--name", "R", "-o", "json")), 0)
-	want := `{"billing":{"email":null},"customer":{"id":1},"line_items":[{"name":"A","price":null,"unit":"x","quantity":1},` +
+	want := `{"billing":{"email":null},"customer":{"id":1},"document_date":"2026-11-04","line_items":[{"name":"A","price":null,"unit":"x","quantity":1},` +
 		`{"name":"B","unit":"x","vat_rate":0.19}],"name":"R","payment_term":{"id":1130}}`
 	if got := canonJSON(t, wantRequests(t, srv, 2)[1].Body); got != canonJSON(t, []byte(want)) {
 		t.Errorf("body = %s\nerwartet %s", got, want)

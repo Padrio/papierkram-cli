@@ -21,8 +21,7 @@ liegt bei dir: Trage nie Subdomain und Token der echten Buchhaltung ein. Die
 Suite legt Firmen, Kontaktpersonen, Projekte, Aufgaben, Zeiteinträge (darunter
 zwei von heute aus `TestE2E_TimeFlow`: einen per `time log`, einen nicht
 abrechenbaren per `time stop` aus dem lokalen Timer), Artikel, ein Datenfeld,
-zwei Angebote, zwei Rechnungen (drei, wenn die API in
-`TestE2E_OpenMeasurements` eine Rechnung ohne Rechnungsdatum annimmt) und zwei
+zwei Angebote, zwei Rechnungen und zwei
 Belege an, lädt Dateien hoch, versendet ein Angebot und eine Rechnung als PDF
 und versucht, beide zu stornieren und einen Beleg zu stornieren und
 gegenzubuchen (ob die API das zulässt, wird gemessen).
@@ -191,7 +190,7 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
 ## Credit-Budget
 
 Ein voller Lauf kostet nach den dokumentierten Preisen (Abschnitt 4.3) etwa
-**696 Credits** (Tests 665, Aufräumen 31; jede Zeile im Kopf von
+**645 Credits** (Tests 615, Aufräumen 30; jede Zeile im Kopf von
 `e2e_test.go` gehört zu einem vorhandenen Test, keine ist mehr geplant); das
 Budget je Lauf ist **760** (Zielwert unter 800, die Aufschlüsselung steht
 im Kopf von `e2e_test.go`). Jede gesendete Anfrage
@@ -202,10 +201,10 @@ genau dieser einen Anfrage nennt (kein laufender Zähler); fehlt der Header
 oder kommt keine Antwort (Netzwerkfehler), zählen die dokumentierten
 Kosten.
 
-Vom Budget sind **64 Credits fürs Aufräumen reserviert** (dokumentierter
+Vom Budget sind **60 Credits fürs Aufräumen reserviert** (dokumentierter
 Höchstaufwand: je Rechnung/Angebot/Beleg 4, je anderem Objekt 2, plus 10
-Puffer; bei 7 Rechnungen, Angeboten und Belegen und 13 anderen Objekten).
-Die Tests dürfen also höchstens 696 Credits verbrauchen (geplant: 665): Eine
+Puffer; bei 6 Rechnungen, Angeboten und Belegen und 13 anderen Objekten).
+Die Tests dürfen also höchstens 700 Credits verbrauchen (geplant: 615): Eine
 Anfrage, die in die Reserve greifen würde, wird nicht gesendet, und reicht das
 Budget für einen Test nicht mehr, werden dieser und alle folgenden Tests mit
 Begründung übersprungen. Erst das Aufräumen am Ende darf die Reserve nutzen.
@@ -282,15 +281,17 @@ ohnehin lädt, gegen den Vertrag
 Verletzung steht als `ABWEICHUNG` mit JSON-Pfad und Regel im Log, nie mit
 Werten der Einträge.
 
-`TestE2E_OpenMeasurements` misst vier offene Punkte (62 Credits je Lauf,
-siehe [docs/offene-punkte.md](../docs/offene-punkte.md)), alle als Messung:
-Nr. 28 legt eine Rechnung ohne `--document-date` an (angenommen: Aufräumen
-wie jede Rechnung; ein 422 ist eine `ABWEICHUNG`), Nr. 10 sendet per
-`papierkram api PUT` ein `due_date` an die Entwurfsrechnung, Nr. 13 setzt
+`TestE2E_OpenMeasurements` prüft vier offene Punkte (12 Credits je Lauf,
+siehe [docs/offene-punkte.md](../docs/offene-punkte.md)): Nr. 28 hart, die
+übrigen als Messung. Nr. 28 ruft `invoice create` ohne `--document-date` auf
+und verlangt Exit 5 ohne Anfrage (0 Credits): Die API lehnt eine solche
+Rechnung mit 422 ab (gemessen Live-Lauf 5, 2026-11-08), und ein abgelehntes
+Anlegen kostet die vollen Credits (gemessen beim Angebot, 2026-11-04). Nr. 10
+sendet per `papierkram api PUT` ein `due_date` an die Entwurfsrechnung, Nr. 13 setzt
 `supply_date` per `--supply-date` und schickt die `describe`-Ausgabe im
 Rundlauf zurück, Nr. 12 setzt eine Bewirtungsperson am Beleg und sendet
 danach `[]` („geleert“ oder „unverändert“). Antwortet ein Schritt mit 429,
 endet der Subtest ohne weitere Anfrage (und alle folgenden Tests werden
-übersprungen, siehe Credit-Budget). Hart fehlschlagen lässt nur Nr. 13, wenn
-`invoice update` im Rundlauf (`payment_term` im Body) die Rechnung vor dem
+übersprungen, siehe Credit-Budget). Von den Messungen lässt nur Nr. 13 den
+Lauf hart fehlschlagen, wenn `invoice update` im Rundlauf (`payment_term` im Body) die Rechnung vor dem
 `PUT` liest: Das ist Verhalten des CLI, kein Messwert der API.

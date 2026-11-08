@@ -508,7 +508,9 @@ func TestCommandsJSONFlags(t *testing.T) {
 	if f := ic.flag(t, "item"); !f.Required || !f.Repeatable || f.Type != "string" {
 		t.Errorf("invoice create --item = %+v", f)
 	}
-	if f := ic.flag(t, "document-date"); f.Type != "date" || f.Required {
+	// required like the estimate's (measured live 2026-11-08); the
+	// estimate does not fill it, so --from-estimate is no alternative
+	if f := ic.flag(t, "document-date"); f.Type != "date" || !f.Required || !slices.Equal(f.Alternatives, []string{"--input"}) {
 		t.Errorf("invoice create --document-date = %+v", f)
 	}
 	if f := ic.flag(t, "flagged"); f.Type != "boolean" {

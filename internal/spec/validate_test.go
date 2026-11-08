@@ -50,7 +50,7 @@ func TestR12_ProvenanceNonEuSuggestsForeign(t *testing.T) {
 
 func TestR17_LineItemsRequired(t *testing.T) {
 	bodies := map[string]map[string]any{
-		"CreateInvoice":  {"name": "R", "payment_term": map[string]any{"id": json.Number("1")}},
+		"CreateInvoice":  {"name": "R", "payment_term": map[string]any{"id": json.Number("1")}, "document_date": "2026-11-04"},
 		"CreateEstimate": {"name": "A", "document_date": "2026-11-04"},
 		"CreateVoucher":  {"name": "B", "provenance": "domestic"},
 	}

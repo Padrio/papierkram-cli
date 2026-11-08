@@ -31,7 +31,7 @@ var runFixtures = map[string]string{
 	"firma.json":      `{"name":"Muster GmbH","contact_type":"customer","email":"info@example.org"}`,
 	"datenfeld.json":  `{"name":"Kostenstelle"}`,
 	"angebot.json":    `{"name":"Website","customer":{"id":3052},"document_date":"2026-11-04","line_items":[{"name":"Konzept","quantity":2,"unit":"Tag","price":800,"vat_rate":0.19}]}`,
-	"rechnung.json":   `{"name":"Wartung","customer":{"id":3214},"payment_term":{"id":1130},"line_items":[{"name":"Wartung","quantity":1,"unit":"Monat","price":250,"vat_rate":0.19}]}`,
+	"rechnung.json":   `{"name":"Wartung","customer":{"id":3214},"payment_term":{"id":1130},"document_date":"2026-11-04","line_items":[{"name":"Wartung","quantity":1,"unit":"Monat","price":250,"vat_rate":0.19}]}`,
 	"projekt.json":    `{"name":"Relaunch","customer":{"id":3214}}`,
 	"artikel.json":    `{"name":"Beratung","article_no":"B-01","time_unit":"hour","proposition_type":"service","price":"100","vat_rate":"0.19"}`,
 	"aufgabe.json":    `{"name":"Konzept","project":{"id":4963}}`,
@@ -140,7 +140,7 @@ func TestDryRunRequests(t *testing.T) {
 		ok    bool
 	}{
 		{[]string{"company", "create", "--name", "X", "--contact-type", "customer", "--dry-run"}, true},
-		{[]string{"invoice", "create", "--from-estimate", "349", "--payment-term", "1130", "--dry-run"}, true},
+		{[]string{"invoice", "create", "--from-estimate", "349", "--payment-term", "1130", "--document-date", "2026-11-04", "--dry-run"}, true},
 		// a mutation without --dry-run reaches the mock: POST
 		{[]string{"company", "create", "--name", "X", "--contact-type", "customer"}, false},
 		{[]string{"invoice", "update", "459", "--description", "X", "--dry-run"}, true},

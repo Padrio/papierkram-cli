@@ -171,8 +171,8 @@ PAPIERKRAM_READ_ONLY=1 papierkram time list --project 4963 --state unbilled --al
 Aus der bestätigten Summe eine Rechnung anlegen (Kunde, Zahlungsbedingung und Stundensatz kommen vom Menschen) und danach wie in Ablauf 2 nur nach Bestätigung versenden:
 
 ```sh
-papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --item "name=Beratung Oktober,qty=12.5,unit=Stunde,price=100,vat=19" --dry-run -o json --no-input
-papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --item "name=Beratung Oktober,qty=12.5,unit=Stunde,price=100,vat=19" -o json --no-input
+papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --document-date heute --item "name=Beratung Oktober,qty=12.5,unit=Stunde,price=100,vat=19" --dry-run -o json --no-input
+papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --document-date heute --item "name=Beratung Oktober,qty=12.5,unit=Stunde,price=100,vat=19" -o json --no-input
 ```
 
 Den Abrechnungsstatus der Zeiteinträge kann das CLI nicht setzen (`papierkram schema time update` hat kein Feld dafür); das bleibt in Papierkram selbst zu erledigen.

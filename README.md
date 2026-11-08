@@ -267,7 +267,7 @@ papierkram auth login --context firma-gmbh --subdomain firma-gmbh --insecure-sto
 - `--dry-run` gilt für jede Änderung: Das CLI prüft den Body lokal gegen das Schema, zeigt Methode, URL, Body (bei Uploads Dateiname, Größe und MIME-Typ) und die Credits und sendet nichts (Exit 0). Unter Schreibschutz gilt auch für `--dry-run` Exit 9.
 
 ```sh
-papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --item "name=Beratung,qty=2,unit=Stunde,price=100,vat=19" --dry-run
+papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --document-date heute --item "name=Beratung,qty=2,unit=Stunde,price=100,vat=19" --dry-run
 papierkram voucher pay 295 --amount 150 --reason skonto --date heute --dry-run
 papierkram invoice deliver 459 --via pdf --yes
 ```

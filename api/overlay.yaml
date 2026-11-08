@@ -721,13 +721,17 @@ actions:
       description: 'Abrechenbare Dauer in Sekunden; wirkungslos: Die API setzt beim Anlegen und Ändern die Dauer aus Beginn und Ende ein (gemessen 2026-11-04)'
 
   # ---------------------------------------------------------------------------
-  # 16. document_date of a new estimate is required (gemessen E2E 2026-11-04)
-  # Why: the request schema marks only name and line_items as required, but
-  # the live API rejects an estimate without document_date with 422 "Datum
-  # muss ausgefüllt werden" and still charges the 50 credits of the create
-  # (E2E run 1, 2026-11-04). null is no date either, so the field is not
-  # nullable in the create. The CLI now refuses such a body before the
-  # request (exit 5). Invoices are not marked: not measured (open point).
+  # 16. document_date of a new estimate or invoice is required (gemessen E2E
+  # 2026-11-04 and 2026-11-08)
+  # Why: the request schemas mark only name and line_items (the invoice also
+  # payment_term) as required, but the live API rejects an estimate without
+  # document_date with 422 "Datum muss ausgefüllt werden" and still charges
+  # the 50 credits of the create (E2E run 1, 2026-11-04); an invoice is
+  # rejected with the same 422 (E2E run 5, 2026-11-08,
+  # TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate). null is no
+  # date either, so the field is not nullable in the create. The CLI
+  # refuses such a body before the request (exit 5). The invoice mirrors
+  # the estimate action for action.
   # ---------------------------------------------------------------------------
   - target: $.paths['/income/estimates'].post.requestBody.content['application/json'].schema
     update:
@@ -736,5 +740,14 @@ actions:
       required:
         - document_date
   - target: $.paths['/income/estimates'].post.requestBody.content['application/json'].schema.properties.document_date
+    update:
+      nullable: false
+  - target: $.paths['/income/invoices'].post.requestBody.content['application/json'].schema
+    update:
+      # arrays are appended to: the snapshot already requires name,
+      # payment_term and line_items
+      required:
+        - document_date
+  - target: $.paths['/income/invoices'].post.requestBody.content['application/json'].schema.properties.document_date
     update:
       nullable: false

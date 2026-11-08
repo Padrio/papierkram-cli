@@ -12,58 +12,40 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/e2eguard"
 )
 
-// TestE2E_OpenMeasurements measures the open points 28, 10, 13 and 12 of
-// docs/offene-punkte.md, one subtest each. All of them are measurements:
-// a result that differs from what the CLI assumes is logged as ABWEICHUNG
-// (deviatef) and never fails the run; only a read before the PUT of the
-// round trip in no. 13 fails it (CLI behaviour, not a value of the API). A
-// step that answers with 429 (exit 6) ends its subtest without a further
-// request and stops all later tests (markQuota).
+// TestE2E_OpenMeasurements checks open point 28 and measures the open
+// points 10, 13 and 12 of docs/offene-punkte.md, one subtest each. No. 28
+// is hard: the CLI must refuse an invoice without document_date locally
+// (measured live run 5, 2026-11-08: the API rejects it with 422; a
+// rejected create is charged in full, measured 2026-11-04). The others are measurements: a result that differs
+// from what the CLI assumes is logged as ABWEICHUNG (deviatef) and never
+// fails the run; only a read before the PUT of the round trip in no. 13
+// fails it (CLI behaviour, not a value of the API). A step that answers
+// with 429 (exit 6) ends its subtest without a further request and stops
+// all later tests (markQuota).
 func TestE2E_OpenMeasurements(t *testing.T) {
 	s := live(t)
 
-	// 28. POST /income/invoices without document_date: the CLI treats the
-	// field as optional for invoices (the estimate requires it, measured
-	// 2026-11-04). Accepted: the invoice is registered for the cleanup and
-	// its document_date logged; accepted without an id in the output (no
-	// JSON, or e.g. {"ok":true}) is reported as such, the next run's
-	// CleanupLeftovers removes it. Rejected (422 expected like the
-	// estimate): exit, HTTP status and message of the API; a 422 is an
-	// ABWEICHUNG.
+	// 28. invoice create without document_date: the API rejects it with
+	// 422 "Datum muss ausgefüllt werden" (live run 5, 2026-11-08) like an
+	// estimate; the overlay requires the field, so the CLI ends with exit
+	// 5 before the request (0 credits). The customer and payment term are
+	// the fixtures of the earlier tests, the body is otherwise complete.
 	t.Run("28_InvoiceWithoutDocumentDate", func(t *testing.T) {
 		c, pt := s.customer(t), idOf(s.paymentTerms(t)[0])
-		s.need(t, 50)
 		name := s.prefix + "rechnung-ohne-datum"
 		r := s.run(t, "", "invoice", "create", "--name", name, "--customer", ids(c), "--payment-term", ids(pt),
 			"--item", "name="+pos19+",qty=1,price=100,vat=19", "-o", "json")
-		m := tryDecode(r.stdout)
-		id := idOf(m)
-		if id != 0 {
+		if id := idOf(tryDecode(r.stdout)); id != 0 {
+			// only if both CLI and API changed: never left behind
 			s.track(object{resource: "invoice", id: id, name: name})
-			s.logf(t, "angelegt: invoice %d (%s)", id, name)
 		}
-		if r.code == 0 {
-			if id == 0 {
-				what := "keine JSON-Ausgabe"
-				if m != nil {
-					what = "Ausgabe ohne id"
-				}
-				s.measuref(t, "Rechnung ohne document_date", "angenommen (Exit 0, %s), aber %s: id unbekannt, CleanupLeftovers des nächsten Laufs räumt sie auf",
-					outcome(r, "POST", "/income/invoices"), what)
-				return
-			}
-			s.measuref(t, "Rechnung ohne document_date", "angenommen (%s): document_date %v (%s)",
-				outcome(r, "POST", "/income/invoices"), m["document_date"], jsonType(m["document_date"]))
-			return
+		if len(r.exchanges) != 0 {
+			s.errorf(t, "invoice create ohne --document-date: %d Anfrage(n) gesendet, erwartet keine (Exit %d)", len(r.exchanges), r.code)
 		}
-		s.measuref(t, "Rechnung ohne document_date", "Exit %d, %s", r.code, outcome(r, "POST", "/income/invoices"))
-		if r.code == 12 {
-			s.logf(t, "Rechnung %s womöglich angelegt, id unbekannt: CleanupLeftovers des nächsten Laufs räumt sie auf", name)
+		if r.code != 5 || !strings.Contains(r.stderr, "document_date") {
+			s.fatalf(t, "invoice create ohne --document-date: Exit %d, erwartet 5 mit document_date\n%s", r.code, r.stderr)
 		}
-		if x := lastExchange(r, "POST", "/income/invoices"); x != nil && x.Status == 422 {
-			s.deviatef(t, "POST /income/invoices ohne document_date: HTTP 422 (%s); das CLI behandelt das Feld bei Rechnungen als optional (Overlay wie beim Angebot ergänzen)",
-				apiMessage(x.RespBody))
-		}
+		s.logf(t, "Rechnung ohne document_date: lokal abgelehnt (Exit 5, keine Anfrage)")
 	})
 
 	// 10. due_date through UpdateInvoice: its request schema has no

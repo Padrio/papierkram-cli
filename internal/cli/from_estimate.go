@@ -81,7 +81,7 @@ var estimateOnlyFields = []string{"document_date", "custom_template", "document_
 
 const fromEstimateLong = `
 
---from-estimate <id> liest das Angebot (1 weiterer Credit) und übernimmt daraus name, description, gross, billing, customer (mit contact_person und project des Angebots) und alle Positionen (name, description, quantity, unit, price, price_gross, discount_percentage, discount_calculated, discount_calculated_gross, proposition, type_of, vat_rate; "19%" wird zu 0.19). --payment-term ist Pflicht, weil Angebote keine Zahlungsbedingung haben.
+--from-estimate <id> liest das Angebot (1 weiterer Credit) und übernimmt daraus name, description, gross, billing, customer (mit contact_person und project des Angebots) und alle Positionen (name, description, quantity, unit, price, price_gross, discount_percentage, discount_calculated, discount_calculated_gross, proposition, type_of, vat_rate; "19%" wird zu 0.19). --payment-term ist Pflicht, weil Angebote keine Zahlungsbedingung haben, --document-date wie bei jeder Rechnung (das Datum des Angebots wird nie übernommen; fehlt es, endet der Befehl mit Exit 5, bevor das Angebot gelesen wird).
 
 Alle anderen Flags überschreiben die Werte des Angebots; --item/--items ersetzen alle Positionen. Nennt --customer einen anderen Kunden als das Angebot, werden contact_person und project des Angebots nicht übernommen (Hinweis auf stderr); sie lassen sich per --contact-person bzw. --customer-project setzen. --input ist zusammen mit --from-estimate nicht möglich.
 
@@ -193,6 +193,9 @@ func (f *fromEstimate) load(c *cobra.Command, client *api.Client, req *openapi3.
 // another one (dropForeignRefs). The nulls left out are named with the
 // hint of the --input path (pruneHints), except those a flag sets.
 func (a *App) estimateBase(c *cobra.Command, client *api.Client, ws writeSpec, f *fromEstimate) (map[string]any, error) {
+	if err := f.unfilled(c, ws); err != nil {
+		return nil, err
+	}
 	base, nulls, err := f.load(c, client, ws.req)
 	if err != nil {
 		return nil, err
@@ -212,6 +215,27 @@ func (a *App) estimateBase(c *cobra.Command, client *api.Client, ws writeSpec, f
 	f.loaded = true
 	a.dropForeignRefs(c, ws, base, "dem Angebot", customerRefs, nil)
 	return base, nil
+}
+
+// unfilled reports a required field of the invoice request that the
+// estimate never fills (invoiceOnlyFields, e.g. document_date) and no
+// changed flag sets, before the estimate is read: the validation after
+// the read would reject the body anyway (exit 5), after a spent credit.
+// payment_term is checked earlier (check, exit 2).
+func (f *fromEstimate) unfilled(c *cobra.Command, ws writeSpec) error {
+	for _, name := range ws.req.Required {
+		if !slices.Contains(invoiceOnlyFields, name) {
+			continue
+		}
+		flag := fieldFlag(ws, name)
+		if flag == "" || c.Flags().Changed(flag) {
+			continue
+		}
+		return clierr.New(clierr.CodeValidation,
+			fmt.Sprintf("Rechnung aus Angebot %d: Pflichtfeld %q fehlt", f.id, name),
+			fmt.Sprintf("das Angebot liefert %s nicht: per --%s angeben (Angebot nicht gelesen, nichts gesendet)", name, flag))
+	}
+	return nil
 }
 
 // itemsReplaced reports whether --item or --items replaces the positions.

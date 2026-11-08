@@ -5029,10 +5029,10 @@ type CreateInvoiceJSONBody struct {
 			Id *int `json:"id,omitempty"`
 		} `json:"project,omitempty"`
 	} `json:"customer,omitempty"`
-	Description  *string             `json:"description,omitempty"`
-	DocumentDate *openapi_types.Date `json:"document_date,omitempty"`
-	Flagged      *bool               `json:"flagged,omitempty"`
-	Gross        *bool               `json:"gross,omitempty"`
+	Description  *string            `json:"description,omitempty"`
+	DocumentDate openapi_types.Date `json:"document_date"`
+	Flagged      *bool              `json:"flagged,omitempty"`
+	Gross        *bool              `json:"gross,omitempty"`
 	LineItems    *[]struct {
 		Description             *string  `json:"description,omitempty"`
 		DiscountCalculated      *float32 `json:"discount_calculated,omitempty"`

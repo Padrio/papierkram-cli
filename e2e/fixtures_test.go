@@ -191,10 +191,9 @@ func (s *liveSuite) estimate(t *testing.T) map[string]any {
 var invoiceResult result
 
 // invoice is a draft invoice created with --from-estimate (spec 9.4),
-// dated today: the invoice date never comes from the estimate, and whether
-// the API requires it is only measured by
-// TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate
-// (docs/offene-punkte.md, point 28).
+// dated today: the invoice date never comes from the estimate, and the API
+// requires it (measured live run 5, 2026-11-08; docs/offene-punkte.md,
+// point 28).
 func (s *liveSuite) invoice(t *testing.T) map[string]any {
 	e := idOf(s.estimate(t))
 	pt := idOf(s.paymentTerms(t)[0])

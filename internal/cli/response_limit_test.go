@@ -198,7 +198,7 @@ func TestFromEstimateReadTooLarge(t *testing.T) {
 	for _, extra := range [][]string{nil, {"--dry-run"}} {
 		app, srv := apiApp(t)
 		srv.OnFunc("GET", "/income/estimates/{id}", tooLarge(http.StatusOK, "application/json"))
-		wantExit(t, app, Run(app, append([]string{"invoice", "create", "--from-estimate", "349", "--payment-term", "1130", "-o", "json"}, extra...)), 1)
+		wantExit(t, app, Run(app, append([]string{"invoice", "create", "--from-estimate", "349", "--payment-term", "1130", "--document-date", "2026-11-04", "-o", "json"}, extra...)), 1)
 		if r := wantRequests(t, srv, 1)[0]; r.Method != "GET" || r.Path != "/income/estimates/349" {
 			t.Errorf("%v: request = %s %s", extra, r.Method, r.Path)
 		}

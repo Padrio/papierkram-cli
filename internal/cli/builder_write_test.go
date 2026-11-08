@@ -261,7 +261,7 @@ func TestWriteRequiredFieldsComeFromFlagsOrInput(t *testing.T) {
 
 	// R17 via the builder: create without positions
 	app, srv = apiApp(t)
-	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4"), 5)
+	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4", "--document-date", "2026-11-04"), 5)
 	wantRequests(t, srv, 0)
 
 	app, srv = apiApp(t)
@@ -318,7 +318,7 @@ func TestWriteInputUnknownFieldNoRequest(t *testing.T) {
 }
 
 func TestWriteInputBOMAndDecimals(t *testing.T) {
-	in := writeFile(t, "invoice.json", "\uFEFF{\r\n  \"name\": \"Rechnung\",\r\n  \"payment_term\": {\"id\": 4},\r\n"+
+	in := writeFile(t, "invoice.json", "\uFEFF{\r\n  \"name\": \"Rechnung\",\r\n  \"payment_term\": {\"id\": 4},\r\n  \"document_date\": \"2026-11-04\",\r\n"+
 		"  \"line_items\": [{\"name\": \"A\", \"quantity\": 3, \"price\": 19.99, \"vat_rate\": 0.19}]\r\n}\r\n")
 	app, srv := apiApp(t)
 	wantExit(t, app, runWrite(t, app, "invoice", "create", "--input", in, "-o", "json"), 0)
@@ -328,7 +328,7 @@ func TestWriteInputBOMAndDecimals(t *testing.T) {
 	}
 
 	app, srv = apiApp(t)
-	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4",
+	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4", "--document-date", "2026-11-04",
 		"--item", "name=A,qty=1.5,price=19.99,vat=19", "-o", "json"), 0)
 	r = wantRequests(t, srv, 1)[0]
 	if !bytes.Contains(r.Body, []byte(`"price":19.99`)) || !bytes.Contains(r.Body, []byte(`"quantity":1.5`)) {
@@ -338,13 +338,13 @@ func TestWriteInputBOMAndDecimals(t *testing.T) {
 
 func TestWriteItemObjectFields(t *testing.T) {
 	app, srv := apiApp(t)
-	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4",
+	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4", "--document-date", "2026-11-04",
 		"--item", item1+",proposition=2", "-o", "json"), 0)
-	wantBody(t, srv, "POST", "/income/invoices", `{"name":"R","payment_term":{"id":4},
+	wantBody(t, srv, "POST", "/income/invoices", `{"name":"R","payment_term":{"id":4},"document_date":"2026-11-04",
 		"line_items":[{"name":"Beratung","quantity":2,"price":100,"vat_rate":0.19,"proposition":{"id":2}}]}`)
 
 	app, srv = apiApp(t)
-	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4",
+	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4", "--document-date", "2026-11-04",
 		"--item", item1+",proposition=zwei"), 5)
 	wantRequests(t, srv, 0)
 	if _, errs := bufs(app); !strings.Contains(errs, "proposition") {
@@ -364,8 +364,8 @@ func TestWriteItemObjectFields(t *testing.T) {
 func TestWriteItemsFile(t *testing.T) {
 	items := writeFile(t, "items.json", `[{"name":"A","quantity":1,"price":5,"vat_rate":"7%","total_net":5}]`)
 	app, srv := apiApp(t)
-	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4", "--items", items, "-o", "json"), 0)
-	wantBody(t, srv, "POST", "/income/invoices", `{"name":"R","payment_term":{"id":4},
+	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4", "--document-date", "2026-11-04", "--items", items, "-o", "json"), 0)
+	wantBody(t, srv, "POST", "/income/invoices", `{"name":"R","payment_term":{"id":4},"document_date":"2026-11-04",
 		"line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.07}]}`)
 	if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: nur lesbare Felder entfernt: line_items[].total_net") {
 		t.Errorf("stderr = %q", errs)
@@ -373,15 +373,15 @@ func TestWriteItemsFile(t *testing.T) {
 
 	// --item replaces the positions of --input (flags win)
 	app, srv = apiApp(t)
-	app.In = strings.NewReader(`{"name":"R","payment_term":{"id":4},"line_items":[{"name":"Alt","quantity":1,"price":1,"vat_rate":0.19}]}`)
+	app.In = strings.NewReader(`{"name":"R","payment_term":{"id":4},"document_date":"2026-11-04","line_items":[{"name":"Alt","quantity":1,"price":1,"vat_rate":0.19}]}`)
 	wantExit(t, app, runWrite(t, app, "invoice", "create", "--input", "-", "--item", item1, "-o", "json"), 0)
-	wantBody(t, srv, "POST", "/income/invoices", `{"name":"R","payment_term":{"id":4},
+	wantBody(t, srv, "POST", "/income/invoices", `{"name":"R","payment_term":{"id":4},"document_date":"2026-11-04",
 		"line_items":[{"name":"Beratung","quantity":2,"price":100,"vat_rate":0.19}]}`)
 
 	// unknown keys in --items are exit 5 like --input
 	bad := writeFile(t, "bad.json", `[{"nam":"A"}]`)
 	app, srv = apiApp(t)
-	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4", "--items", bad), 5)
+	wantExit(t, app, runWrite(t, app, "invoice", "create", "--name", "R", "--payment-term", "4", "--document-date", "2026-11-04", "--items", bad), 5)
 	wantRequests(t, srv, 0)
 }
 
@@ -460,9 +460,9 @@ func TestWriteDescribeRoundTripKeepsPositions(t *testing.T) {
 // always sent.
 func TestWriteCreateSendsInputItems(t *testing.T) {
 	app, srv := apiApp(t)
-	app.In = strings.NewReader(`{"name":"R","payment_term":{"id":4},"line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`)
+	app.In = strings.NewReader(`{"name":"R","payment_term":{"id":4},"document_date":"2026-11-04","line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`)
 	wantExit(t, app, runWrite(t, app, "invoice", "create", "--input", "-", "-o", "json"), 0)
-	wantBody(t, srv, "POST", "/income/invoices", `{"name":"R","payment_term":{"id":4},"line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`)
+	wantBody(t, srv, "POST", "/income/invoices", `{"name":"R","payment_term":{"id":4},"document_date":"2026-11-04","line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`)
 	if _, errs := bufs(app); strings.Contains(errs, "nicht gesendet") {
 		t.Errorf("stderr = %q", errs)
 	}

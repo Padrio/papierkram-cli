@@ -186,6 +186,42 @@ func TestEstimateCreateRequiresDocumentDate(t *testing.T) {
 	}
 }
 
+// The API rejects an invoice without document_date like an estimate, with
+// 422 "Datum muss ausgefüllt werden" (measured live 2026-11-08, run 5).
+// The CLI checks it the same way (exit 5, nothing sent, null counts as
+// missing); --from-estimate does so before it reads the estimate, whose
+// date is never taken over.
+func TestInvoiceCreateRequiresDocumentDate(t *testing.T) {
+	for _, tc := range []struct {
+		args  []string
+		stdin string
+	}{
+		{[]string{"invoice", "create", "--name", "R", "--payment-term", "1130", "--item", "name=A,qty=1,price=5,vat=19"}, ""},
+		{[]string{"invoice", "create", "--name", "R", "--payment-term", "1130", "--item", "name=A,qty=1,price=5,vat=19", "--dry-run"}, ""},
+		{[]string{"invoice", "create", "--input", "-"}, `{"name":"R","payment_term":{"id":1130},"line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`},
+		{[]string{"invoice", "create", "--input", "-"}, `{"name":"R","payment_term":{"id":1130},"document_date":null,"line_items":[{"name":"A","quantity":1,"price":5,"vat_rate":0.19}]}`},
+		{[]string{"invoice", "create", "--from-estimate", "349", "--payment-term", "1130"}, ""},
+		{[]string{"invoice", "create", "--from-estimate", "349", "--payment-term", "1130", "--dry-run"}, ""},
+	} {
+		app, srv := apiApp(t)
+		app.In = strings.NewReader(tc.stdin)
+		wantExit(t, app, Run(app, append(tc.args, "-o", "json")), 5)
+		wantRequests(t, srv, 0)
+		if out, errs := bufs(app); out != "" || !strings.Contains(errs, "document_date") {
+			t.Errorf("%v %s: stdout = %q, stderr = %q", tc.args, tc.stdin, out, errs)
+		}
+	}
+
+	app, srv := apiApp(t)
+	wantExit(t, app, Run(app, []string{"invoice", "create", "--help"}), 0)
+	wantRequests(t, srv, 0)
+	out, _ := bufs(app)
+	i := strings.Index(out, "--document-date Datum")
+	if line, _, _ := strings.Cut(out[max(i, 0):], "\n"); i < 0 || !strings.Contains(line, "(Pflicht)") {
+		t.Errorf("Hilfe nennt --document-date nicht als Pflicht:\n%s", out)
+	}
+}
+
 func TestInvoiceCreate(t *testing.T) {
 	app, srv := apiApp(t)
 	wantExit(t, app, Run(app, []string{"invoice", "create", "--name", "Beratung Oktober", "--customer", "3214",
@@ -543,7 +579,7 @@ func TestIncomeMutationsDryRun(t *testing.T) {
 		method, path  string
 		credits, body string
 	}{
-		{[]string{"invoice", "create", "--name", "R", "--payment-term", "1130", "--item", "name=A,qty=1,price=5,vat=19"},
+		{[]string{"invoice", "create", "--name", "R", "--payment-term", "1130", "--document-date", "2026-11-04", "--item", "name=A,qty=1,price=5,vat=19"},
 			"POST", "/income/invoices", `"credits": 50`, `"vat_rate": 0.19`},
 		{[]string{"estimate", "create", "--name", "A", "--document-date", "2026-11-04", "--item", "name=A,qty=1,price=5,vat=19"},
 			"POST", "/income/estimates", `"credits": 50`, `"name": "A"`},

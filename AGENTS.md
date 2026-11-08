@@ -87,8 +87,8 @@ error:
 ### `--dry-run`
 
 ```sh
-papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --item "name=Beratung,qty=2,unit=Stunde,price=100,vat=19" --dry-run -o json
-papierkram invoice create --from-estimate 349 --payment-term 1130 --dry-run -o json
+papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --document-date heute --item "name=Beratung,qty=2,unit=Stunde,price=100,vat=19" --dry-run -o json
+papierkram invoice create --from-estimate 349 --payment-term 1130 --document-date heute --dry-run -o json
 papierkram voucher create --name "Büromaterial" --provenance domestic --creditor 2904 --item "name=Papier,amount=11.90,vat=19,category=Bürobedarf" --file beleg.pdf --dry-run -o json
 ```
 

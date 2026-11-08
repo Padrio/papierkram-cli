@@ -53,10 +53,10 @@ mockreq 0
 
 # --from-estimate reads the estimate (the only request) and names that read;
 # credits are those of the real call, which reads it again (51)
-papierkram invoice create --from-estimate 349 --payment-term 1130 --dry-run -o json
+papierkram invoice create --from-estimate 349 --payment-term 1130 --document-date 2026-11-04 --dry-run -o json
 jsonschema stdout dry-run
 stdout '"credits": 51'
-papierkram invoice create --from-estimate 349 --payment-term 1130 --dry-run -o json --jq .read
+papierkram invoice create --from-estimate 349 --payment-term 1130 --document-date 2026-11-04 --dry-run -o json --jq .read
 cmpenv stdout read.json
 mockreq 2
 mockreq 2 GET /income/estimates/349

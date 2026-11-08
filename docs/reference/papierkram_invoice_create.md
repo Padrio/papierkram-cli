@@ -7,7 +7,7 @@ Rechnung anlegen.
 
 Kosten: 50 Credits je Anfrage.
 
---from-estimate <id> liest das Angebot (1 weiterer Credit) und übernimmt daraus name, description, gross, billing, customer (mit contact_person und project des Angebots) und alle Positionen (name, description, quantity, unit, price, price_gross, discount_percentage, discount_calculated, discount_calculated_gross, proposition, type_of, vat_rate; "19%" wird zu 0.19). --payment-term ist Pflicht, weil Angebote keine Zahlungsbedingung haben.
+--from-estimate <id> liest das Angebot (1 weiterer Credit) und übernimmt daraus name, description, gross, billing, customer (mit contact_person und project des Angebots) und alle Positionen (name, description, quantity, unit, price, price_gross, discount_percentage, discount_calculated, discount_calculated_gross, proposition, type_of, vat_rate; "19%" wird zu 0.19). --payment-term ist Pflicht, weil Angebote keine Zahlungsbedingung haben, --document-date wie bei jeder Rechnung (das Datum des Angebots wird nie übernommen; fehlt es, endet der Befehl mit Exit 5, bevor das Angebot gelesen wird).
 
 Alle anderen Flags überschreiben die Werte des Angebots; --item/--items ersetzen alle Positionen. Nennt --customer einen anderen Kunden als das Angebot, werden contact_person und project des Angebots nicht übernommen (Hinweis auf stderr); sie lassen sich per --contact-person bzw. --customer-project setzen. --input ist zusammen mit --from-estimate nicht möglich.
 
@@ -19,10 +19,10 @@ Verwendung:
   papierkram invoice create [Optionen]
 
 Beispiele:
-  papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --item "name=Beratung,qty=2,unit=Stunde,price=100,vat=19"
-  papierkram invoice create --name Wartung --customer 3214 --payment-term 1130 --items positionen.json --dry-run
+  papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --document-date heute --item "name=Beratung,qty=2,unit=Stunde,price=100,vat=19"
+  papierkram invoice create --name Wartung --customer 3214 --payment-term 1130 --document-date 2026-11-04 --items positionen.json --dry-run
   papierkram invoice create --input rechnung.json
-  papierkram invoice create --from-estimate 349 --payment-term 1130 --dry-run
+  papierkram invoice create --from-estimate 349 --payment-term 1130 --document-date heute --dry-run
   papierkram invoice create --from-estimate 349 --payment-term 1130 --name "Website Relaunch" --document-date heute
 
 Optionen:
@@ -40,7 +40,7 @@ Optionen:
       --customer ID                   ID für customer
       --customer-project ID           ID für customer.project
       --description Text              Wert für description
-      --document-date Datum           Wert für document_date (YYYY-MM-DD, heute, gestern)
+      --document-date Datum           Wert für document_date (YYYY-MM-DD, heute, gestern) (Pflicht)
       --flagged                       Wert für flagged (true/false)
       --from-estimate ID              Angebot, aus dem die Rechnung entsteht (liest es: 1 weiterer Credit)
       --gross                         Wert für gross (true/false)

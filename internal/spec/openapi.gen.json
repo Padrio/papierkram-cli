@@ -15864,7 +15864,7 @@
                   },
                   "document_date": {
                     "format": "date",
-                    "nullable": true,
+                    "nullable": false,
                     "type": "string"
                   },
                   "flagged": {
@@ -15978,7 +15978,8 @@
                 "required": [
                   "name",
                   "payment_term",
-                  "line_items"
+                  "line_items",
+                  "document_date"
                 ],
                 "type": "object"
               }

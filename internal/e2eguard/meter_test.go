@@ -133,7 +133,7 @@ func TestMeterReplaysFirstLiveRun(t *testing.T) {
 		{"GET", "/api/v1/info", 1},
 		{"DELETE", "/api/v1/projects/4", 10}, // cleanup
 	}
-	m := NewMeter(760, 64)
+	m := NewMeter(760, 60)
 	n := 0
 	for _, r := range run {
 		cost := registry.ExpectedCredits(r.method, r.path)
@@ -148,9 +148,10 @@ func TestMeterReplaysFirstLiveRun(t *testing.T) {
 	if m.Spent() != 303 || m.Unmeasured() != 0 {
 		t.Errorf("spent %d unmeasured %d, want 303 and 0 (API: 10000 → 9697)", m.Spent(), m.Unmeasured())
 	}
-	// budget 760, reserve 64: tests may use 696, so 393 are left
-	if !m.Fits(393) || m.Fits(394) {
-		t.Errorf("spent 303 of 760 - 64: Fits(393)=%v Fits(394)=%v", m.Fits(393), m.Fits(394))
+	// budget 760, reserve 60 (e2e/e2e_test.go): tests may use 700, so
+	// 397 are left
+	if !m.Fits(397) || m.Fits(398) {
+		t.Errorf("spent 303 of 760 - 60: Fits(397)=%v Fits(398)=%v", m.Fits(397), m.Fits(398))
 	}
 }
 
@@ -203,8 +204,9 @@ func TestCleanupReserve(t *testing.T) {
 		t.Errorf("CleanupReserve(4, 10, 10) = %d, want 46", got)
 	}
 	// the reserve of the live suite (e2e/e2e_test.go)
-	if got := CleanupReserve(7, 13, 10); got != 64 {
-		t.Errorf("CleanupReserve(7, 13, 10) = %d, want 64", got)
+	// the reserve of e2e/e2e_test.go
+	if got := CleanupReserve(6, 13, 10); got != 60 {
+		t.Errorf("CleanupReserve(6, 13, 10) = %d, want 60", got)
 	}
 	if got := CleanupReserve(0, 0, 0); got != 0 {
 		t.Errorf("CleanupReserve(0, 0, 0) = %d", got)

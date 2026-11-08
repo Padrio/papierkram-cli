@@ -80,7 +80,7 @@ func TestFieldsCreateInvoice(t *testing.T) {
 		{"billing-company", KindGroup, []string{"billing", "company"}, false},
 		{"name", KindScalar, []string{"name"}, true},
 		{"item", KindItems, []string{"line_items"}, true},
-		{"document-date", KindScalar, []string{"document_date"}, false},
+		{"document-date", KindScalar, []string{"document_date"}, true},
 	}
 	for _, c := range checks {
 		f := fieldByFlag(t, fs, c.flag)

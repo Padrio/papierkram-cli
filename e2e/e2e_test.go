@@ -48,36 +48,36 @@
 //	  describe, update, describe in no. 6), no. 14 describe,
 //	  read + update, describe 4                                    41
 //	OpenMeasurements (4 subtests): no. 28 invoice create without
-//	  document_date 50; no. 10 describe, api PUT, describe 3;
-//	  no. 13 read + update, describe, round trip update,
-//	  describe 5; no. 12 voucher update, describe, update,
-//	  describe 4                                                   62
-//	final cleanup: 1 delete per object (7 documents and 13 other
-//	  objects = 20); the customer (and possibly the creditor of
+//	  document_date, refused locally 0; no. 10 describe, api
+//	  PUT, describe 3; no. 13 read + update, describe, round
+//	  trip update, describe 5; no. 12 voucher update, describe,
+//	  update, describe 4                                           12
+//	final cleanup: 1 delete per object (6 documents and 13 other
+//	  objects = 19); the customer (and possibly the creditor of
 //	  VoucherFlow) can only be archived: +1 each, 2; each of up
 //	  to 3 final documents costs up to 3 more (cancel, delete,
-//	  archive), 9                                                  31
-//	                                                     total    696
+//	  archive), 9                                                  30
+//	                                                     total    645
 //
 // Not counted: a cancel or reverse (InvoiceFlow, VoucherFlow; 4 in all)
 // whose answer names an object other than its target registers that
 // follow-up object for the cleanup (followUp; none expected). Each costs
 // up to 2 there (delete, archive; never cancel), together at most 8, taken
-// from the margin of the reserve: worst case 704 in all, cleanup 62 of 64.
+// from the margin of the reserve: worst case 653 in all, cleanup 58 of 60.
 //
-// Of the budget, cleanupReserve = 64 is kept for the final cleanup: the
-// documented worst case (e2eguard.CleanupReserve) for the 7 documents
-// (2 estimates, up to 3 invoices, 2 vouchers; 4 each) and up to 13 other
+// Of the budget, cleanupReserve = 60 is kept for the final cleanup: the
+// documented worst case (e2eguard.CleanupReserve) for the 6 documents
+// (2 estimates, 2 invoices, 2 vouchers; 4 each) and up to 13 other
 // objects (customer, supplier, creditor of VoucherFlow, person, project,
 // task, article, custom attribute, time entry fixture, 2 midnight time
 // entries, the entries of time log and time stop; 2 each), plus a margin
-// of 10. Tests may use 760 - 64 = 696 (planned: 665, margin 31). The meter (e2eguard.Meter)
-// counts every sent request, rejected ones too, with max(documented cost,
-// X-Consumed-Quota), the header being the cost of that one request;
-// before the cleanup the transport refuses every request that would cut
-// into the reserve, and need() skips a test (and all later ones) when its
-// cost no longer fits. TestMain releases the reserve for the cleanup and
-// prints the total at the end.
+// of 10. Tests may use 760 - 60 = 700 (planned: 615, margin 85). The
+// meter (e2eguard.Meter) counts every sent request, rejected ones too,
+// with max(documented cost, X-Consumed-Quota), the header being the cost
+// of that one request; before the cleanup the transport refuses every
+// request that would cut into the reserve, and need() skips a test (and
+// all later ones) when its cost no longer fits. TestMain releases the
+// reserve for the cleanup and prints the total at the end.
 //
 // Quota: a CLI run that hits HTTP 429 (exit 6, e2eguard.QuotaHit) stops
 // the tests like an exhausted budget: no further request in the tests,
@@ -108,7 +108,8 @@
 //	  12 (time log --from 23:00 --to 00:00 and --to 24:00: exit 0 and
 //	  duration 3600; ended_at and the sent end measured); open point 13:
 //	  the round trip with payment_term in the body sends no read before
-//	  the PUT;
+//	  the PUT; open point 28: invoice create without document_date ends
+//	  with exit 5 and sends nothing;
 //	  invoice flow: deliver --via pdf, pdf (%PDF file), archive and
 //	  unarchive exit 0; voucher flow: create --file (exit 0, upload
 //	  2xx), exactly one document, pdf, document delete, archive and
@@ -131,12 +132,12 @@
 //	  download, voucher reverse and cancel with the states after them,
 //	  GET /info cost, carries 5 (due_time_unit values),
 //	  6 (billable_duration on create and update; run 1: the create
-//	  stored duration instead), 7 (sent_on after deliver pdf), 10 (pay body with value null and a
-//	  transaction that does not exist: the suite never pays),
-//	  13 (structure of GET /info); open points
-//	  28 (invoice create without document_date), 10 (due_date through
-//	  api PUT), 13 (supply_date format and round trip), 12
-//	  (entertainment_persons set, then []: cleared or unchanged); the
+//	  stored duration instead), 7 (sent_on after deliver pdf), 10
+//	  (pay body with value null and a transaction that does not exist:
+//	  the suite never pays), 13 (structure of GET /info); open points
+//	  10 (due_date through api PUT), 13 (supply_date format and round
+//	  trip), 12 (entertainment_persons set, then []: cleared or
+//	  unchanged); the
 //	  answer of archive and unarchive (record_state or empty), the number
 //	  (total_entries) and key shape of bank connections and bank
 //	  transactions (never their values; without an entry the read by
@@ -144,10 +145,9 @@
 //	A measurement that differs from what the CLI assumes (GET /info cost
 //	  vs. registry, due_time_unit other than "day", billable_duration
 //	  not stored as sent, a cancel or reverse answering with another
-//	  object, an invoice without document_date rejected with 422, a
-//	  due_date changed by PUT, supply_date not stored as sent or changed
-//	  by the round trip, a failed step of that round trip, [] rejected
-//	  for entertainment_persons) is logged as
+//	  object, a due_date changed by PUT, supply_date not stored as
+//	  sent or changed by the round trip, a failed step of that round
+//	  trip, [] rejected for entertainment_persons) is logged as
 //	  ABWEICHUNG and listed again in a summary at the end of the run;
 //	  it does not fail the run.
 package e2e
@@ -184,8 +184,8 @@ const creditBudget = 760
 const _ = uint(799 - creditBudget)
 
 // cleanupReserve is the part of the budget kept for the final cleanup
-// (see the header): 7 documents, 13 other objects, margin 10 = 64.
-var cleanupReserve = e2eguard.CleanupReserve(7, 13, 10)
+// (see the header): 6 documents, 13 other objects, margin 10 = 60.
+var cleanupReserve = e2eguard.CleanupReserve(6, 13, 10)
 
 // suite is the live run; nil when the suite is skipped (skipReason).
 var (
