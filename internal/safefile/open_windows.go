@@ -4,6 +4,7 @@ package safefile
 
 import (
 	"os"
+	"path/filepath"
 	"syscall"
 )
 
@@ -15,12 +16,16 @@ import (
 // point at path is opened itself, not followed (FILE_FLAG_OPEN_REPARSE_POINT);
 // ReadRegular then rejects the handle as no regular file, like the Lstat
 // before it and the os.SameFile check guard against a swapped file.
+// FILE_FLAG_BACKUP_SEMANTICS lets a directory swapped in after the Lstat
+// be opened (as os.Open does), so that check reports ErrNotRegular
+// instead of ACCESS_DENIED. A long path gets the extended-length prefix
+// like in the os package (extendedPath); errors name path as given.
 func openRead(path string, follow bool) (*os.File, error) {
-	p, err := syscall.UTF16PtrFromString(path)
+	p, err := syscall.UTF16PtrFromString(extendedPath(path, filepath.Abs))
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
-	attrs := uint32(syscall.FILE_ATTRIBUTE_NORMAL)
+	attrs := uint32(syscall.FILE_ATTRIBUTE_NORMAL | syscall.FILE_FLAG_BACKUP_SEMANTICS)
 	if !follow {
 		attrs |= syscall.FILE_FLAG_OPEN_REPARSE_POINT
 	}

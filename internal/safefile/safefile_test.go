@@ -232,3 +232,73 @@ func TestOpenReadAllowsRemove(t *testing.T) {
 		}
 	}
 }
+
+// Review of task 11: a directory swapped in between the Stat of
+// ReadRegular and the open is opened (on Windows only with
+// FILE_FLAG_BACKUP_SEMANTICS, else ACCESS_DENIED), so the check on the
+// handle reports ErrNotRegular instead of a permission error.
+func TestOpenReadDirectoryIsNotRegular(t *testing.T) {
+	dir := t.TempDir()
+	for _, follow := range []bool{false, true} {
+		f, err := openRead(dir, follow)
+		if err != nil {
+			t.Fatalf("follow=%v: openRead of a directory = %v", follow, err)
+		}
+		st, err := f.Stat()
+		_ = f.Close()
+		if err != nil || st.Mode().IsRegular() || !st.IsDir() {
+			t.Errorf("follow=%v: Stat = %v, %v", follow, st, err)
+		}
+	}
+}
+
+// Review of task 11: a path of 260 characters and more is read (on
+// Windows CreateFile needs the extended-length prefix, which os adds for
+// its own calls).
+func TestReadRegularLongPath(t *testing.T) {
+	dir := t.TempDir()
+	for len(dir) < 300 {
+		dir = filepath.Join(dir, strings.Repeat("d", 40))
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := write(t, filepath.Join(dir, "timer.json"), "{}")
+	for _, follow := range []bool{false, true} {
+		if data, err := ReadRegular(path, follow, 64); err != nil || string(data) != "{}" {
+			t.Errorf("follow=%v: ReadRegular(%d characters) = %q, %v", follow, len(path), data, err)
+		}
+	}
+}
+
+// extendedPath adds the extended-length prefix like fixLongPath of the os
+// package: only from maxShortPath characters, after making the path
+// absolute and clean, for a UNC path as \\?\UNC\, never twice.
+func TestExtendedPath(t *testing.T) {
+	long := strings.Repeat("a", maxShortPath)
+	full := func(p string) (string, error) {
+		switch {
+		case strings.HasPrefix(p, "rel"):
+			return `C:\work\` + p, nil
+		case strings.HasPrefix(p, "bad"):
+			return "", errors.New("bad")
+		}
+		return strings.ReplaceAll(p, "/", `\`), nil
+	}
+	for _, tc := range []struct{ in, want string }{
+		{`C:\short\timer.json`, `C:\short\timer.json`},
+		{`C:\` + long[:maxShortPath-4], `C:\` + long[:maxShortPath-4]},
+		{`C:\` + long, `\\?\C:\` + long},
+		{`C:/` + long, `\\?\C:\` + long},
+		{"rel" + long, `\\?\C:\work\rel` + long},
+		{`\\server\share\` + long, `\\?\UNC\server\share\` + long},
+		{`\\?\C:\` + long, `\\?\C:\` + long},
+		{`\??\C:\` + long, `\??\C:\` + long},
+		{`\\.\pipe\` + long, `\\.\pipe\` + long},
+		{"bad" + long, "bad" + long},
+	} {
+		if got := extendedPath(tc.in, full); got != tc.want {
+			t.Errorf("extendedPath(%.20q…) = %.30q…, want %.30q…", tc.in, got, tc.want)
+		}
+	}
+}
