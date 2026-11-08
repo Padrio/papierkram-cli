@@ -61,6 +61,10 @@ func ReadRegular(path string, follow bool, limit int64) ([]byte, error) {
 	if !st.Mode().IsRegular() {
 		return nil, ErrNotRegular
 	}
+	if !pinFileID(st) {
+		// the file changed or went away since the check
+		return nil, ErrSwapped
+	}
 	beforeOpen(path)
 	f, err := openRead(path, follow)
 	if err != nil {
@@ -158,6 +162,9 @@ func CreateAtomic(path string, data []byte, mode fs.FileMode) error {
 	if rerr != nil {
 		// remove the claim only while path is still it: another writer
 		// may have taken path since (review N2)
+		// claimed comes from the handle (ID set at once); now is the file at
+		// path at the time of the comparison, also on Windows, where the
+		// ID of an Lstat result is read by path only then
 		if now, err := os.Lstat(path); serr == nil && err == nil && os.SameFile(claimed, now) {
 			_ = os.Remove(path)
 		}
