@@ -64,8 +64,9 @@ func TestResponseTooLargeGet(t *testing.T) {
 	if ce.Hint != "Antwort zu groß für das CLI; Ergebnis nicht verwertbar" {
 		t.Errorf("hint = %q", ce.Hint)
 	}
-	if ce.HTTPStatus != http.StatusOK {
-		t.Errorf("http status = %d, want 200", ce.HTTPStatus)
+	if ce.HTTPStatus != 0 {
+		// ruling FR-D: a 2xx status is no error status (error.json)
+		t.Errorf("http status = %d, want none", ce.HTTPStatus)
 	}
 	if !errors.Is(err, ErrResponseTooLarge) {
 		t.Error("error does not wrap ErrResponseTooLarge")
@@ -114,8 +115,9 @@ func TestResponseTooLargeMutation(t *testing.T) {
 			s := &sleepRecorder{}
 			resp, err := tt.call(clientFor(srv, s))
 			ce := asCLIErr(t, err)
-			if ce.Code != clierr.CodeError || ce.Exit() != 1 || ce.HTTPStatus != tt.status {
-				t.Errorf("code %s exit %d status %d, want error 1 %d", ce.Code, ce.Exit(), ce.HTTPStatus, tt.status)
+			// no http_status (ruling FR-D), whatever the 2xx status
+			if ce.Code != clierr.CodeError || ce.Exit() != 1 || ce.HTTPStatus != 0 {
+				t.Errorf("code %s exit %d status %d, want error 1 without status (answer %d)", ce.Code, ce.Exit(), ce.HTTPStatus, tt.status)
 			}
 			if ce.Message != "Antwort größer als 64 MiB; die Änderung wurde ausgeführt" {
 				t.Errorf("message = %q", ce.Message)

@@ -113,7 +113,7 @@ func (c *Client) send(ctx context.Context, req *http.Request, attempt int) (*Res
 	}
 	if tooLarge {
 		// A cut payload is never returned; no retry (code error).
-		return nil, tooLargeError(req.Method, hr.StatusCode)
+		return nil, tooLargeError(req.Method)
 	}
 	return resp, nil
 }

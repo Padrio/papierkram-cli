@@ -90,14 +90,15 @@ func classifyStatus(status int) (clierr.Code, string, string) {
 
 // tooLargeError is the error of a 2xx answer longer than MaxResponseSize
 // (spec 5.5): exit 1 (code error, never retried). For a mutation the
-// server has made the change, so the hint says not to repeat it.
-func tooLargeError(method string, status int) *clierr.Error {
+// server has made the change, so the hint says not to repeat it. It has
+// no HTTP status (ruling FR-D): a 2xx status is no error status in the
+// contract (docs/schemas/error.json), the message says what happened.
+func tooLargeError(method string) *clierr.Error {
 	e := &clierr.Error{
-		Code:       clierr.CodeError,
-		Message:    "Antwort größer als 64 MiB, abgebrochen",
-		Hint:       hintTooLarge,
-		HTTPStatus: status,
-		Cause:      ErrResponseTooLarge,
+		Code:    clierr.CodeError,
+		Message: "Antwort größer als 64 MiB, abgebrochen",
+		Hint:    hintTooLarge,
+		Cause:   ErrResponseTooLarge,
 	}
 	if !safeMethod(method) {
 		e.Message = "Antwort größer als 64 MiB; die Änderung wurde ausgeführt"

@@ -199,6 +199,16 @@ var errorRuns = []contractRun{
 		srv.OnFunc("POST", "/contact/companies", closeAfterRead)
 		return nil
 	}, args: []string{"company", "create", "--name", "Muster GmbH", "--contact-type", "customer", "-o", "json"}},
+	// a 2xx answer longer than 64 MiB (ruling FR-D): exit 1 without
+	// http_status, for a read and a mutation
+	{name: "zu groß Lesen", exit: 1, setup: func(t *testing.T, srv *mockapi.Server) []string {
+		srv.OnFunc("GET", "/income/invoices/{id}", tooLarge(http.StatusOK, "application/json"))
+		return nil
+	}, args: []string{"invoice", "describe", "459", "-o", "json"}},
+	{name: "zu groß Änderung", exit: 1, setup: func(t *testing.T, srv *mockapi.Server) []string {
+		srv.OnFunc("PUT", "/income/invoices/{id}", tooLarge(http.StatusOK, "application/json"))
+		return nil
+	}, args: []string{"invoice", "update", "459", "--payment-term", "1130", "--name", "x", "-o", "json"}},
 }
 
 // Every exit code 1–12 ends with a structured error on stderr that
@@ -328,12 +338,24 @@ func TestPartialContract(t *testing.T) {
 			srv.On("POST", "/expense/vouchers", http.StatusCreated, []byte(`{"name":"Papier"}`))
 			return []string{"--file", writeFile(t, "beleg.pdf", pdfContent)}
 		}, args: append(slices.Clone(voucherCreateArgs), "-o", "json")},
+		// a 2xx answer longer than 64 MiB (ruling FR-D): no http_status
+		{name: "Upload zu groß", exit: 11, setup: func(t *testing.T, srv *mockapi.Server) []string {
+			srv.OnFunc("POST", "/expense/vouchers/{voucher_id}/documents", tooLarge(http.StatusOK, "application/json"))
+			return []string{"--file", writeFile(t, "beleg.pdf", pdfContent)}
+		}, args: append(slices.Clone(voucherCreateArgs), "-o", "json")},
+		{name: "Anlegen zu groß", exit: 11, setup: func(t *testing.T, srv *mockapi.Server) []string {
+			srv.OnFunc("POST", "/expense/vouchers", tooLarge(http.StatusCreated, "application/json"))
+			return []string{"--file", writeFile(t, "beleg.pdf", pdfContent)}
+		}, args: append(slices.Clone(voucherCreateArgs), "-o", "json")},
 	}
 	for _, c := range runs {
 		t.Run(c.name, func(t *testing.T) {
 			out, errs := c.run(t)
 			wantContract(t, "partial", []byte(out))
 			wantContract(t, "error", []byte(lastLine(errs)))
+			if strings.Contains(c.name, "zu groß") && strings.Contains(lastLine(errs), "http_status") {
+				t.Errorf("http_status bei zu großer 2xx-Antwort: %s", lastLine(errs))
+			}
 		})
 	}
 }

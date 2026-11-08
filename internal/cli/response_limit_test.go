@@ -60,7 +60,12 @@ func TestMutationTooLargeIsExit1(t *testing.T) {
 	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--payment-term", "1130", "--name", "x", "-o", "json"}), 1)
 	wantRequests(t, srv, 1)
 	wantStderr(t, app, "Fehler: Antwort größer als 64 MiB; die Änderung wurde ausgeführt",
-		"Hinweis: NICHT wiederholen; Ergebnis per describe/list prüfen", `"code":"error"`, `"http_status":200`)
+		"Hinweis: NICHT wiederholen; Ergebnis per describe/list prüfen", `"code":"error"`)
+	// ruling FR-D: no http_status (error.json allows only up to 499 for
+	// code error; the message says the change was made)
+	if _, errs := bufs(app); strings.Contains(errs, "http_status") {
+		t.Errorf("stderr = %s", errs)
+	}
 }
 
 // deliver keeps the hint not to repeat: the document was sent.
@@ -105,7 +110,7 @@ func TestVoucherCreateFileUploadTooLarge(t *testing.T) {
 }
 
 func TestUploadUncertainTooLarge(t *testing.T) {
-	ce := &clierr.Error{Code: clierr.CodeError, HTTPStatus: 200, Cause: api.ErrResponseTooLarge}
+	ce := &clierr.Error{Code: clierr.CodeError, Cause: api.ErrResponseTooLarge}
 	if !uploadUncertain(ce) {
 		t.Error("too large upload answer is not uncertain")
 	}
