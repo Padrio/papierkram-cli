@@ -530,9 +530,18 @@ func TestInvoiceFromEstimateDroppedNullsHint(t *testing.T) {
 	if got := canonJSON(t, wantRequests(t, srv, 2)[1].Body); got != canonJSON(t, []byte(want)) {
 		t.Errorf("body = %s\nerwartet %s", got, want)
 	}
+	// name is set by --name: the hint does not name it (L310)
 	_, errs := bufs(app)
-	if errs != "Hinweis: null ignoriert (Feld bleibt unverändert): gross, line_items[].proposition.id, line_items[].quantity, line_items[].vat_rate, name\n" {
+	if errs != "Hinweis: null ignoriert (Feld bleibt unverändert): gross, line_items[].proposition.id, line_items[].quantity, line_items[].vat_rate\n" {
 		t.Errorf("stderr = %q", errs)
+	}
+	// positions replaced by --item: their nulls are not named either
+	app, srv = apiApp(t)
+	estimateJSON(srv, `{"name":null,"gross":null,"customer":{"id":1},
+		"line_items":[{"name":"A","quantity":null,"unit":"x","vat_rate":null}]}`)
+	wantExit(t, app, Run(app, fromEstimateCmd("--name", "R", "--item", item1, "-o", "json")), 0)
+	if _, errs := bufs(app); errs != "Hinweis: null ignoriert (Feld bleibt unverändert): gross\n" {
+		t.Errorf("--item: stderr = %q", errs)
 	}
 
 	// the spec example has nulls only in nullable fields and references

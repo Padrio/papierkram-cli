@@ -191,18 +191,18 @@ func (f *fromEstimate) load(c *cobra.Command, client *api.Client, req *openapi3.
 // estimateBase is the base body of the invoice: the estimate read by
 // load, without the references of its customer when --customer names
 // another one (dropForeignRefs). The nulls left out are named with the
-// hint of the --input path (pruneHints).
+// hint of the --input path (pruneHints), except those a flag sets.
 func (a *App) estimateBase(c *cobra.Command, client *api.Client, ws writeSpec, f *fromEstimate) (map[string]any, error) {
 	base, nulls, err := f.load(c, client, ws.req)
 	if err != nil {
 		return nil, err
 	}
-	a.pruneHints(spec.PruneResult{DroppedNulls: nulls})
+	a.pruneHints(spec.PruneResult{DroppedNulls: unsetNulls(c, ws, nulls)})
 	// a value of the estimate that cannot be sent (vat_rate "abc") is
 	// reported as the estimate's; positions replaced by --item/--items
 	// are not checked
 	check := base
-	if ws.items != nil && (c.Flags().Changed("items") || c.Flags().Changed(ws.items.Flag)) {
+	if itemsReplaced(c, ws) {
 		check = maps.Clone(base)
 		delete(check, itemsKey(ws))
 	}
@@ -212,6 +212,30 @@ func (a *App) estimateBase(c *cobra.Command, client *api.Client, ws writeSpec, f
 	f.loaded = true
 	a.dropForeignRefs(c, ws, base, "dem Angebot", customerRefs)
 	return base, nil
+}
+
+// itemsReplaced reports whether --item or --items replaces the positions.
+func itemsReplaced(c *cobra.Command, ws writeSpec) bool {
+	return ws.items != nil && (c.Flags().Changed("items") || c.Flags().Changed(ws.items.Flag))
+}
+
+// unsetNulls are the nulls left out of the estimate (paths as Prune names
+// them, positions as line_items[]) whose field no changed flag sets: a
+// flag at the path or above it, or the positions per --item/--items. The
+// hint would otherwise name a field the flag fills (L310).
+func unsetNulls(c *cobra.Command, ws writeSpec, nulls []string) []string {
+	return slices.DeleteFunc(nulls, func(null string) bool {
+		path := strings.Split(strings.ReplaceAll(null, "[]", ""), ".")
+		if path[0] == itemsKey(ws) && itemsReplaced(c, ws) {
+			return true
+		}
+		for _, f := range ws.fields {
+			if f.Flag != "" && len(f.Path) <= len(path) && slices.Equal(f.Path, path[:len(f.Path)]) && c.Flags().Changed(f.Flag) {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 // customerRefs are the references below customer that belong to the
