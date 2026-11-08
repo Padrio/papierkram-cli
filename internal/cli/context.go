@@ -103,7 +103,10 @@ func newContextCreateCmd(app *App) *cobra.Command {
 			switch err := app.Keyring.Delete(args[0]); {
 			case err == nil:
 				_, _ = fmt.Fprintf(app.Err, "Hinweis: Im Schlüsselbund lag noch ein Token für %q (von einem früheren Kontext gleichen Namens); es wurde entfernt. Token neu hinterlegen: papierkram auth login --context %s\n", args[0], args[0])
-			case errors.Is(err, auth.ErrNotFound), errors.Is(err, auth.ErrUnavailable):
+			case errors.Is(err, auth.ErrNotFound):
+			case errors.Is(err, auth.ErrUnavailable):
+				// the text of auth logout (L120)
+				app.warnKeyring("Schlüsselbund nicht verfügbar, ein dort gespeichertes Token von %q wurde nicht entfernt.", args[0])
 			default:
 				return keyringErr(err, fmt.Sprintf("altes Token für %q konnte nicht entfernt werden, Konfiguration unverändert", args[0]))
 			}
@@ -347,7 +350,11 @@ func newContextRenameCmd(app *App) *cobra.Command {
 				return clierr.New(clierr.CodeUsage,
 					fmt.Sprintf("Im Schlüsselbund existiert bereits ein Token für %q", newName),
 					fmt.Sprintf("Anderen Namen wählen oder den Eintrag (Dienst papierkram-cli, Konto %s) im Schlüsselbund des Betriebssystems entfernen", newName))
-			case errors.Is(err, auth.ErrNotFound), errors.Is(err, auth.ErrUnavailable):
+			case errors.Is(err, auth.ErrNotFound):
+			case errors.Is(err, auth.ErrUnavailable):
+				// like auth logout (L120): a foreign token under the new
+				// name could not be ruled out
+				app.warnKeyring("Schlüsselbund nicht verfügbar, ein dort gespeichertes Token von %q wurde nicht geprüft.", newName)
 			default:
 				return keyringErr(err, "Schlüsselbund konnte nicht geprüft werden, Konfiguration unverändert")
 			}

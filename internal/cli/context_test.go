@@ -564,3 +564,34 @@ func TestContextRenameDeleteRefuseWithTimer(t *testing.T) {
 		})
 	}
 }
+
+// L120: context create and context rename report an unavailable keychain
+// as a warning (like auth logout) instead of going on silently; the exit
+// code stays 0 and the configuration is written.
+func TestContextKeychainUnavailableWarns(t *testing.T) {
+	app, out, errb := newTestApp(t)
+	app.Keyring = unavailableStore{}
+	if code := Run(app, []string{"context", "create", "neu", "--subdomain", "firma-neu"}); code != 0 {
+		t.Fatalf("create: exit %d: %s", code, errb.String())
+	}
+	if want := "Warnung: Schlüsselbund nicht verfügbar, ein dort gespeichertes Token von \"neu\" wurde nicht entfernt.\n"; errb.String() != want {
+		t.Errorf("create: stderr = %q, want %q", errb.String(), want)
+	}
+	if !strings.Contains(out.String(), `Kontext "neu" angelegt.`) {
+		t.Errorf("create: stdout = %q", out.String())
+	}
+
+	errb.Reset()
+	if code := Run(app, []string{"context", "rename", "neu", "neuer"}); code != 0 {
+		t.Fatalf("rename: exit %d: %s", code, errb.String())
+	}
+	errs := errb.String()
+	if !strings.Contains(errs, "Warnung: Schlüsselbund nicht verfügbar, ein dort gespeichertes Token von \"neuer\" wurde nicht geprüft.\n") ||
+		!strings.Contains(errs, "Token von \"neu\" wurde nicht verschoben.") {
+		t.Errorf("rename: stderr = %q", errs)
+	}
+	cfg, _, err := app.loadConfig()
+	if err != nil || cfg.Contexts["neuer"] == nil || cfg.Contexts["neu"] != nil {
+		t.Errorf("rename: config %+v, %v", cfg, err)
+	}
+}
