@@ -87,9 +87,15 @@ func (a *App) newTimeLogCmd() *cobra.Command {
 	fs.String("to", "", "Ende als H:MM oder HH:MM, um Mitternacht 24:00 oder 00:00 (nicht mit --duration)")
 	fs.String("duration", "", "Dauer: 1h30m, 90m oder 1:30; ohne --from endet der Eintrag jetzt")
 	fs.StringP("comments", "m", "", "Kommentar")
-	// a switch like the bool field flags of time create (also ja/nein)
-	fs.VarPF(&rawValue{typ: "bool"}, "unbillable", "", "nicht abrechenbar").NoOptDefVal = "true"
+	addUnbillableFlag(fs)
 	return cmd
+}
+
+// addUnbillableFlag adds --unbillable of time log and time start: a switch
+// like the bool field flags of time create (also ja/nein), checked with
+// the field unbillable of the request schema (spec.CoerceFlag).
+func addUnbillableFlag(fs *pflag.FlagSet) {
+	fs.VarPF(&rawValue{typ: "bool"}, "unbillable", "", "nicht abrechenbar").NoOptDefVal = "true"
 }
 
 // timeLogInput is what the flags of time log give: the period, or the

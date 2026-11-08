@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,11 +18,12 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/redact"
 	"github.com/Padrio/papierkram-cli/internal/registry"
+	"github.com/Padrio/papierkram-cli/internal/spec"
 	"github.com/Padrio/papierkram-cli/internal/timer"
 )
 
-// The local timer (spec 9.6): time start saves start, task, user and
-// comment of the effective context in a state file (internal/timer),
+// The local timer (spec 9.6): time start saves start, task, user, comment
+// and unbillable of the effective context in a state file (internal/timer),
 // time status shows it, time stop books the period through the path of
 // time log (sendTimeEntry) and deletes the state only after the entry was
 // created, time discard drops it. There is no timer on the server; only
@@ -36,15 +38,17 @@ func (a *App) newTimeStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Timer starten (lokal, Buchung mit time stop)",
-		Long: "Startet den Timer für den wirksamen Kontext: Startzeit (jetzt), Aufgabe, Benutzer und Kommentar werden gespeichert; " +
+		Long: "Startet den Timer für den wirksamen Kontext: Startzeit (jetzt), Aufgabe, Benutzer, Kommentar und --unbillable werden gespeichert; " +
 			"time stop bucht die Zeit bis dahin als Zeiteintrag.\n\n" +
 			"Aufgabe und Benutzer werden jetzt bestimmt wie bei time log: Flag, sonst PAPIERKRAM_TASK bzw. PAPIERKRAM_USER, " +
 			"sonst task bzw. user aus der Projektdatei .papierkram.toml (anlegen: papierkram local init), beim Benutzer zuletzt user des Kontexts. " +
 			"--task nimmt auch einen Alias aus [tasks] der Projektdatei.\n\n" +
+			"--unbillable (auch --unbillable=false, ja/nein) legt wie bei time log fest, ob der Eintrag nicht abrechenbar ist; der Wert wird jetzt geprüft (Exit 5) " +
+			"und von time stop gesendet, ohne Angabe sendet time stop keinen. time stop kennt kein --unbillable.\n\n" +
 			"Läuft schon ein Timer oder läuft gerade ein time stop bzw. wurde einer nicht abgeschlossen, bricht der Befehl ab (Exit 7). Unter Schreibschutz ist er gesperrt (Exit 9), weil time stop nicht buchen könnte. " +
 			"Sendet keine Anfrage. " + timerNote,
 		Example: "  papierkram time start --task 545 -m \"Abstimmung mit Kunde\"\n" +
-			"  papierkram time start --task tickets",
+			"  papierkram time start --task tickets --unbillable",
 		Annotations: map[string]string{annotClass: string(registry.ClassCreate), annotLocal: "true"},
 		Args:        noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
@@ -57,6 +61,7 @@ func (a *App) newTimeStartCmd() *cobra.Command {
 	fs := cmd.Flags()
 	addTaskUserFlags(fs)
 	fs.StringP("comments", "m", "", "Kommentar (time stop -m ersetzt ihn)")
+	addUnbillableFlag(fs)
 	return cmd
 }
 
@@ -123,16 +128,22 @@ func (a *App) newTimeDiscardCmd() *cobra.Command {
 }
 
 // runTimeStart saves a new timer. Order like time log: flags (exit 2),
+// the fields of the request schema (exit 1 when the spec lacks one),
 // configuration and read-only gate (mutationClient, exit 9: stop could not
-// book), task and user (exit 2 when missing, R15), a running or unusable
-// timer (exit 7, exit 1), then the state file. No request is sent; the
-// client is built so that a missing token shows now and not at stop.
+// book), task and user (exit 2 when missing, R15), --unbillable (exit 5,
+// task 12), a running or unusable timer (exit 7, exit 1), then the state
+// file. No request is sent; the client is built so that a missing token
+// shows now and not at stop.
 func (a *App) runTimeStart(c *cobra.Command, e registry.Entry) error {
 	if err := checkTaskUserFlags(c); err != nil {
 		return err
 	}
 	if n := len(flagString(c, "comments")); n > timer.MaxComment {
 		return usageErr(fmt.Sprintf("Kommentar zu lang (%d Bytes, höchstens %d KiB)", n, timer.MaxComment>>10))
+	}
+	fields, err := timeLogFieldsOf(e)
+	if err != nil {
+		return errUnavailable(err)
 	}
 	_, r, err := a.mutationClient(e)
 	if err != nil {
@@ -161,6 +172,10 @@ func (a *App) runTimeStart(c *cobra.Command, e registry.Entry) error {
 				"Timer nicht gestartet. Gültige ID angeben, z. B. "+useLine(c)+" --"+p.key+" <id>")
 		}
 	}
+	unbillable, err := a.timerUnbillable(c, e, fields)
+	if err != nil {
+		return err
+	}
 	path, cur, err := a.loadTimer(r)
 	if err != nil {
 		return err
@@ -169,12 +184,13 @@ func (a *App) runTimeStart(c *cobra.Command, e registry.Entry) error {
 		return a.errTimerRunning(*cur)
 	}
 	st := timer.State{
-		Context:   r.Context,
-		StartedAt: a.Now().In(a.loc()).Truncate(time.Second),
-		Task:      task.ID,
-		User:      user.ID,
-		Comment:   flagString(c, "comments"),
-		BaseURL:   redact.URL(r.BaseURL), // never userinfo in the file (N1)
+		Context:    r.Context,
+		StartedAt:  a.Now().In(a.loc()).Truncate(time.Second),
+		Task:       task.ID,
+		User:       user.ID,
+		Comment:    flagString(c, "comments"),
+		BaseURL:    redact.URL(r.BaseURL), // never userinfo in the file (N1)
+		Unbillable: unbillable,
 	}
 	if err := timer.Save(path, st); err != nil {
 		if errors.Is(err, fs.ErrExist) {
@@ -195,6 +211,31 @@ func (a *App) runTimeStart(c *cobra.Command, e registry.Entry) error {
 	_, err = fmt.Fprintf(a.Out, "Timer gestartet um %s (%s): %s.\n",
 		hhmmOf(st.StartedAt.In(a.loc())), contextLabel(r.Context), timerSubject(st))
 	return afterRequest(err)
+}
+
+// timerUnbillable is --unbillable of time start, checked now like time
+// log checks it when it builds its body (spec.CoerceFlag with the field
+// unbillable of the request schema, exit 5): a wrong value fails at start,
+// not hours later at stop. nil without the flag: time stop sends none.
+func (a *App) timerUnbillable(c *cobra.Command, e registry.Entry, fields map[string]spec.Field) (*bool, error) {
+	if !c.Flags().Changed("unbillable") {
+		return nil, nil
+	}
+	v, err := spec.CoerceFlag(a.dayContext(e.Resource), fields["unbillable"], rawText(c, "unbillable"))
+	if err != nil {
+		ce := *clierr.From(err)
+		ce.Hint = strings.TrimSuffix(ce.Hint, ".")
+		if ce.Hint != "" {
+			ce.Hint += ". "
+		}
+		ce.Hint += "Timer nicht gestartet"
+		return nil, &ce
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return nil, errUnavailable(fmt.Errorf("unbillable im Request-Schema von %s ist kein Wahrheitswert", e.OperationID))
+	}
+	return &b, nil
 }
 
 // errTimerRunning is the conflict of time start with a running timer.
@@ -219,6 +260,9 @@ type timerStatusJSON struct {
 	// Account is the host of the base URL the timer was started for, ""
 	// for a state of the first format (review M8).
 	Account string `json:"account"`
+	// Unbillable is what time stop sends as unbillable; false also when
+	// the timer has none (then nothing is sent, task 12).
+	Unbillable bool `json:"unbillable"`
 }
 
 // timerStoppedJSON is the output of time status without a timer.
@@ -234,7 +278,19 @@ var timerColumns = output.Columns{
 		{Header: "BENUTZER", Path: "user"},
 		{Header: "KOMMENTAR", Path: "comment"},
 	},
-	Wide: []output.Column{{Header: "KONTEXT", Path: "context"}, {Header: "KONTO", Path: "account"}},
+	Wide: []output.Column{
+		{Header: "KONTEXT", Path: "context"},
+		{Header: "KONTO", Path: "account"},
+		{Header: "NICHT ABRECHENBAR", Path: "unbillable", Fmt: yesOrEmpty},
+	},
+}
+
+// yesOrEmpty is a bool cell that shows only true (ja).
+func yesOrEmpty(v any) string {
+	if b, _ := v.(bool); b {
+		return "ja"
+	}
+	return ""
 }
 
 // timerStatus is st as output, its duration at the app clock.
@@ -251,6 +307,7 @@ func (a *App) timerStatus(st timer.State) timerStatusJSON {
 		User:            st.User,
 		Comment:         printable(st.Comment),
 		Account:         accountHost(st.BaseURL),
+		Unbillable:      st.Unbillable != nil && *st.Unbillable,
 	}
 }
 
@@ -352,6 +409,12 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 	te := timeEntry{period: p, task: eff.Task, user: eff.User}
 	if c.Flags().Changed("comments") || eff.Comment != "" {
 		te.comments = &eff.Comment
+	}
+	if eff.Unbillable != nil {
+		// the checked value of time start as text, like the flag of
+		// time log; without one nothing is sent (task 12)
+		v := strconv.FormatBool(*eff.Unbillable)
+		te.unbillable = &v
 	}
 	// the claim (task 11, C2): after the question and --dry-run, right
 	// before the request, so a dry run or a declined question never takes
@@ -554,9 +617,17 @@ func (a *App) midnightTimerHint(st timer.State, start, now time.Time) string {
 // timeLogCommand is the time log command that books st from from to to on
 // date by hand. The context of --context is quoted for the shell (a name
 // may hold ; or $, review M7); a comment is named as a placeholder, since
-// its text would need quoting for every shell.
+// its text would need quoting for every shell. The unbillable of the
+// timer is passed on as time stop would send it (task 12).
 func (a *App) timeLogCommand(st timer.State, date, from, to string) string {
 	cmd := fmt.Sprintf("papierkram time log --task %d --user %d --date %s --from %s --to %s", st.Task, st.User, date, from, to)
+	switch {
+	case st.Unbillable == nil:
+	case *st.Unbillable:
+		cmd += " --unbillable"
+	default:
+		cmd += " --unbillable=false"
+	}
 	if st.Comment != "" {
 		cmd += ` -m "<Kommentar>"`
 	}
@@ -759,11 +830,14 @@ func contextLabel(name string) string {
 	return fmt.Sprintf("Kontext %q", printable(name))
 }
 
-// timerSubject names task, user and comment of st.
+// timerSubject names task, user, comment and an unbillable of st.
 func timerSubject(st timer.State) string {
 	s := fmt.Sprintf("Aufgabe %d, Benutzer %d", st.Task, st.User)
 	if st.Comment != "" {
 		s += ", Kommentar „" + printable(st.Comment) + "“"
+	}
+	if st.Unbillable != nil && *st.Unbillable {
+		s += ", nicht abrechenbar"
 	}
 	return s
 }

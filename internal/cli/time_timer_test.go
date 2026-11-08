@@ -86,7 +86,7 @@ func TestTimerStartStatusStopFlow(t *testing.T) {
 	out, _ := bufs(app)
 	want := `{"account":"` + strings.TrimPrefix(strings.SplitN(srv.URL(), "/api", 2)[0], "http://") + `",` +
 		`"comment":"Abstimmung","context":"","duration":"1:47","duration_minutes":107,"running":true,` +
-		`"started_at":"2026-11-04T09:00:12+01:00","task":545,"user":1}`
+		`"started_at":"2026-11-04T09:00:12+01:00","task":545,"unbillable":false,"user":1}`
 	if got := canonJSON(t, []byte(out)); got != want {
 		t.Errorf("status = %s\nwant     %s", got, want)
 	}

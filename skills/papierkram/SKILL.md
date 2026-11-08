@@ -148,6 +148,8 @@ papierkram time stop --dry-run -o json --no-input
 papierkram time stop -o json --no-input
 ```
 
+Nicht abrechenbare Zeit: `--unbillable` gehört an `time start` (wie an `time log`); `time stop` kennt es nicht und sendet den beim Start gespeicherten Wert.
+
 `time stop` nach Exit 11 **nie** erneut ausführen: Der Eintrag ist angelegt. Nach Prüfung per `time list --since heute` den Timer mit `papierkram time discard --yes` verwerfen, nur mit Freigabe (die erfasste Zeit geht verloren).
 
 `time stop` mit Exit 7 sendet nichts: Entweder bucht gerade ein anderer `time stop` denselben Timer (nicht wiederholen, `time status` und `time list --since heute` lesen), oder ein `time stop` läuft gerade bzw. wurde nicht abgeschlossen (Hinweis „Ein time stop läuft gerade oder wurde nicht abgeschlossen“): erst per `time list --since <Startdatum>` prüfen, ob der Eintrag existiert, dann, wenn kein anderer `time stop` mehr läuft, wie im Hinweis `time discard --yes` (mit Freigabe) und, falls er fehlt, von Hand mit `time log` buchen.

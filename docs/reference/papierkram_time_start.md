@@ -3,9 +3,11 @@
 Timer starten (lokal, Buchung mit time stop)
 
 ```text
-Startet den Timer für den wirksamen Kontext: Startzeit (jetzt), Aufgabe, Benutzer und Kommentar werden gespeichert; time stop bucht die Zeit bis dahin als Zeiteintrag.
+Startet den Timer für den wirksamen Kontext: Startzeit (jetzt), Aufgabe, Benutzer, Kommentar und --unbillable werden gespeichert; time stop bucht die Zeit bis dahin als Zeiteintrag.
 
 Aufgabe und Benutzer werden jetzt bestimmt wie bei time log: Flag, sonst PAPIERKRAM_TASK bzw. PAPIERKRAM_USER, sonst task bzw. user aus der Projektdatei .papierkram.toml (anlegen: papierkram local init), beim Benutzer zuletzt user des Kontexts. --task nimmt auch einen Alias aus [tasks] der Projektdatei.
+
+--unbillable (auch --unbillable=false, ja/nein) legt wie bei time log fest, ob der Eintrag nicht abrechenbar ist; der Wert wird jetzt geprüft (Exit 5) und von time stop gesendet, ohne Angabe sendet time stop keinen. time stop kennt kein --unbillable.
 
 Läuft schon ein Timer oder läuft gerade ein time stop bzw. wurde einer nicht abgeschlossen, bricht der Befehl ab (Exit 7). Unter Schreibschutz ist er gesperrt (Exit 9), weil time stop nicht buchen könnte. Sendet keine Anfrage. Der Timer ist lokal (eine Datei je Kontext im Cache-Verzeichnis, PAPIERKRAM_CACHE_DIR); Papierkram kennt ihn nicht.
 
@@ -14,12 +16,13 @@ Verwendung:
 
 Beispiele:
   papierkram time start --task 545 -m "Abstimmung mit Kunde"
-  papierkram time start --task tickets
+  papierkram time start --task tickets --unbillable
 
 Optionen:
   -m, --comments Text   Kommentar (time stop -m ersetzt ihn)
   -h, --help            Hilfe zu start
       --task Text       Aufgabe: ID oder Alias aus [tasks] der Projektdatei; ohne Angabe PAPIERKRAM_TASK oder task aus der Projektdatei .papierkram.toml (Pflicht)
+      --unbillable      nicht abrechenbar
       --user ID         Benutzer-ID; ohne Angabe PAPIERKRAM_USER oder user aus der Projektdatei .papierkram.toml oder user des Kontexts (Pflicht)
 
 Globale Optionen:

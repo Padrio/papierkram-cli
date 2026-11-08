@@ -191,13 +191,14 @@ Der **Timer** läuft lokal (eine Datei je Kontext im Cache-Verzeichnis); Papierk
 
 ```sh
 papierkram time start --task tickets -m "Ticket 4711"
+papierkram time start --task tickets --unbillable
 papierkram time status
 papierkram time stop
 papierkram time stop -m "Fehler behoben"
 papierkram time discard
 ```
 
-`time stop` bucht die Zeit vom Start bis jetzt wie `time log` und löscht den Timer erst, wenn der Zeiteintrag angelegt ist. Läuft schon ein Timer, bricht `time start` mit Exit 7 ab. Direkt vor dem Senden beansprucht `time stop` den Timer atomar (exklusiv angelegte Kopie `….stopping`, danach wird die Timer-Datei entfernt): Ein zweiter `time stop` desselben Timers, etwa in einem anderen Terminal, endet mit Exit 7 und sendet nichts. Scheitert die Anfrage, läuft der Timer weiter. Solange `….stopping` liegt (ein Stopp sendet gerade oder brach ab), brechen `time start` und `time stop` mit Exit 7 ab und `time status` warnt: erst mit `time list --since <Startdatum>` prüfen, ob der Eintrag angelegt wurde, dann, wenn kein anderer `time stop` mehr läuft, `time discard` (und, falls nicht, von Hand mit `time log` buchen).
+`time stop` bucht die Zeit vom Start bis jetzt wie `time log` und löscht den Timer erst, wenn der Zeiteintrag angelegt ist. `time start --unbillable` (auch `--unbillable=false`) prüft den Wert sofort (Exit 5, Timer nicht gestartet) und speichert ihn; `time stop` sendet ihn wie `time log --unbillable`, ohne Angabe keinen. `time stop` selbst hat kein `--unbillable`; `time status` zeigt den Wert (`-o wide`: Spalte `NICHT ABRECHENBAR`). Läuft schon ein Timer, bricht `time start` mit Exit 7 ab. Direkt vor dem Senden beansprucht `time stop` den Timer atomar (exklusiv angelegte Kopie `….stopping`, danach wird die Timer-Datei entfernt): Ein zweiter `time stop` desselben Timers, etwa in einem anderen Terminal, endet mit Exit 7 und sendet nichts. Scheitert die Anfrage, läuft der Timer weiter. Solange `….stopping` liegt (ein Stopp sendet gerade oder brach ab), brechen `time start` und `time stop` mit Exit 7 ab und `time status` warnt: erst mit `time list --since <Startdatum>` prüfen, ob der Eintrag angelegt wurde, dann, wenn kein anderer `time stop` mehr läuft, `time discard` (und, falls nicht, von Hand mit `time log` buchen).
 
 ```sh
 papierkram time list --since 2026-10-01 --until 2026-10-31
