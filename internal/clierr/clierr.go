@@ -76,16 +76,11 @@ func (e *Error) Exit() int {
 	}
 }
 
-// cobraUsagePrefixes are the argument-validation messages produced by cobra
-// itself (cobra.NoArgs, ExactArgs, MarkFlagRequired, ...).
-var cobraUsagePrefixes = []string{
-	"unknown command ", "unknown flag: ", "unknown shorthand flag: ",
-	"flag needs an argument", "invalid argument ", "accepts ", "requires ",
-	"required flag(s) ",
-}
-
 // From converts any error into an *Error. Typed errors are returned as is,
-// cobra argument errors become usage errors, everything else CodeError.
+// everything else is CodeError. Usage errors are always typed: the
+// argument validators of internal/cli and the flag error function
+// (germanFlagError) return them in German, cobra's own validators are not
+// used (TestNoCobraValidators), so no English cobra text is guessed here.
 func From(err error) *Error {
 	if err == nil {
 		return nil
@@ -94,13 +89,7 @@ func From(err error) *Error {
 	if errors.As(err, &ce) {
 		return ce
 	}
-	msg := err.Error()
-	for _, p := range cobraUsagePrefixes {
-		if strings.HasPrefix(msg, p) {
-			return &Error{Code: CodeUsage, Message: msg, Cause: err}
-		}
-	}
-	return &Error{Code: CodeError, Message: msg, Cause: err}
+	return &Error{Code: CodeError, Message: err.Error(), Cause: err}
 }
 
 // Format renders the error as text for stderr.

@@ -3,6 +3,11 @@ package clierr
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -33,10 +38,49 @@ func TestFrom(t *testing.T) {
 	if From(nil) != nil {
 		t.Error("From(nil) must be nil")
 	}
+	// L41: From does not guess usage errors from English cobra or pflag
+	// texts. Argument errors come from the German validators of
+	// internal/cli and flag errors from germanFlagError, both typed
+	// (TestNoCobraValidators); an untyped error is an error of the CLI.
 	for _, msg := range []string{"accepts 0 arg(s), received 1", "unknown command \"x\" for \"y\"", "required flag(s) \"a\" not set", "unknown flag: --x"} {
-		if got := From(errors.New(msg)); got.Exit() != 2 {
-			t.Errorf("%q: exit = %d, want 2", msg, got.Exit())
+		if got := From(errors.New(msg)); got.Exit() != 1 || got.Code != CodeError || got.Message != msg {
+			t.Errorf("%q: code %s, exit %d, message %q; want CodeError with exit 1", msg, got.Code, got.Exit(), got.Message)
 		}
+	}
+}
+
+// cobraValidators are cobra's own argument and flag checks; their errors
+// are untyped English texts that From would report as exit 1.
+var cobraValidators = regexp.MustCompile(`\bcobra\.(ExactArgs|MinimumNArgs|MaximumNArgs|RangeArgs|NoArgs|OnlyValidArgs|ExactValidArgs|MatchAll)\b|\.(MarkFlagRequired|MarkPersistentFlagRequired|MarkFlagsRequiredTogether|MarkFlagsOneRequired|MarkFlagsMutuallyExclusive)\(`)
+
+// L41: every argument error stems from the German validators (noArgs,
+// exactArgs, minArgs, …) of internal/cli: no Go file of internal/ or cmd/
+// uses cobra's validators, so From needs no fallback for their texts.
+func TestNoCobraValidators(t *testing.T) {
+	files := 0
+	for _, root := range []string{"..", filepath.Join("..", "..", "cmd")} {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
+				return err
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			files++
+			for i, line := range strings.Split(string(data), "\n") {
+				if m := cobraValidators.FindString(line); m != "" {
+					t.Errorf("%s:%d: %s – deutschen Validator aus internal/cli verwenden", path, i+1, m)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if files < 100 {
+		t.Fatalf("nur %d Go-Dateien durchsucht", files)
 	}
 }
 
