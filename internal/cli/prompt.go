@@ -10,9 +10,13 @@ import (
 )
 
 // errInterrupted is returned when an interrupt (Ctrl+C) ends a running
-// keyboard input; exit 10 like an interrupted request.
+// keyboard input: exit 8 (confirmation_required), decision of task 17.
+// Every prompt comes before any change (confirmation, token input, local
+// init, the page question of --all after page 1 was read): nothing was
+// sent and a human declined, as spec 10.4 line 8 says; exit 10 would tell
+// agents to retry later. An interrupt during a request stays exit 10/12.
 func errInterrupted() *clierr.Error {
-	return clierr.New(clierr.CodeNetwork, "Abgebrochen: Eingabe durch Unterbrechung beendet", "")
+	return clierr.New(clierr.CodeConfirmation, "Abgebrochen: Eingabe durch Unterbrechung beendet", "Nichts gesendet")
 }
 
 // readCtx runs the blocking read in a goroutine and returns its result, or
@@ -21,6 +25,14 @@ func errInterrupted() *clierr.Error {
 // swallow Ctrl+C. On cancel the terminal state of the start is restored
 // (a hidden token read switches echo off) and the line is ended on stderr.
 // The abandoned read ends with the process.
+//
+// Known residual risk, deliberately not fixed (task 17, L202): between the
+// start of the read goroutine and the moment term.ReadPassword switches
+// echo off there is a window of microseconds. An interrupt in it restores
+// the state of the start first, and ReadPassword switches echo off after
+// that; the terminal can then stay without echo when the process ends
+// (stty sane repairs it). Closing the window needs an own raw-mode line
+// editor instead of term.ReadPassword.
 func (a *App) readCtx(ctx context.Context, read func() ([]byte, error)) ([]byte, error) {
 	type result struct {
 		b   []byte
@@ -59,7 +71,7 @@ func (a *App) stdin() *bufio.Reader {
 }
 
 // prompt writes question to stderr and reads one line of input (without
-// the line ending). An interrupt ends it with errInterrupted (exit 10);
+// the line ending). An interrupt ends it with errInterrupted (exit 8);
 // end of input or a read error count as an empty answer. A confirmation
 // whose empty answer means yes uses ask, so that end of input is no.
 func (a *App) prompt(ctx context.Context, question string) (string, error) {

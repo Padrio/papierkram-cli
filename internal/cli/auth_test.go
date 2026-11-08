@@ -98,19 +98,19 @@ func TestAuthLoginTTYPromptInterrupted(t *testing.T) {
 	restored := false
 	app.restoreTerminal = func() { restored = true }
 	done := make(chan int, 1)
-	go func() { done <- executeContext(ctx, app, NewRootCmd(app), []string{"auth", "login", "--context", "b"}) }()
+	go func() {
+		done <- executeContext(ctx, app, NewRootCmd(app), []string{"auth", "login", "--context", "b", "-o", "json"})
+	}()
 	select {
 	case code := <-done:
-		if code != 10 {
+		if code != 8 {
 			_, errs := bufs(app)
 			t.Fatalf("exit = %d, stderr = %s", code, errs)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Unterbrechung beendet die Token-Eingabe nicht")
 	}
-	if _, errs := bufs(app); !strings.Contains(errs, "Fehler: Abgebrochen: Eingabe durch Unterbrechung beendet") {
-		t.Errorf("stderr = %q", errs)
-	}
+	wantInterruptedPrompt(t, app)
 	if !restored {
 		t.Error("Terminalzustand nicht wiederhergestellt")
 	}

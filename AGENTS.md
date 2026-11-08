@@ -117,7 +117,7 @@ papierkram voucher create --name "Büromaterial" --provenance domestic --credito
 | 5 | `validation` | lokale Prüfung, 400, 422; nicht angewendet | Body nach `message` korrigieren (`schema <ressource> <aktion>`), Datum `YYYY-MM-DD`, Steuersatz `0.19` |
 | 6 | `quota` | 429, Monatskontingent erschöpft | **nicht wiederholen**, abbrechen und melden |
 | 7 | `conflict` | 409, Timer läuft schon oder wird gerade gestoppt | Zustand lesen (`describe`, `time status`) |
-| 8 | `confirmation_required` | Bestätigung fehlt; nichts gesendet | Menschen fragen; `--yes` nur mit Freigabe |
+| 8 | `confirmation_required` | Bestätigung fehlt oder abgelehnt, oder ein Mensch hat eine Rückfrage mit Strg+C abgebrochen; nichts gesendet | Menschen fragen; `--yes` nur mit Freigabe |
 | 9 | `read_only` | Schreibschutz; nichts gesendet | abbrechen und melden; den Schutz nie umgehen (kein anderer Kontext, keine Variable ändern) |
 | 10 | `network` | Netzwerkfehler beim Lesen oder **bevor** eine Änderung gesendet wurde | später erneut versuchen; die Änderung ist nicht angekommen |
 | 11 | `partial` | mehrstufiger Befehl teilweise ausgeführt | `hint` lesen, prüfen, dann höchstens den genannten Nachholschritt; nie den ganzen Befehl (siehe unten) |

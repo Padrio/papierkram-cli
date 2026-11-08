@@ -131,8 +131,8 @@ func jsonInt(v any) int64 {
 }
 
 // confirmTimeLog shows the summary of the time entry on stderr and asks
-// (Enter = yes). Declining or the end of the input is exit 8, an
-// interrupt exit 10.
+// (Enter = yes). Declining, the end of the input or an interrupt of the
+// prompt is exit 8; an interrupt while a name loads is exit 10.
 func (a *App) confirmTimeLog(ctx context.Context, client *api.Client, r *config.Resolved, p period, task, user int64, body map[string]any) error {
 	l := &nameLookup{a: a, client: client, cache: a.names(), scope: cacheScope(r), seen: map[string]cachedName{}}
 	type line struct{ label, value string }

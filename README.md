@@ -337,9 +337,9 @@ completion_lookup = false
 | 5 | `validation` | lokale Prüfung, 400 oder 422 |
 | 6 | `quota` | 429: Monatskontingent erschöpft |
 | 7 | `conflict` | 409, Timer läuft schon oder wird gerade gestoppt |
-| 8 | `confirmation_required` | Bestätigung fehlt oder abgelehnt; `--yes` |
+| 8 | `confirmation_required` | Bestätigung fehlt oder abgelehnt, oder Rückfrage mit Strg+C abgebrochen; nichts gesendet; `--yes` |
 | 9 | `read_only` | Schreibschutz (`PAPIERKRAM_READ_ONLY` oder `read_only` im Kontext) |
-| 10 | `network` | Zeitüberschreitung, DNS, TLS bei einem Lesezugriff oder bevor eine Änderung gesendet wurde; Abbruch einer Rückfrage mit Strg+C |
+| 10 | `network` | Zeitüberschreitung, DNS, TLS bei einem Lesezugriff oder bevor eine Änderung gesendet wurde |
 | 11 | `partial` | mehrstufiger Befehl teilweise ausgeführt; Ausgabe nennt, was fehlt, und den Befehl zum Nachholen |
 | 12 | `outcome_unknown` | Verbindung brach ab, **nachdem** eine Änderung gesendet wurde, oder die API beantwortete die Änderung mit einer Weiterleitung (3xx), der das CLI nicht folgt: vor einer Wiederholung mit `describe`/`list` prüfen |
 

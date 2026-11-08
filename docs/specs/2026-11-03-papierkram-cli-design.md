@@ -425,7 +425,7 @@ read_only = true
 | 5 | `validation` | 400, 422, lokale Validierung | API-Meldung + Formattipps (Datum `YYYY-MM-DD`, `vat_rate` 0.19) |
 | 6 | `quota` | 429 | „Monatskontingent erschöpft“ |
 | 7 | `conflict` | 409, laufender Timer | |
-| 8 | `confirmation_required` | Bestätigung fehlt/abgelehnt | „`--yes` verwenden“ |
+| 8 | `confirmation_required` | Bestätigung fehlt/abgelehnt oder Rückfrage mit Strg+C abgebrochen (alle Rückfragen liegen vor jeder Änderung) | „`--yes` verwenden“; bei Strg+C „Nichts gesendet“ |
 | 9 | `read_only` | Schreibversuch im `read_only`-Kontext | „anderen Kontext wählen“ |
 | 10 | `network` | Timeout, DNS, TLS **bevor** eine Mutation gesendet wurde, oder bei GET | „Subdomain und Verbindung prüfen“ |
 | 11 | `partial` | mehrstufiges Command teilweise erfolgreich (9.3) | Ausgabe nennt erledigte/fehlgeschlagene Schritte und den Befehl zum Nachholen; **nicht** das ganze Command wiederholen |

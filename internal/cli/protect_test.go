@@ -280,15 +280,13 @@ func TestConfirmPromptInterrupted(t *testing.T) {
 	app.StdinTTY = true
 	app.In = newBlockingReader(t, cancel)
 	code := waitExit(t, func() int {
-		return runEntries(t, app, ctx, []string{"invoice", "delete", "12"}, invoiceActions(t)...)
+		return runEntries(t, app, ctx, []string{"invoice", "delete", "12", "-o", "json"}, invoiceActions(t)...)
 	})
-	wantExit(t, app, code, 10)
+	wantExit(t, app, code, 8)
 	if r := wantRequests(t, srv, 1)[0]; r.Method != "GET" {
 		t.Errorf("request = %s %s", r.Method, r.Path)
 	}
-	if _, errs := bufs(app); !strings.Contains(errs, "Fehler: Abgebrochen: Eingabe durch Unterbrechung beendet") {
-		t.Errorf("stderr = %q", errs)
-	}
+	wantInterruptedPrompt(t, app)
 }
 
 // Prompts share one buffered reader: a second prompt on piped stdin gets

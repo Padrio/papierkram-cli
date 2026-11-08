@@ -87,8 +87,8 @@ func (a *App) mustAsk(e registry.Entry, s Summary) (bool, error) {
 
 // confirm asks for the confirmation of a destructive or send action
 // (spec 8.2) on stderr: delete wants the ID typed in, other actions
-// ja/yes/j/y (any case). Declining, an empty answer or a wrong ID is exit 8,
-// an interrupt exit 10. Without a terminal or with --no-input it is exit 8
+// ja/yes/j/y (any case). Declining, an empty answer, a wrong ID or an
+// interrupt of the prompt is exit 8. Without a terminal or with --no-input it is exit 8
 // with the hint on --yes; --yes and the other classes pass without asking.
 func (a *App) confirm(ctx context.Context, e registry.Entry, s Summary) error {
 	ask, err := a.mustAsk(e, s)
@@ -194,8 +194,8 @@ func objectGet(e registry.Entry) (spec.Operation, bool) {
 // fetchSummary builds the summary of the object e acts on; it loads the
 // object (1 credit) for name and amount. It is only called when a prompt
 // follows (terminal, no --yes). A failed load does not abort: the summary
-// is shown without name and amount, with a warning. Only an interrupt
-// ends it (exit 10).
+// is shown without name and amount, with a warning. Only an interrupt of
+// the load ends it (exit 10, a request was interrupted).
 func (a *App) fetchSummary(ctx context.Context, client *api.Client, e registry.Entry, params []int64) (Summary, error) {
 	s := Summary{Resource: resourceNoun(e.Resource), ID: lastID(params)}
 	op, ok := objectGet(e)

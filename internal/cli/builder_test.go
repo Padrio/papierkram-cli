@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -529,6 +530,29 @@ func newBlockingReader(t *testing.T, onRead func()) *blockingReader {
 	return b
 }
 
+// wantInterruptedPrompt checks the error of a prompt ended by Ctrl+C
+// (task 17): exit 8, confirmation_required, nothing sent.
+func wantInterruptedPrompt(t *testing.T, app *App) {
+	t.Helper()
+	_, errs := bufs(app)
+	lines := strings.Split(strings.TrimSpace(errs), "\n")
+	var e struct {
+		Error struct {
+			Code     string `json:"code"`
+			Message  string `json:"message"`
+			Hint     string `json:"hint"`
+			ExitCode int    `json:"exit_code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &e); err != nil {
+		t.Fatalf("kein JSON-Fehler: %v\n%s", err, errs)
+	}
+	if e.Error.Code != "confirmation_required" || e.Error.ExitCode != 8 ||
+		e.Error.Message != "Abgebrochen: Eingabe durch Unterbrechung beendet" || e.Error.Hint != "Nichts gesendet" {
+		t.Errorf("Fehler = %+v", e.Error)
+	}
+}
+
 func waitExit(t *testing.T, run func() int) int {
 	t.Helper()
 	done := make(chan int, 1)
@@ -551,13 +575,14 @@ func TestListAllPromptInterrupted(t *testing.T) {
 	app.In = newBlockingReader(t, cancel)
 	restored := false
 	app.restoreTerminal = func() { restored = true }
-	code := waitExit(t, func() int { return runEntries(t, app, ctx, []string{"user", "list", "--all"}) })
-	wantExit(t, app, code, 10)
+	code := waitExit(t, func() int { return runEntries(t, app, ctx, []string{"user", "list", "--all", "-o", "json"}) })
+	wantExit(t, app, code, 8)
 	wantRequests(t, srv, 1)
 	out, errs := bufs(app)
-	if out != "" || !strings.Contains(errs, "Fortfahren? [j/N] \nFehler: Abgebrochen: Eingabe durch Unterbrechung beendet") {
+	if out != "" || !strings.Contains(errs, "Fortfahren? [j/N] \nFehler: Abgebrochen: Eingabe durch Unterbrechung beendet\nHinweis: Nichts gesendet\n") {
 		t.Errorf("stdout = %q, stderr = %q", out, errs)
 	}
+	wantInterruptedPrompt(t, app)
 	if !restored {
 		t.Error("Terminalzustand nicht wiederhergestellt")
 	}

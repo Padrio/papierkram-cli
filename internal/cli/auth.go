@@ -285,7 +285,7 @@ func (a *App) readLoginToken(ctx context.Context, fromStdin bool, name string) (
 	}
 	var ce *clierr.Error
 	if errors.As(err, &ce) {
-		return "", ce // interrupted; readCtx ended the line
+		return "", ce // interrupted (exit 8, nothing stored); readCtx ended the line
 	}
 	if !fromStdin {
 		_, _ = fmt.Fprintln(a.Err)
