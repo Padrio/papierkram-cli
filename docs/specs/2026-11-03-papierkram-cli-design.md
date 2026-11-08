@@ -352,6 +352,7 @@ maintenance = 58
 - Priorität: Flag > Env (`PAPIERKRAM_PROJECT`, `PAPIERKRAM_TASK`, …) > Projektdatei > Kontext-Defaults > eingebauter Default.
 - Genutzt von `time log|start|stop|list`, `task list|create`, `project describe` ohne ID **[Call]**, `person list|create|describe|update|delete` (`--company`; offener Punkt 27, entschieden: Pfad-Flag, bleibt Pflicht, Person-ID bleibt Pflicht, Quellen Flag > `PAPIERKRAM_COMPANY` > `company` der Projektdatei, kein Kontext-Default; `default_from` in `commands --json`). `--task` akzeptiert ID oder Alias aus `[tasks]`.
 - Enthält keine Secrets; unbekannte Schlüssel → Warnung, kein Fehler.
+- Aliase in `[tasks]`: nicht leer, keine Zahl (würde als Aufgaben-ID gelesen), ohne Steuer- oder unsichtbare Zeichen, Wert eine positive ganze Zahl; sonst Exit 2 beim Laden (leerer Alias: Ruling T19-B).
 - Ist die gefundene Datei nicht lesbar (Rechte, E/A-Fehler), Exit 1 (`error`) mit dem Hinweis „Projektdatei <pfad> prüfen oder entfernen“ (Pfad ohne Steuerzeichen).
 - `papierkram local show` zeigt die wirksamen Werte mit Herkunft.
 

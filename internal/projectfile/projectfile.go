@@ -150,6 +150,13 @@ func Load(path string) (*File, error) {
 					fmt.Sprintf("Projektdatei %s: Aufgaben-Alias %q enthält Steuerzeichen oder unsichtbare Zeichen", shown, alias),
 					"Alias nur aus sichtbaren Zeichen bilden, z. B. [tasks] tickets = 57")
 			}
+			// An empty alias ("" = 57) is valid TOML that no --task value
+			// names (ruling T19-B).
+			if alias == "" {
+				return nil, clierr.New(clierr.CodeUsage,
+					fmt.Sprintf("Projektdatei %s: Aufgaben-Alias %q darf nicht leer sein", shown, alias),
+					"Alias mit Buchstaben benennen, z. B. [tasks] tickets = 57")
+			}
 			// A numeric alias would be shadowed by the ID parsing in ResolveTask.
 			if _, err := strconv.ParseInt(alias, 10, 64); err == nil {
 				return nil, clierr.New(clierr.CodeUsage,

@@ -642,22 +642,26 @@ func TestLoad_DuplicateAlias(t *testing.T) {
 	}
 }
 
-// L81: an empty alias ("" = 57, valid TOML) is loaded as written, like a
-// blank one (" "); ResolveTask("") finds it. In the CLI only an explicit
-// empty value reaches it (time log --task ""); an empty PAPIERKRAM_TASK
-// counts as unset, and local init rejects --task "" and skips an empty
-// answer.
+// Ruling T19-B: an empty alias ("" = 57, valid TOML) is rejected on load
+// like the other invalid alias names (exit 2): no --task value names it
+// (an empty PAPIERKRAM_TASK counts as unset, local init rejects
+// --task ""). A blank one (" ") stays an alias like any other visible
+// text.
 func TestLoad_EmptyAlias(t *testing.T) {
-	f, err := Load(write(t, t.TempDir(), FileName, "[tasks]\n\"\" = 57\n\" \" = 58\ntickets = 59\n"))
+	p := write(t, t.TempDir(), FileName, "[tasks]\n\"\" = 57\ntickets = 59\n")
+	_, err := Load(p)
+	ce := usageErr(t, err)
+	if ce.Message != "Projektdatei "+p+": Aufgaben-Alias \"\" darf nicht leer sein" || ce.Hint != "Alias mit Buchstaben benennen, z. B. [tasks] tickets = 57" {
+		t.Errorf("message %q, hint %q", ce.Message, ce.Hint)
+	}
+	f, err := Load(write(t, t.TempDir(), FileName, "[tasks]\n\" \" = 58\ntickets = 59\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(f.Tasks, map[string]int64{"": 57, " ": 58, "tickets": 59}) {
+	if !reflect.DeepEqual(f.Tasks, map[string]int64{" ": 58, "tickets": 59}) {
 		t.Fatalf("Tasks = %v", f.Tasks)
 	}
-	for alias, want := range map[string]int64{"": 57, " ": 58, "tickets": 59} {
-		if id, err := f.ResolveTask(alias); err != nil || id != want {
-			t.Errorf("ResolveTask(%q) = %d, %v; want %d", alias, id, err, want)
-		}
+	if id, err := f.ResolveTask(" "); err != nil || id != 58 {
+		t.Errorf("ResolveTask(\" \") = %d, %v", id, err)
 	}
 }
