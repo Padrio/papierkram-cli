@@ -212,7 +212,9 @@ func presetNote(key string) string {
 
 // presetHint queues the hint naming a preset a command uses; the runner
 // prints it with flushPresetHints once flags and body are valid, so a
-// failing command never claims a preset was used.
+// failing command never claims a preset was used. The hint comes before
+// --dry-run and the confirmation: exit 8 (no --yes) names it too, as the
+// preset is what the confirmed command would use.
 func (a *App) presetHint(key string, p preset) {
 	from := p.Origin
 	switch p.Source {

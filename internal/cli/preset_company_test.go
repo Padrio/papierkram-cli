@@ -233,6 +233,54 @@ func TestPersonCompanyPresetAfterFlagChecks(t *testing.T) {
 			t.Errorf("%v: stderr = %q", args, errs)
 		}
 	}
+
+	// review T9-M2: a body error is no flag error. The preset path flag
+	// is resolved before the body is built (runWriteThen), so person
+	// create without --last-name (exit 5 with a company) in another
+	// context warns about the project file and fails on the missing
+	// --company (exit 2), nothing sent.
+	args := []string{"person", "create", "--first-name", "Anna", "-o", "json"}
+	app, srv := contextApp(t, nil)
+	writeProjectFile(t, app, "context = \"a\"\ncompany = 8\n")
+	wantExit(t, app, Run(app, append(slices.Clone(args), "--context", "a")), 5)
+	wantRequests(t, srv, 0)
+	if _, errs := bufs(app); !strings.Contains(errs, `Fehler: Pflichtfeld "last_name" fehlt`) {
+		t.Errorf("Kontext a: stderr = %q", errs)
+	}
+	app, srv = contextApp(t, nil)
+	writeProjectFile(t, app, "context = \"a\"\ncompany = 8\n")
+	wantExit(t, app, Run(app, append(slices.Clone(args), "--context", "b")), 2)
+	wantRequests(t, srv, 0)
+	_, errs := bufs(app)
+	for _, want := range []string{`gilt für Kontext "a"`, "Fehler: Pflichtangabe --company fehlt\n", `"code":"usage"`} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("Kontext b: stderr ohne %q: %s", want, errs)
+		}
+	}
+	if n := strings.Count(errs, "Warnung: Projektdatei"); n != 1 || strings.Contains(errs, "last_name") || strings.Contains(errs, "Hinweis: Firma") {
+		t.Errorf("Kontext b: stderr = %q", errs)
+	}
+}
+
+// Review T9-M1: the preset hint is printed before the confirmation, so
+// person delete without --yes (exit 8, nothing sent) names the company it
+// would have used.
+func TestPersonDeletePresetHintBeforeConfirmation(t *testing.T) {
+	app, srv := mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-p", "PAPIERKRAM_COMPANY": "7"})
+	wantExit(t, app, Run(app, []string{"person", "delete", "5", "-o", "json", "--no-input"}), 8)
+	wantRequests(t, srv, 0)
+	out, errs := bufs(app)
+	if out != "" {
+		t.Errorf("stdout = %q", out)
+	}
+	hint := strings.Index(errs, "Hinweis: Firma 7 aus PAPIERKRAM_COMPANY\n")
+	confirm := strings.Index(errs, "Fehler: Bestätigung erforderlich: Kontaktperson 5 löschen\n")
+	if hint < 0 || confirm < 0 || hint > confirm || !strings.Contains(errs, `"code":"confirmation_required"`) {
+		t.Errorf("stderr = %q", errs)
+	}
+	if n := strings.Count(errs, "Hinweis: Firma"); n != 1 {
+		t.Errorf("Hinweis %d-mal: %s", n, errs)
+	}
 }
 
 // commands --json names where --company of the person commands comes

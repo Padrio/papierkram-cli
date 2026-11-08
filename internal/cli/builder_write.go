@@ -232,7 +232,9 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 	// after the flag checks, before the read-only gate (exit 2 first): a
 	// preset path flag (person create --company) reads environment,
 	// project file and configuration, whose errors must not hide a flag
-	// error
+	// error. The body is built later: with a project file of another
+	// context and an invalid body, the warning and the missing --company
+	// (exit 2) come first, the body error (exit 5) is not reached.
 	params, err := a.pathValues(c, e, args)
 	if err != nil {
 		return err
