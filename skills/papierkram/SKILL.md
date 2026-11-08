@@ -80,7 +80,7 @@ PAPIERKRAM_READ_ONLY=1 papierkram estimate list --company 3214 -o json --no-inpu
 PAPIERKRAM_READ_ONLY=1 papierkram payment-term list -o json --no-input --jq '.entries[] | {id, name}'
 ```
 
-Rechnung anlegen (51 Credits: Angebot lesen 1, Anlegen 50). `--payment-term` ist Pflicht. Auch `--dry-run` liest das Angebot (1 Credit) und zeigt den vollständigen Body:
+Rechnung anlegen (51 Credits: Angebot lesen 1, Anlegen 50). `--payment-term` und `--document-date` sind Pflicht (ohne Datum Exit 5, bevor das Angebot gelesen wird). Auch `--dry-run` liest das Angebot (1 Credit) und zeigt den vollständigen Body:
 
 ```sh
 papierkram invoice create --from-estimate 349 --payment-term 1130 --document-date heute --dry-run -o json --no-input

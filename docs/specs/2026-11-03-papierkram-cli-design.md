@@ -92,7 +92,7 @@ Kein klassisches Rate-Limit, sondern Monats-Credits (Paket M 10 000, L 20 000); 
 ### 4.4 Request-Bodies
 - Alle Bodies inline mit `additionalProperties:false`: **jedes unbekannte Feld → 422**. Felder, die nur gelesen werden (254 Stellen mit `readOnly:true` in den Response-Schemas, z. B. `id`, `customer_no`, `record_state`, `created_at`), müssen vor PUT entfernt werden.
 - Bodies verweisen mit verschachtelten Objekten (`customer:{id, contact_person:{id}, project:{id}}`, `task:{id}`, `payment_term:{id}`), Responses liefern flache `*_id` bzw. eingebettete Objekte.
-- Typen weichen vom Naheliegenden ab. **String** erwartet bei: `budget_money`, `budget_time` (Projekt), `complete`, `relative_costs`, `flagged` (Aufgabe), `default`, `flagged` (Person), `price`, `vat_rate` (Artikel). `vat_rate` in Positionen: Zahl oder String, Dezimalbruch `0.19`. Responses liefern `vat_rate` als `"19%"` und `supply_date` als `"2026-08-28 13:41:23 +0200"`.
+- Typen weichen vom Naheliegenden ab. **String** erwartet bei: `budget_money`, `budget_time` (Projekt), `complete`, `relative_costs`, `flagged` (Aufgabe), `default`, `flagged` (Person), `price`, `vat_rate` (Artikel). `vat_rate` in Positionen: Zahl oder String, Dezimalbruch `0.19`. Responses liefern `vat_rate` als `"19%"` und laut Spec-Beispiel `supply_date` als `"2026-08-28 13:41:23 +0200"` (live: `YYYY-MM-DD`, gemessen Live-Lauf 5, 2026-11-08).
 - Pflichtfelder:
 
 | Ressource | Pflicht |
