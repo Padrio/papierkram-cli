@@ -676,8 +676,11 @@ func TestAuthLogoutSaveFailure(t *testing.T) {
 	if code := Run(app, []string{"auth", "logout", "--context", "b", "-o", "json"}); code != 1 {
 		t.Fatalf("exit %d, erwartet 1: %s", code, errb.String())
 	}
+	// review T19a-M2: the keychain entry is gone already (partial state),
+	// the hint says so and how to finish
 	e, ok := lastJSONError(t, errb.String())
-	if !ok || e.Message != "Datenträger voll" || e.Hint != "Konfigurationsdatei prüfen: "+cfgFile(t, app) {
+	if !ok || e.Message != "Datenträger voll" || e.Hint != "Konfigurationsdatei prüfen: "+cfgFile(t, app)+
+		". Das Token im Schlüsselbund ist bereits entfernt, das in config.toml noch nicht; danach erneut papierkram auth logout --context b" {
 		t.Errorf("Fehler = %+v (%v)", e, ok)
 	}
 	if strings.Contains(errb.String(), "Abgemeldet") || out.Len() != 0 {
@@ -690,6 +693,27 @@ func TestAuthLogoutSaveFailure(t *testing.T) {
 		t.Errorf("Schlüsselbund b: %v, erwartet entfernt", err)
 	}
 	assertNoToken(t, app)
+
+	// the retry the hint names finishes the logout
+	app.saveConfig = nil
+	errb.Reset()
+	if code := Run(app, []string{"auth", "logout", "--context", "b"}); code != 0 {
+		t.Fatalf("Wiederholung: exit %d: %s", code, errb.String())
+	}
+	if !strings.Contains(errb.String(), `Abgemeldet: Kontext "b", Token entfernt aus: config.toml.`) {
+		t.Errorf("Wiederholung: stderr %q", errb.String())
+	}
+
+	// without a keychain entry nothing is half done: the hint stays
+	app, _, errb = newTestApp(t)
+	writeCfg(t, app, cfg)
+	saveFails(app)
+	if code := Run(app, []string{"auth", "logout", "--context", "b", "-o", "json"}); code != 1 {
+		t.Fatalf("ohne Schlüsselbund: exit %d", code)
+	}
+	if e, ok := lastJSONError(t, errb.String()); !ok || e.Hint != "Konfigurationsdatei prüfen: "+cfgFile(t, app) {
+		t.Errorf("ohne Schlüsselbund: Fehler = %+v (%v)", e, ok)
+	}
 }
 
 // L86: context active without an active context says so on stderr and

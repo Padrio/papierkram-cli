@@ -378,6 +378,7 @@ read_only = true
 - Direktbetrieb ohne Config: `PAPIERKRAM_TOKEN` + `PAPIERKRAM_SUBDOMAIN` (haben Vorrang vor dem Kontext-Token, `auth status` zeigt die Quelle). `PAPIERKRAM_BASE_URL` überschreibt die komplette Basis-URL (Tests, Mock-Server). `PAPIERKRAM_READ_ONLY=1` erzwingt den Schutzmodus.
 - `context delete` löscht auch den Keychain-Eintrag.
 - Ist der Schlüsselbund nicht verfügbar, warnen `context create` („Schlüsselbund nicht verfügbar, ein dort gespeichertes Token von "<name>" wurde nicht entfernt.“, wie `auth logout`) und `context rename` („… von "<neu>" wurde nicht geprüft.“ und „… Token von "<alt>" wurde nicht verschoben.“) auf stderr; der Exit-Code bleibt 0.
+- Scheitert bei `auth logout` das Schreiben von `config.toml`, nachdem der Schlüsselbund-Eintrag schon entfernt ist, endet der Befehl mit Exit 1; der Hinweis nennt diesen Teilzustand (Token im Schlüsselbund entfernt, in `config.toml` noch nicht) und `papierkram auth logout --context <name>` zum Abschließen.
 
 ### 10.2 Secrets
 - Token im OS-Schlüsselbund über `zalando/go-keyring`: Service `papierkram-cli`, Account = Kontextname.

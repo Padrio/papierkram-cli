@@ -349,7 +349,15 @@ func (a *App) logout() error {
 	if ctx.Token != "" {
 		ctx.Token = ""
 		if err := wrapConfigErr(a.save(cfg, path), path); err != nil {
-			return err
+			if len(removed) == 0 {
+				return err
+			}
+			// half done (review T19a-M2): the keychain entry is gone,
+			// the token in config.toml is not; a second logout finishes
+			ce := *clierr.From(err)
+			ce.Hint = strings.TrimSuffix(ce.Hint, ".") + ". Das Token im Schlüsselbund ist bereits entfernt, das in config.toml noch nicht; " +
+				"danach erneut papierkram auth logout --context " + name
+			return &ce
 		}
 		removed = append(removed, "config.toml")
 	}
