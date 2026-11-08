@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -551,6 +552,34 @@ func TestStateEqual(t *testing.T) {
 	b.Unbillable = &no
 	if a.Equal(b) {
 		t.Error("unbillable true and false: equal")
+	}
+}
+
+// Review T12-M2: Equal ends with s == o, which compares pointers. Every
+// pointer field of State must be compared by its value before (like
+// Unbillable), so two states whose field points to equal values are
+// equal, and a set field never equals a nil one.
+func TestStateEqualPointerFields(t *testing.T) {
+	typ := reflect.TypeFor[State]()
+	n := 0
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		if f.Type.Kind() != reflect.Pointer {
+			continue
+		}
+		n++
+		a, b := state(t), state(t)
+		reflect.ValueOf(&a).Elem().Field(i).Set(reflect.New(f.Type.Elem()))
+		reflect.ValueOf(&b).Elem().Field(i).Set(reflect.New(f.Type.Elem()))
+		if !a.Equal(b) {
+			t.Errorf("%s: two pointers to the same value are not equal (compared as pointers)", f.Name)
+		}
+		if c := state(t); a.Equal(c) || c.Equal(a) {
+			t.Errorf("%s: set and nil are equal", f.Name)
+		}
+	}
+	if n == 0 {
+		t.Fatal("no pointer field in State: test outdated")
 	}
 }
 

@@ -286,7 +286,10 @@ func LoadStopping(path string) (*State, error) { return Load(StoppingPath(path))
 
 // Equal reports whether s and o are the same timer: all fields equal, the
 // start as the same instant (its zone may differ), unbillable by its
-// value (both nil, or both set to the same value).
+// value (both nil, or both set to the same value). The final s == o
+// compares pointers, so every pointer field of State must be compared by
+// its value before and copied over like Unbillable;
+// TestStateEqualPointerFields fails for one that is not.
 func (s State) Equal(o State) bool {
 	if !s.StartedAt.Equal(o.StartedAt) || !sameBool(s.Unbillable, o.Unbillable) {
 		return false
