@@ -185,3 +185,41 @@ func TestInvoiceUpdateReadTooLarge(t *testing.T) {
 		wantStderr(t, app, "Rechnung 459 nicht gelesen, nichts geändert: Antwort größer als 64 MiB, abgebrochen", tc.hint)
 	}
 }
+
+// Review T15-M1: invoice create --from-estimate whose estimate is
+// answered too large creates nothing: exit 1 naming that no invoice was
+// created, no POST (--dry-run reads as well and stops the same way).
+func TestFromEstimateReadTooLarge(t *testing.T) {
+	for _, extra := range [][]string{nil, {"--dry-run"}} {
+		app, srv := apiApp(t)
+		srv.OnFunc("GET", "/income/estimates/{id}", tooLarge(http.StatusOK, "application/json"))
+		wantExit(t, app, Run(app, append([]string{"invoice", "create", "--from-estimate", "349", "--payment-term", "1130", "-o", "json"}, extra...)), 1)
+		if r := wantRequests(t, srv, 1)[0]; r.Method != "GET" || r.Path != "/income/estimates/349" {
+			t.Errorf("%v: request = %s %s", extra, r.Method, r.Path)
+		}
+		wantStderr(t, app, "Fehler: Angebot 349 nicht gelesen, keine Rechnung angelegt: Antwort größer als 64 MiB, abgebrochen", `"code":"error"`)
+		if out := mustOut(app); out != "" {
+			t.Errorf("%v: stdout = %q", extra, out)
+		}
+	}
+}
+
+// Review T15-M1: deliver answered 2xx whose readback is too large is sent:
+// exit 0 with {"id","delivered","warnings"} and the warning not to run it
+// again, never a second POST.
+func TestDeliverReadbackTooLarge(t *testing.T) {
+	app, srv := apiApp(t)
+	srv.On("POST", "/income/invoices/459/deliver", http.StatusOK, nil)
+	srv.OnFunc("GET", "/income/invoices/{id}", tooLarge(http.StatusOK, "application/json"))
+	wantExit(t, app, Run(app, []string{"invoice", "deliver", "459", "--via", "pdf", "--yes", "-o", "json"}), 0)
+	rs := wantRequests(t, srv, 2)
+	if rs[0].Method != "POST" || rs[1].Method != "GET" {
+		t.Errorf("requests = %s, %s", rs[0].Method, rs[1].Method)
+	}
+	const warning = "Versand erfolgreich, Nachlesen fehlgeschlagen: Antwort größer als 64 MiB, abgebrochen – NICHT erneut ausführen"
+	out, errs := bufs(app)
+	wantContract(t, "deliver", []byte(out))
+	if !strings.Contains(out, `"delivered": true`) || !strings.Contains(out, warning) || errs != "Warnung: "+warning+"\n" {
+		t.Errorf("stdout = %s\nstderr = %q", out, errs)
+	}
+}
