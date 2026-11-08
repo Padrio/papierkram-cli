@@ -428,16 +428,30 @@ func newAuthStatusCmd(app *App) *cobra.Command {
 				ReadOnly: r.ReadOnly, ReadOnlySource: r.ReadOnlySource,
 				Quota: quotaOf(app.quota),
 			}
+			var outErr error
 			if o := app.outputOptions(c.Context(), app.outputFormat(r)); !ownText(o) {
-				if err := output.RenderValue(o, st, output.Columns{}); err != nil {
-					return err
-				}
-			} else if err := app.writeStatusText(st); err != nil {
-				return err
+				outErr = output.RenderValue(o, st, output.Columns{})
+			} else {
+				outErr = app.writeStatusText(st)
 			}
-			return callErr
+			return statusResult(app, callErr, outErr)
 		},
 	}
+}
+
+// statusResult is the result of auth status: a failed call (no token, exit
+// 3; 401/403; 404) keeps its code, and an output error then is a warning
+// (L149); otherwise the output error is that of an output after a request
+// (afterRequest, exit 1).
+func statusResult(app *App, callErr, outErr error) error {
+	if callErr == nil {
+		return afterRequest(outErr)
+	}
+	if outErr != nil {
+		msg := strings.TrimPrefix(clierr.From(outErr).Message, outputFailed)
+		output.Warn(app.Err, "Ausgabe fehlgeschlagen: "+msg)
+	}
+	return callErr
 }
 
 var contextSourceText = map[string]string{

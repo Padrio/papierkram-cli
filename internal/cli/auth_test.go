@@ -661,3 +661,36 @@ func TestAuthLoginInsecureSkipsKeychainProbe(t *testing.T) {
 		t.Errorf("Keyring.Get %d-mal aufgerufen, erwartet 0", gets)
 	}
 }
+
+// L149: when GET /info fails (exit 3, 4) and the output fails as well (a
+// --jq runtime error), the code of the call wins; the output error is a
+// warning on stderr. Without a call error the output error stays exit 1.
+func TestAuthStatusCallErrorWinsOverOutputError(t *testing.T) {
+	for status, exit := range map[int]int{http.StatusUnauthorized: 3, http.StatusNotFound: 4} {
+		app, srv := mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-x", "PAPIERKRAM_SUBDOMAIN": "firma"})
+		srv.On(http.MethodGet, "/info", status, nil)
+		if code := run(t, app, "auth", "status", "--jq", `.context | error("kaputt")`); code != exit {
+			t.Errorf("%d: exit = %d, want %d", status, code, exit)
+		}
+		_, errs := bufs(app)
+		if !strings.Contains(errs, "Warnung: Ausgabe fehlgeschlagen: error: kaputt") || strings.Contains(errs, "Befehl ausgeführt") {
+			t.Errorf("%d: stderr = %q", status, errs)
+		}
+		assertNoToken(t, app)
+	}
+	// without a token nothing is sent: exit 3 as well
+	app, _ := mockApp(t, nil)
+	writeCfg(t, app, twoCtx)
+	if code := run(t, app, "auth", "status", "--jq", `.context | error("kaputt")`); code != 3 {
+		t.Errorf("ohne Token: exit = %d, want 3", code)
+	}
+	// the call succeeded: the output error is the error (exit 1)
+	app, srv := mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-x", "PAPIERKRAM_SUBDOMAIN": "firma"})
+	srv.On(http.MethodGet, "/info", http.StatusOK, []byte(`{}`))
+	if code := run(t, app, "auth", "status", "--jq", `.context | error("kaputt")`); code != 1 {
+		t.Errorf("Erfolg: exit = %d, want 1", code)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Befehl ausgeführt, Ausgabe fehlgeschlagen: error: kaputt") {
+		t.Errorf("Erfolg: stderr = %q", errs)
+	}
+}
