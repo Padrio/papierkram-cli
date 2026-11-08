@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -986,5 +987,66 @@ func TestCommandsLongWording(t *testing.T) {
 		"Standardwert wie „Standard:“ in der Hilfe (Feld default), geprüften Grenzen (Felder minimum, maximum) und Hilfetext, dazu Beispiele;"
 	if !strings.Contains(commandsLong, want) {
 		t.Errorf("commandsLong ohne %q:\n%s", want, commandsLong)
+	}
+}
+
+// Review T16-M1: every bound commands --json names is the one the CLI
+// checks. For each flag with minimum or maximum, min-1 and max+1 are exit
+// 2 naming the flag before any request; min and max are accepted (exit
+// 0 against the mock). Required id flags get 1; --max-pages needs --all
+// (papierkram api: --paginate and a list path).
+func TestFlagBoundsEnforced(t *testing.T) {
+	d := decodeCommands(t, runCommandsJSON(t, "--json"))
+	checked := 0
+	for _, c := range d.Commands {
+		for _, f := range c.Flags {
+			if f.Minimum == nil && f.Maximum == nil {
+				continue
+			}
+			if f.Type != "integer" {
+				t.Errorf("%s --%s: Grenzen bei Typ %q (Test kennt nur integer)", c.Command, f.Name, f.Type)
+				continue
+			}
+			base := strings.Fields(c.Command)
+			for _, r := range c.Flags {
+				if r.Required && r.Type == "id" {
+					base = append(base, "--"+r.Name, "1")
+				}
+			}
+			switch {
+			case c.Command == "api":
+				base = append(base, "GET", "/income/invoices", "--paginate")
+			case f.Name == "max-pages":
+				base = append(base, "--all")
+			}
+			type probe struct {
+				value int
+				ok    bool
+			}
+			var probes []probe
+			if f.Minimum != nil {
+				probes = append(probes, probe{int(*f.Minimum) - 1, false}, probe{int(*f.Minimum), true})
+			}
+			if f.Maximum != nil {
+				probes = append(probes, probe{int(*f.Maximum), true}, probe{int(*f.Maximum) + 1, false})
+			}
+			for _, p := range probes {
+				args := append(slices.Clone(base), "--"+f.Name, strconv.Itoa(p.value), "-o", "json")
+				app, srv := apiApp(t)
+				code := Run(app, args)
+				_, errs := bufs(app)
+				switch {
+				case p.ok && (code != 0 || len(srv.Requests()) == 0):
+					t.Errorf("%v: Exit %d, %d Anfragen, erwartet angenommen:\n%s", args, code, len(srv.Requests()), errs)
+				case !p.ok && (code != 2 || len(srv.Requests()) != 0 ||
+					!strings.Contains(errs, fmt.Sprintf("ungültiger Wert %d für --%s", p.value, f.Name)) || !strings.Contains(errs, `"code":"usage"`)):
+					t.Errorf("%v: Exit %d, %d Anfragen, erwartet Exit 2 ohne Anfrage:\n%s", args, code, len(srv.Requests()), errs)
+				}
+				checked++
+			}
+		}
+	}
+	if checked < 100 {
+		t.Errorf("nur %d Grenzwerte geprüft", checked)
 	}
 }
