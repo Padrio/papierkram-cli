@@ -174,6 +174,7 @@ func TestInvoiceUpdateReadTooLarge(t *testing.T) {
 	}{
 		{[]string{"--description", "x"}, "Zahlungsbedingung per --payment-term <id> angeben (papierkram payment-term list)"},
 		{[]string{"--customer", "3214", "--payment-term", "7"}, "Kontaktperson und Projekt per --contact-person/--customer-project angeben"},
+		{[]string{"--customer", "3214"}, "Zahlungsbedingung per --payment-term <id> angeben (papierkram payment-term list); Kontaktperson und Projekt per --contact-person/--customer-project angeben"},
 	} {
 		app, srv := apiApp(t)
 		srv.OnFunc("GET", "/income/invoices/{id}", tooLarge(http.StatusOK, "application/json"))

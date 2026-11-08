@@ -106,8 +106,12 @@ func (k *keepPaymentTerm) apply(c *cobra.Command, a *App, client *api.Client, pa
 		ce.Message = fmt.Sprintf("Rechnung %d nicht gelesen, nichts geändert: %s", id, ce.Message)
 		if errors.Is(err, api.ErrResponseTooLarge) {
 			// a repeat would fail the same way; the flags save the read
-			// (T15-M5)
-			ce.Hint = strings.TrimPrefix(ce.Hint+"; "+hint, "; ")
+			// (T15-M5), with both reasons all of them
+			avoid := hint
+			if needTerm && needRefs {
+				avoid += "; " + refsHint(ws)
+			}
+			ce.Hint = strings.TrimPrefix(ce.Hint+"; "+avoid, "; ")
 		}
 		ce.Cause = err
 		return nil, &ce
