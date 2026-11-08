@@ -1,12 +1,15 @@
 package e2eguard
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"maps"
+	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -44,46 +47,287 @@ func TestCoveragePlanMatchesRegistry(t *testing.T) {
 }
 
 // Every expected operation names a test function of e2e/ (the part
-// before "/"); a pending one may name none yet.
+// before "/") and, after "/", subtests that function runs by a string
+// literal (review T1-M4); a pending one may name none yet.
 func TestCoveragePlanTestsExist(t *testing.T) {
 	funcs := e2eTestFuncs(t, filepath.Join(modroot.Find(t), "e2e"))
-	for id, e := range CoveragePlan {
-		switch e.Test {
-		case "":
-			if e.Pending == 0 {
-				t.Errorf("%s: expected (Pending 0) without Test", id)
-			}
-		case cleanupTest:
-		default:
-			top, _, _ := strings.Cut(e.Test, "/")
-			if !funcs[top] {
-				t.Errorf("%s: Test %q: no func %s in e2e/*_test.go", id, e.Test, top)
-			}
-		}
-		if e.Pending < 0 {
-			t.Errorf("%s: Pending %d", id, e.Pending)
-		}
+	for _, bad := range checkPlanTests(CoveragePlan, funcs) {
+		t.Error(bad)
 	}
 }
 
-// e2eTestFuncs are the names of the top-level Test functions of the
-// _test.go files in dir.
-func e2eTestFuncs(t *testing.T, dir string) map[string]bool {
+// checkPlanTests lists the entries of plan whose Test names no function
+// of funcs (top-level test name to the subtest names it runs) or a
+// subtest that function does not run.
+func checkPlanTests(plan map[string]Expectation, funcs map[string]map[string]bool) []string {
+	var bad []string
+	for _, id := range slices.Sorted(maps.Keys(plan)) {
+		e := plan[id]
+		switch e.Test {
+		case "":
+			if e.Pending == 0 {
+				bad = append(bad, id+": expected (Pending 0) without Test")
+			}
+		case cleanupTest:
+		default:
+			top, rest, _ := strings.Cut(e.Test, "/")
+			subs, ok := funcs[top]
+			if !ok {
+				bad = append(bad, fmt.Sprintf("%s: Test %q: no func %s in e2e/*_test.go", id, e.Test, top))
+				break
+			}
+			if rest == "" {
+				break
+			}
+			for sub := range strings.SplitSeq(rest, "/") {
+				if !subs[sub] {
+					bad = append(bad, fmt.Sprintf("%s: Test %q: %s runs no subtest %q (t.Run with a literal or a table field)", id, e.Test, top, sub))
+				}
+			}
+		}
+		if e.Pending < 0 {
+			bad = append(bad, fmt.Sprintf("%s: Pending %d", id, e.Pending))
+		}
+	}
+	return bad
+}
+
+// The check of the plan finds a missing function, a missing subtest at
+// any level and a pending entry without test; nested subtests and the
+// cleanup pass.
+func TestCheckPlanTestsFindsViolations(t *testing.T) {
+	funcs := map[string]map[string]bool{
+		"TestE2E_A": {"01_X": true, "inner": true},
+		"TestE2E_B": {},
+	}
+	plan := map[string]Expectation{
+		"OpOK":       {Test: "TestE2E_A"},
+		"OpSub":      {Test: "TestE2E_A/01_X"},
+		"OpNested":   {Test: "TestE2E_A/01_X/inner"},
+		"OpCleanup":  {Test: cleanupTest},
+		"OpPending":  {Pending: 1},
+		"OpNoFunc":   {Test: "TestE2E_C"},
+		"OpNoSub":    {Test: "TestE2E_A/02_Y"},
+		"OpNoNested": {Test: "TestE2E_A/01_X/other"},
+		"OpEmpty":    {Test: "TestE2E_B/x"},
+		"OpNoTest":   {},
+		"OpNegative": {Test: "TestE2E_B", Pending: -1},
+	}
+	want := []string{
+		`OpEmpty: Test "TestE2E_B/x": TestE2E_B runs no subtest "x" (t.Run with a literal or a table field)`,
+		`OpNegative: Pending -1`,
+		`OpNoFunc: Test "TestE2E_C": no func TestE2E_C in e2e/*_test.go`,
+		`OpNoNested: Test "TestE2E_A/01_X/other": TestE2E_A runs no subtest "other" (t.Run with a literal or a table field)`,
+		`OpNoSub: Test "TestE2E_A/02_Y": TestE2E_A runs no subtest "02_Y" (t.Run with a literal or a table field)`,
+		`OpNoTest: expected (Pending 0) without Test`,
+	}
+	if got := checkPlanTests(plan, funcs); !slices.Equal(got, want) {
+		t.Errorf("checkPlanTests =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// e2eTestFuncs finds subtests by literal, by a table of an anonymous or
+// a package-level struct type (positional or keyed), nested, and not
+// those of a computed name or of another range variable.
+func TestE2ETestFuncsSubtests(t *testing.T) {
+	dir := t.TempDir()
+	src := `package e2e
+
+import "testing"
+
+type row struct {
+	n    int
+	name string
+}
+
+func TestA(t *testing.T) {
+	t.Run("01 literal", func(t *testing.T) {
+		t.Run("inner", func(t *testing.T) {})
+	})
+	cases := []struct {
+		resource string
+		id       int
+	}{{"company", 1}, {resource: "task"}}
+	for _, c := range cases {
+		t.Run(c.resource, func(t *testing.T) {})
+	}
+	rows := []row{{1, "positional"}, {name: "keyed", n: 2}}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {})
+		for _, c := range cases {
+			t.Run(r.name+c.resource, func(t *testing.T) {})
+		}
+	}
+	other := []row{{3, "unused"}}
+	for _, o := range other {
+		_ = o
+		t.Run(fmt(), func(t *testing.T) {})
+	}
+}
+
+func TestB(t *testing.T) {}
+
+func helper() {}
+
+func fmt() string { return "" }
+`
+	if err := os.WriteFile(filepath.Join(dir, "a_test.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := e2eTestFuncs(t, dir)
+	want := map[string]map[string]bool{
+		"TestA": {"01_literal": true, "inner": true, "company": true, "task": true, "positional": true, "keyed": true},
+		"TestB": {},
+	}
+	if !maps.EqualFunc(got, want, maps.Equal) {
+		t.Errorf("e2eTestFuncs = %v, want %v", got, want)
+	}
+}
+
+// e2eTestFuncs are the top-level Test functions of the _test.go files in
+// dir, each with the names of the subtests it runs (subtestNames).
+func e2eTestFuncs(t *testing.T, dir string) map[string]map[string]bool {
 	t.Helper()
 	paths, err := filepath.Glob(filepath.Join(dir, "*_test.go"))
 	if err != nil || len(paths) == 0 {
 		t.Fatalf("no test files in %s: %v", dir, err)
 	}
-	out := map[string]bool{}
 	fset := token.NewFileSet()
+	var files []*ast.File
+	structs := map[string]*ast.StructType{} // package-level struct types
 	for _, p := range paths {
 		f, err := parser.ParseFile(fset, p, nil, parser.SkipObjectResolution)
 		if err != nil {
 			t.Fatal(err)
 		}
+		files = append(files, f)
+		ast.Inspect(f, func(n ast.Node) bool {
+			if ts, ok := n.(*ast.TypeSpec); ok {
+				if st, ok := ts.Type.(*ast.StructType); ok {
+					structs[ts.Name.Name] = st
+				}
+			}
+			return true
+		})
+	}
+	out := map[string]map[string]bool{}
+	for _, f := range files {
 		for _, d := range f.Decls {
-			if fn, ok := d.(*ast.FuncDecl); ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test") {
-				out[fn.Name.Name] = true
+			fn, ok := d.(*ast.FuncDecl)
+			if ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test") {
+				out[fn.Name.Name] = subtestNames(fn.Body, structs)
+			}
+		}
+	}
+	return out
+}
+
+// subtestNames are the names of the subtests body runs, spaces replaced
+// by "_" as go test does: the string literal of t.Run("name", …), and for
+// a table t.Run(c.field, …) inside "for _, c := range cases" the literal
+// of that field in each element of the composite literal assigned to
+// cases in body (cases := []T{…}, T a struct type of the function or of
+// the package). Other computed names are not known.
+func subtestNames(body *ast.BlockStmt, structs map[string]*ast.StructType) map[string]bool {
+	tables := map[string]*ast.CompositeLit{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		if as, ok := n.(*ast.AssignStmt); ok && len(as.Lhs) == 1 && len(as.Rhs) == 1 {
+			if id, ok := as.Lhs[0].(*ast.Ident); ok {
+				if cl, ok := as.Rhs[0].(*ast.CompositeLit); ok {
+					tables[id.Name] = cl
+				}
+			}
+		}
+		return true
+	})
+	out := map[string]bool{}
+	add := func(e ast.Expr) {
+		if lit, ok := e.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			if name, err := strconv.Unquote(lit.Value); err == nil {
+				out[strings.ReplaceAll(name, " ", "_")] = true
+			}
+		}
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		if arg := runArg(n); arg != nil {
+			add(arg)
+		}
+		rs, ok := n.(*ast.RangeStmt)
+		if !ok {
+			return true
+		}
+		v, vok := rs.Value.(*ast.Ident)
+		x, xok := rs.X.(*ast.Ident)
+		if !vok || !xok || tables[x.Name] == nil {
+			return true
+		}
+		ast.Inspect(rs.Body, func(n ast.Node) bool {
+			sel, ok := runArg(n).(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if id, ok := sel.X.(*ast.Ident); !ok || id.Name != v.Name {
+				return true
+			}
+			for _, e := range tableField(tables[x.Name], sel.Sel.Name, structs) {
+				add(e)
+			}
+			return true
+		})
+		return true
+	})
+	return out
+}
+
+// runArg is the first argument of a call x.Run(name, f), nil for any
+// other node.
+func runArg(n ast.Node) ast.Expr {
+	call, ok := n.(*ast.CallExpr)
+	if !ok || len(call.Args) != 2 {
+		return nil
+	}
+	if sel, ok := call.Fun.(*ast.SelectorExpr); !ok || sel.Sel.Name != "Run" {
+		return nil
+	}
+	return call.Args[0]
+}
+
+// tableField is the value of field in each element of the slice literal
+// cl ([]T{{…}, …}), by key or by position in the struct type T.
+func tableField(cl *ast.CompositeLit, field string, structs map[string]*ast.StructType) []ast.Expr {
+	at, ok := cl.Type.(*ast.ArrayType)
+	if !ok {
+		return nil
+	}
+	st, ok := at.Elt.(*ast.StructType)
+	if id, isIdent := at.Elt.(*ast.Ident); isIdent {
+		st, ok = structs[id.Name]
+	}
+	if !ok {
+		return nil
+	}
+	pos, i := -1, 0
+	for _, f := range st.Fields.List {
+		for _, n := range f.Names {
+			if n.Name == field {
+				pos = i
+			}
+			i++
+		}
+	}
+	var out []ast.Expr
+	for _, el := range cl.Elts {
+		row, ok := el.(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		for j, e := range row.Elts {
+			if kv, ok := e.(*ast.KeyValueExpr); ok {
+				if k, ok := kv.Key.(*ast.Ident); ok && k.Name == field {
+					out = append(out, kv.Value)
+				}
+			} else if j == pos {
+				out = append(out, e)
 			}
 		}
 	}
