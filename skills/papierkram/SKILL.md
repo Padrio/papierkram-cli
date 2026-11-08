@@ -104,6 +104,13 @@ papierkram invoice deliver 459 --via email --to kunde@example.org --subject "Rec
 papierkram invoice deliver 459 --via email --to kunde@example.org --subject "Rechnung {{rechnung.rechnungsnummer}}" --body-file mail.txt --yes -o json --no-input
 ```
 
+Rechnung vor dem Versand ändern: `invoice update` liest die Rechnung vorher (zusammen mit dem Ändern 2 Credits) und sendet ihre Zahlungsbedingung mit, sonst stellt die API sie auf den Standard um. Mit `--customer` sendet es beim Kunden der Rechnung auch Kontaktperson und Projekt mit (ohne sie leert die API beide); nennt `--customer` einen anderen Kunden, entfallen sie, der Hinweis auf stderr sagt das. Dann Kontaktperson und Projekt beim Menschen erfragen und per `--contact-person`/`--customer-project` mitgeben:
+
+```sh
+papierkram invoice update 459 --customer 3214 --description "Leistungszeitraum Oktober" --dry-run -o json --no-input
+papierkram invoice update 459 --customer 3214 --description "Leistungszeitraum Oktober" -o json --no-input
+```
+
 `deliver` läuft genau einmal. Nach Exit 12 oder einer Warnung „Nachlesen fehlgeschlagen“ nur `invoice describe 459` lesen (`sent_on`, `state`, `invoice_no`) und den Menschen entscheiden lassen.
 
 ## Ablauf 3: offene Posten prüfen
@@ -121,7 +128,7 @@ Die zweite Zeile listet überfällige Rechnungen (Fälligkeit vor heute, UTC), d
 
 ## Ablauf 4: Zeiten erfassen und abrechnen
 
-Standardwerte für ein Verzeichnis (Firma, Projekt, Aufgabe, Benutzer) legt die Projektdatei `.papierkram.toml` fest; `local show` zeigt, was gilt. Aufgaben-Aliase aus `[tasks]` gehen statt IDs. `local init` nur auf Wunsch des Nutzers: Es schreibt die Projektdatei neu (Kommentare gehen verloren) und kennt kein `--dry-run`; deshalb vorher `local show` lesen und die geplante Änderung nennen:
+Standardwerte für ein Verzeichnis (Firma, Projekt, Aufgabe, Benutzer) legt die Projektdatei `.papierkram.toml` fest; `local show` zeigt, was gilt. Aufgaben-Aliase aus `[tasks]` gehen statt IDs. `local init` nur auf Wunsch des Nutzers: Es schreibt die Projektdatei neu (Kommentare gehen verloren) und kennt kein `--dry-run`; deshalb vorher `local show` lesen und die geplante Änderung nennen. Fehlt ein Flag, nimmt das CLI den Wert aus `PAPIERKRAM_<NAME>` oder der Projektdatei und nennt die Quelle auf stderr (`Hinweis: Firma 2843 aus PAPIERKRAM_COMPANY`); das gilt auch für `--company` aller `person`-Befehle. Ohne Wert endet ein Befehl, der ihn braucht, mit Exit 2 ohne Anfrage:
 
 ```sh
 papierkram local show -o json --no-input
@@ -137,7 +144,7 @@ papierkram time log --task tickets --date gestern --from 14:00 --duration 1h30m 
 papierkram time log --task tickets --date gestern --from 14:00 --duration 1h30m -o json --no-input
 ```
 
-Ein Eintrag hat nur ein Datum: Ein Ende genau um Mitternacht geht mit `--to 24:00` (oder `--to 00:00`); andere Einträge über Mitternacht enden mit Exit 2 und werden als zwei Einträge gebucht (bis `24:00`, ab `00:00` am Folgetag mit `--date`).
+Ein Eintrag hat nur ein Datum: Ein Ende genau um Mitternacht geht mit `--to 24:00` (oder `--to 00:00`, gesendet als `24:00`); `time stop` in der ersten Minute nach Mitternacht bucht bis `24:00` des Starttags. Andere Einträge über Mitternacht enden mit Exit 2 ohne Anfrage und werden als zwei Einträge gebucht (bis `24:00`, ab `00:00` am Folgetag mit `--date`).
 
 Timer (lokal, kostet erst beim Stoppen 10 Credits):
 
@@ -148,13 +155,13 @@ papierkram time stop --dry-run -o json --no-input
 papierkram time stop -o json --no-input
 ```
 
-Nicht abrechenbare Zeit: `--unbillable` gehört an `time start` (wie an `time log`); `time stop` kennt es nicht und sendet den beim Start gespeicherten Wert.
+Nicht abrechenbare Zeit: `--unbillable` gehört an `time start` (wie an `time log`); `time start` prüft den Wert sofort (Exit 5, kein Timer gestartet), `time stop` kennt das Flag nicht und sendet den beim Start gespeicherten Wert. `time start` endet mit Exit 7, wenn schon ein Timer läuft oder ein `time stop` nicht abgeschlossen ist; dann erst `time status` lesen.
 
 `time stop` nach Exit 11 **nie** erneut ausführen: Der Eintrag ist angelegt. Nach Prüfung per `time list --since heute` den Timer mit `papierkram time discard --yes` verwerfen, nur mit Freigabe (die erfasste Zeit geht verloren).
 
 `time stop` mit Exit 7 sendet nichts: Entweder bucht gerade ein anderer `time stop` denselben Timer (nicht wiederholen, `time status` und `time list --since heute` lesen), oder ein `time stop` läuft gerade bzw. wurde nicht abgeschlossen (Hinweis „Ein time stop läuft gerade oder wurde nicht abgeschlossen“): erst per `time list --since <Startdatum>` prüfen, ob der Eintrag existiert, dann, wenn kein anderer `time stop` mehr läuft, wie im Hinweis `time discard --yes` (mit Freigabe) und, falls er fehlt, von Hand mit `time log` buchen.
 
-Abrechnen: offene Zeiten eines Projekts lesen und die abrechenbaren Stunden summieren. Das CLI nimmt `billable_duration` in Sekunden an; bestätigt ist das erst mit der E2E-Messung ([offene Punkte](https://github.com/Padrio/papierkram-cli/blob/main/docs/offene-punkte.md), Nr. 15). Deshalb die Summe mit den Einzeleinträgen vergleichen und dem Menschen vor dem Anlegen der Rechnung nennen:
+Abrechnen: offene Zeiten eines Projekts lesen und die abrechenbaren Stunden summieren. Die API speichert als `billable_duration` immer die Dauer aus Beginn und Ende (Sekunden; gemessen, [offene Punkte](https://github.com/Padrio/papierkram-cli/blob/main/docs/offene-punkte.md), Nr. 15), `--billable-duration` ist wirkungslos. Deshalb die Summe mit den Einzeleinträgen vergleichen und dem Menschen vor dem Anlegen der Rechnung nennen:
 
 ```sh
 PAPIERKRAM_READ_ONLY=1 papierkram time list --project 4963 --state unbilled --all --max-pages 5 -o json --no-input --fields id,started_at,duration,billable_duration,comments
@@ -175,14 +182,14 @@ Den Abrechnungsstatus der Zeiteinträge kann das CLI nicht setzen (`papierkram s
 | Exit | `code` | Was der Agent tut |
 |---|---|---|
 | 0 | – | Ergebnis auswerten, `warnings[]` und stderr lesen |
-| 1 | `error`, `server_error` | Lesen: später einmal erneut. Änderung: erst per `describe`/`list` prüfen. „Befehl ausgeführt, Ausgabe fehlgeschlagen“ oder „Antwort größer als 64 MiB; die Änderung wurde ausgeführt“: angekommen, nicht wiederholen |
+| 1 | `error`, `server_error` | Lesen: später einmal erneut. Änderung: erst per `describe`/`list` prüfen. „Befehl ausgeführt, Ausgabe fehlgeschlagen“ oder „Antwort größer als 64 MiB; die Änderung wurde ausgeführt“: angekommen, nicht wiederholen. „Antwort größer als 64 MiB, abgebrochen“ (Lesen): nicht unverändert wiederholen; bei `list` mit kleinerem `--limit`, sonst melden |
 | 2 | `usage` | Befehl nach `Hinweis` korrigieren; nichts gesendet |
 | 3 | `auth` | abbrechen, Menschen um `papierkram auth login` bitten |
 | 4 | `not_found` | ID und Kontext per `list` prüfen |
 | 5 | `validation` | Body nach `message` und `schema` korrigieren; nicht angewendet |
 | 6 | `quota` | Kontingent erschöpft: abbrechen, **nicht** wiederholen |
-| 7 | `conflict` | Zustand lesen (`describe`, `time status`) |
-| 8 | `confirmation_required` | Menschen fragen; `--yes` nur mit Freigabe |
+| 7 | `conflict` | 409 nicht angewendet, beim Timer nichts gesendet; Zustand lesen (`describe`, `time status`); `time stop` nicht wiederholen (siehe Ablauf 4) |
+| 8 | `confirmation_required` | nichts gesendet (auch wenn ein Mensch eine Rückfrage mit Strg+C abbricht); Menschen fragen, `--yes` nur mit Freigabe |
 | 9 | `read_only` | abbrechen und melden; Schutz nie umgehen |
 | 10 | `network` | später erneut; die Änderung ist nicht angekommen |
 | 11 | `partial` | `hint` lesen, höchstens den genannten Nachholschritt ([Details](https://github.com/Padrio/papierkram-cli/blob/main/AGENTS.md#exit-11-und-12-schritt-für-schritt)) |

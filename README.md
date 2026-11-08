@@ -13,6 +13,7 @@ Das Binary heißt `papierkram`. Alle Texte (Hilfe, Fehler, Hinweise) sind deutsc
 
 - [Installation](#installation)
 - [Schnellstart](#schnellstart)
+- [Ressourcen](#ressourcen)
 - [Kontexte](#kontexte)
 - [Projektdatei](#projektdatei)
 - [Zeiterfassung](#zeiterfassung)
@@ -92,6 +93,31 @@ papierkram --help
 papierkram invoice create --help
 papierkram commands
 ```
+
+## Ressourcen
+
+Jede Ressource ist ein Befehl mit Unterbefehlen (`list`, `describe`, `create`, `update`, `delete`, …); `papierkram <ressource> --help` zeigt alle mit Beispielen und Credits, `papierkram commands` die vollständige Liste.
+
+| Befehl | Alias | Zweck |
+|---|---|---|
+| `company` | `firma`, `kontakt` | Firmen (Kunden und Lieferanten): anlegen, ändern, archivieren, löschen; `list --type customer\|supplier` |
+| `person` | `kontaktperson` | Kontaktpersonen einer Firma (`--company`, auch aus `PAPIERKRAM_COMPANY` oder der Projektdatei) |
+| `invoice` | `rechnung` | Rechnungen: anlegen (auch `--from-estimate`), ändern, `deliver`, `pdf`, `cancel`, archivieren, löschen |
+| `estimate` | `angebot` | Angebote: anlegen, ändern, `deliver`, `pdf`, `cancel`, archivieren, löschen |
+| `voucher` | `beleg`, `expense` | Belege (Ausgaben): anlegen (auch `--file`), `upload`, `document delete`, `pay`, `reverse`, `cancel`, `pdf`, archivieren, löschen |
+| `proposition` | `artikel`, `leistung` | Artikel und Leistungen für Positionen |
+| `payment-term` | `zahlungsbedingung` | Zahlungsbedingungen anzeigen (nur lesen) |
+| `project` | `projekt` | Projekte |
+| `task` | `aufgabe` | Aufgaben eines Projekts |
+| `time` | `zeit`, `time-entry` | Zeiteinträge: `log`, lokaler Timer (`start`, `status`, `stop`, `discard`), anlegen, ändern, archivieren, löschen |
+| `custom-attribute` | `datenfeld` | benutzerdefinierte Datenfelder |
+| `bank-connection` | `bankverbindung` | Bankverbindungen anzeigen (nur lesen) |
+| `transaction` | `umsatz` | Bankumsätze anzeigen (nur lesen), z. B. für `voucher pay --transaction` |
+| `user` | `benutzer` | Benutzer des Accounts anzeigen (nur lesen) |
+| `info` | – | Account-Informationen inkl. Rechnungsvorlagen |
+| `api` | – | beliebige Anfrage an die API (wie `gh api`), mit denselben Schutzregeln |
+
+Dazu kommen die lokalen Befehle `context`, `auth`, `local`, `commands`, `schema`, `completion` und `version`.
 
 ## Kontexte
 
@@ -283,7 +309,7 @@ Papierkram rechnet in Monats-Credits (Paket M 10 000, L 20 000); danach antworte
 | 50 | Rechnung, Angebot oder Beleg anlegen |
 | 10 | anderes Anlegen (Firma, Kontaktperson, Artikel, Projekt, Datenfeld, Aufgabe, Zeiteintrag) und Beleg-Upload |
 | 1 | alles andere: Liste je Seite, Abruf, Änderung, Archivieren, Löschen, Aktion, PDF, `GET /info` |
-| 0 | lokale Befehle (`context`, `local`, `commands`, `schema`, `completion`, `version`, `time start|status|discard`) |
+| 0 | lokale Befehle (`context`, `local`, `commands`, `schema`, `completion`, `version`, `auth logout`, `time start|status|discard`) |
 
 Zusammengesetzte Befehle kosten die Summe: `deliver` 2 (Versand und Nachlesen), `voucher create --file` 60, `invoice create --from-estimate` 51, `invoice update` 2 (liest die Rechnung, um ihre Zahlungsbedingung und bei `--customer` Kontaktperson und Projekt mitzusenden; 1 mit `--payment-term`, außer mit `--customer` ohne `--contact-person`/`--customer-project`), `auth login` und `auth status` je 1. `--all` kostet 1 Credit je geladener Seite; ab 10 Seiten warnt das CLI und fragt im Terminal nach, `--max-pages` begrenzt. `company list --type` lädt immer alle Seiten (die API filtert nicht). Die Vervollständigung von IDs kostet je Abfrage 1 Credit. Fällt das Restkontingent unter 100, warnt das CLI auf stderr.
 
@@ -347,14 +373,18 @@ Fehler stehen auf stderr als `Fehler: …` mit `Hinweis: …` und ggf. `Correlat
 
 ## Eigenheiten der API
 
-Live gemessen gegen einen Sandbox-Account (Stand 2026-11-04, Einzelheiten in [docs/offene-punkte.md](docs/offene-punkte.md)):
+Live gemessen gegen einen Sandbox-Account (Läufe 1 bis 4 am 2026-11-04; die Messungen der Läufe danach und alle Einzelheiten stehen in [docs/offene-punkte.md](docs/offene-punkte.md)):
 
 - **Angebote brauchen ein Datum:** `estimate create` ohne `--document-date` lehnt die API ab und berechnet trotzdem 50 Credits; das CLI prüft das deshalb vorher (Exit 5).
 - **Abgelehnte Anfragen kosten:** Auch ein mit 422 abgelehntes Anlegen kostet die vollen Credits.
-- **Rechnung ändern:** Ein `PUT` ohne Zahlungsbedingung stellt eine Rechnung auf die Standard-Zahlungsbedingung des Accounts um und ändert das Fälligkeitsdatum. `invoice update` liest die Rechnung deshalb vorher und sendet ihre aktuelle Zahlungsbedingung mit (1 Credit mehr; nicht mit `--payment-term` oder `payment_term` in `--input`). Ebenso leert ein `PUT`, dessen Kunde keine Kontaktperson und kein Projekt nennt, beide, auch beim selben Kunden. `invoice update --customer` ohne `--contact-person`/`--customer-project` nutzt dasselbe Lesen: Beim Kunden der Rechnung sendet es Kontaktperson und Projekt mit, bei einem anderen Kunden entfallen sie (Hinweis auf stderr; neu setzen per `--contact-person`/`--customer-project`). `papierkram api PUT` tut beides nicht.
+- **Rechnung ändern:** Ein `PUT` ohne Zahlungsbedingung stellt eine Rechnung auf die Standard-Zahlungsbedingung des Accounts um und ändert das Fälligkeitsdatum. `invoice update` liest die Rechnung deshalb vorher und sendet ihre aktuelle Zahlungsbedingung mit (1 Credit mehr; nicht mit `--payment-term` oder `payment_term` in `--input`). `papierkram api PUT` liest nicht.
+- **Kontaktperson und Projekt einer Rechnung** (offener Punkt 29): Ein `PUT`, dessen Kunde keine Kontaktperson und kein Projekt nennt, leert beide, auch beim selben Kunden. `invoice update --customer` ohne `--contact-person`/`--customer-project` nutzt dasselbe Lesen: Beim Kunden der Rechnung sendet es Kontaktperson und Projekt mit, bei einem anderen Kunden entfallen sie (Hinweis auf stderr; neu setzen per `--contact-person`/`--customer-project`); `papierkram api PUT` tut das nicht.
+- **Firma für Kontaktpersonen** (Punkt 27): Die API erwartet die Firma im Pfad jedes `person`-Befehls; `--company` kommt ohne Flag aus `PAPIERKRAM_COMPANY` oder `company` der Projektdatei (Hinweis auf stderr), fehlt der Wert überall, endet der Befehl mit Exit 2 ohne Anfrage.
+- **Ende um Mitternacht** (Punkt 22): Die API nimmt `ended_at_time` `00:00` und `24:00` nach einem Beginn um 23:00 an, je als eine Stunde. Das CLI sendet ein Ende genau um Mitternacht immer als `24:00` und lehnt andere Einträge über Mitternacht ab (Exit 2), weil ein Zeiteintrag nur ein Datum hat.
+- **Der Timer ist lokal:** Papierkram kennt keinen laufenden Timer und sperrt nichts; zwei `time stop` desselben Timers würden zwei Einträge buchen. `time stop` beansprucht den Timer deshalb direkt vor dem Senden; ein zweiter Stopp endet mit Exit 7 ohne Anfrage (siehe [Zeiterfassung](#zeiterfassung)).
 - **`--billable-duration` ist wirkungslos:** Gemessen wurde 1800 Sekunden bei einem Eintrag von 90 Minuten; gespeichert war beim Anlegen und beim Ändern die Dauer (5400).
 - **PDF-Versand:** `deliver --via pdf` vergibt die Nummer und setzt den Status (z. B. `sent`), aber weder `sent_on` noch `sent_via`.
-- **Upload:** PDF, PNG und JPG werden angenommen; TXT lehnt die API mit HTTP 500 ab (Exit 1), andere Typen sind nicht gemessen. Das ist kein vorübergehender Fehler, also nicht wiederholen. Die ganze Datei muss innerhalb des Zeitlimits übertragen sein: `voucher upload` und das Hochladen bei `voucher create --file` warten ohne `--timeout` je Versuch mindestens 120 s (ein größeres `timeout` des Kontexts gilt); mit `--timeout` gilt genau dieser Wert, auch wenn er kleiner ist.
+- **Upload:** PDF, PNG und JPG werden angenommen; TXT lehnt die API mit HTTP 500 ab, andere Typen sind nicht gemessen. `voucher upload` endet dann mit Exit 1 (`server_error`), `voucher create --file` mit Exit 11: Der Beleg ist angelegt, das Hochladen unbekannt (bei HTTP 500 oder einer Zeitüberschreitung) bzw. gescheitert (wenn die API die Datei mit 4xx ablehnt); nur das Hochladen nachholen, nie den ganzen Befehl. Das ist kein vorübergehender Fehler, also nicht mit derselben Datei wiederholen. Die ganze Datei muss innerhalb des Zeitlimits übertragen sein: `voucher upload` und das Hochladen bei `voucher create --file` warten ohne `--timeout` je Versuch mindestens 120 s (ein größeres `timeout` des Kontexts gilt); mit `--timeout` gilt genau dieser Wert, auch wenn er kleiner ist.
 
 ## Weitere Dokumentation
 
@@ -365,7 +395,7 @@ Live gemessen gegen einen Sandbox-Account (Stand 2026-11-04, Einzelheiten in [do
 - [docs/offene-punkte.md](docs/offene-punkte.md): offene Fragen zur API und wie die E2E-Suite sie misst
 - [CHANGELOG.md](CHANGELOG.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 - [docs/release.md](docs/release.md): Release mit GoReleaser, Snapshot-Test, Kurzform `pk` je Paketquelle
-- Design: [Spezifikation](docs/specs/2026-11-03-papierkram-cli-design.md), [Implementierungsplan](docs/plans/2026-11-03-papierkram-cli.md), [API-Snapshot](api/)
+- Design: [Spezifikation](docs/specs/2026-11-03-papierkram-cli-design.md), [Implementierungsplan](docs/plans/2026-11-03-papierkram-cli.md), [Plan der Runde 2](docs/plans/2026-11-07-papierkram-cli-ausbau.md), [API-Snapshot](api/)
 
 ## Dank
 

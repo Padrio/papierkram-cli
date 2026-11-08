@@ -7,13 +7,13 @@ Die Suite unterscheidet zwei Arten von Prüfungen:
 - **hart:** Das CLI verlässt sich auf das Verhalten; weicht die API ab, schlägt der Test fehl.
 - **Messung:** Das Ergebnis steht im Log mit dem Präfix `MESSUNG`; weicht es von der Annahme des CLI ab, zusätzlich mit `ABWEICHUNG:` und in der Zusammenfassung am Ende des Laufs. Eine Messung schlägt nicht fehl.
 
-Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -tags e2e -run 'TestE2E_Carries/01_DeadlineISO' ./e2e/...`). Stand: Ein erster Live-Lauf gegen einen Sandbox-Account fand am 2026-11-04 statt; seine Ergebnisse stehen bei den Punkten unter **Gemessen 2026-11-04**. Viele Prüfungen scheiterten in diesem Lauf an einer Vorbedingung (Angebot ohne `document_date`, Account als Kleinunternehmer ohne Umsatzsteuer); diese Punkte sind weiterhin **nicht live beantwortet**.
+Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -tags e2e -run 'TestE2E_Carries/01_DeadlineISO' ./e2e/...`). Stand: Die Live-Läufe 1 bis 4 gegen einen Sandbox-Account fanden am 2026-11-04 statt; ihre Ergebnisse stehen bei den Punkten unter **Gemessen 2026-11-04**. Live-Lauf 5 mit den neuen Prüfungen (`TestE2E_InvoiceFlow`, `TestE2E_VoucherFlow`, `TestE2E_TimeFlow`, `TestE2E_MasterDataArchive`, `TestE2E_ReadCommands`, `TestE2E_OpenMeasurements`) steht aus; Punkte, die er misst, tragen „Messung in Live-Lauf 5 ausstehend“. Viele Prüfungen scheiterten in diesem Lauf an einer Vorbedingung (Angebot ohne `document_date`, Account als Kleinunternehmer ohne Umsatzsteuer); diese Punkte sind weiterhin **nicht live beantwortet**.
 
 ## Übersicht
 
 | Nr. | Punkt | Annahme des CLI | E2E-Test | Art |
 |---|---|---|---|---|
-| 1 | Statuswerte (`state`) der Belege | `state` wird roh angezeigt, nicht geprüft | `TestE2E_VoucherStateValues`, `TestE2E_InvoiceFlow`, `TestE2E_VoucherFlow` | Messung |
+| 1 | Statuswerte (`state`) der Belege | `state` wird roh angezeigt, nicht geprüft | `TestE2E_VoucherStateValues`, `TestE2E_InvoiceFlow`, `TestE2E_VoucherFlow` | Messung (Lebenszyklus: Lauf 5 ausstehend) |
 | 2 | Erlaubte Upload-MIME-Typen | keine lokale Einschränkung; gemessen: PDF, PNG, JPG ja, TXT HTTP 500 | `TestE2E_UploadMimeTypes`, `TestE2E_VoucherFlow` | PDF hart, sonst Messung |
 | 3 | Maximale Upload-Dateigröße | keine lokale Grenze | – | **bewusst nicht gemessen** |
 | 4 | `0.19` ergibt 19 % (Position und Artikel) | `0.19` als Zahl bzw. beim Artikel als String `"0.19"` | `TestE2E_VatRate019Is19Percent/Position`, `TestE2E_VatRate019Is19Percent/Artikel` | hart |
@@ -22,10 +22,10 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 7 | `line_items` im `PUT` ersetzen alle Positionen | ja; deshalb `--replace-items` | `TestE2E_ReplaceLineItems` | hart |
 | 8 | `{id}`-Pfadparameter in der Spec nicht deklariert | im Overlay ergänzt | – | erledigt (kein Live-Punkt) |
 | 9 | `deadline` als ISO-Datum | `YYYY-MM-DD` | `TestE2E_Carries/01_DeadlineISO` | hart |
-| 10 | `due_date` per `UpdateInvoice` nicht änderbar | Feld wird aus `--input` entfernt | `TestE2E_OpenMeasurements/10_InvoiceDueDatePut` | Messung |
+| 10 | `due_date` per `UpdateInvoice` nicht änderbar | Feld wird aus `--input` entfernt | `TestE2E_OpenMeasurements/10_InvoiceDueDatePut` | Messung (Lauf 5 ausstehend) |
 | 11 | `sent_on`/`sent_to` als `null` im Angebots-`PUT` | wird akzeptiert | `TestE2E_Carries/03_EstimateNullSentFields` | hart |
-| 12 | `entertainment_persons: []` im Beleg-`PUT` | wird akzeptiert | `TestE2E_OpenMeasurements/12_VoucherEntertainmentPersons` (Bedeutung); Annahme hart in `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` | Messung |
-| 13 | `supply_date` im Antwortformat und Kontaktperson/Projekt im Rundlauf | Kontaktperson und Projekt werden unter `customer` mitgesendet und bleiben (gemessen Lauf 3 und 4); `supply_date` kommt im Rundlauf unverändert zurück | `TestE2E_OpenMeasurements/13_InvoiceSupplyDate` (`supply_date`); Kontaktperson und Projekt hart in `TestE2E_Carries/02_InvoiceRoundTrip` | Messung |
+| 12 | `entertainment_persons: []` im Beleg-`PUT` | wird akzeptiert | `TestE2E_OpenMeasurements/12_VoucherEntertainmentPersons` (Bedeutung); Annahme hart in `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` | Messung (Bedeutung: Lauf 5 ausstehend) |
+| 13 | `supply_date` im Antwortformat und Kontaktperson/Projekt im Rundlauf | Kontaktperson und Projekt werden unter `customer` mitgesendet und bleiben (gemessen Lauf 3 und 4); `supply_date` kommt im Rundlauf unverändert zurück | `TestE2E_OpenMeasurements/13_InvoiceSupplyDate` (`supply_date`); Kontaktperson und Projekt hart in `TestE2E_Carries/02_InvoiceRoundTrip` | Messung (`supply_date`: Lauf 5 ausstehend) |
 | 14 | Werte von `due_time_unit` | meist `day`; die Tabelle zeigt `ZIEL` und `EINHEIT` getrennt | `TestE2E_Carries/05_PaymentTermUnits` | Messung |
 | 15 | Einheit von `billable_duration` | Sekunden; die API ignoriert den Wert beim Anlegen und Ändern (gemessen) | `TestE2E_Carries/06_BillableDurationSeconds` | Messung |
 | 16 | Setzt `deliver --via pdf` `sent_on`? | nein (gemessen); abgebrochener PDF-Versand endet mit Exit 12 | `TestE2E_Carries/07_DeliverPdfSentOn`, `TestE2E_InvoiceFlow` | Messung |
@@ -40,7 +40,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 25 | Quota-Header `X-Remaining-Quota`, `X-Consumed-Quota` | vorhanden und ganzzahlig | `TestE2E_QuotaHeadersPresent` | hart |
 | 26 | Person `default` als String | Request `"true"`/`"false"`; Antwort Boolean (gemessen) | `TestE2E_PersonDefaultIsString` | hart |
 | 27 | `PAPIERKRAM_COMPANY`/`company` aus der Projektdatei als Default für `person … --company` | Voreinstellung wie die übrigen: Flag > `PAPIERKRAM_COMPANY` > Projektdatei; ohne Wert Exit 2 | – | entschieden und umgesetzt (Task 9); keine API-Frage, nicht gemessen |
-| 28 | `document_date` Pflicht beim Anlegen | Angebot: Pflicht (gemessen); Rechnung: nicht Pflicht | `TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate` (Rechnung); Angebot indirekt in `TestE2E_DeliverPdfEmptyBody` | Messung |
+| 28 | `document_date` Pflicht beim Anlegen | Angebot: Pflicht (gemessen); Rechnung: nicht Pflicht | `TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate` (Rechnung); Angebot indirekt in `TestE2E_DeliverPdfEmptyBody` | Messung (Rechnung: Lauf 5 ausstehend) |
 | 29 | `invoice update --customer X` ohne Kontaktperson/Projekt | gleicher Kunde: Kontaktperson und Projekt aus der gelesenen Rechnung mitgesendet; anderer Kunde: entfallen (Hinweis) | `TestE2E_Carries/14_InvoiceUpdateSameCustomer` | entschieden und umgesetzt (Task 8); hart |
 
 ## Punkte im Einzelnen
@@ -50,6 +50,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Die Spec dokumentiert die Werte von `state` für Rechnungen, Angebote und Belege nicht (Beispiele zeigen u. a. `draft`, `canceled`, `unpaid`, `partially_paid`, `deleted`, `imported`).
 - **Annahme:** Tabellen zeigen `state` roh; das CLI prüft oder übersetzt keine Statuswerte. Filter nach Status bietet die API nur für Zeiteinträge (`--state`, dort ist das Enum dokumentiert).
 - **E2E:** `TestE2E_VoucherStateValues` (Messung) sammelt die Werte der ersten Listenseite von Belegen, Rechnungen und Angeboten und den Status eines neuen Belegs. `TestE2E_InvoiceFlow` (Messung) misst die Statuswerte einer eigenen Rechnung im Lebenszyklus: `state` nach dem Anlegen, nach `deliver --via pdf` (mit `invoice_no`, `sent_on`, `sent_via`) und nach `cancel` (mit Exit, HTTP-Status und Meldung der API), `record_state` nach `archive`, außerdem `state` des versendeten Angebots nach `estimate cancel`. `TestE2E_VoucherFlow` (Messung) misst an einem eigenen Beleg `voucher reverse` und danach `voucher cancel` (je Exit, HTTP-Status und Meldung der API) und `state` nach jedem Schritt; nennt die Antwort ein anderes Objekt als den Beleg (Folgeobjekt, z. B. eine Gegenbuchung), steht das als `ABWEICHUNG` im Log, und das Objekt wird mit aufgeräumt. Danach sollen die Werte in der Doku ergänzt werden; die Ergebnisse von `TestE2E_InvoiceFlow` und `TestE2E_VoucherFlow` folgen nach Live-Lauf 5.
+- **Stand:** Messung des Lebenszyklus (`TestE2E_InvoiceFlow`, `TestE2E_VoucherFlow`) in Live-Lauf 5 ausstehend.
 - **Gemessen 2026-11-04 (Lauf 2):** Ein neuer Beleg hat `state` `unpaid`; die erste Belegliste zeigte nur `unpaid`, die Angebotsliste `draft` und `sent` (nach `deliver --via pdf`), die Rechnungsliste war leer. Weitere Werte (z. B. von Rechnungen) bleiben offen.
 
 ### 2. Erlaubte Upload-MIME-Typen
@@ -114,6 +115,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Offen:** Das Request-Schema von `UpdateInvoice` hat kein `due_date`. Lässt sich das Fälligkeitsdatum nur über `payment_term` ändern, oder nimmt die API das Feld trotzdem an?
 - **Annahme:** Nur über `payment_term`. `invoice update --input` entfernt `due_date` als nur lesbares Feld (Hinweis auf stderr); `papierkram api PUT` sendet es unverändert, die API lehnt es dann vermutlich mit 422 ab.
 - **E2E:** `TestE2E_OpenMeasurements/10_InvoiceDueDatePut` (Messung): `papierkram api PUT /income/invoices/<id>` ohne `--validate` (der Body geht unverändert hinaus) an der Entwurfsrechnung der Suite mit `{"due_date":"<heute + 45 Tage>","payment_term":{"id":<aktuelle>}}`, davor und danach `invoice describe` (3 Credits). Im Log stehen HTTP-Status und `due_date` vorher und nachher; ändert sich `due_date`, steht das als `ABWEICHUNG` im Log. Lehnte `api` den Body lokal ab (Exit 5, nichts gesendet), stünde „lokal abgelehnt“ im Log.
+- **Stand:** Messung in Live-Lauf 5 ausstehend.
 
 ### 11. `sent_on`/`sent_to` als `null` im Angebots-`PUT`
 
@@ -128,6 +130,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Annahme:** Wird angenommen; das CLI sendet es, wenn es angegeben ist.
 - **E2E:** `TestE2E_Carries/04_VoucherEmptyEntertainmentPersons` (Annahme hart); die Bedeutung misst `TestE2E_OpenMeasurements/12_VoucherEntertainmentPersons` (Messung, 4 Credits): Er setzt am Beleg der Suite `entertainment_persons` auf eine Person (`pk-e2e-<lauf-id>-gast`), liest den Beleg, sendet `[]` und liest ihn erneut; im Log steht „geleert“ oder „unverändert“. Lehnt die API schon die Person ab, endet die Messung dort; ein abgelehntes `[]` steht als `ABWEICHUNG` im Log.
 - **Gemessen 2026-11-04 (Lauf 2):** angenommen; danach `[]` (die Liste war vorher schon leer, die Bedeutung „leeren oder unverändert“ bleibt damit offen).
+- **Stand:** Messung der Bedeutung (`12_VoucherEntertainmentPersons`) in Live-Lauf 5 ausstehend.
 
 ### 13. Rundlauf einer Rechnung: `supply_date` und `customer`
 
@@ -137,6 +140,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Gemessen 2026-11-04 (Lauf 2):** Gesendet wurde `customer` als `{id}` ohne Kontaktperson und Projekt (die Antwort hat beide auf oberster Ebene, die das CLI damals als nur lesbar entfernte). Danach waren `contact_person` und `project` der Rechnung leer. `supply_date` war im Lauf leer und ist damit weiter ungeprüft.
 - **Stand des CLI:** Die Bereinigung von `--input` übernimmt `contact_person` und `project` der Antwort jetzt als `customer.contact_person`/`customer.project` (`{id}`), wenn `customer` im Body steht (Hinweis „Referenzen übernommen“); nennt `--customer` einen anderen Kunden, entfallen sie wieder (Hinweis „Kunde X statt Y aus --input“).
 - **Gemessen 2026-11-04 (Lauf 3 und 4):** Mit `customer{contact_person{id},id,project{id}}` im `PUT` bleiben Kontaktperson und Projekt erhalten (Lauf 3: 7 → 7, 16 → 16; Lauf 4: 10 → 10, 22 → 22). `supply_date` war weiter leer, das Antwortformat ist damit ungeprüft.
+- **Stand:** Messung von `supply_date` (`13_InvoiceSupplyDate`) in Live-Lauf 5 ausstehend.
 
 ### 14. Werte von `due_time_unit`
 
@@ -198,7 +202,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 - **Frage:** Nimmt die API `ended_at_time` `"00:00"` oder `"24:00"` nach einem Beginn um 23:00 an, und als eine Stunde?
 - **Gemessen 2026-11-04 (Lauf 2, über `papierkram api`):** Die API nimmt beide an: 23:00–00:00 und 23:00–24:00 ergeben je `duration` 3600 und `ended_at` 00:00 des Folgetags. Damals lehnte das CLI ein Ende um Mitternacht mit Exit 2 ab (Ruling E2E-Mitternacht, inzwischen ersetzt).
-- **Entschieden und umgesetzt (Task 10):** Ein Ende genau um Mitternacht ist erlaubt. `time log --to 24:00` und, bei Beginn nach 00:00, `--to 00:00` enden um Mitternacht am Ende des Datums, ebenso `--from 23:00 --duration 1h`; gesendet wird `ended_at_time` `"24:00"` (eindeutig als Tagesende). `--from 00:00 --to 24:00` ist der ganze Tag, `--from 00:00 --to 00:00` bleibt Dauer 0 und `--from 24:00` ungültig (je Exit 2). `time stop` bucht einen Timer, der zwischen 00:00:00 und 00:00:59 des Folgetags stoppt, bis `24:00` des Starttags. Andere Einträge über Mitternacht bleiben Exit 2; der Hinweis nennt die zwei Einträge (bis `24:00` und ab `00:00` am Folgetag). Das Overlay (Abschnitt 14) erlaubt `24:00` nur für `ended_at_time` (POST und PUT), sodass auch `time create|update --ended-at-time 24:00` gesendet wird; `--started-at-time 24:00` ist Exit 5.
+- **Entschieden und umgesetzt (Task 10):** Ein Ende genau um Mitternacht ist erlaubt. `time log --to 24:00` und, bei Beginn nach 00:00, `--to 00:00` enden um Mitternacht am Ende des Datums, ebenso `--from 23:00 --duration 1h`; gesendet wird `ended_at_time` `"24:00"` (eindeutig als Tagesende). `--from 00:00 --to 24:00` ist der ganze Tag (00:00–24:00 live nicht gemessen; gemessen sind nur 23:00–00:00 und 23:00–24:00), `--from 00:00 --to 00:00` bleibt Dauer 0 und `--from 24:00` ungültig (je Exit 2). `time stop` bucht einen Timer, der zwischen 00:00:00 und 00:00:59 des Folgetags stoppt, bis `24:00` des Starttags. Andere Einträge über Mitternacht bleiben Exit 2; der Hinweis nennt die zwei Einträge (bis `24:00` und ab `00:00` am Folgetag). Das Overlay (Abschnitt 14) erlaubt `24:00` nur für `ended_at_time` (POST und PUT), sodass auch `time create|update --ended-at-time 24:00` gesendet wird; `--started-at-time 24:00` ist Exit 5.
 - **E2E:** `TestE2E_Carries/12_MidnightEnd` (hart, 22 Credits): `time log --date 2026-06-10 --from 23:00 --to 00:00` und `--to 24:00` müssen mit Exit 0 enden und in ihrer Antwort `duration` 3600 haben; `ended_at` und das gesendete `ended_at_time` stehen als Messung im Log.
 
 ### 23. Antwort von `GET /info`
@@ -241,8 +245,9 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Gemessen 2026-11-04 (erster Live-Lauf):** `POST /income/estimates` ohne `document_date` lehnt die API mit 422 „Datum muss ausgefüllt werden“ ab und berechnet trotzdem die 50 Credits des Anlegens. Die Spec nennt nur `name` und `line_items` als Pflicht.
 - **Stand des CLI:** Das Overlay ([api/overlay.yaml](../api/overlay.yaml), Abschnitt 16) macht `document_date` im Anlege-Body des Angebots zur Pflicht (auch `null` gilt als fehlend). `estimate create` ohne `--document-date` (bzw. ohne `document_date` in `--input`) endet mit Exit 5, bevor eine Anfrage gesendet wird. `invoice create --from-estimate` ist nicht betroffen: Das Rechnungsdatum kommt nie aus dem Angebot, sondern aus `--document-date`.
 - **Offen:** Ob auch `POST /income/invoices` ohne `document_date` scheitert. Das CLI behandelt das Feld bei Rechnungen weiter als optional; die Fixtures der E2E-Suite senden es immer mit. Bei 422 wie beim Angebot das Overlay entsprechend ergänzen.
-- **E2E:** `TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate` (Messung, 50 Credits): `invoice create --name pk-e2e-<lauf-id>-rechnung-ohne-datum --customer <C> --payment-term <PT> --item name=pk-e2e-pos-19,qty=1,price=100,vat=19` ohne `--document-date`. Angenommen: Die Rechnung wird fürs Aufräumen registriert, `document_date` der Antwort steht im Log. Abgelehnt: Exit, HTTP-Status und Meldung der API im Log; ein 422 steht als `ABWEICHUNG` im Log.
+- **E2E:** `TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate` (Messung, 50 Credits): `invoice create --name pk-e2e-<lauf-id>-rechnung-ohne-datum --customer <C> --payment-term <PT> --item name=pk-e2e-pos-19,qty=1,price=100,vat=19` ohne `--document-date`. Angenommen: Die Rechnung wird fürs Aufräumen registriert, `document_date` der Antwort steht im Log. Abgelehnt: Exit, HTTP-Status und Meldung der API im Log; ein 422 steht als `ABWEICHUNG` im Log. Das Angebot (immer mit `--document-date`) prüft indirekt `TestE2E_DeliverPdfEmptyBody`.
 - **Gemessen 2026-11-04 (Lauf 2):** `estimate create` mit `--document-date` gelingt (zwei Angebote angelegt).
+- **Stand:** Messung der Rechnung ohne `document_date` (`28_InvoiceWithoutDocumentDate`) in Live-Lauf 5 ausstehend.
 
 ### 29. `invoice update --customer X` leert Kontaktperson und Projekt
 
