@@ -30,7 +30,7 @@ Gilt für jede Task zusätzlich zu `global-constraints.md` des Workspaces und zu
 
 **Runde 2:**
 - **Live-E2E (`-tags e2e` mit Sandbox-Variablen) läuft nur der Controller**, nie Implementer oder Reviewer. Implementer prüfen E2E-Code ausschließlich offline (Gate G6).
-- **Sandbox-Frist:** `apitest-123` endet ca. **2026-11-19**. Live-Lauf 5 spätestens 2026-11-14, Puffer für Lauf 6 bis 2026-11-18. Restkontingent beim Planen: 8386 Credits.
+- **Sandbox-Frist:** `<sandbox>` endet ca. **2026-11-19**. Live-Lauf 5 spätestens 2026-11-14, Puffer für Lauf 6 bis 2026-11-18. Restkontingent beim Planen: 8386 Credits.
 - **E2E-Suite:** nie `pay` mit echter Transaktion (nur `e2eguard.NoTransactionID`), nie `deliver --via email`, kein String-Literal `"email"` in `e2e/`; Ausgabe nur über `e2e/log_test.go`; jede neue Live-Anfrage steht im Kosten-Header von `e2e/e2e_test.go`, hat ein `s.need(t, n)` davor und passt ins Budget; jedes angelegte Objekt heißt `pk-e2e-<runid>-…` und wird über `s.create`/`s.track` fürs Aufräumen registriert. Bankdaten (Bankverbindungen, Umsätze) nie mit Werten loggen, nur Anzahl und Schlüsselform (`keyShape`).
 - **Credit-Budget je Lauf:** `creditBudget = 760`, Compile-Guard `const _ = uint(799 - creditBudget)`, `cleanupReserve = e2eguard.CleanupReserve(7, 12, 10)` = 62; geplant Tests 655 + Aufräumen 28 = **683** (Herleitung in Task 2).
 - **Entscheidungen verbindlich:** 29 (Task 8), 27 (Task 9), 22 (Task 10), C2 (Task 11), Prompt-Abbruch Exit 8 (Task 17). `deliver --via pdf` mit Abbruch bleibt Exit 12.
@@ -454,7 +454,7 @@ Gilt für jede Task zusätzlich zu `global-constraints.md` des Workspaces und zu
 
 ## Meilenstein: Live-Lauf 5 (Controller)
 
-Nach Task 12, spätestens 2026-11-14. Der Controller (nicht ein Implementer) führt die Suite lokal mit dem Befehl aus `HANDOFF.md` §2 gegen `apitest-123` aus und prüft danach: `grep -c` des Tokens im Log = 0; Zeile `ABDECKUNG: abgedeckt …/89` mit nur begründeten Ausschlüssen; `Credits: … von 760`; Restkontingent notiert. Ergebnisse (Statuswerte #1, #10, #12, #13, #28, Bank-Ausschlüsse, Antworten von reverse/cancel) trägt er in `docs/offene-punkte.md`, README „Eigenheiten der API“ und AGENTS ein; nötige Anpassungen (z. B. Overlay `document_date` Pflicht bei Rechnungen, Moduswechsel im CoveragePlan, Kostenkorrekturen) laufen als Fix-Agent mit eigenem Brief. Danach einmal `gh workflow run e2e.yml -f sandbox_confirm=apitest-123` und Prüfung von Step-Summary und Artefakt. Puffer für Lauf 6 bis 2026-11-18. Erwarteter Verbrauch je Lauf ≈ 683 Credits.
+Nach Task 12, spätestens 2026-11-14. Der Controller (nicht ein Implementer) führt die Suite lokal mit dem Befehl aus `HANDOFF.md` §2 gegen `<sandbox>` aus und prüft danach: `grep -c` des Tokens im Log = 0; Zeile `ABDECKUNG: abgedeckt …/89` mit nur begründeten Ausschlüssen; `Credits: … von 760`; Restkontingent notiert. Ergebnisse (Statuswerte #1, #10, #12, #13, #28, Bank-Ausschlüsse, Antworten von reverse/cancel) trägt er in `docs/offene-punkte.md`, README „Eigenheiten der API“ und AGENTS ein; nötige Anpassungen (z. B. Overlay `document_date` Pflicht bei Rechnungen, Moduswechsel im CoveragePlan, Kostenkorrekturen) laufen als Fix-Agent mit eigenem Brief. Danach einmal `gh workflow run e2e.yml -f sandbox_confirm=<sandbox>` und Prüfung von Step-Summary und Artefakt. Puffer für Lauf 6 bis 2026-11-18. Erwarteter Verbrauch je Lauf ≈ 683 Credits.
 
 ---
 
