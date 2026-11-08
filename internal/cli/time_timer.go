@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
@@ -649,22 +650,24 @@ func shellWord(s string) string {
 }
 
 // keepTimer adds to an error of time stop after the timer was read that
-// the timer stays and how to go on: after an unknown outcome check first
-// (the entry may exist), after a declined question nothing else, after
-// any other error book by hand or stop again.
+// the timer stays and how to go on: after an unknown outcome or an answer
+// too long to read (api.ErrResponseTooLarge, the entry exists) check first,
+// after a declined question nothing else, after any other error book by
+// hand or stop again.
 func (a *App) keepTimer(err error, st timer.State, p period) error {
 	ce := *clierr.From(err)
 	var keep string
-	switch ce.Code {
-	case clierr.CodeOutcomeUnknown:
+	switch {
+	case ce.Code == clierr.CodeOutcomeUnknown, errors.Is(err, api.ErrResponseTooLarge):
+		// a 2xx answer too long to read: the entry was created
 		keep = "Der Timer läuft weiter: erst mit papierkram time list prüfen, ob der Eintrag angelegt wurde; " +
 			"wenn ja, den Timer mit papierkram time discard verwerfen, sonst erneut papierkram time stop"
-	case clierr.CodeServer:
+	case ce.Code == clierr.CodeServer:
 		// a 5xx after the POST may still have created the entry
 		keep = "Der Timer läuft weiter: erst mit papierkram time list prüfen, ob der Eintrag angelegt wurde; " +
 			"wenn ja, den Timer mit papierkram time discard verwerfen, sonst erneut papierkram time stop oder von Hand buchen mit " +
 			a.timeLogCommand(st, p.date, hhmm(p.start), hhmm(p.end)) + ", danach papierkram time discard"
-	case clierr.CodeConfirmation:
+	case ce.Code == clierr.CodeConfirmation:
 		keep = "Der Timer läuft weiter"
 	default:
 		keep = "Der Timer läuft weiter: erneut papierkram time stop oder von Hand buchen mit " +

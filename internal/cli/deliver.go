@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -178,9 +179,11 @@ func moreCredits(n int) string {
 // A 5xx or an unexpected status does not prove that no mail went out, so
 // the hint names the describe command to check before repeating; client
 // errors (422: broken placeholder, 404, …) keep theirs, nothing was sent.
+// A 2xx answer too long to read (api.ErrResponseTooLarge) keeps its hint
+// too: the document was sent.
 func deliverFailed(e registry.Entry, id int64, err error) error {
 	ce := clierr.From(err)
-	if ce.Code != clierr.CodeServer && ce.Code != clierr.CodeError {
+	if ce.Code != clierr.CodeServer && ce.Code != clierr.CodeError || errors.Is(err, api.ErrResponseTooLarge) {
 		return err
 	}
 	out := *ce

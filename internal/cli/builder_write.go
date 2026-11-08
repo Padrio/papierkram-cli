@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/spf13/cobra"
 
+	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
@@ -286,6 +288,11 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 	}
 	resp, err := client.Call(c.Context(), e.OperationID, params, nil, body)
 	if err != nil {
+		if up != nil && errors.Is(err, api.ErrResponseTooLarge) {
+			// created, but the ID is in the unread answer: the upload
+			// cannot follow (exit 11 without ID)
+			return a.uploadPartial(a.outputOptions(c.Context(), a.outputFormat(r)), e, up, nil, err)
+		}
 		return err
 	}
 	if up != nil {

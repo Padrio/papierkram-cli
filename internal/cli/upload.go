@@ -508,15 +508,17 @@ func (a *App) uploadPartial(o output.Options, e registry.Entry, up *createUpload
 }
 
 // uploadUncertain reports an upload failure that does not prove the file
-// was not attached: no complete answer (outcome_unknown, network) or a 5xx.
-// Every 4xx, also one without its own code (413, 415), and a file that
-// could not be read (no HTTP status) are clean failures.
+// was not attached: no complete answer (outcome_unknown, network), a 5xx,
+// or a 2xx answer too long to read (api.ErrResponseTooLarge; the file was
+// taken, but its answer is unchecked). Every 4xx, also one without its own
+// code (413, 415), and a file that could not be read (no HTTP status) are
+// clean failures.
 func uploadUncertain(ce *clierr.Error) bool {
 	switch ce.Code {
 	case clierr.CodeOutcomeUnknown, clierr.CodeNetwork, clierr.CodeServer:
 		return true
 	}
-	return ce.HTTPStatus >= 500
+	return ce.HTTPStatus >= 500 || errors.Is(ce, api.ErrResponseTooLarge)
 }
 
 // quotaPartialHint ends the hint of a partial run whose upload got a 429
