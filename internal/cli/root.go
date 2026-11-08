@@ -313,7 +313,9 @@ func executeContext(ctx context.Context, app *App, root *cobra.Command, args []s
 // (the format then stays as parsed). The value of another flag of cmd
 // that takes one (--name X, -O X; not --name=X) is skipped like pflag
 // takes it, even when it starts with "-": --name -ojson names, it sets no
-// format. Without cmd every other argument is read as it is.
+// format. Bundled shorthands (-yO X, -yojson) are read char by char like
+// pflag does (shortBundle). Without cmd every other argument is read as
+// it is.
 func (a *App) errorFormatFromArgs(cmd *cobra.Command, args []string) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -329,7 +331,14 @@ func (a *App) errorFormatFromArgs(cmd *cobra.Command, args []string) {
 		}
 		var out, jq string
 		var hasOut, hasJQ bool
+		f, value, takesNext, bundled := shortBundle(cmd, arg)
+		if bundled && takesNext {
+			value, _ = next()
+		}
 		switch {
+		case bundled:
+			// a value flag of the bundle took value; -o sets the format
+			out, hasOut = value, f.Name == "output"
 		case takesValue(cmd, arg):
 			next()
 		case arg == "-o" || arg == "--output":
@@ -352,28 +361,53 @@ func (a *App) errorFormatFromArgs(cmd *cobra.Command, args []string) {
 	}
 }
 
-// takesValue reports whether arg is a flag of cmd (own or inherited)
-// written as --name or -n whose value is the next argument: a flag that
-// is no -o/--output or --jq and has no value without one (NoOptDefVal,
-// e.g. a bool). Unknown flags take nothing.
+// takesValue reports whether arg is a long flag of cmd (own or
+// inherited) written as --name whose value is the next argument: a flag
+// that is no --output or --jq and has no value without one (NoOptDefVal,
+// e.g. a bool). Unknown flags take nothing. Shorthands are read by
+// shortBundle.
 func takesValue(cmd *cobra.Command, arg string) bool {
-	if cmd == nil || arg == "-" || !strings.HasPrefix(arg, "-") || strings.Contains(arg, "=") {
+	name, long := strings.CutPrefix(arg, "--")
+	if cmd == nil || !long || name == "" || strings.Contains(name, "=") {
 		return false
 	}
-	var f *pflag.Flag
-	switch name, long := strings.CutPrefix(arg, "--"); {
-	case long:
-		f = cmd.Flags().Lookup(name)
-		if f == nil {
-			f = cmd.InheritedFlags().Lookup(name)
-		}
-	case len(arg) == 2:
-		f = cmd.Flags().ShorthandLookup(arg[1:])
-		if f == nil {
-			f = cmd.InheritedFlags().ShorthandLookup(arg[1:])
-		}
+	f := cmd.Flags().Lookup(name)
+	if f == nil {
+		f = cmd.InheritedFlags().Lookup(name)
 	}
 	return f != nil && f.NoOptDefVal == "" && f.Name != "output" && f.Name != "jq"
+}
+
+// shortBundle reads arg as shorthands of cmd the way pflag does: char by
+// char, a flag with a value without one (a bool) lets the next char
+// follow; "x=v" gives flag x the value v and ends the bundle; any other
+// flag takes the rest of the bundle as its value or, at its end, the next
+// argument (takesNext). f is the flag that took a value, bundled is false
+// for no shorthand argument, without cmd, at an unknown shorthand (pflag
+// fails there) or when every flag of the bundle is a bool.
+func shortBundle(cmd *cobra.Command, arg string) (f *pflag.Flag, value string, takesNext, bundled bool) {
+	if cmd == nil || len(arg) < 2 || arg[0] != '-' || arg[1] == '-' {
+		return nil, "", false, false
+	}
+	for s := arg[1:]; s != ""; s = s[1:] {
+		f = cmd.Flags().ShorthandLookup(s[:1])
+		if f == nil {
+			f = cmd.InheritedFlags().ShorthandLookup(s[:1])
+		}
+		switch {
+		case f == nil:
+			return nil, "", false, false
+		case len(s) > 2 && s[1] == '=':
+			return f, s[2:], false, true
+		case f.NoOptDefVal != "":
+			continue
+		case len(s) > 1:
+			return f, s[1:], false, true
+		default:
+			return f, "", true, true
+		}
+	}
+	return nil, "", false, false
 }
 
 // completeArgsErr is err of cmd, but for cobra's own __complete command

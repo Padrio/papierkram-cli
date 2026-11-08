@@ -38,6 +38,14 @@ func TestFlagErrorFormatFromRawArgs(t *testing.T) {
 		{"--name=value", []string{"company", "create", "--name=x", "-o", "json", "--bogus"}, "json"},
 		{"--limit value", []string{"user", "list", "--limit", "5", "-o", "json", "--bogus"}, "json"},
 		{"bool flag", []string{"user", "list", "--all", "-o", "json", "--bogus"}, "json"},
+		// bundled shorthands are read char by char like pflag: a value
+		// flag takes the rest of the bundle or, at its end, the next
+		// argument; -o inside a bundle sets the format
+		{"bundle -yO value", []string{"invoice", "pdf", "459", "--bogus", "-yO", "-ojson"}, "text"},
+		{"bundle -yOdatei", []string{"invoice", "pdf", "459", "--bogus", "-yOdatei.pdf", "-o", "json"}, "json"},
+		{"bundle -yojson", []string{"user", "list", "--bogus", "-yojson"}, "json"},
+		{"bundle -yo json", []string{"user", "list", "--bogus", "-yo", "json"}, "json"},
+		{"bundle -yo=yaml", []string{"user", "list", "--bogus", "-yo=yaml"}, "yaml"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, out, errb := newTestApp(t)
