@@ -66,5 +66,6 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 - Timer: Beansprucht ein anderer `time stop` den Timer genau zwischen dem Lesen von `….stopping` und dem der Timer-Datei, gilt das nicht mehr als „kein Timer“ (`time start` startete sonst einen zweiten Timer): Fehlt die Timer-Datei, wird `….stopping` erneut gelesen (Exit 7). Liegt beim Zurückstellen nach einem gescheiterten `time stop` schon eine neue Timer-Datei, rät der Hinweis „Beide Dateien prüfen, nicht umbenennen“ statt zum Umbenennen (das hätte die neue Datei ersetzt).
 - Strg+C vor dem Senden einer Anfrage (Exit 10, „Abgebrochen: Anfrage durch Unterbrechung beendet“) behält den Hinweis des Befehls; `time stop` nennt so weiter „Der Timer läuft weiter …“ mit dem Befehl zum Buchen von Hand.
 - Hinweise mit einem Befehl (`auth login`, `auth logout`, kein Token, `context create`) setzen einen Kontextnamen, den die Shell sonst anders läse (z. B. `a;b`), in einfache Anführungszeichen wie schon die Hinweise des Timers.
+- `update --input` mit `--customer`: Hat `customer` im Input keine lesbare `id`, gilt das nicht mehr als Kundenwechsel; Kontaktperson und Projekt des Inputs werden gesendet (bisher entfielen sie mit dem Hinweis „Kunde 99 statt <nil> aus --input“).
 
 [Unreleased]: https://github.com/Padrio/papierkram-cli/commits/main

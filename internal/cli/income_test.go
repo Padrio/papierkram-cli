@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -370,6 +371,38 @@ func TestIncomeRoundTripOtherCustomerDropsMovedRefs(t *testing.T) {
 			}
 			if tc.notInHint != "" && strings.Contains(errs, "übernommen: "+tc.notInHint) {
 				t.Errorf("Hinweis nennt %q: %q", tc.notInHint, errs)
+			}
+		})
+	}
+}
+
+// Review B-M6: a customer of the --input without a readable id is no
+// other customer than --customer names, so its moved references are sent
+// and no hint says they were dropped.
+func TestIncomeRoundTripCustomerWithoutIDKeepsMovedRefs(t *testing.T) {
+	for _, id := range []any{nil, "x", "delete"} {
+		t.Run(fmt.Sprint(id), func(t *testing.T) {
+			var m map[string]any
+			if err := json.Unmarshal([]byte(describeJSON(t, "invoice", "459")), &m); err != nil {
+				t.Fatal(err)
+			}
+			cust, _ := m["customer"].(map[string]any)
+			if id == "delete" {
+				delete(cust, "id")
+			} else {
+				cust["id"] = id
+			}
+			in, _ := json.Marshal(m)
+			app, srv := apiApp(t)
+			app.In = strings.NewReader(string(in))
+			wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--input", "-", "--customer", "99", "-o", "json"}), 0)
+			body := decodeBody(t, wantRequests(t, srv, 1)[0].Body)
+			raw, _ := json.Marshal(body["customer"])
+			if got, want := canonJSON(t, raw), `{"contact_person":{"id":1205},"id":99,"project":{"id":4576}}`; got != want {
+				t.Errorf("customer = %s, erwartet %s", got, want)
+			}
+			if _, errs := bufs(app); strings.Contains(errs, " statt ") {
+				t.Errorf("unerwarteter Hinweis: %q", errs)
 			}
 		})
 	}

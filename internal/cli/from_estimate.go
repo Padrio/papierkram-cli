@@ -269,7 +269,8 @@ var customerRefs = []string{"contact_person", "project"}
 // that is sent when base is another document (the invoice read by
 // invoice update), nil otherwise: a reference it has (from --input) is
 // sent and not named (T8-M1). The same customer keeps them. It reports
-// whether --customer names another customer than base.
+// whether --customer names another customer than base; a customer of base
+// without a readable id is no other one.
 func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]any, src string, refs []string, sent map[string]any) bool {
 	flag := fieldFlag(ws, "customer")
 	cust, ok := base["customer"].(map[string]any)
@@ -279,7 +280,10 @@ func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]an
 	given := strings.TrimSpace(rawText(c, flag))
 	newID, okNew := parseID(given)
 	oldID, okOld := parseID(fmt.Sprint(cust["id"]))
-	if okNew && okOld && newID == oldID {
+	if !okOld || (okNew && newID == oldID) {
+		// without a readable id of base's customer (a --input without
+		// customer.id) nothing says the references belong to another
+		// one: they stay (review B-M6)
 		return false
 	}
 	var dropped, flags []string
