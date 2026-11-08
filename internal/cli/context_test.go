@@ -546,8 +546,17 @@ func TestContextRenameDeleteRefuseWithTimer(t *testing.T) {
 				t.Errorf("error = %+v", e)
 			}
 
+			// the claim of an unfinished time stop counts too (task 11)
+			if err := timer.Claim(path); err != nil {
+				t.Fatal(err)
+			}
+			errb.Reset()
+			if code := Run(app, args); code != 7 || !strings.Contains(errb.String(), ".stopping") {
+				t.Fatalf("with a claim: exit %d, stderr %s", code, errb.String())
+			}
+
 			// the timer of another context does not block
-			if err := os.Rename(path, timer.Path(app.CacheDir, "b")); err != nil {
+			if err := os.Rename(timer.StoppingPath(path), timer.Path(app.CacheDir, "b")); err != nil {
 				t.Fatal(err)
 			}
 			errb.Reset()

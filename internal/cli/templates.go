@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -180,11 +181,18 @@ const helpTemplate = `{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces}}
 
 {{end}}{{if or .Runnable .HasSubCommands}}{{.UsageString}}{{end}}`
 
+// templateFuncs registers the template functions in cobra's global map
+// once: two command trees built at the same time (concurrent stops in the
+// tests of task 11) must not write it concurrently.
+var templateFuncs sync.Once
+
 // applyGerman installs the German templates and help texts on the whole
 // command tree. It must be called after all subcommands are added.
 func applyGerman(root *cobra.Command) {
-	cobra.AddTemplateFunc("useLine", useLine)
-	cobra.AddTemplateFunc("germanFlagUsages", germanFlagUsages)
+	templateFuncs.Do(func() {
+		cobra.AddTemplateFunc("useLine", useLine)
+		cobra.AddTemplateFunc("germanFlagUsages", germanFlagUsages)
+	})
 	root.SetUsageTemplate(usageTemplate)
 	root.SetHelpTemplate(helpTemplate)
 	help := &cobra.Command{

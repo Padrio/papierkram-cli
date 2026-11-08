@@ -263,19 +263,23 @@ func keyringErr(err error, what string) error {
 // context name while a timer file exists for it: the file is found by the
 // context name (timer.Path), so the timer would be lost silently, and a
 // later context of that name would inherit it. Any file counts, also one
-// time status calls invalid: time discard removes that too.
+// time status calls invalid, and the claim of an unfinished time stop
+// (timer.StoppingPath): time discard removes them too.
 func (a *App) refuseWithTimer(name string) error {
 	dir := a.cacheDir()
 	if dir == "" {
 		return nil // no cache directory, no timer (timerPath)
 	}
-	path := timer.Path(dir, name)
-	if _, err := os.Lstat(path); err != nil {
-		return nil
+	main := timer.Path(dir, name)
+	for _, path := range []string{main, timer.StoppingPath(main)} {
+		if _, err := os.Lstat(path); err != nil {
+			continue
+		}
+		return clierr.New(clierr.CodeConflict,
+			fmt.Sprintf("Für den Kontext %q läuft ein Timer (%s)", name, printable(path)),
+			"erst papierkram time stop oder papierkram time discard (mit --context "+shellWord(name)+")")
 	}
-	return clierr.New(clierr.CodeConflict,
-		fmt.Sprintf("Für den Kontext %q läuft ein Timer (%s)", name, printable(path)),
-		"erst papierkram time stop oder papierkram time discard (mit --context "+shellWord(name)+")")
+	return nil
 }
 
 func newContextDeleteCmd(app *App) *cobra.Command {

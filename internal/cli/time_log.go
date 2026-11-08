@@ -151,7 +151,7 @@ func (a *App) runTimeLog(c *cobra.Command, e registry.Entry) error {
 		v := rawText(c, "unbillable")
 		te.unbillable = &v
 	}
-	resp, err := a.sendTimeEntry(c, e, client, r, fields, te)
+	resp, err := a.sendTimeEntry(c, e, client, r, fields, te, nil)
 	if err != nil || resp == nil {
 		return err
 	}
@@ -172,9 +172,12 @@ type timeEntry struct {
 // presets that time stop shares: body (exit 5), the queued preset hints,
 // --dry-run and the repeated gate (beforeSend), the summary with names
 // and the question in a terminal (exit 8 when declined), then the
-// request. A nil response without error is a dry run: nothing was sent.
+// request. beforeCall, when not nil, runs between the question and the
+// request (time stop claims its timer there, task 11); its error ends the
+// command before anything is sent. A nil response without error is a dry
+// run: nothing was sent.
 func (a *App) sendTimeEntry(c *cobra.Command, e registry.Entry, client *api.Client, r *config.Resolved,
-	fields map[string]spec.Field, te timeEntry) (*api.Response, error) {
+	fields map[string]spec.Field, te timeEntry, beforeCall func() error) (*api.Response, error) {
 	body, err := a.timeLogBody(e, fields, te)
 	if err != nil {
 		return nil, err
@@ -185,6 +188,11 @@ func (a *App) sendTimeEntry(c *cobra.Command, e registry.Entry, client *api.Clie
 	}
 	if a.StdinTTY && !a.Flags.NoInput && !a.Flags.Yes {
 		if err := a.confirmTimeLog(c.Context(), client, r, te.period, te.task, te.user, body); err != nil {
+			return nil, err
+		}
+	}
+	if beforeCall != nil {
+		if err := beforeCall(); err != nil {
 			return nil, err
 		}
 	}

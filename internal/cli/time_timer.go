@@ -25,7 +25,9 @@ import (
 // time status shows it, time stop books the period through the path of
 // time log (sendTimeEntry) and deletes the state only after the entry was
 // created, time discard drops it. There is no timer on the server; only
-// time stop sends a request.
+// time stop sends a request. Before it sends, time stop claims the state
+// file (timer.Claim, task 11): of two stops of one timer only one books
+// it.
 
 const timerNote = "Der Timer ist lokal (eine Datei je Kontext im Cache-Verzeichnis, PAPIERKRAM_CACHE_DIR); Papierkram kennt ihn nicht."
 
@@ -39,7 +41,7 @@ func (a *App) newTimeStartCmd() *cobra.Command {
 			"Aufgabe und Benutzer werden jetzt bestimmt wie bei time log: Flag, sonst PAPIERKRAM_TASK bzw. PAPIERKRAM_USER, " +
 			"sonst task bzw. user aus der Projektdatei .papierkram.toml (anlegen: papierkram local init), beim Benutzer zuletzt user des Kontexts. " +
 			"--task nimmt auch einen Alias aus [tasks] der Projektdatei.\n\n" +
-			"Läuft schon ein Timer, bricht der Befehl ab (Exit 7). Unter Schreibschutz ist er gesperrt (Exit 9), weil time stop nicht buchen könnte. " +
+			"Läuft schon ein Timer oder wurde ein time stop nicht abgeschlossen, bricht der Befehl ab (Exit 7). Unter Schreibschutz ist er gesperrt (Exit 9), weil time stop nicht buchen könnte. " +
 			"Sendet keine Anfrage. " + timerNote,
 		Example: "  papierkram time start --task 545 -m \"Abstimmung mit Kunde\"\n" +
 			"  papierkram time start --task tickets",
@@ -64,7 +66,7 @@ func (a *App) newTimeStatusCmd() *cobra.Command {
 		Short: "Laufenden Timer anzeigen",
 		Long: "Zeigt den Timer des wirksamen Kontexts: Start, bisherige Dauer (h:mm nach Uhrzeit, wie time stop sie bucht, auch an Tagen der Zeitumstellung), " +
 			"Aufgabe, Benutzer, Kommentar und das Konto (Host), für das er gestartet wurde (-o wide, JSON account; " +
-			"gilt jetzt ein anderes, warnt der Befehl, denn time stop bucht dann nicht). Ohne Timer: „Kein Timer läuft“, mit -o json {\"running\":false} (Exit 0). " +
+			"gilt jetzt ein anderes, warnt der Befehl, denn time stop bucht dann nicht). Wurde ein time stop nicht abgeschlossen, zeigt der Befehl dessen Timer mit einer Warnung. Ohne Timer: „Kein Timer läuft“, mit -o json {\"running\":false} (Exit 0). " +
 			"Sendet keine Anfrage. " + timerNote,
 		Example:     "  papierkram time status\n  papierkram time status -o json",
 		Annotations: readsOnly(),
@@ -87,7 +89,10 @@ func (a *App) newTimeStopCmd() *cobra.Command {
 			"die Dauer bleibt richtig.\n\n" +
 			"Im Terminal zeigt der Befehl vorher eine Zusammenfassung und fragt nach (Enter = ja), wie time log; --dry-run zeigt die Anfrage. " +
 			"Der Timer wird erst gelöscht, wenn der Zeiteintrag angelegt ist; bei jedem Fehler, Abbruch oder Probelauf läuft er weiter " +
-			"(dann von Hand mit papierkram time log buchen oder mit papierkram time discard verwerfen)." +
+			"(dann von Hand mit papierkram time log buchen oder mit papierkram time discard verwerfen).\n\n" +
+			"Direkt vor dem Senden beansprucht der Befehl den Timer atomar (die Timer-Datei wird in <datei>.stopping umbenannt): " +
+			"Ein zweiter time stop desselben Timers endet mit Exit 7, ohne etwas zu senden. Scheitert die Anfrage, wird die Datei zurückbenannt. " +
+			"Bleibt sie nach einem Absturz liegen, brechen time start und time stop mit Exit 7 ab, bis sie geprüft und mit papierkram time discard verworfen ist." +
 			"\n\nKosten: " + creditsText(e.Credits) + " je Zeiteintrag.",
 		Example:     "  papierkram time stop\n  papierkram time stop -m \"Fehler behoben\" --yes",
 		Annotations: map[string]string{annotClass: string(registry.ClassCreate), annotOperation: e.OperationID},
@@ -109,7 +114,7 @@ func (a *App) newTimeDiscardCmd() *cobra.Command {
 		Short: "Timer verwerfen, ohne zu buchen",
 		Long: "Löscht den Timer des wirksamen Kontexts, ohne einen Zeiteintrag anzulegen: die erfasste Zeit geht verloren. " +
 			"Im Terminal fragt der Befehl nach (Enter = nein); ohne Terminal oder mit --no-input ist --yes nötig (sonst Exit 8). " +
-			"Verwirft auch eine beschädigte Timer-Datei. Auch unter Schreibschutz erlaubt, da nur lokal. " + timerNote,
+			"Verwirft auch eine beschädigte Timer-Datei und die Datei eines nicht abgeschlossenen time stop (<datei>.stopping). Auch unter Schreibschutz erlaubt, da nur lokal. " + timerNote,
 		Example:     "  papierkram time discard\n  papierkram time discard --yes",
 		Annotations: map[string]string{annotLocal: "true"},
 		Args:        noArgs,
@@ -281,9 +286,13 @@ func (a *App) runTimeStatus(c *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	_, st, err := a.loadTimer(r)
+	_, st, stopping, err := a.readTimers(r)
 	if err != nil {
 		return err
+	}
+	if stopping {
+		ce := a.errStopUnfinished(*st)
+		output.Warn(a.Err, ce.Message+". "+ce.Hint)
 	}
 	if st != nil && !sameAccount(st.BaseURL, r.BaseURL) {
 		// time stop would refuse (controller ruling C1): say so now
@@ -344,22 +353,40 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 	if c.Flags().Changed("comments") || eff.Comment != "" {
 		te.comments = &eff.Comment
 	}
-	// not guarded: two concurrent stops of one timer may both book it
-	resp, err := a.sendTimeEntry(c, e, client, r, fields, te)
+	// the claim (task 11, C2): after the question and --dry-run, right
+	// before the request, so a dry run or a declined question never takes
+	// the timer and of two stops only one sends
+	var claimed bool
+	var claimErr error
+	claim := func() error {
+		claimed, claimErr = a.claimTimer(path, *st, eff, p)
+		return claimErr
+	}
+	resp, err := a.sendTimeEntry(c, e, client, r, fields, te, claim)
 	if err != nil {
-		return a.keepTimer(err, eff, p)
+		kept := err // an error of the claim is complete
+		if claimErr == nil {
+			kept = a.keepTimer(err, eff, p)
+		}
+		if claimed {
+			if rerr := timer.Release(path); rerr != nil {
+				return errNotReleased(path, rerr, kept)
+			}
+		}
+		return kept
 	}
 	if resp == nil {
 		_, _ = fmt.Fprintln(a.Err, "Hinweis: Probelauf – nichts gebucht, der Timer läuft weiter.")
 		return nil
 	}
-	delErr := timer.Delete(path)
+	claimPath := timer.StoppingPath(path)
+	delErr := timer.Delete(claimPath)
 	outErr := a.writeResult(c, e, r, nil, resp.Body)
 	if delErr != nil {
 		ce := clierr.New(clierr.CodePartial,
 			fmt.Sprintf("Zeiteintrag angelegt, aber Timer-Datei nicht gelöscht: %s", printable(delErr.Error())),
 			fmt.Sprintf("NICHT erneut papierkram time stop ausführen (würde doppelt buchen); den Timer mit papierkram time discard verwerfen "+
-				"oder die Datei %s von Hand löschen", printable(path)))
+				"oder die Datei %s von Hand löschen", printable(claimPath)))
 		ce.Cause = delErr
 		return ce
 	}
@@ -369,6 +396,62 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 	d := p.end - p.start
 	_, _ = fmt.Fprintf(a.Err, "Timer gestoppt: %s %s–%s (%d:%02d h) gebucht.\n", p.date, hhmm(p.start), hhmm(p.end), d/60, d%60)
 	return nil
+}
+
+// claimTimer claims the timer st at path for this stop and reports
+// whether it holds the claim. Another stop's claim, or no file, is exit 7
+// (nothing sent). A claim that is not st (in the meantime another stop
+// booked it and a new timer was started, e.g. while this one asked) is
+// exit 7 too; the claim is held then and must be released. Any other
+// error of the file system ends the stop before the request (exit 1),
+// the timer stays.
+func (a *App) claimTimer(path string, st, eff timer.State, p period) (bool, error) {
+	if err := timer.Claim(path); errors.Is(err, timer.ErrClaimed) {
+		return false, clierr.New(clierr.CodeConflict, "Timer wird bereits von einem anderen papierkram time stop gebucht", claimedHint)
+	} else if err != nil {
+		ce := clierr.New(clierr.CodeError, "Timer-Datei nicht beansprucht: "+printable(err.Error()), "Nichts gesendet")
+		ce.Cause = err
+		return false, a.keepTimer(ce, eff, p)
+	}
+	if now, err := timer.LoadStopping(path); err != nil || now == nil || !now.Equal(st) {
+		return true, clierr.New(clierr.CodeConflict,
+			"Timer wurde seit dem Lesen ersetzt (von einem anderen papierkram time stop gebucht und neu gestartet?)", claimedHint)
+	}
+	return true, nil
+}
+
+// claimedHint is the hint of a stop that found the timer claimed or
+// replaced: it sent nothing.
+const claimedHint = "Nichts gesendet. Mit papierkram time status prüfen, ob er noch läuft"
+
+// errNotReleased is the failure to put the claim of path back after the
+// stop failed with cause (exit 1): the claim stays, so time start and
+// time stop refuse until it is renamed back or discarded. The hint keeps
+// what went wrong before, also an unknown outcome.
+func errNotReleased(path string, rerr, cause error) error {
+	prev := clierr.From(cause)
+	before := prev.Message
+	if prev.Hint != "" {
+		before += ". " + prev.Hint
+	}
+	ce := clierr.New(clierr.CodeError, "Timer-Datei nicht zurückgestellt: "+printable(rerr.Error()),
+		fmt.Sprintf("Die Datei %s in %s umbenennen (dann läuft der Timer weiter) oder papierkram time discard. Zuvor gescheitert: %s",
+			printable(timer.StoppingPath(path)), printable(path), before))
+	ce.Cause = rerr
+	return ce
+}
+
+// errStopUnfinished is the claim of a time stop that did not finish
+// (killed between the claim and the end): its entry may exist. time start
+// and time stop refuse (exit 7), time status warns with its text.
+func (a *App) errStopUnfinished(st timer.State) *clierr.Error {
+	v := a.timerStatus(st)
+	start := st.StartedAt.In(a.loc())
+	date := start.Format(time.DateOnly)
+	return clierr.New(clierr.CodeConflict,
+		fmt.Sprintf("Ein time stop wurde nicht abgeschlossen (Timer seit %s, %s)", output.FmtDate(v.StartedAt), timerSubject(st)),
+		fmt.Sprintf("Erst mit papierkram time list --since %s prüfen, ob der Eintrag angelegt wurde; wenn ja: papierkram time discard; "+
+			"sonst papierkram time discard und von Hand buchen mit %s", date, a.timeLogCommand(st, date, hhmmOf(start), "HH:MM")))
 }
 
 // sameAccount reports whether the base URL a timer was started with is
@@ -519,31 +602,41 @@ func (a *App) runTimeDiscard(c *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	path, st, lerr := a.loadTimer(r)
-	if path == "" {
-		return lerr
+	path, err := a.timerPath(r)
+	if err != nil {
+		return err
+	}
+	// the claim of an unfinished stop first, then the state file; both
+	// are discarded, also when they cannot be used
+	var what []string
+	for _, stopping := range []bool{true, false} {
+		st, err := a.timerState(r, path, stopping)
+		switch {
+		case err != nil:
+			what = append(what, clierr.From(err).Message)
+		case st != nil && stopping:
+			what = append(what, a.errStopUnfinished(*st).Message)
+		case st != nil:
+			v := a.timerStatus(*st)
+			what = append(what, fmt.Sprintf("Timer läuft seit %s (%s h): %s", output.FmtDate(v.StartedAt), v.Duration, timerSubject(*st)))
+		}
 	}
 	o := a.outputOptions(c.Context(), a.outputFormat(r))
-	if st == nil && lerr == nil {
+	if len(what) == 0 {
 		if !ownText(o) {
 			return output.RenderValue(o, discardJSON{}, output.Columns{})
 		}
 		_, err := fmt.Fprintf(a.Out, "Kein Timer läuft (%s), nichts zu verwerfen.\n", contextLabel(r.Context))
 		return err
 	}
-	var what string
-	if st != nil {
-		v := a.timerStatus(*st)
-		what = fmt.Sprintf("Timer läuft seit %s (%s h): %s", output.FmtDate(v.StartedAt), v.Duration, timerSubject(*st))
-	} else {
-		what = clierr.From(lerr).Message
-	}
-	if err := a.confirmDiscard(c.Context(), what); err != nil {
+	if err := a.confirmDiscard(c.Context(), strings.Join(what, "; ")); err != nil {
 		return err
 	}
-	if err := timer.Delete(path); err != nil {
-		return clierr.New(clierr.CodeError, "Timer nicht verworfen: "+printable(err.Error()),
-			"Die Timer-Datei von Hand löschen")
+	for _, p := range []string{timer.StoppingPath(path), path} {
+		if err := timer.Delete(p); err != nil {
+			return clierr.New(clierr.CodeError, "Timer nicht verworfen: "+printable(err.Error()),
+				"Die Timer-Datei "+printable(p)+" von Hand löschen")
+		}
 	}
 	if !ownText(o) {
 		return afterRequest(output.RenderValue(o, discardJSON{Discarded: true}, output.Columns{}))
@@ -599,23 +692,51 @@ func (a *App) timerPath(r *config.Resolved) (string, error) {
 
 // loadTimer reads the timer of the context of r: nil without one. A state
 // that cannot be used, also one that names another context (the file was
-// edited or copied), is an error (exit 1) that names time discard.
+// edited or copied), is an error (exit 1) that names time discard. The
+// claim of an unfinished time stop comes first: it is exit 7
+// (errStopUnfinished), since its entry may exist.
 func (a *App) loadTimer(r *config.Resolved) (string, *timer.State, error) {
-	path, err := a.timerPath(r)
-	if err != nil {
-		return "", nil, err
+	path, st, stopping, err := a.readTimers(r)
+	if err == nil && stopping {
+		return path, nil, a.errStopUnfinished(*st)
 	}
-	st, err := timer.Load(path)
+	return path, st, err
+}
+
+// readTimers reads the claim of an unfinished time stop of the context of
+// r and, without one, its state file; stopping reports that st is the
+// claim. Errors as loadTimer.
+func (a *App) readTimers(r *config.Resolved) (path string, st *timer.State, stopping bool, err error) {
+	path, err = a.timerPath(r)
+	if err != nil {
+		return "", nil, false, err
+	}
+	if st, err = a.timerState(r, path, true); err != nil || st != nil {
+		return path, st, st != nil, err
+	}
+	st, err = a.timerState(r, path, false)
+	return path, st, false, err
+}
+
+// timerState reads the state file at path, or its claim with stopping,
+// for the context of r: nil without one; one of another context is an
+// error like an unusable one (exit 1, naming the file and time discard).
+func (a *App) timerState(r *config.Resolved, path string, stopping bool) (*timer.State, error) {
+	load, shown := timer.Load, path
+	if stopping {
+		load, shown = timer.LoadStopping, timer.StoppingPath(path)
+	}
+	st, err := load(path)
 	if err != nil || st == nil {
-		return path, nil, err
+		return nil, err
 	}
 	if st.Context != r.Context {
-		return path, nil, clierr.New(clierr.CodeError,
+		return nil, clierr.New(clierr.CodeError,
 			fmt.Sprintf("Timer-Datei %s ist ungültig: sie gehört zu %s, wirksam ist %s",
-				printable(path), contextLabel(st.Context), contextLabel(r.Context)),
+				printable(shown), contextLabel(st.Context), contextLabel(r.Context)),
 			timer.DiscardHint)
 	}
-	return path, st, nil
+	return st, nil
 }
 
 // contextLabel names a context in texts; "" is direct mode.

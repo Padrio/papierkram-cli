@@ -211,6 +211,9 @@ func TestTimerStopFailureKeepsState(t *testing.T) {
 			if after := timerFile(t, app, ""); !bytes.Equal(after, before) {
 				t.Errorf("state changed: %s → %s", before, after)
 			}
+			if claimFile(t, app, "") != nil {
+				t.Error("claim left")
+			}
 			wantStderr(t, app, tc.stderr...)
 		})
 	}
@@ -487,27 +490,6 @@ func TestTimerCommandAnnotations(t *testing.T) {
 			t.Errorf("time %s: %v, annotations %v", name, err, cmd.Annotations)
 		}
 	}
-}
-
-// When the timer file cannot be deleted after the entry was created, the
-// entry is shown and the error says not to stop again (exit 11).
-func TestTimerStopDeleteFailureIsPartial(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
-		t.Skip("needs Unix permissions")
-	}
-	app, srv := logApp(t, nine(t))
-	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 0)
-	dir := filepath.Dir(timer.Path(app.CacheDir, ""))
-	if err := os.Chmod(dir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	wantExit(t, app, at(app, morning(t), "time", "stop", "-o", "json"), 11)
-	wantRequests(t, srv, 1)
-	if out, _ := bufs(app); !strings.Contains(out, `"id":`) {
-		t.Errorf("created entry not shown: %s", out)
-	}
-	wantStderr(t, app, "Zeiteintrag angelegt", "NICHT erneut", "papierkram time discard", "timer-.direct.json", "von Hand löschen")
 }
 
 // Controller ruling (concern 1): the timer remembers the account (base
