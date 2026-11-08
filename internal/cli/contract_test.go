@@ -4,17 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 
+	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/testutil/mockapi"
 )
 
@@ -89,7 +94,9 @@ type contractRun struct {
 	exit  int
 	env   map[string]string
 	setup func(t *testing.T, srv *mockapi.Server) []string
-	args  []string
+	// prepare writes configuration, keychain or project file of the app
+	prepare func(t *testing.T, app *App)
+	args    []string
 }
 
 // run executes c and returns stdout and stderr; the exit code must match.
@@ -101,6 +108,9 @@ func (c contractRun) run(t *testing.T) (string, string) {
 	}
 	app, srv := mockApp(t, env)
 	app.Now = func() time.Time { return contractNow }
+	if c.prepare != nil {
+		c.prepare(t, app)
+	}
 	args := c.args
 	if c.setup != nil {
 		args = append(append([]string{}, args...), c.setup(t, srv)...)
@@ -376,42 +386,146 @@ func listPages(w http.ResponseWriter, r *http.Request) {
 
 // outputRuns cover the plain JSON outputs of spec 10.3 with their
 // contract: list (API envelope, --all, local filter, api --paginate), the
-// empty answer of an action and of create, auth status and version.
+// empty answer of an action, an update, a create and papierkram api, auth
+// status with every source of context, token and read-only, and version.
+// check tests what the contract cannot (review T13-M4: one function per
+// run instead of a switch on its name); nil checks nothing more.
 var outputRuns = []struct {
 	schema string
 	contractRun
+	check func(t *testing.T, doc map[string]any, out string)
 }{
-	{"list", contractRun{name: "list", args: []string{"invoice", "list", "-o", "json"}}},
+	{"list", contractRun{name: "list", args: []string{"invoice", "list", "-o", "json"}}, nil},
 	{"list", contractRun{name: "list --all", setup: func(_ *testing.T, srv *mockapi.Server) []string {
 		srv.OnFunc("GET", "/income/invoices", listPages)
 		return nil
-	}, args: []string{"invoice", "list", "--all", "-o", "json"}}},
-	{"list", contractRun{name: "list lokal gefiltert", args: []string{"company", "list", "--type", "customer", "-o", "json"}}},
+	}, args: []string{"invoice", "list", "--all", "-o", "json"}}, wantMerged},
+	{"list", contractRun{name: "list lokal gefiltert", args: []string{"company", "list", "--type", "customer", "-o", "json"}}, nil},
 	{"list", contractRun{name: "api --paginate", setup: func(_ *testing.T, srv *mockapi.Server) []string {
 		srv.OnFunc("GET", "/income/invoices", listPages)
 		return nil
-	}, args: []string{"api", "GET", "/income/invoices", "--paginate", "-o", "json"}}},
+	}, args: []string{"api", "GET", "/income/invoices", "--paginate", "-o", "json"}}, wantMerged},
 	{"ok", contractRun{name: "archive leer", setup: func(_ *testing.T, srv *mockapi.Server) []string {
 		srv.On("POST", "/contact/companies/12/archive", http.StatusOK, nil)
 		return nil
-	}, args: []string{"company", "archive", "12", "-o", "json"}}},
+	}, args: []string{"company", "archive", "12", "-o", "json"}}, wantOKID(12)},
+	// review T13-M5: update and papierkram api with an empty answer
+	{"ok", contractRun{name: "update leer", setup: func(_ *testing.T, srv *mockapi.Server) []string {
+		srv.On("PUT", "/contact/companies/12", http.StatusOK, nil)
+		return nil
+	}, args: []string{"company", "update", "12", "--name", "Muster GmbH", "-o", "json"}}, wantOKID(12)},
 	{"ok", contractRun{name: "create leer", setup: func(_ *testing.T, srv *mockapi.Server) []string {
 		srv.On("POST", "/contact/companies", http.StatusCreated, nil)
 		return nil
-	}, args: []string{"company", "create", "--name", "Muster GmbH", "--contact-type", "customer", "-o", "json"}}},
+	}, args: []string{"company", "create", "--name", "Muster GmbH", "--contact-type", "customer", "-o", "json"}}, wantOKWithoutID},
+	{"ok", contractRun{name: "api POST leer", setup: func(_ *testing.T, srv *mockapi.Server) []string {
+		srv.On("POST", "/contact/companies/12/archive", http.StatusOK, nil)
+		return nil
+	}, args: []string{"api", "POST", "/contact/companies/12/archive", "-o", "json"}}, wantOKWithoutID},
 	{"auth-status", contractRun{name: "auth status", setup: func(_ *testing.T, srv *mockapi.Server) []string {
 		srv.On("GET", "/info", http.StatusOK, []byte(`{}`), "X-Remaining-Quota", "8000", "X-Consumed-Quota", "1")
 		return nil
-	}, args: []string{"auth", "status", "-o", "json"}}},
+	}, args: []string{"auth", "status", "-o", "json"}}, func(t *testing.T, doc map[string]any, out string) {
+		if q := objOf(doc, "quota"); q["known"] != true || q["request_cost"] != 1.0 {
+			t.Errorf("Kontingent fehlt: %s", out)
+		}
+		wantSources(t, doc, "", "env", "")
+	}},
 	{"auth-status", contractRun{name: "auth status ohne Kontingent", env: map[string]string{"PAPIERKRAM_READ_ONLY": "1"},
 		setup: func(_ *testing.T, srv *mockapi.Server) []string {
 			srv.On("GET", "/info", http.StatusOK, []byte(`{}`), "X-Remaining-Quota", "", "X-Consumed-Quota", "")
 			return nil
-		}, args: []string{"auth", "status", "-o", "json"}}},
+		}, args: []string{"auth", "status", "-o", "json"}}, func(t *testing.T, doc map[string]any, out string) {
+		if q := objOf(doc, "quota"); q["known"] != false || q["request_cost"] != nil {
+			t.Errorf("Kontingent bekannt: %s", out)
+		}
+		wantSources(t, doc, "", "env", "env")
+	}},
 	// without a token auth status still prints what it knows (exit 3)
 	{"auth-status", contractRun{name: "auth status ohne Token", exit: 3, env: map[string]string{"PAPIERKRAM_TOKEN": ""},
-		args: []string{"auth", "status", "-o", "json"}}},
-	{"version", contractRun{name: "version", args: []string{"version", "-o", "json"}}},
+		args: []string{"auth", "status", "-o", "json"}}, func(t *testing.T, doc map[string]any, _ string) {
+		wantSources(t, doc, "", "", "")
+	}},
+	// review T13-M1: the other sources, each once (token of the context
+	// from the keychain or in plain text, context by flag, environment,
+	// project file or active_context, read-only of the context)
+	{"auth-status", contractRun{name: "auth status Schlüsselbund --context", env: map[string]string{"PAPIERKRAM_TOKEN": ""},
+		prepare: authContexts, args: []string{"auth", "status", "--context", "b", "-o", "json"}},
+		func(t *testing.T, doc map[string]any, _ string) {
+			wantSources(t, doc, "flag", "keychain", "")
+			if doc["context"] != "b" || doc["subdomain"] != "firma-b" {
+				t.Errorf("Kontext: %v", doc)
+			}
+		}},
+	{"auth-status", contractRun{name: "auth status PAPIERKRAM_CONTEXT", env: map[string]string{"PAPIERKRAM_TOKEN": "", "PAPIERKRAM_CONTEXT": "b"},
+		prepare: authContexts, args: []string{"auth", "status", "-o", "json"}},
+		func(t *testing.T, doc map[string]any, _ string) { wantSources(t, doc, "env", "keychain", "") }},
+	{"auth-status", contractRun{name: "auth status active_context", env: map[string]string{"PAPIERKRAM_TOKEN": ""},
+		prepare: authContexts, args: []string{"auth", "status", "-o", "json"}},
+		func(t *testing.T, doc map[string]any, _ string) {
+			wantSources(t, doc, "config", "keychain", "")
+			if doc["context"] != "a" {
+				t.Errorf("Kontext: %v", doc)
+			}
+		}},
+	{"auth-status", contractRun{name: "auth status Projektdatei, Klartext, Schreibschutz des Kontexts", env: map[string]string{"PAPIERKRAM_TOKEN": ""},
+		prepare: func(t *testing.T, app *App) {
+			authContexts(t, app)
+			writeProjectFile(t, app, "context = \"c\"\n")
+		}, args: []string{"auth", "status", "-o", "json"}},
+		func(t *testing.T, doc map[string]any, _ string) {
+			wantSources(t, doc, "projectfile", "config", "context")
+			if doc["context"] != "c" || doc["read_only"] != true {
+				t.Errorf("Kontext: %v", doc)
+			}
+		}},
+	{"version", contractRun{name: "version", args: []string{"version", "-o", "json"}}, nil},
+}
+
+// authContexts writes the contexts a and b (token in the keychain) and c
+// (token in plain text, read-only) with a active.
+func authContexts(t *testing.T, app *App) {
+	t.Helper()
+	writeCfg(t, app, twoWritableCtx+"[contexts.c]\nsubdomain = \"firma-c\"\ntoken = \"test-token-c\"\nread_only = true\n")
+	for _, ctx := range []string{"a", "b"} {
+		if err := app.Keyring.Set(ctx, "test-token-"+ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// wantSources checks the three sources of an auth status document.
+func wantSources(t *testing.T, doc map[string]any, context, token, readOnly string) {
+	t.Helper()
+	if doc["context_source"] != context || doc["token_source"] != token || doc["read_only_source"] != readOnly {
+		t.Errorf("Quellen = %v/%v/%v, erwartet %q/%q/%q", doc["context_source"], doc["token_source"], doc["read_only_source"], context, token, readOnly)
+	}
+}
+
+// wantMerged checks a list merged from the two pages of listPages.
+func wantMerged(t *testing.T, doc map[string]any, out string) {
+	t.Helper()
+	if doc["page"] != 1.0 || doc["has_more"] != false || len(doc["entries"].([]any)) != 2 {
+		t.Errorf("nicht zusammengeführt: %s", out)
+	}
+}
+
+// wantOKID checks the empty answer of an update or action: {"id":id,"ok":true}.
+func wantOKID(id float64) func(t *testing.T, doc map[string]any, out string) {
+	return func(t *testing.T, doc map[string]any, out string) {
+		t.Helper()
+		if doc["id"] != id || len(doc) != 2 {
+			t.Errorf("erwartet id %v: %s", id, out)
+		}
+	}
+}
+
+// wantOKWithoutID checks the empty answer of a create or papierkram api.
+func wantOKWithoutID(t *testing.T, doc map[string]any, out string) {
+	t.Helper()
+	if _, ok := doc["id"]; ok {
+		t.Errorf("id ohne Objekt: %s", out)
+	}
 }
 
 // The JSON outputs of list, an empty answer, auth status and version
@@ -425,31 +539,8 @@ func TestOutputContract(t *testing.T) {
 			if err := json.Unmarshal([]byte(out), &doc); err != nil {
 				t.Fatal(err)
 			}
-			switch c.name {
-			case "list --all", "api --paginate":
-				if doc["page"] != 1.0 || doc["has_more"] != false || len(doc["entries"].([]any)) != 2 {
-					t.Errorf("nicht zusammengeführt: %s", out)
-				}
-			case "archive leer":
-				if doc["id"] != 12.0 {
-					t.Errorf("id fehlt: %s", out)
-				}
-			case "create leer":
-				if _, ok := doc["id"]; ok {
-					t.Errorf("id bei create: %s", out)
-				}
-			case "auth status":
-				if q := objOf(doc, "quota"); q["known"] != true || q["request_cost"] != 1.0 || doc["token_source"] != "env" {
-					t.Errorf("Kontingent oder Token-Quelle fehlt: %s", out)
-				}
-			case "auth status ohne Kontingent":
-				if q := objOf(doc, "quota"); q["known"] != false || q["request_cost"] != nil || doc["read_only_source"] != "env" {
-					t.Errorf("Kontingent bekannt oder Schreibschutz fehlt: %s", out)
-				}
-			case "auth status ohne Token":
-				if doc["token_source"] != "" {
-					t.Errorf("Token-Quelle ohne Token: %s", out)
-				}
+			if c.check != nil {
+				c.check(t, doc, out)
 			}
 		})
 	}
@@ -671,3 +762,123 @@ func errOf(d map[string]any) map[string]any { return objOf(d, "error") }
 
 // objOf is the object under key of a decoded document.
 func objOf(d map[string]any, key string) map[string]any { return d[key].(map[string]any) }
+
+// authStatusSources are the values of the source fields of auth status
+// (config.Resolved), "" for none.
+var authStatusSources = map[string][]string{
+	"context_source":   {"", config.SourceFlag, config.SourceEnv, config.SourceProjectFile, config.SourceConfig},
+	"token_source":     {"", config.SourceEnv, config.SourceKeychain, config.SourceConfig},
+	"read_only_source": {"", config.SourceEnv, config.SourceContext},
+}
+
+// Review T13-M1: the enums of the source fields in auth-status.json are
+// the config.Source* constants each field takes; every such constant
+// belongs to a field (a new one fails here until the schema and this
+// table name it), and the real runs of outputRuns produce every value.
+func TestAuthStatusSourceEnums(t *testing.T) {
+	schema := loadContract(t, "auth-status")
+	used := map[string]bool{}
+	for field, want := range authStatusSources {
+		ref := schema.Properties[field]
+		if ref == nil || ref.Value == nil {
+			t.Fatalf("%s fehlt im Schema", field)
+		}
+		var enum []string
+		for _, v := range ref.Value.Enum {
+			s, ok := v.(string)
+			if !ok {
+				t.Fatalf("%s: Enum-Wert %v kein Text", field, v)
+			}
+			enum = append(enum, s)
+		}
+		if !sameSet(enum, want) {
+			t.Errorf("%s: Enum %q, config.Source* %q", field, enum, want)
+		}
+		for _, v := range want {
+			used[v] = true
+		}
+	}
+
+	consts := sourceConstants(t)
+	if len(consts) < 6 {
+		t.Fatalf("nur %d Source-Konstanten gefunden: %v", len(consts), consts)
+	}
+	for name, v := range consts {
+		if !used[v] {
+			t.Errorf("config.%s = %q gehört zu keinem Feld von auth status", name, v)
+		}
+	}
+
+	seen := map[string][]string{}
+	for _, c := range outputRuns {
+		if c.schema != "auth-status" {
+			continue
+		}
+		out, _ := c.run(t)
+		var doc map[string]any
+		if err := json.Unmarshal([]byte(out), &doc); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		for field := range authStatusSources {
+			if v, _ := doc[field].(string); !slices.Contains(seen[field], v) {
+				seen[field] = append(seen[field], v)
+			}
+		}
+	}
+	for field, want := range authStatusSources {
+		if !sameSet(seen[field], want) {
+			t.Errorf("%s: Läufe zeigen %q, erwartet alle von %q", field, seen[field], want)
+		}
+	}
+}
+
+// sameSet reports whether a and b hold the same strings.
+func sameSet(a, b []string) bool {
+	a, b = slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b))
+	return slices.Equal(slices.Compact(a), slices.Compact(b))
+}
+
+// sourceConstants are the string constants Source* of package config
+// (name to value), read from its source so a new one is not missed.
+func sourceConstants(t *testing.T) map[string]string {
+	t.Helper()
+	files, err := filepath.Glob("../config/*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{}
+	fset := token.NewFileSet()
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, f, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range file.Decls {
+			gd, ok := d.(*ast.GenDecl)
+			if !ok || gd.Tok != token.CONST {
+				continue
+			}
+			for _, sp := range gd.Specs {
+				vs := sp.(*ast.ValueSpec)
+				for i, n := range vs.Names {
+					if !strings.HasPrefix(n.Name, "Source") || i >= len(vs.Values) {
+						continue
+					}
+					lit, ok := vs.Values[i].(*ast.BasicLit)
+					if !ok || lit.Kind != token.STRING {
+						t.Fatalf("config.%s ist kein Text-Literal", n.Name)
+					}
+					v, err := strconv.Unquote(lit.Value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					out[n.Name] = v
+				}
+			}
+		}
+	}
+	return out
+}
