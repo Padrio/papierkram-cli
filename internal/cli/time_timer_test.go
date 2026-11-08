@@ -178,7 +178,7 @@ func TestTimerStopFailureKeepsState(t *testing.T) {
 		{name: "dry run", start: nine(t), stop: morning(t), args: []string{"--dry-run"}, exit: 0,
 			stderr: []string{"Timer läuft weiter"}},
 		{name: "midnight", start: berlinAt(t, 2026, 11, 3, 22, 10, 0), stop: berlinAt(t, 2026, 11, 4, 1, 15, 0), exit: 2,
-			stderr: []string{"Mitternacht", "papierkram time log --task 545 --user 1 --date 2026-11-03 --from 22:10 --to 23:59",
+			stderr: []string{"Mitternacht", "papierkram time log --task 545 --user 1 --date 2026-11-03 --from 22:10 --to 24:00",
 				"papierkram time log --task 545 --user 1 --date 2026-11-04 --from 00:00 --to 01:15", "papierkram time discard"}},
 		{name: "days later", start: berlinAt(t, 2026, 11, 1, 22, 10, 0), stop: morning(t), exit: 2,
 			stderr: []string{"Mitternacht", "papierkram time log", "papierkram time discard"}},
@@ -646,27 +646,53 @@ func TestTimerStopInAnotherTimeZone(t *testing.T) {
 	}
 }
 
-// Review M1: the hint for a timer over midnight to the next day leaves out
-// an empty half, and says there is nothing to book when both halves are
-// empty (23:59 → 00:00).
-func TestTimerMidnightHintEdges(t *testing.T) {
+// Open point 22 (decided): a timer stopped in the first minute of the
+// next day (00:00:00–00:00:59) books until 24:00 of its start date, like
+// time log --to 24:00; a later stop is over midnight (exit 2, the timer
+// stays). Review M1: the hint for a timer over midnight to the next day
+// names both halves, the first one up to 24:00, so 23:59 → 00:30 books
+// the minute before midnight as well.
+func TestTimerStopAtMidnight(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		start, stop time.Time
+		from        string
+	}{
+		{"23:00 to 00:00:30", berlinAt(t, 2026, 6, 10, 23, 0, 0), berlinAt(t, 2026, 6, 11, 0, 0, 30), "23:00"},
+		{"23:59 to 00:00:20", berlinAt(t, 2026, 6, 10, 23, 59, 10), berlinAt(t, 2026, 6, 11, 0, 0, 20), "23:59"},
+		{"22:10 to 00:00:00", berlinAt(t, 2026, 6, 10, 22, 10, 0), berlinAt(t, 2026, 6, 11, 0, 0, 0), "22:10"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, srv := logApp(t, tc.start)
+			wantExit(t, app, at(app, tc.start, "time", "start", "--task", "545", "--user", "1"), 0)
+			wantExit(t, app, at(app, tc.stop, "time", "stop", "-o", "json"), 0)
+			wantBody(t, srv, "POST", timeEntries,
+				`{"entry_date":"2026-06-10","started_at_time":"`+tc.from+`","ended_at_time":"24:00","task":{"id":545},"user":{"id":1}}`)
+			wantStderr(t, app, "Timer gestoppt: 2026-06-10 "+tc.from+"–24:00")
+			if b := timerFile(t, app, ""); b != nil {
+				t.Errorf("timer kept: %s", b)
+			}
+		})
+	}
 	for _, tc := range []struct {
 		name        string
 		start, stop time.Time
 		want, not   []string
 	}{
-		{"23:59 to 00:00", berlinAt(t, 2026, 11, 3, 23, 59, 10), berlinAt(t, 2026, 11, 4, 0, 0, 20),
-			[]string{"nichts zu buchen", "papierkram time discard"}, []string{"papierkram time log", ": ,"}},
+		{"23:00 to 00:01", berlinAt(t, 2026, 6, 10, 23, 0, 0), berlinAt(t, 2026, 6, 11, 0, 1, 0),
+			[]string{"über Mitternacht", "papierkram time log --task 545 --user 1 --date 2026-06-10 --from 23:00 --to 24:00",
+				"papierkram time log --task 545 --user 1 --date 2026-06-11 --from 00:00 --to 00:01", "papierkram time discard"}, nil},
 		{"23:59 to 00:30", berlinAt(t, 2026, 11, 3, 23, 59, 0), berlinAt(t, 2026, 11, 4, 0, 30, 0),
-			[]string{"papierkram time log --task 545 --user 1 --date 2026-11-04 --from 00:00 --to 00:30", "papierkram time discard"},
-			[]string{"--date 2026-11-03"}},
-		{"22:10 to 00:00", berlinAt(t, 2026, 11, 3, 22, 10, 0), berlinAt(t, 2026, 11, 4, 0, 0, 0),
-			[]string{"papierkram time log --task 545 --user 1 --date 2026-11-03 --from 22:10 --to 23:59", "papierkram time discard"},
-			[]string{"--date 2026-11-04"}},
+			[]string{"papierkram time log --task 545 --user 1 --date 2026-11-03 --from 23:59 --to 24:00",
+				"papierkram time log --task 545 --user 1 --date 2026-11-04 --from 00:00 --to 00:30", "papierkram time discard"}, nil},
+		{"two days later at 00:00", berlinAt(t, 2026, 6, 10, 23, 0, 0), berlinAt(t, 2026, 6, 12, 0, 0, 30),
+			[]string{"über Mitternacht", "Je Tag einen Eintrag", "--date 2026-06-10 --from 23:00 --to 24:00", "papierkram time discard"},
+			[]string{"--date 2026-06-12"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, srv := logApp(t, tc.start)
 			wantExit(t, app, at(app, tc.start, "time", "start", "--task", "545", "--user", "1"), 0)
+			before := timerFile(t, app, "")
 			wantExit(t, app, at(app, tc.stop, "time", "stop"), 2)
 			wantStderr(t, app, tc.want...)
 			_, errs := bufs(app)
@@ -676,6 +702,9 @@ func TestTimerMidnightHintEdges(t *testing.T) {
 				}
 			}
 			wantRequests(t, srv, 0)
+			if after := timerFile(t, app, ""); !bytes.Equal(after, before) {
+				t.Errorf("state changed: %s → %s", before, after)
+			}
 		})
 	}
 }

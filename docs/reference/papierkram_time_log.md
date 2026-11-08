@@ -5,7 +5,7 @@ Zeit erfassen (Zeiteintrag mit Zeitraum, Aufgabe und Benutzer)
 ```text
 Erfasst Zeit als Zeiteintrag: Datum, Zeitraum, Aufgabe und Benutzer.
 
-Zeitraum: --from und --to (H:MM oder HH:MM) oder --duration (1h30m, 90m, 1:30), mit --from ab dieser Uhrzeit, ohne --from bis jetzt (nur für heute). Ein Zeiteintrag hat nur ein Datum: Einträge über Mitternacht werden abgelehnt; sie werden als zwei Einträge erfasst. Eine Dauer wird in Uhrzeit gerechnet, wie Papierkram sie bucht (Uhrzeiten ohne Zeitzone): --from 01:30 --duration 2h ergibt 01:30–03:30, auch an den Tagen der Zeitumstellung; --from und --to gelten wie angegeben.
+Zeitraum: --from und --to (H:MM oder HH:MM) oder --duration (1h30m, 90m, 1:30), mit --from ab dieser Uhrzeit, ohne --from bis jetzt (nur für heute). Ein Zeiteintrag hat nur ein Datum: Ein Ende genau um Mitternacht (--to 24:00 oder 00:00) ist erlaubt; andere Einträge über Mitternacht werden abgelehnt, sie werden als zwei Einträge erfasst. Eine Dauer wird in Uhrzeit gerechnet, wie Papierkram sie bucht (Uhrzeiten ohne Zeitzone): --from 01:30 --duration 2h ergibt 01:30–03:30, auch an den Tagen der Zeitumstellung; --from und --to gelten wie angegeben.
 
 Aufgabe und Benutzer: Flag, sonst PAPIERKRAM_TASK bzw. PAPIERKRAM_USER, sonst task bzw. user aus der Projektdatei .papierkram.toml (anlegen: papierkram local init), beim Benutzer zuletzt user des Kontexts. --task nimmt auch einen Alias aus [tasks] der Projektdatei.
 
@@ -28,7 +28,7 @@ Optionen:
       --from Text       Beginn als H:MM oder HH:MM
   -h, --help            Hilfe zu log
       --task Text       Aufgabe: ID oder Alias aus [tasks] der Projektdatei; ohne Angabe PAPIERKRAM_TASK oder task aus der Projektdatei .papierkram.toml (Pflicht)
-      --to Text         Ende als H:MM oder HH:MM (nicht mit --duration)
+      --to Text         Ende als H:MM oder HH:MM, um Mitternacht 24:00 oder 00:00 (nicht mit --duration)
       --unbillable      nicht abrechenbar
       --user ID         Benutzer-ID; ohne Angabe PAPIERKRAM_USER oder user aus der Projektdatei .papierkram.toml oder user des Kontexts (Pflicht)
 

@@ -18,7 +18,7 @@ Beispiele:
 Optionen:
       --billable-duration Zahl   Abrechenbare Dauer in Sekunden; wirkungslos: Die API setzt beim Anlegen und Ändern die Dauer aus Beginn und Ende ein (gemessen 2026-11-04)
       --comments Text            Wert für comments
-      --ended-at-time Text       Wert für ended_at_time (HH:MM)
+      --ended-at-time Text       Wert für ended_at_time (HH:MM (bis 24:00))
       --entry-date Datum         Wert für entry_date (YYYY-MM-DD, heute, gestern)
   -h, --help                     Hilfe zu update
       --input Text               Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder

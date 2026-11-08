@@ -112,7 +112,8 @@ func TestTimeLogMidnightRejected(t *testing.T) {
 		{"to before from", morning(t), []string{"--from", "22:00", "--to", "01:00"}, "Ende 01:00 liegt vor dem Beginn 22:00", ""},
 		{"to equals from", morning(t), []string{"--from", "10:00", "--to", "10:00"}, "Dauer 0", "Mitternacht"},
 		{"duration before midnight", berlinAt(t, 2026, 11, 4, 0, 30, 0), []string{"--duration", "2h"}, "beginnt am Vortag", ""},
-		{"exactly midnight", morning(t), []string{"--from", "23:00", "--duration", "1h"}, "endet am Folgetag", ""},
+		{"to after midnight", morning(t), []string{"--from", "23:00", "--to", "00:30"}, "Ende 00:30 liegt vor dem Beginn 23:00", ""},
+		{"from 00:00 to 00:00", morning(t), []string{"--from", "00:00", "--to", "00:00"}, "Dauer 0: Ende 00:00 ist gleich dem Beginn", "Mitternacht"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, srv := logApp(t, tc.now)
@@ -133,6 +134,76 @@ func TestTimeLogMidnightRejected(t *testing.T) {
 	if r := wantRequests(t, srv, 1)[0]; !strings.Contains(string(r.Body), `"ended_at_time":"23:59"`) {
 		t.Errorf("body = %s", r.Body)
 	}
+}
+
+// Open point 22 (decided): an entry may end exactly at midnight. --to
+// 24:00, --to 00:00 after a start after 00:00 and a duration up to
+// midnight end at 24:00 of the date, sent as "24:00" (unambiguous: the
+// API takes 00:00 and 24:00 alike, measured E2E run 2); 24:00 is always
+// the end of the day, so 00:00–24:00 is the whole day. The mock server
+// validates the body against the request schema, so it takes "24:00".
+func TestTimeLogEndsAtMidnight(t *testing.T) {
+	for _, tc := range []struct {
+		name, start string
+		args        []string
+	}{
+		{"to 00:00", "23:00", []string{"--from", "23:00", "--to", "00:00"}},
+		{"to 0:00", "23:00", []string{"--from", "23:00", "--to", "0:00"}},
+		{"to 24:00", "23:00", []string{"--from", "23:00", "--to", "24:00"}},
+		{"duration to midnight", "23:00", []string{"--from", "23:00", "--duration", "1h"}},
+		{"whole day", "00:00", []string{"--from", "00:00", "--to", "24:00"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, srv := logApp(t, morning(t))
+			wantExit(t, app, Run(app, append([]string{"time", "log", "--task", "545", "--user", "1", "--date", "2026-06-10", "-o", "json"}, tc.args...)), 0)
+			wantBody(t, srv, "POST", timeEntries,
+				`{"entry_date":"2026-06-10","started_at_time":"`+tc.start+`","ended_at_time":"24:00","task":{"id":545},"user":{"id":1}}`)
+		})
+	}
+	// the summary in a terminal shows the end and the duration
+	app, _ := logApp(t, morning(t))
+	app.StdinTTY = true
+	app.In = strings.NewReader("\n")
+	wantExit(t, app, Run(app, []string{"time", "log", "--task", "545", "--user", "1", "--from", "23:00", "--to", "00:00"}), 0)
+	wantStderr(t, app, "23:00–24:00 (1:00 h)")
+	// the start stays 00:00–23:59, the end at most 24:00
+	for _, tc := range []struct{ flag, value, want string }{
+		{"--from", "24:00", `ungültiger Wert "24:00" für --from: Uhrzeit als HH:MM oder H:MM erwartet (00:00 bis 23:59, z. B. 09:00)`},
+		{"--to", "24:01", `ungültiger Wert "24:01" für --to: Uhrzeit als HH:MM oder H:MM erwartet (00:00 bis 24:00, z. B. 09:00)`},
+		{"--to", "25:00", `ungültiger Wert "25:00" für --to`},
+	} {
+		app, srv := logApp(t, morning(t))
+		args := []string{"time", "log", "--task", "545", "--user", "1", "--from", "23:00", "--to", "24:00"}
+		if tc.flag == "--from" {
+			args[7] = tc.value
+		} else {
+			args[9] = tc.value
+		}
+		wantExit(t, app, Run(app, args), 2)
+		wantRequests(t, srv, 0)
+		wantStderr(t, app, tc.want)
+	}
+}
+
+// time create and time update take an end of 24:00 through the pattern of
+// the request schema (overlay section 14); the start stays 00:00–23:59
+// (exit 5 before any request). They have no period check of their own.
+func TestTimeCreateEndAt2400(t *testing.T) {
+	app, srv := logApp(t, morning(t))
+	wantExit(t, app, Run(app, []string{"time", "create", "--entry-date", "2026-06-10", "--started-at-time", "23:00",
+		"--ended-at-time", "24:00", "--task", "545", "--user", "1", "-o", "json"}), 0)
+	wantBody(t, srv, "POST", timeEntries,
+		`{"entry_date":"2026-06-10","started_at_time":"23:00","ended_at_time":"24:00","task":{"id":545},"user":{"id":1}}`)
+
+	app, srv = logApp(t, morning(t))
+	wantExit(t, app, Run(app, []string{"time", "create", "--entry-date", "2026-06-10", "--started-at-time", "24:00",
+		"--ended-at-time", "24:00", "--task", "545", "--user", "1", "-o", "json"}), 5)
+	wantRequests(t, srv, 0)
+	wantStderr(t, app, `started_at_time: ungültiger Wert "24:00", erwartet HH:MM`)
+
+	app, srv = logApp(t, morning(t))
+	wantExit(t, app, Run(app, []string{"time", "update", "271", "--ended-at-time", "24:00", "-o", "json"}), 0)
+	wantBody(t, srv, "PUT", timeEntries+"/271", `{"ended_at_time":"24:00"}`)
 }
 
 // Review Focus 4, controller ruling: --duration is the booked duration in

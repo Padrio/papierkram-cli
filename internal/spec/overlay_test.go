@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"os"
 	"reflect"
 	"regexp"
@@ -671,17 +672,19 @@ func TestUploadFileRequired(t *testing.T) {
 
 // Spec R16, 4.4: the start and end times of a time entry are HH:MM; the
 // pattern rejects ISO timestamps and single-digit hours before any request,
-// and x-cli-pattern-format names the form in help and errors.
+// and x-cli-pattern-format names the form in help and errors. The end may
+// also be 24:00, the end of the day (open point 22, measured E2E run 2).
 func TestTimeEntryTimesHHMM(t *testing.T) {
-	want := []string{
-		"CreateTimeEntry.started_at_time", "CreateTimeEntry.ended_at_time",
-		"UpdateTimeEntry.started_at_time", "UpdateTimeEntry.ended_at_time",
+	format := map[string]string{
+		"CreateTimeEntry.started_at_time": "HH:MM", "CreateTimeEntry.ended_at_time": "HH:MM (bis 24:00)",
+		"UpdateTimeEntry.started_at_time": "HH:MM", "UpdateTimeEntry.ended_at_time": "HH:MM (bis 24:00)",
 	}
+	want := slices.Sorted(maps.Keys(format))
 	got := extensionPaths(t, "x-cli-pattern-format")
 	assertPaths(t, "x-cli-pattern-format", got, want)
 	for _, g := range got {
-		if g.value != "HH:MM" {
-			t.Errorf("%s: x-cli-pattern-format=%v, want HH:MM", g.path, g.value)
+		if g.value != format[g.path] {
+			t.Errorf("%s: x-cli-pattern-format=%v, want %s", g.path, g.value, format[g.path])
 		}
 	}
 	doc := loadDoc(t, generatedPath)
@@ -693,12 +696,13 @@ func TestTimeEntryTimesHHMM(t *testing.T) {
 			continue
 		}
 		re := regexp.MustCompile(s.Pattern)
-		for _, ok := range []string{"00:00", "09:00", "10:20", "23:59"} {
-			if !re.MatchString(ok) {
-				t.Errorf("%s: pattern %s rejects %q", w, s.Pattern, ok)
+		end := name == "ended_at_time"
+		for _, v := range []string{"00:00", "09:00", "10:20", "23:59", "24:00"} {
+			if match := v != "24:00" || end; re.MatchString(v) != match {
+				t.Errorf("%s: pattern %s matches %q = %v, want %v", w, s.Pattern, v, !match, match)
 			}
 		}
-		for _, bad := range []string{"9:00", "24:00", "09:60", "09:00:00", "2026-10-25T09:00:00+02:00", "0900", ""} {
+		for _, bad := range []string{"9:00", "24:01", "24:30", "25:00", "09:60", "09:00:00", "2026-10-25T09:00:00+02:00", "0900", ""} {
 			if re.MatchString(bad) {
 				t.Errorf("%s: pattern %s accepts %q", w, s.Pattern, bad)
 			}

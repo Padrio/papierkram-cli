@@ -80,7 +80,8 @@ func (a *App) newTimeStopCmd() *cobra.Command {
 		Short: "Timer stoppen und als Zeiteintrag buchen",
 		Long: "Bucht die Zeit des Timers wie time log: Datum und Uhrzeit des Starts bis jetzt (in ganzen Minuten), " +
 			"Aufgabe, Benutzer und Kommentar des Timers; -m ersetzt den Kommentar. " +
-			"Einträge über Mitternacht und unter einer Minute werden abgelehnt (Exit 2). " +
+			"Stoppt der Timer in der ersten Minute des Folgetags (00:00:00 bis 00:00:59), endet der Eintrag um 24:00 des Starttags; " +
+			"andere Einträge über Mitternacht und Einträge unter einer Minute werden abgelehnt (Exit 2). " +
 			"Start und Ende gelten in der Zeitzone des Rechners beim Stoppen: Wechselt die Zeitzone zwischen time start und time stop " +
 			"(z. B. auf Reisen), werden die Uhrzeiten des Stopp-Orts gebucht (Start 09:00 in Berlin, Stopp 11:00 in London ergibt 08:00–11:00); " +
 			"die Dauer bleibt richtig.\n\n" +
@@ -398,7 +399,9 @@ func errTimerAccount(started, now string) error {
 
 // timerPeriod is the period of st that time stop books: the date and the
 // wall clock (minutes) of its start to the wall clock of now, like
-// time log --date <start> --from <start> --to <now>. A period over
+// time log --date <start> --from <start> --to <now>. A stop in the first
+// minute of the next day (00:00:00–00:00:59) ends at 24:00 of the start
+// date, like time log --to 24:00 (open point 22). Any other period over
 // midnight, under one minute or before the start (clock changed) is a
 // usage error (exit 2) whose hint says how to go on; the timer stays.
 func (a *App) timerPeriod(st timer.State) (period, error) {
@@ -406,6 +409,9 @@ func (a *App) timerPeriod(st timer.State) (period, error) {
 	start, now := st.StartedAt.In(loc), a.Now().In(loc)
 	p := period{date: start.Format(time.DateOnly), start: start.Hour()*60 + start.Minute(), end: now.Hour()*60 + now.Minute()}
 	today := now.Format(time.DateOnly)
+	if p.end == 0 && today == start.AddDate(0, 0, 1).Format(time.DateOnly) {
+		p.end, today = day, p.date
+	}
 	since := p.date + " " + hhmm(p.start)
 	switch {
 	case now.Before(start):
@@ -437,26 +443,17 @@ func (a *App) timerPeriod(st timer.State) (period, error) {
 }
 
 // midnightTimerHint names the entries that book a timer over midnight by
-// hand: two when it ends on the next day, otherwise one per day.
+// hand: two when it ends on the next day, otherwise one per day. The
+// first ends at 24:00 of the start date; a stop at 00:00 of the next day
+// is booked by timerPeriod, so both halves have at least one minute.
 func (a *App) midnightTimerHint(st timer.State, start, now time.Time) string {
 	const keep = "Der Timer läuft weiter. "
-	from, end := hhmmOf(start), hhmmOf(now)
+	first := a.timeLogCommand(st, start.Format(time.DateOnly), hhmmOf(start), hhmm(day))
 	if start.AddDate(0, 0, 1).Format(time.DateOnly) != now.Format(time.DateOnly) {
-		return keep + "Je Tag einen Eintrag von Hand buchen, z. B. " +
-			a.timeLogCommand(st, start.Format(time.DateOnly), from, "23:59") + ", danach papierkram time discard"
+		return keep + "Je Tag einen Eintrag von Hand buchen, z. B. " + first + ", danach papierkram time discard"
 	}
-	// a half of zero minutes (start 23:59, stop 00:00) is no entry
-	var cmds []string
-	if from != "23:59" {
-		cmds = append(cmds, a.timeLogCommand(st, start.Format(time.DateOnly), from, "23:59"))
-	}
-	if end != "00:00" {
-		cmds = append(cmds, a.timeLogCommand(st, now.Format(time.DateOnly), "00:00", end))
-	}
-	if len(cmds) == 0 {
-		return "Weniger als eine Minute je Tag, nichts zu buchen: den Timer mit papierkram time discard verwerfen"
-	}
-	return keep + "Von Hand buchen: " + strings.Join(cmds, " und ") + ", danach papierkram time discard"
+	return keep + "Von Hand buchen: " + first + " und " +
+		a.timeLogCommand(st, now.Format(time.DateOnly), "00:00", hhmmOf(now)) + ", danach papierkram time discard"
 }
 
 // timeLogCommand is the time log command that books st from from to to on

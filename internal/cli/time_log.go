@@ -26,7 +26,7 @@ import (
 
 const timeLogLong = `Erfasst Zeit als Zeiteintrag: Datum, Zeitraum, Aufgabe und Benutzer.
 
-Zeitraum: --from und --to (H:MM oder HH:MM) oder --duration (1h30m, 90m, 1:30), mit --from ab dieser Uhrzeit, ohne --from bis jetzt (nur für heute). Ein Zeiteintrag hat nur ein Datum: Einträge über Mitternacht werden abgelehnt; sie werden als zwei Einträge erfasst. Eine Dauer wird in Uhrzeit gerechnet, wie Papierkram sie bucht (Uhrzeiten ohne Zeitzone): --from 01:30 --duration 2h ergibt 01:30–03:30, auch an den Tagen der Zeitumstellung; --from und --to gelten wie angegeben.
+Zeitraum: --from und --to (H:MM oder HH:MM) oder --duration (1h30m, 90m, 1:30), mit --from ab dieser Uhrzeit, ohne --from bis jetzt (nur für heute). Ein Zeiteintrag hat nur ein Datum: Ein Ende genau um Mitternacht (--to 24:00 oder 00:00) ist erlaubt; andere Einträge über Mitternacht werden abgelehnt, sie werden als zwei Einträge erfasst. Eine Dauer wird in Uhrzeit gerechnet, wie Papierkram sie bucht (Uhrzeiten ohne Zeitzone): --from 01:30 --duration 2h ergibt 01:30–03:30, auch an den Tagen der Zeitumstellung; --from und --to gelten wie angegeben.
 
 Aufgabe und Benutzer: Flag, sonst PAPIERKRAM_TASK bzw. PAPIERKRAM_USER, sonst task bzw. user aus der Projektdatei .papierkram.toml (anlegen: papierkram local init), beim Benutzer zuletzt user des Kontexts. --task nimmt auch einen Alias aus [tasks] der Projektdatei.
 
@@ -84,7 +84,7 @@ func (a *App) newTimeLogCmd() *cobra.Command {
 	addTaskUserFlags(fs)
 	fs.Var(&rawValue{typ: "date"}, "date", "Datum: YYYY-MM-DD, today/heute, yesterday/gestern (Standard: heute)")
 	fs.String("from", "", "Beginn als H:MM oder HH:MM")
-	fs.String("to", "", "Ende als H:MM oder HH:MM (nicht mit --duration)")
+	fs.String("to", "", "Ende als H:MM oder HH:MM, um Mitternacht 24:00 oder 00:00 (nicht mit --duration)")
 	fs.String("duration", "", "Dauer: 1h30m, 90m oder 1:30; ohne --from endet der Eintrag jetzt")
 	fs.StringP("comments", "m", "", "Kommentar")
 	// a switch like the bool field flags of time create (also ja/nein)
@@ -102,7 +102,8 @@ type timeLogInput struct {
 
 // period is a time entry: its date and the start and end as wall-clock
 // minutes after 00:00 of that date (one date, end after start; outside
-// 0–1439 means another day).
+// 0–1439 means another day, except an end of 1440: midnight at the end of
+// the date, sent as 24:00, open point 22).
 //
 // Controller ruling (Task 36): all arithmetic is wall-clock arithmetic.
 // Papierkram stores entry_date plus HH:MM without offset, so the booked
@@ -215,12 +216,12 @@ func (a *App) checkTimeLog(c *cobra.Command, e registry.Entry) (timeLogInput, er
 	var d time.Duration
 	var err error
 	if from {
-		if startClock, err = parseClock("--from", flagString(c, "from")); err != nil {
+		if startClock, err = parseClock("--from", flagString(c, "from"), false); err != nil {
 			return timeLogInput{}, err
 		}
 	}
 	if to {
-		if endClock, err = parseClock("--to", flagString(c, "to")); err != nil {
+		if endClock, err = parseClock("--to", flagString(c, "to"), true); err != nil {
 			return timeLogInput{}, err
 		}
 	}
@@ -265,6 +266,11 @@ func (a *App) checkTimeLog(c *cobra.Command, e registry.Entry) (timeLogInput, er
 			p.end = p.start + minutes
 		} else {
 			p.end = endClock.minutes()
+			if p.end == 0 && p.start > 0 {
+				// --to 00:00 after a start is midnight at the end of
+				// the date, like --to 24:00 (open point 22)
+				p.end = day
+			}
 		}
 	}
 	return timeLogInput{period: p}, checkPeriod(p)
@@ -292,18 +298,22 @@ func checkTaskUserFlags(c *cobra.Command) error {
 }
 
 // midnightHint explains why a period over midnight is rejected.
-const midnightHint = "Ein Zeiteintrag hat nur ein Datum: über Mitternacht als zwei Einträge erfassen (bis 23:59 und ab 00:00 am Folgetag mit --date)"
+const midnightHint = "Ein Zeiteintrag hat nur ein Datum: über Mitternacht als zwei Einträge erfassen (bis 24:00 und ab 00:00 am Folgetag mit --date)"
+
+// day is a day in wall-clock minutes; as the end of a period it is
+// midnight at the end of its date (24:00).
+const day = 24 * 60
 
 // checkPeriod rejects a period whose wall-clock times do not lie within
-// its date or whose end does not follow its start (spec 9.6, exit 2).
+// its date or whose end does not follow its start (spec 9.6, exit 2). An
+// end at midnight at the end of the date (day, 24:00) lies within it.
 func checkPeriod(p period) error {
-	const day = 24 * 60
 	switch {
 	case p.start < 0:
 		return clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("Zeiteintrag beginnt am Vortag um %s: Einträge über Mitternacht sind nicht möglich", hhmm(p.start+day)),
 			midnightHint)
-	case p.end >= day:
+	case p.end > day:
 		return clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("Zeiteintrag endet am Folgetag um %s: Einträge über Mitternacht sind nicht möglich", hhmm(p.end%day)),
 			midnightHint)
@@ -335,17 +345,22 @@ func (c clock) minutes() int { return c.h*60 + c.m }
 
 var clockRe = regexp.MustCompile(`^([0-9]{1,2}):([0-9]{2})$`)
 
-// parseClock parses H:MM or HH:MM (00:00–23:59).
-func parseClock(flag, raw string) (clock, error) {
+// parseClock parses H:MM or HH:MM (00:00–23:59); an end also takes 24:00,
+// midnight at the end of the date.
+func parseClock(flag, raw string, end bool) (clock, error) {
 	m := clockRe.FindStringSubmatch(raw)
 	if m != nil {
 		h, _ := strconv.Atoi(m[1])
 		mi, _ := strconv.Atoi(m[2])
-		if h < 24 && mi < 60 {
+		if (h < 24 && mi < 60) || (end && h == 24 && mi == 0) {
 			return clock{h, mi}, nil
 		}
 	}
-	return clock{}, usageErr(fmt.Sprintf("ungültiger Wert %q für %s: Uhrzeit als HH:MM oder H:MM erwartet (00:00 bis 23:59, z. B. 09:00)", raw, flag))
+	last := "23:59"
+	if end {
+		last = "24:00"
+	}
+	return clock{}, usageErr(fmt.Sprintf("ungültiger Wert %q für %s: Uhrzeit als HH:MM oder H:MM erwartet (00:00 bis %s, z. B. 09:00)", raw, flag, last))
 }
 
 var durationClockRe = regexp.MustCompile(`^([0-9]+):([0-5][0-9])$`)
@@ -376,7 +391,8 @@ func parseLogDuration(raw string) (time.Duration, error) {
 	return d, nil
 }
 
-// hhmm formats wall-clock minutes after 00:00 (0–1439) as HH:MM.
+// hhmm formats wall-clock minutes after 00:00 (0–1439) as HH:MM, and
+// 1440, midnight at the end of the date, as 24:00.
 func hhmm(m int) string { return fmt.Sprintf("%02d:%02d", m/60, m%60) }
 
 // timeLogPresets resolves task and user after the read-only gate: flag >

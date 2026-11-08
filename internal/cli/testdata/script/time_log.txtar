@@ -28,6 +28,11 @@ stderr 'Einträge über Mitternacht sind nicht möglich'
 jsonschema -last stderr error
 mockreq 2
 
+# an end exactly at midnight is fine: --to 00:00 (or 24:00) is sent as 24:00
+papierkram time log --task 545 --user 1 --from 23:00 --to 00:00 -o json --jq .id
+stdout '^271$'
+mockbody 3 body-midnight.json
+
 # terminal: summary with names (company, project, task, user), Enter sends
 env PK_TEST_TTY=1
 stdin enter.txt
@@ -41,14 +46,14 @@ stderr '^  Projekt: +Important project \(4835\)$'
 stderr '^  Aufgabe: +Some important task \(545\)$'
 stderr '^  Benutzer: +Will E Coyote \(1\)$'
 stderr '^Zeiteintrag anlegen\? \[J/n\]: $'
-mockreq 3 POST /tracker/time_entries
+mockreq 4 POST /tracker/time_entries
 mockreq 3 GET
 
 # terminal: n aborts with exit 8; the names come from the cache now
 stdin nein.txt
 ! papierkram time log --task 545 --user 1 --from 09:00 --to 10:00
 pkexit 8
-mockreq 3 POST /tracker/time_entries
+mockreq 4 POST /tracker/time_entries
 mockreq 3 GET
 env PK_TEST_TTY=
 
@@ -57,15 +62,17 @@ cp papierkram.toml .papierkram.toml
 papierkram time log --task tickets --duration 30m
 pkexit 0
 stderr '^Hinweis: Benutzer 1 aus Projektdatei .*\.papierkram\.toml$'
-mockreq 4 POST /tracker/time_entries
-# request 7: 4 POSTs and the 3 name reads
-mockreq 7
-mockbody 7 body-alias.json
+mockreq 5 POST /tracker/time_entries
+# request 8: 5 POSTs and the 3 name reads
+mockreq 8
+mockbody 8 body-alias.json
 
 -- body-from-to.json --
 {"entry_date":"2026-11-04","started_at_time":"09:00","ended_at_time":"10:00","task":{"id":545},"user":{"id":1},"comments":"Daily"}
 -- body-duration.json --
 {"entry_date":"2026-11-04","started_at_time":"08:30","ended_at_time":"10:00","task":{"id":545},"user":{"id":1}}
+-- body-midnight.json --
+{"entry_date":"2026-11-04","started_at_time":"23:00","ended_at_time":"24:00","task":{"id":545},"user":{"id":1}}
 -- body-alias.json --
 {"entry_date":"2026-11-04","started_at_time":"09:30","ended_at_time":"10:00","task":{"id":546},"user":{"id":1}}
 -- enter.txt --

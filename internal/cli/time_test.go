@@ -158,19 +158,22 @@ func TestTimeBillableDurationHelpSaysNoEffect(t *testing.T) {
 func TestTimeCreateRejectsTimesOtherThanHHMM(t *testing.T) {
 	base := []string{"time", "create", "--entry-date", "2026-11-04", "--task", "545", "--user", "1"}
 	for _, tc := range []struct {
-		times []string
-		want  string
+		times      []string
+		want, hint string
 	}{
-		{[]string{"--started-at-time", "9:00", "--ended-at-time", "10:30"}, `started_at_time: ungültiger Wert "9:00", erwartet HH:MM`},
-		{[]string{"--started-at-time", "09:00", "--ended-at-time", "2026-11-04T10:30:00+01:00"}, `ended_at_time: ungültiger Wert "2026-11-04T10:30:00+01:00", erwartet HH:MM`},
-		{[]string{"--started-at-time", "09:00", "--ended-at-time", "24:00"}, `ended_at_time: ungültiger Wert "24:00", erwartet HH:MM`},
+		{[]string{"--started-at-time", "9:00", "--ended-at-time", "10:30"}, `started_at_time: ungültiger Wert "9:00", erwartet HH:MM`, "HH:MM"},
+		{[]string{"--started-at-time", "24:00", "--ended-at-time", "24:00"}, `started_at_time: ungültiger Wert "24:00", erwartet HH:MM`, "HH:MM"},
+		{[]string{"--started-at-time", "09:00", "--ended-at-time", "2026-11-04T10:30:00+01:00"},
+			`ended_at_time: ungültiger Wert "2026-11-04T10:30:00+01:00", erwartet HH:MM (bis 24:00)`, "HH:MM (bis 24:00)"},
+		// the end may be 24:00 (open point 22), not later
+		{[]string{"--started-at-time", "09:00", "--ended-at-time", "24:01"}, `ended_at_time: ungültiger Wert "24:01", erwartet HH:MM (bis 24:00)`, "HH:MM (bis 24:00)"},
 	} {
 		for _, extra := range [][]string{nil, {"--dry-run"}} {
 			app, srv := apiApp(t)
 			wantExit(t, app, Run(app, append(append(append([]string{}, base...), tc.times...), extra...)), 5)
 			wantRequests(t, srv, 0)
 			_, errs := bufs(app)
-			if !strings.Contains(errs, tc.want) || !strings.Contains(errs, "Hinweis: Wert im Format HH:MM angeben") {
+			if !strings.Contains(errs, tc.want) || !strings.Contains(errs, "Hinweis: Wert im Format "+tc.hint+" angeben\n") {
 				t.Errorf("%v %v: stderr = %q", tc.times, extra, errs)
 			}
 		}
@@ -192,8 +195,8 @@ func TestTimeCreateRejectsTimesOtherThanHHMM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, flag := range []string{"started-at-time", "ended-at-time"} {
-		if u := cmd.Flags().Lookup(flag).Usage; !strings.Contains(u, "(HH:MM)") {
+	for flag, form := range map[string]string{"started-at-time": "(HH:MM)", "ended-at-time": "(HH:MM (bis 24:00))"} {
+		if u := cmd.Flags().Lookup(flag).Usage; !strings.Contains(u, form) {
 			t.Errorf("--%s usage = %q", flag, u)
 		}
 	}
