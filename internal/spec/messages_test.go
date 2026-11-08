@@ -101,6 +101,47 @@ func TestAttrHintFollowsPattern(t *testing.T) {
 // ' as a JSON unicode escape for the single-quoted shell argument (task
 // 17, L188). The hint's jq program, run by gojq on the body, removes
 // exactly the unknown fields.
+// Review T17-deferred: keys with a quote, a backslash or control
+// characters (also U+2028) are JSON-escaped in the jq step, so the hint
+// holds no raw control character and no ', and jq removes exactly them.
+func TestUnknownFieldJQPathQuotingEscapes(t *testing.T) {
+	body := map[string]any{
+		"name": "R", `q"uote`: 1, `back\slash`: 1, "tab\tkey": 1, "nl\nkey": 1, "ctl\x01": 1, "ls\u2028": 1,
+		"customer": map[string]any{"id": json.Number("1"), `"`: 1},
+	}
+	_, err := Prune(body, RequestSchema("CreateInvoice"), ResourceResponseSchema("CreateInvoice"))
+	ce := validationError(t, err)
+	want := `stammen die Felder aus einer describe-Ausgabe: mit jq 'del(.["back\\slash"], .["ctl\u0001"], .customer["\""], .["ls\u2028"], .["nl\nkey"], .["q\"uote"], .["tab\tkey"])' entfernen oder die CLI aktualisieren`
+	if ce.Hint != want {
+		t.Errorf("hint =\n%s\nwant\n%s", ce.Hint, want)
+	}
+	for _, r := range ce.Hint {
+		if r < 0x20 || r == 0x7f || r == 0x2028 || r == 0x2029 {
+			t.Errorf("hint holds raw %U: %q", r, ce.Hint)
+		}
+	}
+	i, j := strings.Index(ce.Hint, "jq '"), strings.LastIndex(ce.Hint, "'")
+	if i < 0 || j <= i+4 || strings.Contains(ce.Hint[i+4:j], "'") {
+		t.Fatalf("no single-quoted jq program in %q", ce.Hint)
+	}
+	prog := ce.Hint[i+4 : j]
+	q, err := gojq.Parse(prog)
+	if err != nil {
+		t.Fatalf("gojq parses %q not: %v", prog, err)
+	}
+	got, ok := q.Run(body).Next()
+	if !ok {
+		t.Fatal("no result")
+	}
+	if err, isErr := got.(error); isErr {
+		t.Fatalf("gojq %q: %v", prog, err)
+	}
+	clean := map[string]any{"name": "R", "customer": map[string]any{"id": json.Number("1")}}
+	if !reflect.DeepEqual(got, clean) {
+		t.Errorf("gojq %q: %#v, want %#v", prog, got, clean)
+	}
+}
+
 func TestUnknownFieldJQPathQuoting(t *testing.T) {
 	body := map[string]any{
 		"name": "R", "12": 1, "a.b": 1, "x[1]": 1, "it's": 1, "with space": 1, "ä": 1, "ok_1": 1,
