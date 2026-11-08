@@ -537,17 +537,18 @@ func TestUploadViolations(t *testing.T) {
 		t.Errorf("valid upload: status %d, want 201", resp.StatusCode)
 	}
 
-	for name, run := range map[string]func(*mockapi.Server) *http.Response{
-		"wrong part name": func(s *mockapi.Server) *http.Response { return sendUpload(t, s, "datei") },
-		"no file part":    func(s *mockapi.Server) *http.Response { return sendUpload(t, s, "") },
-		"text/plain body": func(s *mockapi.Server) *http.Response {
+	// each closure gets the t of its subtest (L128)
+	for name, run := range map[string]func(*testing.T, *mockapi.Server) *http.Response{
+		"wrong part name": func(t *testing.T, s *mockapi.Server) *http.Response { return sendUpload(t, s, "datei") },
+		"no file part":    func(t *testing.T, s *mockapi.Server) *http.Response { return sendUpload(t, s, "") },
+		"text/plain body": func(t *testing.T, s *mockapi.Server) *http.Response {
 			resp, _ := send(t, s, http.MethodPost, "/expense/vouchers/7/documents", "datei", "Content-Type", "text/plain")
 			return resp
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := mockapi.New(t, mockapi.WithoutAutoFail())
-			resp := run(s)
+			resp := run(t, s)
 			if resp.StatusCode != http.StatusInternalServerError || len(s.Violations()) != 1 {
 				t.Errorf("status %d, violations %v; want 500 and one violation", resp.StatusCode, s.Violations())
 			}
@@ -612,5 +613,50 @@ func TestOverrideForPathOutsideSpec(t *testing.T) {
 	// still no request without a bearer token
 	if resp, _ := send(t, s, http.MethodGet, "/nope", "", "Authorization", ""); resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("without token: %d", resp.StatusCode)
+	}
+}
+
+// L128: a request URI the router cannot even parse ("GET *") is a
+// violation that keeps the parse error, answered with 404 like any path
+// outside the spec.
+func TestUnparsableRequestURIKeepsError(t *testing.T) {
+	s := mockapi.New(t, mockapi.WithoutAutoFail())
+	u, err := url.Parse(s.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &http.Request{Method: http.MethodGet, URL: &url.URL{Scheme: u.Scheme, Host: u.Host, Opaque: "*"},
+		Header: http.Header{"Authorization": {"Bearer " + testToken}}, Host: u.Host}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", resp.StatusCode)
+	}
+	v := s.Violations()
+	if len(v) != 1 || !strings.HasPrefix(v[0], "GET *: URL nicht auswertbar: ") || !strings.Contains(v[0], "invalid port") {
+		t.Errorf("violations = %q, want one with the parse error", v)
+	}
+}
+
+// L128: the violation texts of the mock itself are German (the causes
+// kin-openapi reports stay as the library writes them).
+func TestViolationTextsGerman(t *testing.T) {
+	for name, tc := range map[string]struct {
+		method, path, auth, want string
+	}{
+		"Authorization": {http.MethodGet, "/info", "", `GET /api/v1/info: Header "Authorization: Bearer <Token>" fehlt oder ist leer`},
+		"query":         {http.MethodGet, "/income/invoices?colour=red", "Bearer " + testToken, `GET /api/v1/income/invoices?colour=red: Query-Parameter "colour" ist für ListInvoices nicht definiert`},
+		"unknown path":  {http.MethodGet, "/nope", "Bearer " + testToken, "GET /api/v1/nope: Pfad/Methode nicht in der API-Spec"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := mockapi.New(t, mockapi.WithoutAutoFail())
+			_, _ = send(t, s, tc.method, tc.path, "", "Authorization", tc.auth)
+			if v := s.Violations(); len(v) != 1 || v[0] != tc.want {
+				t.Errorf("violations = %q, want %q", v, tc.want)
+			}
+		})
 	}
 }

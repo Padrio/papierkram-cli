@@ -204,20 +204,26 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Consumed-Quota", defaultConsumedQuota)
 
 	if err != nil {
-		s.violate(w, r, fmt.Errorf("request body unreadable: %w", err))
+		s.violate(w, r, fmt.Errorf("Body der Anfrage nicht lesbar: %w", err))
 		return
 	}
 	if !hasBearer(r.Header.Get("Authorization")) {
-		s.violate(w, r, errors.New(`header "Authorization: Bearer <token>" missing or empty`))
+		s.violate(w, r, errors.New(`Header "Authorization: Bearer <Token>" fehlt oder ist leer`))
 		return
 	}
 
 	vr := r.Clone(r.Context())
 	vr.Body = io.NopCloser(bytes.NewReader(body))
-	vr.URL, err = url.Parse(s.srv.URL + r.URL.RequestURI()) // router matches the absolute server URL
 	var route *routers.Route
 	var pathParams map[string]string
-	if err == nil {
+	// the router matches the absolute server URL; a request URI that does
+	// not parse as one ("GET *") is outside the spec too, and its
+	// violation keeps the parse error
+	notInSpec := errors.New("Pfad/Methode nicht in der API-Spec")
+	vr.URL, err = url.Parse(s.srv.URL + r.URL.RequestURI())
+	if err != nil {
+		notInSpec = fmt.Errorf("URL nicht auswertbar: %w", err)
+	} else {
 		route, pathParams, err = s.router.FindRoute(vr)
 	}
 	if err != nil {
@@ -228,7 +234,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			h(w, r)
 			return
 		}
-		s.record(r, errors.New("Pfad/Methode nicht in der API-Spec"))
+		s.record(r, notInSpec)
 		s.writeError(w, http.StatusNotFound, "not_found", "Nicht gefunden")
 		return
 	}
@@ -271,7 +277,7 @@ func validate(ctx context.Context, r *http.Request, route *routers.Route, pathPa
 	}
 	for _, name := range slices.Sorted(maps.Keys(r.URL.Query())) {
 		if !declared[name] {
-			return fmt.Errorf("query parameter %q is not defined for %s", name, route.Operation.OperationID)
+			return fmt.Errorf("Query-Parameter %q ist für %s nicht definiert", name, route.Operation.OperationID)
 		}
 	}
 	return nil
@@ -282,10 +288,10 @@ func validate(ctx context.Context, r *http.Request, route *routers.Route, pathPa
 func schemaErrorMessage(err *openapi3.SchemaError) string {
 	reason := err.Reason
 	if reason == "" {
-		reason = fmt.Sprintf("doesn't match schema %q", err.SchemaField)
+		reason = fmt.Sprintf("entspricht nicht dem Schema (%q)", err.SchemaField)
 	}
 	if p := err.JSONPointer(); len(p) > 0 {
-		return fmt.Sprintf("at %q: %s", "/"+strings.Join(p, "/"), reason)
+		return fmt.Sprintf("bei %q: %s", "/"+strings.Join(p, "/"), reason)
 	}
 	return reason
 }
