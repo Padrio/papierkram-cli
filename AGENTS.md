@@ -43,12 +43,14 @@ Alle Formen sind als strikte JSON-Schemas in [docs/schemas/](docs/schemas/) eing
 
 | Ausgabe | Form | Schema |
 |---|---|---|
-| `list` | Envelope der API unverändert: `type`, `page`, `page_size`, `total_pages`, `total_entries`, `has_more`, `entries[]`; mit `--all` alle Einträge zusammengeführt, `page` 1, `has_more` false | – |
-| `describe`, `create`, `update`, Aktionen | das Objekt der API; antwortet die API leer: `{"id":N,"ok":true}` (bei `create` `{"ok":true}` mit Warnung) | – |
+| `list` | Envelope der API unverändert: `type`, `page`, `page_size`, `total_pages`, `total_entries`, `has_more`, `entries[]`; mit `--all` alle Einträge zusammengeführt, `page` 1, `has_more` false (true nur, wenn `--max-pages` Seiten auslässt) | [list.json](docs/schemas/list.json) |
+| `describe`, `create`, `update`, Aktionen | das Objekt der API; antwortet die API leer: `{"id":N,"ok":true}` (bei `create` und `papierkram api` `{"ok":true}`, bei `create` mit Warnung) | leere Antwort: [ok.json](docs/schemas/ok.json); das Objekt: `papierkram schema <ressource> <aktion>` |
 | `delete` | `{"id":N,"deleted":true}` | [delete.json](docs/schemas/delete.json) |
 | `--dry-run` | `{"dry_run":true,"method":…,"url":…,"body":…,"credits":…}`, ggf. mit `upload` und `read` | [dry-run.json](docs/schemas/dry-run.json) |
 | `invoice|estimate deliver` | `id`, `invoice_no` bzw. `estimate_no`, `state`, `sent_on`, `sent_via`, `sent_to`; scheitert nur das Nachlesen: `{"id":…,"delivered":true,"warnings":[…]}` | [deliver.json](docs/schemas/deliver.json) |
 | `voucher create --file`, Upload gescheitert (Exit 11) | `{"id":…,"completed":["create"],"failed":["upload"],"retry_command":…,"warnings":[…]}` | [partial.json](docs/schemas/partial.json) |
+| `auth status` | `context`, `context_source`, `subdomain`, `base_url`, `token_source`, `read_only`, `read_only_source`, `quota` (`remaining`, `request_cost`, `known`); unbekannte Angaben leer, `request_cost` ggf. `null`; ohne gültiges Token dieselbe Form mit Exit 3 | [auth-status.json](docs/schemas/auth-status.json) |
+| `version` | `version`, `commit`, `date`, `go_version` | [version.json](docs/schemas/version.json) |
 | Fehler | auf **stderr**: bei `-o json` und `--jq` als letzte Zeile eine kompakte JSON-Zeile, bei `-o yaml` als YAML-Block am Ende (siehe [Fehler](#fehler)) | [error.json](docs/schemas/error.json) |
 
 ### Fehler

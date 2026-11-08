@@ -405,6 +405,7 @@ read_only = true
   - `describe`, `create`, `update`, Aktionen: das Objekt der API. Liefert die API leer, wird das Objekt nachgelesen (deliver) bzw. `{"id":N,"ok":true}` ausgegeben.
   - `delete`: `{"id":N,"deleted":true}`.
   - Optionale `warnings[]` nur bei Aktionen, die Warnungen erzeugen.
+  - Schemas in `docs/schemas/` (OpenAPI-3-Schema-Objekte, strikt, `additionalProperties: false`, per Vertragstest gegen die echte Ausgabe geprüft): `list.json` (Envelope, auch `--all`, lokaler Filter und `api --paginate`), `ok.json` (leere Antwort: `{"id":N,"ok":true}` bzw. `{"ok":true}`), `delete.json`, `dry-run.json`, `deliver.json`, `partial.json`, `auth-status.json` (`auth status -o json`), `version.json` (`version -o json`), `error.json` (10.4) und `commands.json` (`commands --json`).
 - Ohne TTY auf stdout: keine Farben, keine Spinner. Ohne TTY auf stdin oder mit `--no-input`: keine Prompts. `NO_COLOR` wird beachtet.
 - Hinweise und Warnungen immer auf stderr, Nutzdaten auf stdout.
 
