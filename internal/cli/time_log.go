@@ -104,6 +104,9 @@ func addUnbillableFlag(fs *pflag.FlagSet) {
 type timeLogInput struct {
 	period  period
 	dateErr error
+	// zeroEnd is set when --to 00:00 was taken as 24:00 (midnight at the
+	// end of the date): runTimeLog says so on stderr (review B-M3)
+	zeroEnd bool
 }
 
 // period is a time entry: its date and the start and end as wall-clock
@@ -160,6 +163,9 @@ func (a *App) runTimeLog(c *cobra.Command, e registry.Entry) error {
 	resp, err := a.sendTimeEntry(c, e, client, r, fields, te, nil)
 	if err != nil || resp == nil {
 		return err
+	}
+	if in.zeroEnd {
+		_, _ = fmt.Fprintln(a.Err, "Hinweis: Ende 00:00 als 24:00 (Mitternacht) gebucht")
 	}
 	return a.writeResult(c, e, r, nil, resp.Body)
 }
@@ -262,6 +268,7 @@ func (a *App) checkTimeLog(c *cobra.Command, e registry.Entry) (timeLogInput, er
 
 	// wall-clock arithmetic, see period
 	p := period{date: date}
+	zeroEnd := false
 	minutes := int(d / time.Minute)
 	switch {
 	case dur && !from:
@@ -283,11 +290,11 @@ func (a *App) checkTimeLog(c *cobra.Command, e registry.Entry) (timeLogInput, er
 			if p.end == 0 && p.start > 0 {
 				// --to 00:00 after a start is midnight at the end of
 				// the date, like --to 24:00 (open point 22)
-				p.end = day
+				p.end, zeroEnd = day, true
 			}
 		}
 	}
-	return timeLogInput{period: p}, checkPeriod(p)
+	return timeLogInput{period: p, zeroEnd: zeroEnd}, checkPeriod(p)
 }
 
 // checkTaskUserFlags checks the form of --task (ID or alias) and --user

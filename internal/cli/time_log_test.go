@@ -143,22 +143,36 @@ func TestTimeLogMidnightRejected(t *testing.T) {
 // the end of the day, so 00:00–24:00 is the whole day. The mock server
 // validates the body against the request schema, so it takes "24:00".
 func TestTimeLogEndsAtMidnight(t *testing.T) {
+	// an end given as 00:00 says on stderr that it is booked as 24:00
+	// (review B-M3); 24:00 and a duration need no such hint
+	const zeroHint = "Hinweis: Ende 00:00 als 24:00 (Mitternacht) gebucht\n"
 	for _, tc := range []struct {
 		name, start string
 		args        []string
+		hint        bool
 	}{
-		{"to 00:00", "23:00", []string{"--from", "23:00", "--to", "00:00"}},
-		{"to 0:00", "23:00", []string{"--from", "23:00", "--to", "0:00"}},
-		{"to 24:00", "23:00", []string{"--from", "23:00", "--to", "24:00"}},
-		{"duration to midnight", "23:00", []string{"--from", "23:00", "--duration", "1h"}},
-		{"whole day", "00:00", []string{"--from", "00:00", "--to", "24:00"}},
+		{"to 00:00", "23:00", []string{"--from", "23:00", "--to", "00:00"}, true},
+		{"to 0:00", "23:00", []string{"--from", "23:00", "--to", "0:00"}, true},
+		{"to 24:00", "23:00", []string{"--from", "23:00", "--to", "24:00"}, false},
+		{"duration to midnight", "23:00", []string{"--from", "23:00", "--duration", "1h"}, false},
+		{"whole day", "00:00", []string{"--from", "00:00", "--to", "24:00"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, srv := logApp(t, morning(t))
 			wantExit(t, app, Run(app, append([]string{"time", "log", "--task", "545", "--user", "1", "--date", "2026-06-10", "-o", "json"}, tc.args...)), 0)
 			wantBody(t, srv, "POST", timeEntries,
 				`{"entry_date":"2026-06-10","started_at_time":"`+tc.start+`","ended_at_time":"24:00","task":{"id":545},"user":{"id":1}}`)
+			if _, errs := bufs(app); strings.Contains(errs, zeroHint) != tc.hint {
+				t.Errorf("stderr %q, hint %q wanted: %v", errs, zeroHint, tc.hint)
+			}
 		})
+	}
+	// a dry run sends nothing and says nothing about booking
+	app0, srv0 := logApp(t, morning(t))
+	wantExit(t, app0, Run(app0, []string{"time", "log", "--task", "545", "--user", "1", "--from", "23:00", "--to", "00:00", "--dry-run", "-o", "json"}), 0)
+	wantRequests(t, srv0, 0)
+	if _, errs := bufs(app0); strings.Contains(errs, zeroHint) {
+		t.Errorf("dry run: stderr %q", errs)
 	}
 	// the summary in a terminal shows the end and the duration
 	app, _ := logApp(t, morning(t))
