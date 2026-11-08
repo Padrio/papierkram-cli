@@ -217,17 +217,22 @@ func quoteList(items []string, conj string) string {
 }
 
 func coerceAttr(f Field, raw string) (any, error) {
-	key, val, ok := strings.Cut(raw, "=")
-	if !ok {
-		return nil, flagError(f, raw, "erwartet <id>=<wert>", "z. B. --"+f.Flag+" 12=Wert")
-	}
 	pattern := keyPattern(f.Schema)
 	re, err := regexp.Compile(pattern)
 	if err != nil {
 		return nil, clierr.New(clierr.CodeError, fmt.Sprintf("--%s: ungültiges Schlüsselmuster %q in der Spec", f.Flag, pattern), "")
 	}
+	// the example key 12 only where it fits the pattern
+	hint := "Schlüssel muss zum Muster " + pattern + " passen"
+	if re.MatchString("12") {
+		hint = "z. B. --" + f.Flag + " 12=Wert"
+	}
+	key, val, ok := strings.Cut(raw, "=")
+	if !ok {
+		return nil, flagError(f, raw, "erwartet <id>=<wert>", hint)
+	}
 	if !re.MatchString(key) {
-		return nil, flagError(f, raw, fmt.Sprintf("Attribut-ID %q passt nicht zum Muster %s", key, pattern), "z. B. --"+f.Flag+" 12=Wert")
+		return nil, flagError(f, raw, fmt.Sprintf("Attribut-ID %q passt nicht zum Muster %s", key, pattern), hint)
 	}
 	return map[string]any{key: val}, nil
 }
@@ -251,7 +256,8 @@ func flagError(f Field, raw, reason, hint string) *clierr.Error {
 // its schema, recursing into objects and arrays (spec 4.4, 6.3): numbers and
 // booleans for string fields become strings ("5000", "12.5", "true"),
 // numeric strings for integer/number fields become json.Number, "true"/"false"
-// (also ja/nein/1/0) for boolean fields become bool, x-cli-bool-string
+// (also ja/nein/1/0) and the numbers 0 and 1 for boolean fields become bool
+// (other numbers are left for the validator), x-cli-bool-string
 // fields become "true"/"false" from a bool, true/false/ja/nein/1/0 or the
 // numbers 0 and 1 (anything else is a validation error, as for the flag),
 // and every vat_rate is normalized (number
@@ -354,8 +360,11 @@ func coerceValue(s *openapi3.Schema, v any, path, key string) (any, error) {
 			return json.Number(x), nil
 		}
 	case s.Type.Is("boolean"):
-		if x, ok := v.(string); ok {
-			if b, ok := parseBool(x); ok {
+		switch v.(type) {
+		case string, json.Number, float64, int, int64:
+			// true/false/ja/nein/1/0 as text, and the JSON numbers 0 and
+			// 1 like the flag; other numbers stay for the validator
+			if b, ok := valueBool(v); ok {
 				return b, nil
 			}
 		}
@@ -430,14 +439,20 @@ func valueBool(v any) (bool, bool) {
 	return false, false
 }
 
-// showValue renders a body value for an error message.
+// showValue renders a body value for an error message: strings quoted,
+// everything else as JSON ({}, [], {"a":1}), never in Go syntax.
 func showValue(v any) string {
 	switch x := v.(type) {
 	case string:
 		return strconv.Quote(x)
 	case nil:
 		return "null"
-	default:
-		return fmt.Sprintf("%v", x)
 	}
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if enc.Encode(v) != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return strings.TrimSuffix(b.String(), "\n")
 }

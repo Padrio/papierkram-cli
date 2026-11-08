@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"regexp"
@@ -83,8 +84,10 @@ type pruner struct {
 }
 
 // unknownField is a key that neither schema knows; suggestion may be empty.
+// path is the dotted path for messages, parent the path of its object
+// (schema properties and [], so jq identifiers) and key the key itself.
 type unknownField struct {
-	path, suggestion string
+	path, parent, key, suggestion string
 }
 
 func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi3.Schema, path string) map[string]any {
@@ -112,7 +115,7 @@ func (p *pruner) object(in map[string]any, req *openapi3.Schema, resp []*openapi
 			if !p.unknownSeen[cp] {
 				p.unknownSeen[cp] = true
 				own = append(own, len(p.unknown))
-				p.unknown = append(p.unknown, unknownField{cp, suggestKey(k, req)})
+				p.unknown = append(p.unknown, unknownField{path: cp, parent: path, key: k, suggestion: suggestKey(k, req)})
 			}
 		}
 	}
@@ -325,7 +328,7 @@ func unknownLine(u unknownField) string {
 func unknownHint(us []unknownField) string {
 	paths := make([]string, len(us))
 	for i, u := range us {
-		paths[i] = jqPath(u.path)
+		paths[i] = jqPath(u.parent) + jqKey(u.key)
 	}
 	lead := "stammt das Feld"
 	if len(us) > 1 {
@@ -336,23 +339,39 @@ func unknownHint(us []unknownField) string {
 
 var jqIdentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// jqPath turns a dotted field path (line_items[].name, line_items[1].name)
-// into a jq path (.line_items[].name); keys that are no jq identifiers are
-// quoted (."12").
+// jqPath turns the dotted path of an object (customer, line_items[]) into
+// a jq path (.customer, .line_items[]); "" is the top level. Its segments
+// are schema properties, so their keys need no quoting (jqKey does it
+// anyway).
 func jqPath(path string) string {
+	if path == "" {
+		return ""
+	}
 	var b strings.Builder
 	for _, seg := range strings.Split(path, ".") {
-		key, idx, _ := strings.Cut(seg, "[")
-		if jqIdentRe.MatchString(key) {
-			b.WriteString("." + key)
-		} else {
-			b.WriteString("." + strconv.Quote(key))
-		}
-		if idx != "" {
-			b.WriteString("[" + idx)
+		key, arrays, _ := strings.Cut(seg, "[")
+		b.WriteString(jqKey(key))
+		if arrays != "" {
+			b.WriteString("[" + arrays)
 		}
 	}
 	return b.String()
+}
+
+// jqKey is the jq path step to key: .key for a jq identifier, else
+// .["key"] with key JSON-quoted (dots, brackets, spaces, umlauts, digits
+// first) and ' as \u0027, so that the step fits into the single-quoted
+// jq argument of a shell.
+func jqKey(key string) string {
+	if jqIdentRe.MatchString(key) {
+		return "." + key
+	}
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(key) // a string always encodes
+	q := strings.ReplaceAll(strings.TrimSuffix(b.String(), "\n"), "'", `\u0027`)
+	return ".[" + q + "]"
 }
 
 func unknownFieldsError(us []unknownField) *clierr.Error {

@@ -128,7 +128,7 @@ func convertSchemaError(body any, se *openapi3.SchemaError) problem {
 		return problem{path, where + ": darf nicht null sein", ""}
 	}
 	if key == vatField {
-		return problem{path, fmt.Sprintf("%s: ungültiger Steuersatz %s", where, showJSON(se.Value)), vatFormatHint}
+		return problem{path, fmt.Sprintf("%s: ungültiger Steuersatz %s", where, showValue(se.Value)), vatFormatHint}
 	}
 	switch se.SchemaField {
 	case "type":
@@ -139,17 +139,17 @@ func convertSchemaError(body any, se *openapi3.SchemaError) problem {
 		}
 	case "format":
 		if s.Format == "date" {
-			return problem{path, fmt.Sprintf("%s: ungültiges Datum %s", where, showJSON(se.Value)), dateFormatHint}
+			return problem{path, fmt.Sprintf("%s: ungültiges Datum %s", where, showValue(se.Value)), dateFormatHint}
 		}
-		return problem{path, fmt.Sprintf("%s: ungültiges Format %s", where, showJSON(se.Value)), ""}
+		return problem{path, fmt.Sprintf("%s: ungültiges Format %s", where, showValue(se.Value)), ""}
 	case "pattern":
 		if name := patternFormat(s); name != "" {
-			return problem{path, fmt.Sprintf("%s: ungültiger Wert %s, erwartet %s", where, showJSON(se.Value), name),
+			return problem{path, fmt.Sprintf("%s: ungültiger Wert %s, erwartet %s", where, showValue(se.Value), name),
 				"Wert im Format " + name + " angeben"}
 		}
-		return problem{path, fmt.Sprintf("%s: ungültiger Wert %s (Muster %s)", where, showJSON(se.Value), s.Pattern), ""}
+		return problem{path, fmt.Sprintf("%s: ungültiger Wert %s (Muster %s)", where, showValue(se.Value), s.Pattern), ""}
 	}
-	return problem{path, fmt.Sprintf("%s: ungültiger Wert %s", where, showJSON(se.Value)), ""}
+	return problem{path, fmt.Sprintf("%s: ungültiger Wert %s", where, showValue(se.Value)), ""}
 }
 
 // unknownProblem reports the keys of an object that its schema does not
@@ -161,7 +161,7 @@ func unknownProblem(path string, v any, s *openapi3.Schema) problem {
 	var us []unknownField
 	for _, k := range slices.Sorted(maps.Keys(m)) {
 		if s.Properties[k] == nil {
-			us = append(us, unknownField{dotPath(path, k), suggestKey(k, s)})
+			us = append(us, unknownField{path: dotPath(path, k), parent: path, key: k, suggestion: suggestKey(k, s)})
 		}
 	}
 	if len(us) == 0 {
@@ -181,7 +181,7 @@ func enumProblem(path string, v any, s *openapi3.Schema) problem {
 			allowed = append(allowed, fmt.Sprint(e))
 		}
 	}
-	msg := fmt.Sprintf("ungültiger Wert %s für %s", showJSON(v), path)
+	msg := fmt.Sprintf("ungültiger Wert %s für %s", showValue(v), path)
 	sugg := enumSuggestions(s, fmt.Sprint(v), allowed)
 	if len(allowed) > bigEnum {
 		return problem{path, msg + " – meintest du " + quoteList(sugg, "oder") + "?", bigEnumHint}
@@ -276,18 +276,6 @@ func or(s, def string) string {
 		return def
 	}
 	return s
-}
-
-// showJSON renders a body value for an error message: strings quoted,
-// objects and arrays as JSON.
-func showJSON(v any) string {
-	switch v.(type) {
-	case map[string]any, []any:
-		if b, err := json.Marshal(v); err == nil {
-			return string(b)
-		}
-	}
-	return showValue(v)
 }
 
 // checkKeyPatterns enforces x-cli-key-pattern (default ^[0-9]+$, as for

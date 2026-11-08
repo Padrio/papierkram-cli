@@ -44,5 +44,6 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 ### Geändert
 
 - Jeder Usage-Fehler (Exit 2) hat einen Hinweis: Flag- und Argumentfehler die Verwendungszeile (`Verwendung: papierkram invoice list [Optionen]`), ein unbekannter Befehl `Befehle anzeigen: <befehl> --help`. Ein falscher Zahlen- oder Wahrheitswert eines Flags nennt, was erwartet wird („ganze Zahl erwartet“, „Wahrheitswert erwartet (true oder false)“), statt „ungültige Syntax“.
+- Eingabe und Meldungen: `line_items: null` in `--input` mit `--replace-items` ist kein Fehler mehr, wenn `--item`/`--items` die Positionen setzen (Flags gewinnen); sonst nennt die Meldung beide Wege. Ein Wahrheitswert aus `--input` nimmt die JSON-Zahlen `0` und `1` an. Werte in Meldungen stehen als JSON (`{}`, `[]`), nicht in Go-Schreibweise; der jq-Hinweis zu unbekannten Feldern schreibt Schlüssel, die kein jq-Bezeichner sind, als `.["…"]`; der Hinweis zu `--attr` zeigt das Beispiel `12=Wert` nur, wenn `12` zum Schlüsselmuster passt; `--item`-Fehler maskieren unsichtbare Formatzeichen (Bidi, Nullbreite) mit `�` und melden von mehreren ungültigen Referenzen immer dieselbe.
 
 [Unreleased]: https://github.com/Padrio/papierkram-cli/commits/main
