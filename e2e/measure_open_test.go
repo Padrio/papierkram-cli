@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Padrio/papierkram-cli/internal/e2eguard"
 )
 
 // TestE2E_OpenMeasurements measures the open points 28, 10, 13 and 12 of
@@ -196,11 +198,12 @@ func TestE2E_OpenMeasurements(t *testing.T) {
 	})
 }
 
-// quotaStop reports whether r ended with 429 (exit 6) and then logs that
-// the measurement stops: no further request after an exhausted quota.
+// quotaStop reports whether r hit the monthly quota (e2eguard.QuotaHit:
+// exit 6, or a 429 of any of its requests) and then logs that the
+// measurement stops: no further request after an exhausted quota.
 func (s *liveSuite) quotaStop(t *testing.T, r result) bool {
 	t.Helper()
-	if r.code != 6 {
+	if !e2eguard.QuotaHit(r.code, r.exchanges) {
 		return false
 	}
 	s.measuref(t, "Kontingent", "HTTP 429 (Exit 6): Messung abgebrochen, keine weitere Anfrage")

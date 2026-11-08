@@ -171,7 +171,7 @@ func (s *liveSuite) execAt(dir string, now func() time.Time, stdin string, args 
 }
 
 // quotaRefused is the stderr of a CLI run execAt did not start.
-const quotaRefused = "e2e: Kontingent erschöpft (HTTP 429): nicht gesendet"
+const quotaRefused = "e2e: Kontingent erschöpft (HTTP 429): nicht ausgeführt"
 
 // quotaNow reports whether the quota was hit in the current phase (tests
 // or cleanup).
@@ -219,7 +219,9 @@ func (s *liveSuite) runIn(t *testing.T, dir string, now func() time.Time, stdin 
 	t.Helper()
 	r := s.execAt(dir, now, stdin, args...)
 	if r.refused {
-		s.skipf(t, "Kontingent erschöpft (HTTP 429): %q nicht gesendet, Test übersprungen", commandOf(args))
+		// neutral: a local command (time start, local init) sends
+		// nothing either way (review F2-M4)
+		s.skipf(t, "Kontingent erschöpft (HTTP 429): %q nicht ausgeführt, Test übersprungen", commandOf(args))
 	}
 	if s.red.Contains(r.stdout) || s.red.Contains(r.stderr) {
 		// only the command (resource and action): no ids or values
@@ -239,9 +241,20 @@ func (s *liveSuite) ok(t *testing.T, stdin string, args ...string) map[string]an
 	t.Helper()
 	r := s.run(t, stdin, append(args, "-o", "json")...)
 	if r.code != 0 {
+		s.quotaSkip(t, r, args)
 		s.fatalf(t, "papierkram %s: Exit %d\n%s", strings.Join(args, " "), r.code, r.stderr)
 	}
 	return s.decode(t, r.stdout)
+}
+
+// quotaSkip skips the test when r hit the monthly quota
+// (e2eguard.QuotaHit): like need after the hit, no failure of the
+// command (review F2-M2). The caller registers what was created first.
+func (s *liveSuite) quotaSkip(t *testing.T, r result, args []string) {
+	t.Helper()
+	if e2eguard.QuotaHit(r.code, r.exchanges) {
+		s.skipf(t, "Kontingent erschöpft (HTTP 429) bei %q, Exit %d: Test übersprungen", commandOf(args), r.code)
+	}
 }
 
 // tryDecode is raw as a JSON object with exact numbers; nil when it is
@@ -269,7 +282,9 @@ func (s *liveSuite) decode(t *testing.T, raw string) map[string]any {
 
 // need skips the test when n more credits would cut into the cleanup
 // reserve (e2eguard.Meter.Fits); all later tests skip too, so the cleanup
-// at the end always gets to run.
+// at the end always gets to run. Once a run hit the monthly quota (HTTP
+// 429, s.quota) it skips every later test as well, before the budget is
+// looked at.
 func (s *liveSuite) need(t *testing.T, n int) {
 	t.Helper()
 	if s.quota {

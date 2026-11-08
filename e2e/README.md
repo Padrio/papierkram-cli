@@ -242,8 +242,8 @@ Sandbox-Account (gemessen)`; das entschuldigt nur diese beiden Operationen.
 Gate: Fehlt eine erwartete Operation, endet der Lauf mit Exit 1 und
 `e2e: Abdeckung unvollständig: <n> Operation(en) fehlen`, aber nur bei einem
 vollständigen Lauf: kein `-run`, kein `-skip` und kein `-list`, Budget und
-Kontingent nicht erschöpft und bis dahin kein Fehler. Sonst stehen nur die Zeilen im Log. Ausstehende
-Operationen lassen den Lauf nie scheitern.
+Kontingent nicht erschöpft und bis dahin kein Fehler. Sonst stehen nur die
+Zeilen im Log. Ausstehende Operationen lassen den Lauf nie scheitern.
 
 ## Bewusst nicht gemessen
 
