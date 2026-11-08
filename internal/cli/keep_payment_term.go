@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -95,20 +96,25 @@ func (k *keepPaymentTerm) apply(c *cobra.Command, a *App, client *api.Client, pa
 		return nil, err
 	}
 	id := lastID(params)
+	hint := "Zahlungsbedingung per --payment-term <id> angeben (papierkram payment-term list)"
+	if !needTerm {
+		hint = refsHint(ws)
+	}
 	resp, err := client.Call(c.Context(), k.read.OperationID, params, nil, nil)
 	if err != nil {
 		ce := *clierr.From(err)
 		ce.Message = fmt.Sprintf("Rechnung %d nicht gelesen, nichts geändert: %s", id, ce.Message)
+		if errors.Is(err, api.ErrResponseTooLarge) {
+			// a repeat would fail the same way; the flags save the read
+			// (T15-M5)
+			ce.Hint = strings.TrimPrefix(ce.Hint+"; "+hint, "; ")
+		}
 		ce.Cause = err
 		return nil, &ce
 	}
 	var doc map[string]any
 	dec := json.NewDecoder(bytes.NewReader(resp.Body))
 	dec.UseNumber()
-	hint := "Zahlungsbedingung per --payment-term <id> angeben (papierkram payment-term list)"
-	if !needTerm {
-		hint = refsHint(ws)
-	}
 	if dec.Decode(&doc) != nil || doc == nil || !atEOF(dec) {
 		return nil, clierr.New(clierr.CodeError, fmt.Sprintf("Rechnung %d: Antwort ist kein JSON-Objekt, nichts geändert", id), hint)
 	}

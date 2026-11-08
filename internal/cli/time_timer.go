@@ -653,16 +653,20 @@ func shellWord(s string) string {
 }
 
 // keepTimer adds to an error of time stop after the timer was read that
-// the timer stays and how to go on: after an unknown outcome or an answer
-// too long to read (api.ErrResponseTooLarge, the entry exists) check first,
-// after a declined question nothing else, after any other error book by
-// hand or stop again.
+// the timer stays and how to go on: after an unknown outcome check first,
+// after an answer too long to read (api.ErrResponseTooLarge, the entry
+// exists) discard the timer, after a declined question nothing else,
+// after any other error book by hand or stop again.
 func (a *App) keepTimer(err error, st timer.State, p period) error {
 	ce := *clierr.From(err)
 	var keep string
 	switch {
-	case ce.Code == clierr.CodeOutcomeUnknown, errors.Is(err, api.ErrResponseTooLarge):
-		// a 2xx answer too long to read: the entry was created
+	case errors.Is(err, api.ErrResponseTooLarge):
+		// a 2xx answer too long to read: the entry was created, a second
+		// time stop would book it twice (T15-M4)
+		keep = "Der Timer läuft weiter, der Eintrag wurde angelegt: mit papierkram time list prüfen, " +
+			"dann den Timer mit papierkram time discard verwerfen"
+	case ce.Code == clierr.CodeOutcomeUnknown:
 		keep = "Der Timer läuft weiter: erst mit papierkram time list prüfen, ob der Eintrag angelegt wurde; " +
 			"wenn ja, den Timer mit papierkram time discard verwerfen, sonst erneut papierkram time stop"
 	case ce.Code == clierr.CodeServer:

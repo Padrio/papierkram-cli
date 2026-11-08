@@ -112,16 +112,17 @@ func TestUploadUncertainTooLarge(t *testing.T) {
 }
 
 // time stop answered too large: the entry exists, so the hint says to
-// check with time list and discard, never just to stop again.
+// check with time list and discard, never to stop again (T15-M4: no
+// "sonst erneut papierkram time stop" either).
 func TestTimerStopTooLarge(t *testing.T) {
 	app, srv := logApp(t, nine(t))
 	srv.OnFunc("POST", timeEntries, tooLarge(http.StatusCreated, "application/json"))
 	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 0)
 	before := timerFile(t, app, "")
-	wantExit(t, app, at(app, morning(t), "time", "stop"), 1)
+	wantExit(t, app, at(app, morning(t), "time", "stop", "-o", "json"), 1)
 	wantStderr(t, app, "die Änderung wurde ausgeführt", "NICHT wiederholen",
-		"erst mit papierkram time list prüfen, ob der Eintrag angelegt wurde", "papierkram time discard")
-	if _, errs := bufs(app); strings.Contains(errs, "Der Timer läuft weiter: erneut papierkram time stop") {
+		"Der Timer läuft weiter, der Eintrag wurde angelegt: mit papierkram time list prüfen, dann den Timer mit papierkram time discard verwerfen\n")
+	if _, errs := bufs(app); strings.Contains(errs, "erneut papierkram time stop") {
 		t.Errorf("stderr = %s", errs)
 	}
 	if after := timerFile(t, app, ""); string(after) != string(before) {
@@ -160,5 +161,26 @@ func TestReadTooLargeHints(t *testing.T) {
 				t.Errorf("stderr = %s", errs)
 			}
 		})
+	}
+}
+
+// T15-M5: the read of invoice update answered too large changes nothing;
+// the hint says how to do without the read: the payment term per
+// --payment-term (or, when only the references were read, their flags).
+func TestInvoiceUpdateReadTooLarge(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		hint string
+	}{
+		{[]string{"--description", "x"}, "Zahlungsbedingung per --payment-term <id> angeben (papierkram payment-term list)"},
+		{[]string{"--customer", "3214", "--payment-term", "7"}, "Kontaktperson und Projekt per --contact-person/--customer-project angeben"},
+	} {
+		app, srv := apiApp(t)
+		srv.OnFunc("GET", "/income/invoices/{id}", tooLarge(http.StatusOK, "application/json"))
+		wantExit(t, app, Run(app, append([]string{"invoice", "update", "459", "-o", "json"}, tc.args...)), 1)
+		if r := wantRequests(t, srv, 1)[0]; r.Method != "GET" {
+			t.Errorf("%v: request = %s", tc.args, r.Method)
+		}
+		wantStderr(t, app, "Rechnung 459 nicht gelesen, nichts geändert: Antwort größer als 64 MiB, abgebrochen", tc.hint)
 	}
 }
