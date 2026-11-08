@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -29,7 +30,7 @@ import (
 
 const uploadLong = `
 
-Die Datei wird als multipart/form-data hochgeladen; der MIME-Typ folgt aus der Dateiendung (unbekannte Endung: application/octet-stream). Gesendet wird nur der Dateiname ohne Verzeichnis und ohne Steuer- oder unsichtbare Zeichen. Die Datei muss vorhanden, lesbar und nicht leer sein, sonst bricht der Befehl ohne Anfrage ab. --dry-run zeigt Dateiname, Größe und MIME-Typ. Die ganze Datei muss innerhalb von --timeout (Standard 30 s) übertragen sein; größere Dateien brauchen ggf. --timeout 120s.`
+Die Datei wird als multipart/form-data hochgeladen; der MIME-Typ folgt aus der Dateiendung (unbekannte Endung: application/octet-stream). Gesendet wird nur der Dateiname ohne Verzeichnis und ohne Steuer- oder unsichtbare Zeichen. Die Datei muss vorhanden, lesbar und nicht leer sein, sonst bricht der Befehl ohne Anfrage ab. --dry-run zeigt Dateiname, Größe und MIME-Typ. Die ganze Datei muss innerhalb des Zeitlimits übertragen sein: ohne --timeout mindestens 120 s (ein größeres timeout des Kontexts gilt), mit --timeout genau dieser Wert; größere Dateien brauchen ein höheres --timeout.`
 
 const documentDeleteLong = `
 
@@ -98,7 +99,7 @@ func (a *App) runUpload(c *cobra.Command, e registry.Entry, args []string) error
 	if proceed, err := a.beforeSend(c, e, client, params, nil, sendExtras{upload: file.info()}); !proceed || err != nil {
 		return err
 	}
-	resp, err := file.send(c, client, params)
+	resp, err := a.sendUpload(c, client, r, file, params)
 	if err != nil {
 		return withTimeoutHint(err)
 	}
@@ -314,9 +315,22 @@ func (u *uploadFile) info() *UploadInfo {
 	return &UploadInfo{Name: u.name, Size: u.size, MIME: api.MediaType(u.name)}
 }
 
-// send uploads the file with the size checked by openUpload.
-func (u *uploadFile) send(c *cobra.Command, client *api.Client, params []int64) (*api.Response, error) {
-	return client.Upload(c.Context(), u.opID, params, u.field, u.name, u.f, u.size)
+// sendUpload uploads the file u with the size checked by openUpload, with
+// the timeout of an upload (uploadClient). voucher upload and the upload
+// step of create --file share it; every other request keeps client.
+func (a *App) sendUpload(c *cobra.Command, client *api.Client, r *config.Resolved, u *uploadFile, params []int64) (*api.Response, error) {
+	return a.uploadClient(client, r).Upload(c.Context(), u.opID, params, u.field, u.name, u.f, u.size)
+}
+
+// uploadClient is client with the timeout per attempt of an upload (spec
+// 5.5, 9.3): without --timeout the effective timeout of r (context or
+// default), at least uploadTimeout; an explicit --timeout is taken as it
+// is, like clientOptions does.
+func (a *App) uploadClient(client *api.Client, r *config.Resolved) *api.Client {
+	if a.Flags.TimeoutSet {
+		return client
+	}
+	return client.WithTimeout(max(r.Timeout, uploadTimeout))
 }
 
 func (u *uploadFile) close() { _ = u.f.Close() }
@@ -417,7 +431,7 @@ func (a *App) uploadCreated(c *cobra.Command, e registry.Entry, client *api.Clie
 	if !ok {
 		return a.uploadPartial(o, e, up, nil, clierr.New(clierr.CodeError, "API lieferte keine ID des angelegten Objekts", ""))
 	}
-	if _, err := up.file.send(c, client, []int64{id}); err != nil {
+	if _, err := a.sendUpload(c, client, r, up.file, []int64{id}); err != nil {
 		return a.uploadPartial(o, e, up, &id, err)
 	}
 	return a.render(c, resp.Body, e.Columns)
@@ -509,8 +523,12 @@ func uploadUncertain(ce *clierr.Error) bool {
 // (monthly quota): nothing can be done now.
 const quotaPartialHint = "Kontingent erschöpft – nicht jetzt nachholen"
 
+// uploadTimeout is the minimum timeout per attempt of an upload without
+// --timeout (spec 5.5, 9.3): the whole file has to go out within it.
+const uploadTimeout = 120 * time.Second
+
 // timeoutHint names --timeout: the whole file has to go out within it.
-const timeoutHint = "größere Dateien brauchen ggf. --timeout 120s"
+const timeoutHint = "größere Dateien brauchen ein höheres --timeout (Uploads ohne --timeout: 120 s)"
 
 // timedOut reports an upload that ran into the request timeout.
 func timedOut(err error) bool { return errors.Is(err, context.DeadlineExceeded) }

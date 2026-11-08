@@ -7,7 +7,7 @@ Datei (Belegbild) an einen Beleg anhängen.
 
 Kosten: 10 Credits je Anfrage.
 
-Die Datei wird als multipart/form-data hochgeladen; der MIME-Typ folgt aus der Dateiendung (unbekannte Endung: application/octet-stream). Gesendet wird nur der Dateiname ohne Verzeichnis und ohne Steuer- oder unsichtbare Zeichen. Die Datei muss vorhanden, lesbar und nicht leer sein, sonst bricht der Befehl ohne Anfrage ab. --dry-run zeigt Dateiname, Größe und MIME-Typ. Die ganze Datei muss innerhalb von --timeout (Standard 30 s) übertragen sein; größere Dateien brauchen ggf. --timeout 120s.
+Die Datei wird als multipart/form-data hochgeladen; der MIME-Typ folgt aus der Dateiendung (unbekannte Endung: application/octet-stream). Gesendet wird nur der Dateiname ohne Verzeichnis und ohne Steuer- oder unsichtbare Zeichen. Die Datei muss vorhanden, lesbar und nicht leer sein, sonst bricht der Befehl ohne Anfrage ab. --dry-run zeigt Dateiname, Größe und MIME-Typ. Die ganze Datei muss innerhalb des Zeitlimits übertragen sein: ohne --timeout mindestens 120 s (ein größeres timeout des Kontexts gilt), mit --timeout genau dieser Wert; größere Dateien brauchen ein höheres --timeout.
 
 Verwendung:
   papierkram voucher upload <beleg-id> <datei> [Optionen]
@@ -28,7 +28,7 @@ Globale Optionen:
       --no-color        Farben abschalten
       --no-input        keine interaktiven Rückfragen
   -o, --output Text     Ausgabeformat: table|wide|json|yaml (Standard: "table")
-      --timeout Dauer   Zeitlimit je Anfrage, pro Versuch; GET wird bis zu zweimal wiederholt (Standard: 30s)
+      --timeout Dauer   Zeitlimit je Anfrage, pro Versuch (Uploads ohne Angabe mindestens 120 s); GET wird bis zu zweimal wiederholt (Standard: 30s)
   -y, --yes             Bestätigungen automatisch bejahen
 ```
 

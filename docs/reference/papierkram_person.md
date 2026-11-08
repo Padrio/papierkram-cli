@@ -31,7 +31,7 @@ Globale Optionen:
       --no-color        Farben abschalten
       --no-input        keine interaktiven Rückfragen
   -o, --output Text     Ausgabeformat: table|wide|json|yaml (Standard: "table")
-      --timeout Dauer   Zeitlimit je Anfrage, pro Versuch; GET wird bis zu zweimal wiederholt (Standard: 30s)
+      --timeout Dauer   Zeitlimit je Anfrage, pro Versuch (Uploads ohne Angabe mindestens 120 s); GET wird bis zu zweimal wiederholt (Standard: 30s)
   -y, --yes             Bestätigungen automatisch bejahen
 
 Mit "papierkram person [Befehl] --help" gibt es weitere Informationen zu einem Befehl.

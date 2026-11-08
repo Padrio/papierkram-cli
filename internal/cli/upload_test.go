@@ -454,7 +454,7 @@ func TestR39_VoucherFileUploadPartial(t *testing.T) {
 			if strings.Contains(out+errs, "))") {
 				t.Errorf("doppelte Klammer im Text:\n%s\n%s", out, errs)
 			}
-			if timedOut := strings.HasPrefix(tc.name, "keine Antwort"); timedOut != strings.Contains(errs, "--timeout 120s") {
+			if timedOut := strings.HasPrefix(tc.name, "keine Antwort"); timedOut != strings.Contains(errs, "größere Dateien brauchen ein höheres --timeout (Uploads ohne --timeout: 120 s)") {
 				t.Errorf("Hinweis auf --timeout nur bei Zeitüberschreitung: %s", errs)
 			}
 			assertNoToken(t, app)
@@ -653,7 +653,7 @@ func TestVoucherUploadTimeoutHint(t *testing.T) {
 	})
 	code := waitExit(t, func() int { return Run(app, []string{"voucher", "upload", "295", path, "--timeout", "300ms"}) })
 	wantExit(t, app, code, 12)
-	if _, errs := bufs(app); !strings.Contains(errs, "größere Dateien brauchen ggf. --timeout 120s") {
+	if _, errs := bufs(app); !strings.Contains(errs, "größere Dateien brauchen ein höheres --timeout (Uploads ohne --timeout: 120 s)") {
 		t.Errorf("stderr = %s", errs)
 	}
 }

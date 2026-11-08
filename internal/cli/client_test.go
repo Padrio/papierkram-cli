@@ -283,7 +283,7 @@ func TestTimeoutHelpSaysPerAttempt(t *testing.T) {
 	if code := Run(app, []string{"--help"}); code != 0 {
 		t.Fatal(code)
 	}
-	if !strings.Contains(out.String(), "pro Versuch; GET wird bis zu zweimal wiederholt") {
+	if !strings.Contains(out.String(), "Zeitlimit je Anfrage, pro Versuch (Uploads ohne Angabe mindestens 120 s); GET wird bis zu zweimal wiederholt") {
 		t.Errorf("--timeout-Hilfe:\n%s", out.String())
 	}
 }
