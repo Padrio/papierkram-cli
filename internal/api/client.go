@@ -95,6 +95,19 @@ func New(o Options) *Client {
 	return &Client{opts: o, base: base, http: hc}
 }
 
+// WithTimeout returns a copy of c whose deadline per attempt is d (zero
+// means DefaultTimeout, as in New); c keeps its own. The copy shares
+// everything else with c: options, base URL and HTTP client (spec 5.5:
+// the longer timeout of an upload applies to that request only).
+func (c *Client) WithTimeout(d time.Duration) *Client {
+	if d == 0 {
+		d = DefaultTimeout
+	}
+	cp := *c
+	cp.opts.Timeout = d
+	return &cp
+}
+
 // maxRedirects is the limit of net/http's default policy.
 const maxRedirects = 10
 

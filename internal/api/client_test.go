@@ -660,3 +660,34 @@ func TestCheckPathError(t *testing.T) {
 		t.Errorf("query is not part of the path: %v", err)
 	}
 }
+
+// WithTimeout returns a copy with another deadline per attempt; the
+// original keeps its own, and both share base URL, token and HTTP client.
+func TestWithTimeout(t *testing.T) {
+	var left []time.Duration
+	hc := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		dl, ok := r.Context().Deadline()
+		if !ok {
+			t.Error("Anfrage ohne Deadline")
+		}
+		left = append(left, time.Until(dl))
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
+	})}
+	c := New(Options{BaseURL: "https://firma.example/api/v1", Token: testToken, HTTP: hc})
+	long := c.WithTimeout(120 * time.Second)
+	if long == c {
+		t.Fatal("WithTimeout liefert den Client selbst")
+	}
+	for _, cl := range []*Client{long, c} {
+		if _, err := cl.Call(context.Background(), "ListInvoices", nil, nil, nil); err != nil {
+			t.Fatalf("Call: %v", err)
+		}
+	}
+	if len(left) != 2 || left[0] < 119*time.Second || left[0] > 120*time.Second ||
+		left[1] < 29*time.Second || left[1] > DefaultTimeout {
+		t.Errorf("Restzeit = %v, erwartet ~120s für die Kopie und ~30s für das Original", left)
+	}
+	if got := c.WithTimeout(0); got.opts.Timeout != DefaultTimeout {
+		t.Errorf("WithTimeout(0) = %s, erwartet DefaultTimeout", got.opts.Timeout)
+	}
+}
