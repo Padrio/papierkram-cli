@@ -786,7 +786,7 @@ func TestSkillOpenItemsJQ(t *testing.T) {
 // pdf message {path, bytes}). Per case: lines that pass, lines that fail.
 func TestDocFieldsFollowTheOutputShape(t *testing.T) {
 	const voucher = `papierkram voucher create --name X --provenance domestic --item "name=a,amount=1,vat=19" --file beleg.pdf`
-	const invoice = `papierkram invoice create --name X --customer 1 --payment-term 2 --item "name=a,qty=1,price=1,vat=19"`
+	const invoice = `papierkram invoice create --name X --customer 1 --payment-term 2 --document-date 2026-11-04 --item "name=a,qty=1,price=1,vat=19"`
 	for _, tc := range []struct {
 		name      string
 		good, bad []string

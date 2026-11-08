@@ -261,4 +261,4 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 ## Weitere Ergebnisse von Live-Lauf 5
 
 - **Bank:** `bank-connection list` lieferte 1 Eintrag (Schlüssel `{id,name,type}`), `transaction list` 0 Einträge. Ohne Bankumsatz lässt sich `GetTransaction` nicht aufrufen; der Abdeckungsbericht führt die Operation deshalb begründet als „nicht anwendbar“ (kein Bankumsatz im Sandbox-Account, gemessen).
-- **Aufräumen:** Stornierte Rechnungen und Angebote lassen sich weder löschen noch erneut stornieren (je Exit 5); die Suite archiviert sie. Ebenso lässt sich der Kunde nicht löschen, solange Belege an ihm hängen (Exit 5, archiviert). Diese Reste wachsen mit jedem Lauf: Vor Lauf 5 fand die Restesuche 6 archivierte bzw. übrige Objekte früherer Läufe.
+- **Aufräumen:** Stornierte Rechnungen und Angebote lassen sich weder löschen noch erneut stornieren (je Exit 5); die Suite archiviert sie. Ebenso ließ sich der Kunde nicht löschen (Exit 5, archiviert); vermutlich, weil Belege an ihm hängen (die Ursache nennt das Log nicht). Diese Reste wachsen mit jedem Lauf: Vor Lauf 5 fand die Restesuche 6 archivierte bzw. übrige Objekte früherer Läufe.
