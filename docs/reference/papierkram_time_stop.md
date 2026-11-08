@@ -7,7 +7,7 @@ Bucht die Zeit des Timers wie time log: Datum und Uhrzeit des Starts bis jetzt (
 
 Im Terminal zeigt der Befehl vorher eine Zusammenfassung und fragt nach (Enter = ja), wie time log; --dry-run zeigt die Anfrage. Der Timer wird erst gelöscht, wenn der Zeiteintrag angelegt ist; bei jedem Fehler, Abbruch oder Probelauf läuft er weiter (dann von Hand mit papierkram time log buchen oder mit papierkram time discard verwerfen).
 
-Direkt vor dem Senden beansprucht der Befehl den Timer atomar (die Timer-Datei wird in <datei>.stopping umbenannt): Ein zweiter time stop desselben Timers endet mit Exit 7, ohne etwas zu senden. Scheitert die Anfrage, wird die Datei zurückbenannt. Bleibt sie nach einem Absturz liegen, brechen time start und time stop mit Exit 7 ab, bis sie geprüft und mit papierkram time discard verworfen ist.
+Direkt vor dem Senden beansprucht der Befehl den Timer atomar (er legt <datei>.stopping exklusiv an und entfernt danach die Timer-Datei): Ein zweiter time stop desselben Timers endet mit Exit 7, ohne etwas zu senden. Scheitert die Anfrage, wird die Timer-Datei wiederhergestellt. Bleibt sie nach einem Absturz liegen, brechen time start und time stop mit Exit 7 ab, bis sie geprüft und mit papierkram time discard verworfen ist.
 
 Kosten: 10 Credits je Zeiteintrag.
 

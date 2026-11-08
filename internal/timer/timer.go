@@ -70,31 +70,38 @@ const DiscardHint = "Timer-Datei verwerfen: papierkram time discard (die bisher 
 // regular file (also a symbolic link), larger than MaxSize, no valid
 // state or unreadable is an error (exit 1) that names time discard.
 func Load(path string) (*State, error) {
+	st, _, err := load(path)
+	return st, err
+}
+
+// load is Load that also returns the bytes of the file the state was read
+// from (nil without one).
+func load(path string) (*State, []byte, error) {
 	data, err := safefile.ReadRegular(path, false, MaxSize)
 	switch {
 	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
 		// ENOTDIR: a file blocks the cache directory; there is no timer
 		// (start then fails to save and names the directory, review M4)
-		return nil, nil
+		return nil, nil, nil
 	case errors.Is(err, safefile.ErrSymlink), errors.Is(err, safefile.ErrNotRegular):
-		return nil, invalid(path, "keine reguläre Datei", nil)
+		return nil, nil, invalid(path, "keine reguläre Datei", nil)
 	case errors.Is(err, safefile.ErrTooLarge):
-		return nil, invalid(path, fmt.Sprintf("zu groß (mehr als %d KiB)", MaxSize>>10), nil)
+		return nil, nil, invalid(path, fmt.Sprintf("zu groß (mehr als %d KiB)", MaxSize>>10), nil)
 	case err != nil:
-		return nil, invalid(path, "nicht lesbar", err)
+		return nil, nil, invalid(path, "nicht lesbar", err)
 	}
 	var s State
 	dec := json.NewDecoder(bytes.NewReader(data))
 	if err := dec.Decode(&s); err != nil {
-		return nil, invalid(path, "kein gültiges JSON", err)
+		return nil, nil, invalid(path, "kein gültiges JSON", err)
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, invalid(path, "Daten nach dem JSON-Objekt", nil)
+		return nil, nil, invalid(path, "Daten nach dem JSON-Objekt", nil)
 	}
 	if why := validate(s); why != "" {
-		return nil, invalid(path, why, nil)
+		return nil, nil, invalid(path, why, nil)
 	}
-	return &s, nil
+	return &s, data, nil
 }
 
 // validate is the check of a state that Load and Save share, so a state
@@ -147,29 +154,60 @@ func Save(path string, s State) error {
 	return safefile.CreateAtomic(path, append(data, '\n'), 0o600)
 }
 
-// ErrClaimed reports that the state file cannot be claimed: another
-// time stop has claimed it (its claim is there) or has already removed
-// it.
+// ErrClaimed reports that the timer cannot be claimed: another time stop
+// holds the claim, or the state file is gone (another stop or a discard
+// was faster).
 var ErrClaimed = errors.New("timer already claimed by another time stop")
 
-// StoppingPath is the claim of the state file at path: the name time stop
-// renames it to before it sends the entry (task 11, C2).
+// ErrChanged reports that the state file is no longer the timer the stop
+// read (another stop booked it and a new one was started); nothing was
+// claimed.
+var ErrChanged = errors.New("timer replaced since it was read")
+
+// StoppingPath is the claim of the state file at path: the file time stop
+// holds while it sends the entry (task 11, C2).
 func StoppingPath(path string) string { return path + ".stopping" }
 
-// Claim takes the state file at path for one time stop by renaming it to
-// StoppingPath(path). The rename of one file succeeds once, so of two
-// concurrent stops one gets the claim and the other fs.ErrNotExist, which
-// is ErrClaimed. A claim already there (also a symbolic link) is
-// ErrClaimed before anything is renamed: os.Rename replaces an existing
-// target on every platform (on Windows with MOVEFILE_REPLACE_EXISTING),
-// so without this check a stop could take a new state file over the
-// claim of another. A symbolic link at path is renamed itself, never
-// its target. Other errors are those of the file system.
-func Claim(path string) error {
-	if _, err := os.Lstat(StoppingPath(path)); err == nil {
+// Claim takes the timer want at path for one time stop (ruling T11-A). The
+// claim is a copy of the state file created exclusively at
+// StoppingPath(path) with safefile.CreateAtomic (hard link, otherwise
+// O_EXCL): of concurrent claims exactly one creates it, the others get
+// ErrClaimed. A rename would not do: os.Rename replaces an existing target
+// on every platform (on Windows with MOVEFILE_REPLACE_EXISTING). Only then
+// the state file is removed, and only while it still holds the bytes that
+// were copied; otherwise the claim is removed again: ErrClaimed when the
+// file is gone, ErrChanged when it is another timer. A newly started timer
+// is thus never overwritten or removed by a claim. The state file is read
+// with the rules of Load (no symbolic link, MaxSize, valid); an unusable
+// one is the error of Load. Other errors are those of the file system,
+// with nothing claimed.
+func Claim(path string, want State) error {
+	st, data, err := load(path)
+	switch {
+	case err != nil:
+		return err
+	case st == nil:
 		return ErrClaimed
+	case !st.Equal(want):
+		return ErrChanged
 	}
-	if err := os.Rename(path, StoppingPath(path)); err != nil {
+	claim := StoppingPath(path)
+	if err := safefile.CreateAtomic(claim, data, 0o600); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return ErrClaimed
+		}
+		return err
+	}
+	// the claim is ours: no other claim can be created while it exists
+	now, err := safefile.ReadRegular(path, false, MaxSize)
+	switch {
+	case err == nil && bytes.Equal(now, data):
+		err = os.Remove(path)
+	case err == nil:
+		err = ErrChanged
+	}
+	if err != nil {
+		_ = os.Remove(claim)
 		if errors.Is(err, fs.ErrNotExist) {
 			return ErrClaimed
 		}
@@ -179,17 +217,27 @@ func Claim(path string) error {
 }
 
 // Release puts the claim of path back (the stop failed, the timer keeps
-// running). It never replaces a state file at path (also a symbolic
-// link): one there is an error matching fs.ErrExist, and the claim
-// stays. Without a claim the error matches fs.ErrNotExist.
+// running): the state file is created again from the claim with
+// safefile.CreateAtomic, so a state file at path (also a symbolic link)
+// is never replaced; it is an error matching fs.ErrExist and the claim
+// stays. Then the claim is removed. Without a claim the error matches
+// fs.ErrNotExist; a claim that is no regular file is not read.
 func Release(path string) error {
-	if _, err := os.Lstat(StoppingPath(path)); err != nil {
+	claim := StoppingPath(path)
+	data, err := safefile.ReadRegular(claim, false, MaxSize)
+	if err != nil {
 		return err
 	}
-	if _, err := os.Lstat(path); err == nil {
-		return fmt.Errorf("Timer-Datei %s ist schon vorhanden: %w", output.Printable(path), fs.ErrExist)
+	if err := safefile.CreateAtomic(path, data, 0o600); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("Timer-Datei %s ist schon vorhanden: %w", output.Printable(path), fs.ErrExist)
+		}
+		return err
 	}
-	return os.Rename(StoppingPath(path), path)
+	if err := os.Remove(claim); err != nil {
+		return fmt.Errorf("Timer-Datei zurückgestellt, aber %s nicht gelöscht: %w", output.Printable(claim), err)
+	}
+	return nil
 }
 
 // LoadStopping reads the claim of path with the rules of Load: nil

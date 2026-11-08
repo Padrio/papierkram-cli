@@ -41,7 +41,7 @@ func (a *App) newTimeStartCmd() *cobra.Command {
 			"Aufgabe und Benutzer werden jetzt bestimmt wie bei time log: Flag, sonst PAPIERKRAM_TASK bzw. PAPIERKRAM_USER, " +
 			"sonst task bzw. user aus der Projektdatei .papierkram.toml (anlegen: papierkram local init), beim Benutzer zuletzt user des Kontexts. " +
 			"--task nimmt auch einen Alias aus [tasks] der Projektdatei.\n\n" +
-			"Läuft schon ein Timer oder wurde ein time stop nicht abgeschlossen, bricht der Befehl ab (Exit 7). Unter Schreibschutz ist er gesperrt (Exit 9), weil time stop nicht buchen könnte. " +
+			"Läuft schon ein Timer oder läuft gerade ein time stop bzw. wurde einer nicht abgeschlossen, bricht der Befehl ab (Exit 7). Unter Schreibschutz ist er gesperrt (Exit 9), weil time stop nicht buchen könnte. " +
 			"Sendet keine Anfrage. " + timerNote,
 		Example: "  papierkram time start --task 545 -m \"Abstimmung mit Kunde\"\n" +
 			"  papierkram time start --task tickets",
@@ -66,7 +66,7 @@ func (a *App) newTimeStatusCmd() *cobra.Command {
 		Short: "Laufenden Timer anzeigen",
 		Long: "Zeigt den Timer des wirksamen Kontexts: Start, bisherige Dauer (h:mm nach Uhrzeit, wie time stop sie bucht, auch an Tagen der Zeitumstellung), " +
 			"Aufgabe, Benutzer, Kommentar und das Konto (Host), für das er gestartet wurde (-o wide, JSON account; " +
-			"gilt jetzt ein anderes, warnt der Befehl, denn time stop bucht dann nicht). Wurde ein time stop nicht abgeschlossen, zeigt der Befehl dessen Timer mit einer Warnung. Ohne Timer: „Kein Timer läuft“, mit -o json {\"running\":false} (Exit 0). " +
+			"gilt jetzt ein anderes, warnt der Befehl, denn time stop bucht dann nicht). Läuft gerade ein time stop oder wurde einer nicht abgeschlossen, zeigt der Befehl dessen Timer mit einer Warnung. Ohne Timer: „Kein Timer läuft“, mit -o json {\"running\":false} (Exit 0). " +
 			"Sendet keine Anfrage. " + timerNote,
 		Example:     "  papierkram time status\n  papierkram time status -o json",
 		Annotations: readsOnly(),
@@ -90,8 +90,8 @@ func (a *App) newTimeStopCmd() *cobra.Command {
 			"Im Terminal zeigt der Befehl vorher eine Zusammenfassung und fragt nach (Enter = ja), wie time log; --dry-run zeigt die Anfrage. " +
 			"Der Timer wird erst gelöscht, wenn der Zeiteintrag angelegt ist; bei jedem Fehler, Abbruch oder Probelauf läuft er weiter " +
 			"(dann von Hand mit papierkram time log buchen oder mit papierkram time discard verwerfen).\n\n" +
-			"Direkt vor dem Senden beansprucht der Befehl den Timer atomar (die Timer-Datei wird in <datei>.stopping umbenannt): " +
-			"Ein zweiter time stop desselben Timers endet mit Exit 7, ohne etwas zu senden. Scheitert die Anfrage, wird die Datei zurückbenannt. " +
+			"Direkt vor dem Senden beansprucht der Befehl den Timer atomar (er legt <datei>.stopping exklusiv an und entfernt danach die Timer-Datei): " +
+			"Ein zweiter time stop desselben Timers endet mit Exit 7, ohne etwas zu senden. Scheitert die Anfrage, wird die Timer-Datei wiederhergestellt. " +
 			"Bleibt sie nach einem Absturz liegen, brechen time start und time stop mit Exit 7 ab, bis sie geprüft und mit papierkram time discard verworfen ist." +
 			"\n\nKosten: " + creditsText(e.Credits) + " je Zeiteintrag.",
 		Example:     "  papierkram time stop\n  papierkram time stop -m \"Fehler behoben\" --yes",
@@ -359,7 +359,8 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 	var claimed bool
 	var claimErr error
 	claim := func() error {
-		claimed, claimErr = a.claimTimer(path, *st, eff, p)
+		claimErr = a.claimTimer(path, *st, eff, p)
+		claimed = claimErr == nil
 		return claimErr
 	}
 	resp, err := a.sendTimeEntry(c, e, client, r, fields, te, claim)
@@ -398,26 +399,26 @@ func (a *App) runTimeStop(c *cobra.Command, e registry.Entry) error {
 	return nil
 }
 
-// claimTimer claims the timer st at path for this stop and reports
-// whether it holds the claim. Another stop's claim, or no file, is exit 7
-// (nothing sent). A claim that is not st (in the meantime another stop
-// booked it and a new timer was started, e.g. while this one asked) is
-// exit 7 too; the claim is held then and must be released. Any other
-// error of the file system ends the stop before the request (exit 1),
-// the timer stays.
-func (a *App) claimTimer(path string, st, eff timer.State, p period) (bool, error) {
-	if err := timer.Claim(path); errors.Is(err, timer.ErrClaimed) {
-		return false, clierr.New(clierr.CodeConflict, "Timer wird bereits von einem anderen papierkram time stop gebucht", claimedHint)
-	} else if err != nil {
-		ce := clierr.New(clierr.CodeError, "Timer-Datei nicht beansprucht: "+printable(err.Error()), "Nichts gesendet")
-		ce.Cause = err
-		return false, a.keepTimer(ce, eff, p)
-	}
-	if now, err := timer.LoadStopping(path); err != nil || now == nil || !now.Equal(st) {
-		return true, clierr.New(clierr.CodeConflict,
+// claimTimer claims the timer st at path for this stop (timer.Claim,
+// ruling T11-A); on an error nothing is claimed and nothing was sent.
+// Another stop's claim, or no file, is exit 7; a state file that is no
+// longer st (in the meantime another stop booked it and a new timer was
+// started, e.g. while this one asked) is exit 7 too. Any other error ends
+// the stop before the request (exit 1), the timer stays.
+func (a *App) claimTimer(path string, st, eff timer.State, p period) error {
+	switch err := timer.Claim(path, st); {
+	case err == nil:
+		return nil
+	case errors.Is(err, timer.ErrClaimed):
+		return clierr.New(clierr.CodeConflict, "Timer wird bereits von einem anderen papierkram time stop gebucht", claimedHint)
+	case errors.Is(err, timer.ErrChanged):
+		return clierr.New(clierr.CodeConflict,
 			"Timer wurde seit dem Lesen ersetzt (von einem anderen papierkram time stop gebucht und neu gestartet?)", claimedHint)
+	default:
+		ce := clierr.New(clierr.CodeError, "Timer-Datei nicht beansprucht: "+printable(clierr.From(err).Message), "Nichts gesendet")
+		ce.Cause = err
+		return a.keepTimer(ce, eff, p)
 	}
-	return true, nil
 }
 
 // claimedHint is the hint of a stop that found the timer claimed or
@@ -441,17 +442,18 @@ func errNotReleased(path string, rerr, cause error) error {
 	return ce
 }
 
-// errStopUnfinished is the claim of a time stop that did not finish
-// (killed between the claim and the end): its entry may exist. time start
+// errStopUnfinished is the claim of a time stop that is still sending or
+// did not finish (killed between the claim and the end); the two cannot
+// be told apart, and the entry may exist. time start
 // and time stop refuse (exit 7), time status warns with its text.
 func (a *App) errStopUnfinished(st timer.State) *clierr.Error {
 	v := a.timerStatus(st)
 	start := st.StartedAt.In(a.loc())
 	date := start.Format(time.DateOnly)
 	return clierr.New(clierr.CodeConflict,
-		fmt.Sprintf("Ein time stop wurde nicht abgeschlossen (Timer seit %s, %s)", output.FmtDate(v.StartedAt), timerSubject(st)),
-		fmt.Sprintf("Erst mit papierkram time list --since %s prüfen, ob der Eintrag angelegt wurde; wenn ja: papierkram time discard; "+
-			"sonst papierkram time discard und von Hand buchen mit %s", date, a.timeLogCommand(st, date, hhmmOf(start), "HH:MM")))
+		fmt.Sprintf("Ein time stop läuft gerade oder wurde nicht abgeschlossen (Timer seit %s, %s)", output.FmtDate(v.StartedAt), timerSubject(st)),
+		fmt.Sprintf("Erst mit papierkram time list --since %s prüfen, ob der Eintrag angelegt wurde. Läuft kein anderer time stop mehr: "+
+			"wenn ja, papierkram time discard; sonst papierkram time discard und von Hand buchen mit %s", date, a.timeLogCommand(st, date, hhmmOf(start), "HH:MM")))
 }
 
 // sameAccount reports whether the base URL a timer was started with is

@@ -150,7 +150,7 @@ papierkram time stop -o json --no-input
 
 `time stop` nach Exit 11 **nie** erneut ausführen: Der Eintrag ist angelegt. Nach Prüfung per `time list --since heute` den Timer mit `papierkram time discard --yes` verwerfen, nur mit Freigabe (die erfasste Zeit geht verloren).
 
-`time stop` mit Exit 7 sendet nichts: Entweder bucht gerade ein anderer `time stop` denselben Timer (nicht wiederholen, `time status` und `time list --since heute` lesen), oder ein früherer `time stop` wurde nicht abgeschlossen (Hinweis „Ein time stop wurde nicht abgeschlossen“): erst per `time list --since <Startdatum>` prüfen, ob der Eintrag existiert, dann wie im Hinweis `time discard --yes` (mit Freigabe) und, falls er fehlt, von Hand mit `time log` buchen.
+`time stop` mit Exit 7 sendet nichts: Entweder bucht gerade ein anderer `time stop` denselben Timer (nicht wiederholen, `time status` und `time list --since heute` lesen), oder ein `time stop` läuft gerade bzw. wurde nicht abgeschlossen (Hinweis „Ein time stop läuft gerade oder wurde nicht abgeschlossen“): erst per `time list --since <Startdatum>` prüfen, ob der Eintrag existiert, dann, wenn kein anderer `time stop` mehr läuft, wie im Hinweis `time discard --yes` (mit Freigabe) und, falls er fehlt, von Hand mit `time log` buchen.
 
 Abrechnen: offene Zeiten eines Projekts lesen und die abrechenbaren Stunden summieren. Das CLI nimmt `billable_duration` in Sekunden an; bestätigt ist das erst mit der E2E-Messung ([offene Punkte](https://github.com/Padrio/papierkram-cli/blob/main/docs/offene-punkte.md), Nr. 15). Deshalb die Summe mit den Einzeleinträgen vergleichen und dem Menschen vor dem Anlegen der Rechnung nennen:
 

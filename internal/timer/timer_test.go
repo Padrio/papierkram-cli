@@ -1,11 +1,13 @@
 package timer
 
 import (
+	"bytes"
 	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -238,55 +240,66 @@ func TestLoadWithFileInPathIsNoTimer(t *testing.T) {
 	}
 }
 
-// Task 11 (C2): time stop claims the state file by renaming it to
-// StoppingPath before it sends the entry. Of two stops only one claim
-// succeeds; the other gets ErrClaimed, as does a stop that finds a claim
-// left behind. Release puts the claim back, never over a new state file.
+// Task 11 (C2, ruling T11-A): time stop claims the timer by creating a
+// copy of the state file exclusively at StoppingPath and then removing the
+// state file. Of two stops only one claim succeeds; the other gets
+// ErrClaimed, as does a stop that finds the file gone, and ErrChanged when
+// the file is another timer. Release creates the state file again, never
+// over a new one.
 func TestClaimRelease(t *testing.T) {
 	path := Path(t.TempDir(), "firma")
 	if got := StoppingPath(path); got != path+".stopping" {
 		t.Errorf("StoppingPath = %q", got)
 	}
+	want := state(t)
 	// no timer: nothing to claim
-	if err := Claim(path); !errors.Is(err, ErrClaimed) {
+	if err := Claim(path, want); !errors.Is(err, ErrClaimed) {
 		t.Errorf("Claim without file = %v, want ErrClaimed", err)
 	}
 	if st, err := LoadStopping(path); st != nil || err != nil {
 		t.Errorf("LoadStopping without claim = %+v, %v", st, err)
 	}
-	want := state(t)
 	if err := Save(path, want); err != nil {
 		t.Fatal(err)
 	}
-	if err := Claim(path); err != nil {
+	saved, _ := os.ReadFile(path)
+	// another timer than the one read: nothing claimed
+	other := want
+	other.Task = 999
+	if err := Claim(path, other); !errors.Is(err, ErrChanged) {
+		t.Errorf("Claim of another timer = %v, want ErrChanged", err)
+	}
+	if _, err := os.Lstat(StoppingPath(path)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("claim created for another timer: %v", err)
+	}
+	if err := Claim(path, want); err != nil {
 		t.Fatalf("Claim = %v", err)
 	}
 	if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("state file left after Claim: %v", err)
 	}
-	if st, err := Load(path); st != nil || err != nil {
-		t.Errorf("Load after Claim = %+v, %v", st, err)
+	if fi, err := os.Stat(StoppingPath(path)); err != nil || (runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600) {
+		t.Errorf("claim: %v, %v", fi, err)
+	}
+	if got, _ := os.ReadFile(StoppingPath(path)); !bytes.Equal(got, saved) {
+		t.Errorf("claim %s, want the state file %s", got, saved)
 	}
 	got, err := LoadStopping(path)
 	if err != nil || got == nil || !got.Equal(want) {
 		t.Fatalf("LoadStopping = %+v, %v", got, err)
 	}
-	// a second claim: the first one is there
-	if err := Claim(path); !errors.Is(err, ErrClaimed) {
-		t.Errorf("second Claim = %v, want ErrClaimed", err)
-	}
-	// a new state file next to the claim is not taken either (the claim
-	// is checked first, so no rename replaces it, also on Windows)
-	other := want
-	other.Task = 999
+	// a new state file next to the claim is never claimed over it
 	if err := Save(path, other); err != nil {
 		t.Fatal(err)
 	}
-	if err := Claim(path); !errors.Is(err, ErrClaimed) {
+	if err := Claim(path, other); !errors.Is(err, ErrClaimed) {
 		t.Errorf("Claim with a claim present = %v, want ErrClaimed", err)
 	}
 	if st, _ := LoadStopping(path); st == nil || st.Task != 545 {
 		t.Errorf("claim replaced: %+v", st)
+	}
+	if st, _ := Load(path); st == nil || st.Task != 999 {
+		t.Errorf("new state file changed: %+v", st)
 	}
 	// Release never replaces a state file
 	if err := Release(path); !errors.Is(err, fs.ErrExist) {
@@ -304,8 +317,8 @@ func TestClaimRelease(t *testing.T) {
 	if err := Release(path); err != nil {
 		t.Fatalf("Release = %v", err)
 	}
-	if st, err := Load(path); err != nil || st == nil || !st.Equal(want) {
-		t.Errorf("Load after Release = %+v, %v", st, err)
+	if got, _ := os.ReadFile(path); !bytes.Equal(got, saved) {
+		t.Errorf("released state %s, want %s", got, saved)
 	}
 	if _, err := os.Lstat(StoppingPath(path)); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("claim left after Release: %v", err)
@@ -314,49 +327,112 @@ func TestClaimRelease(t *testing.T) {
 	if err := Release(path); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Release without claim = %v, want fs.ErrNotExist", err)
 	}
+	// an unusable state file is the error of Load, nothing claimed
+	if err := os.WriteFile(path, []byte("kein JSON"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var ce *clierr.Error
+	if err := Claim(path, want); !errors.As(err, &ce) || ce.Exit() != 1 {
+		t.Errorf("Claim of an unusable file = %v", err)
+	}
+	if _, err := os.Lstat(StoppingPath(path)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("claim created for an unusable file: %v", err)
+	}
 }
 
-// Of concurrent claims of one state file exactly one succeeds.
+// Of N concurrent claims of one timer exactly one succeeds, and a timer
+// started meanwhile (once the winner removed the state file) is never
+// overwritten or removed: later claims of the old timer get ErrClaimed
+// while the claim exists and ErrChanged after it.
 func TestClaimConcurrent(t *testing.T) {
 	path := Path(t.TempDir(), "firma")
-	for range 20 {
-		if err := Save(path, state(t)); err != nil {
-			t.Fatal(err)
-		}
-		const n = 8
-		errs := make(chan error, n)
+	old := state(t)
+	newer := old
+	newer.Task, newer.StartedAt = 777, old.StartedAt.Add(time.Hour)
+	claim := func(n int) (won int, errs []error) {
+		results := make(chan error, n)
 		start := make(chan struct{})
 		for range n {
 			go func() {
 				<-start
-				errs <- Claim(path)
+				results <- Claim(path, old)
 			}()
 		}
 		close(start)
-		won := 0
 		for range n {
-			switch err := <-errs; {
-			case err == nil:
+			if err := <-results; err == nil {
 				won++
-			case !errors.Is(err, ErrClaimed) && runtime.GOOS != "windows":
-				// Windows may refuse a rename of a file that another
-				// rename holds open (sharing violation): still a loser
-				t.Errorf("Claim = %v", err)
+			} else {
+				errs = append(errs, err)
 			}
 		}
-		if won != 1 {
-			t.Fatalf("%d claims succeeded, want 1", won)
+		return won, errs
+	}
+	for round := range 20 {
+		if err := Save(path, old); err != nil {
+			t.Fatal(err)
 		}
+		oldBytes, _ := os.ReadFile(path)
+		// a time start racing the claims: it can only save once the
+		// winner removed the state file, and nothing may replace its file
+		started := make(chan []byte, 1)
+		go func() {
+			for {
+				if err := Save(path, newer); err == nil {
+					data, _ := os.ReadFile(path)
+					started <- data
+					return
+				} else if !errors.Is(err, fs.ErrExist) {
+					t.Error(err)
+					started <- nil
+					return
+				}
+				runtime.Gosched()
+			}
+		}()
+		won, errs := claim(8)
+		if won != 1 {
+			t.Fatalf("round %d: %d claims succeeded, want 1 (%v)", round, won, errs)
+		}
+		for _, err := range errs {
+			if !errors.Is(err, ErrClaimed) && !errors.Is(err, ErrChanged) {
+				t.Errorf("round %d: Claim = %v", round, err)
+			}
+		}
+		newBytes := <-started
+		if got, _ := os.ReadFile(StoppingPath(path)); !bytes.Equal(got, oldBytes) {
+			t.Fatalf("round %d: claim %s, want the old timer", round, got)
+		}
+		// while the claim exists, more claims of the old timer find the new one
+		if won, errs := claim(4); won != 0 {
+			t.Fatalf("round %d: %d late claims succeeded (%v)", round, won, errs)
+		}
+		if got, _ := os.ReadFile(path); !bytes.Equal(got, newBytes) {
+			t.Fatalf("round %d: new timer changed: %s", round, got)
+		}
+		// the stop is done: the claim goes, the new timer stays
 		if err := Delete(StoppingPath(path)); err != nil {
+			t.Fatal(err)
+		}
+		if won, errs := claim(4); won != 0 || slices.ContainsFunc(errs, func(err error) bool { return !errors.Is(err, ErrChanged) }) {
+			t.Fatalf("round %d: claims after the stop: %d, %v", round, won, errs)
+		}
+		if got, _ := os.ReadFile(path); !bytes.Equal(got, newBytes) {
+			t.Fatalf("round %d: new timer changed: %s", round, got)
+		}
+		if _, err := os.Lstat(StoppingPath(path)); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("round %d: claim of a changed timer left", round)
+		}
+		if err := Delete(path); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-// The claim follows the rules of the state file: LoadStopping rejects
-// what Load rejects and names the claim; a symbolic link is renamed and
-// released as a link, never followed, and a link at the claim path
-// blocks a claim.
+// The claim follows the rules of the state file: a symbolic link as state
+// file is never claimed (the error of Load) and never followed; a link at
+// the claim path blocks a claim and is not released; LoadStopping rejects
+// it and names the claim.
 func TestClaimSymlinkRule(t *testing.T) {
 	dir := t.TempDir()
 	valid := filepath.Join(dir, "valid.json")
@@ -370,43 +446,56 @@ func TestClaimSymlinkRule(t *testing.T) {
 	if err := os.Symlink(valid, path); err != nil {
 		t.Skipf("no symlinks: %v", err)
 	}
-	if err := Claim(path); err != nil {
-		t.Fatalf("Claim of a link = %v", err)
-	}
-	if fi, err := os.Lstat(StoppingPath(path)); err != nil || fi.Mode()&fs.ModeSymlink == 0 {
-		t.Errorf("claim is no link: %v, %v", fi, err)
-	}
-	st, err := LoadStopping(path)
 	var ce *clierr.Error
-	if st != nil || !errors.As(err, &ce) || ce.Exit() != 1 || !strings.Contains(ce.Message, ".stopping") ||
-		!strings.Contains(ce.Hint, "papierkram time discard") {
-		t.Errorf("LoadStopping of a link = %+v, %v", st, err)
+	if err := Claim(path, state(t)); !errors.As(err, &ce) || ce.Exit() != 1 {
+		t.Errorf("Claim of a link = %v", err)
 	}
-	if err := Release(path); err != nil {
-		t.Fatalf("Release of a link = %v", err)
+	if _, err := os.Lstat(StoppingPath(path)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("claim created for a link: %v", err)
 	}
 	if fi, err := os.Lstat(path); err != nil || fi.Mode()&fs.ModeSymlink == 0 {
-		t.Errorf("released file is no link: %v, %v", fi, err)
+		t.Errorf("link changed: %v, %v", fi, err)
 	}
-	if _, err := Load(valid); err != nil {
-		t.Errorf("link target changed: %v", err)
-	}
-
-	// a (dangling) link at the claim path blocks the claim
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
+
+	// a (dangling) link at the claim path blocks the claim
 	if err := Save(path, state(t)); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(dir, "nirgends"), StoppingPath(path)); err != nil {
 		t.Fatal(err)
 	}
-	if err := Claim(path); !errors.Is(err, ErrClaimed) {
+	if err := Claim(path, state(t)); !errors.Is(err, ErrClaimed) {
 		t.Errorf("Claim with a link at the claim = %v, want ErrClaimed", err)
 	}
 	if st, err := Load(path); err != nil || st == nil {
-		t.Errorf("state file moved: %+v, %v", st, err)
+		t.Errorf("state file changed: %+v, %v", st, err)
+	}
+	// a link as claim is not released, and LoadStopping rejects it
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(StoppingPath(path)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(valid, StoppingPath(path)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Release(path); err == nil {
+		t.Error("Release followed a link")
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("state file created from a link: %v", err)
+	}
+	st, err := LoadStopping(path)
+	if st != nil || !errors.As(err, &ce) || ce.Exit() != 1 || !strings.Contains(ce.Message, ".stopping") ||
+		!strings.Contains(ce.Hint, "papierkram time discard") {
+		t.Errorf("LoadStopping of a link = %+v, %v", st, err)
+	}
+	if _, err := Load(valid); err != nil {
+		t.Errorf("link target changed: %v", err)
 	}
 }
 

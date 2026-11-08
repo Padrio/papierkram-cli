@@ -3,7 +3,7 @@
 Laufenden Timer anzeigen
 
 ```text
-Zeigt den Timer des wirksamen Kontexts: Start, bisherige Dauer (h:mm nach Uhrzeit, wie time stop sie bucht, auch an Tagen der Zeitumstellung), Aufgabe, Benutzer, Kommentar und das Konto (Host), für das er gestartet wurde (-o wide, JSON account; gilt jetzt ein anderes, warnt der Befehl, denn time stop bucht dann nicht). Wurde ein time stop nicht abgeschlossen, zeigt der Befehl dessen Timer mit einer Warnung. Ohne Timer: „Kein Timer läuft“, mit -o json {"running":false} (Exit 0). Sendet keine Anfrage. Der Timer ist lokal (eine Datei je Kontext im Cache-Verzeichnis, PAPIERKRAM_CACHE_DIR); Papierkram kennt ihn nicht.
+Zeigt den Timer des wirksamen Kontexts: Start, bisherige Dauer (h:mm nach Uhrzeit, wie time stop sie bucht, auch an Tagen der Zeitumstellung), Aufgabe, Benutzer, Kommentar und das Konto (Host), für das er gestartet wurde (-o wide, JSON account; gilt jetzt ein anderes, warnt der Befehl, denn time stop bucht dann nicht). Läuft gerade ein time stop oder wurde einer nicht abgeschlossen, zeigt der Befehl dessen Timer mit einer Warnung. Ohne Timer: „Kein Timer läuft“, mit -o json {"running":false} (Exit 0). Sendet keine Anfrage. Der Timer ist lokal (eine Datei je Kontext im Cache-Verzeichnis, PAPIERKRAM_CACHE_DIR); Papierkram kennt ihn nicht.
 
 Verwendung:
   papierkram time status [Optionen]

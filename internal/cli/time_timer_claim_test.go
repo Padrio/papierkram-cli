@@ -27,9 +27,10 @@ const (
 	claimedMsg      = "Timer wird bereits von einem anderen papierkram time stop gebucht"
 	wantClaimedHint = "Nichts gesendet. Mit papierkram time status prüfen, ob er noch läuft"
 	// the remaining claim of the timer of nine(t), task 545, user 1
-	unfinishedMsg  = "Ein time stop wurde nicht abgeschlossen (Timer seit 2026-11-04 09:00, Aufgabe 545, Benutzer 1)"
-	unfinishedHint = "Erst mit papierkram time list --since 2026-11-04 prüfen, ob der Eintrag angelegt wurde; wenn ja: papierkram time discard; " +
-		"sonst papierkram time discard und von Hand buchen mit papierkram time log --task 545 --user 1 --date 2026-11-04 --from 09:00 --to HH:MM"
+	unfinishedMsg  = "Ein time stop läuft gerade oder wurde nicht abgeschlossen (Timer seit 2026-11-04 09:00, Aufgabe 545, Benutzer 1)"
+	unfinishedHint = "Erst mit papierkram time list --since 2026-11-04 prüfen, ob der Eintrag angelegt wurde. Läuft kein anderer time stop mehr: " +
+		"wenn ja, papierkram time discard; sonst papierkram time discard und von Hand buchen mit " +
+		"papierkram time log --task 545 --user 1 --date 2026-11-04 --from 09:00 --to HH:MM"
 )
 
 // claimFile is the content of the claim of the timer of ctx, nil
@@ -44,6 +45,15 @@ func claimFile(t *testing.T, app *App, ctx string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+// leaveClaim leaves the claim of a time stop that did not finish: the
+// state file at path is now its claim.
+func leaveClaim(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Rename(path, timer.StoppingPath(path)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // twin is a second invocation on the same machine: another app with the
@@ -373,9 +383,7 @@ func TestTimerUnfinishedStop(t *testing.T) {
 	app, srv := logApp(t, nine(t))
 	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 0)
 	path := timer.Path(app.CacheDir, "")
-	if err := timer.Claim(path); err != nil {
-		t.Fatal(err)
-	}
+	leaveClaim(t, path)
 	claim := claimFile(t, app, "")
 	for _, args := range [][]string{{"time", "stop", "-o", "json"}, {"time", "start", "--task", "1", "--user", "1", "-o", "json"}} {
 		wantExit(t, app, at(app, morning(t), args...), 7)
@@ -408,9 +416,7 @@ func TestTimerUnfinishedStop(t *testing.T) {
 	// only a claim, discarded with --yes
 	app.StdinTTY = false
 	wantExit(t, app, at(app, nine(t), "time", "start", "--task", "545", "--user", "1"), 0)
-	if err := timer.Claim(path); err != nil {
-		t.Fatal(err)
-	}
+	leaveClaim(t, path)
 	wantExit(t, app, at(app, morning(t), "time", "discard", "--yes", "-o", "json"), 0)
 	if out, _ := bufs(app); canonJSON(t, []byte(out)) != `{"discarded":true}` {
 		t.Errorf("json = %s", out)
@@ -442,9 +448,7 @@ func TestTimerUnusableClaim(t *testing.T) {
 	}
 	// a claim of another context is unusable too
 	writeTimerFile(t, app, "", `{"context":"x","started_at":"2026-11-04T09:00:00+01:00","task":1,"user":1}`)
-	if err := timer.Claim(timer.Path(app.CacheDir, "")); err != nil {
-		t.Fatal(err)
-	}
+	leaveClaim(t, timer.Path(app.CacheDir, ""))
 	wantExit(t, app, at(app, morning(t), "time", "stop"), 1)
 	wantStderr(t, app, "timer-.direct.json.stopping", "gehört zu", "papierkram time discard")
 	wantRequests(t, srv, 0)
