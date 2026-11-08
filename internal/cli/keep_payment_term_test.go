@@ -393,3 +393,39 @@ func TestInvoiceUpdateRefsReadFails(t *testing.T) {
 	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "3214", "--payment-term", "7"}), 9)
 	wantRequests(t, srv, 0)
 }
+
+// T8-M1: a reference that --input brings (and that is sent) is not named
+// as dropped when the invoice belongs to another customer: the hint names
+// only what is really left out.
+func TestInvoiceUpdateForeignRefsHintSkipsInputRefs(t *testing.T) {
+	app, srv := apiApp(t)
+	invoiceWithRefs(srv, bothRefs)
+	app.In = strings.NewReader(`{"customer":{"id":99,"contact_person":{"id":5}}}`)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--input", "-", "--customer", "99", "--payment-term", "7", "-o", "json"}), 0)
+	if reqs := wantRequests(t, srv, 2); canonJSON(t, reqs[1].Body) != canonJSON(t, []byte(`{"customer":{"id":99,"contact_person":{"id":5}},"payment_term":{"id":7}}`)) {
+		t.Errorf("body = %s", reqs[1].Body)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: Kunde 99 statt 3214 aus der Rechnung: project nicht übernommen (setzen per --customer-project)\n") {
+		t.Errorf("stderr = %q", errs)
+	}
+}
+
+// T8-M3: --input with the same customer as --customer and without
+// references reads once and sends both references of the invoice.
+func TestInvoiceUpdateInputSameCustomerKeepsRefs(t *testing.T) {
+	app, srv := apiApp(t)
+	invoiceWithRefs(srv, bothRefs)
+	app.In = strings.NewReader(`{"customer":{"id":3214}}`)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--input", "-", "--customer", "3214", "--payment-term", "7", "-o", "json"}), 0)
+	reqs := wantRequests(t, srv, 2)
+	if n := countGET(reqs); n != 1 {
+		t.Errorf("%d GET, want 1", n)
+	}
+	want := `{"customer":{"id":3214,"contact_person":{"id":55},"project":{"id":66}},"payment_term":{"id":7}}`
+	if reqs[1].Method != "PUT" || canonJSON(t, reqs[1].Body) != canonJSON(t, []byte(want)) {
+		t.Errorf("%s body = %s, want %s", reqs[1].Method, reqs[1].Body, want)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: Kontaktperson 55 und Projekt 66 der Rechnung mitgesendet") {
+		t.Errorf("stderr = %q", errs)
+	}
+}

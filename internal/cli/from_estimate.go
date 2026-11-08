@@ -210,7 +210,7 @@ func (a *App) estimateBase(c *cobra.Command, client *api.Client, ws writeSpec, f
 		return nil, f.wrap(err, fmt.Sprintf("aus Angebot %d: ", f.id), "Wert im Angebot korrigieren oder die Positionen per --item/--items ersetzen")
 	}
 	f.loaded = true
-	a.dropForeignRefs(c, ws, base, "dem Angebot", customerRefs)
+	a.dropForeignRefs(c, ws, base, "dem Angebot", customerRefs, nil)
 	return base, nil
 }
 
@@ -247,10 +247,13 @@ var customerRefs = []string{"contact_person", "project"}
 // customer than base: they belong to base's customer. Their own flags
 // still set them; for the others a hint names what was dropped, where it
 // came from (src: "dem Angebot" for --from-estimate, "--input" for the
-// references Prune moved there) and the flags that set it. The same
-// customer keeps them. It reports whether --customer names another
-// customer than base.
-func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]any, src string, refs []string) bool {
+// references Prune moved there, "der Rechnung" for the read of invoice
+// update) and the flags that set it. sent is the customer of the body
+// that is sent when base is another document (the invoice read by
+// invoice update), nil otherwise: a reference it has (from --input) is
+// sent and not named (T8-M1). The same customer keeps them. It reports
+// whether --customer names another customer than base.
+func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]any, src string, refs []string, sent map[string]any) bool {
 	flag := fieldFlag(ws, "customer")
 	cust, ok := base["customer"].(map[string]any)
 	if flag == "" || !c.Flags().Changed(flag) || !ok {
@@ -271,6 +274,9 @@ func (a *App) dropForeignRefs(c *cobra.Command, ws writeSpec, base map[string]an
 		f := fieldFlag(ws, "customer", k)
 		if f != "" && c.Flags().Changed(f) {
 			continue // set by its flag
+		}
+		if _, has := sent[k]; has {
+			continue // sent from --input
 		}
 		dropped = append(dropped, k)
 		flags = append(flags, "--"+f)

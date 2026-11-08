@@ -81,8 +81,11 @@ func (a *App) addKeepPaymentTerm(e registry.Entry, cmd *cobra.Command) {
 func (k *keepPaymentTerm) apply(c *cobra.Command, a *App, client *api.Client, params []int64, ws writeSpec, body map[string]any, foreignInput bool) (*ReadInfo, error) {
 	_, given := body["payment_term"]
 	// a customer change against --input: its references belong to the old
-	// customer (dropped by dropForeignRefs), and so do those of the
-	// invoice, so a read could take over nothing
+	// customer (dropped by dropForeignRefs), and mostly so do those of the
+	// invoice, so there is no read for them (ruling T8-A). Edge case:
+	// --input comes from another invoice and --customer names this
+	// invoice's own customer; then the PUT clears both references, and
+	// only their flags keep them
 	needTerm, needRefs := !given, !foreignInput && needCustomerRefs(c, ws, body)
 	if !needTerm && !needRefs {
 		return nil, nil
@@ -175,9 +178,9 @@ func (k *keepPaymentTerm) keepRefs(c *cobra.Command, a *App, ws writeSpec, body,
 		return nil, &ce
 	}
 	base := pr.Body
-	a.dropForeignRefs(c, ws, base, "der Rechnung", customerRefs)
-	from, _ := base["customer"].(map[string]any)
 	cust, _ := body["customer"].(map[string]any)
+	a.dropForeignRefs(c, ws, base, "der Rechnung", customerRefs, cust)
+	from, _ := base["customer"].(map[string]any)
 	if from == nil || cust == nil {
 		return nil, nil
 	}

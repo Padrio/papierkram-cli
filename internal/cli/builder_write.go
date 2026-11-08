@@ -439,7 +439,7 @@ func (a *App) buildBodyFrom(c *cobra.Command, e registry.Entry, isUpdate bool, l
 		body, removed, moved = pr.Body, pr.Removed, pr.Moved
 		// the moved references belong to the customer of the input, like
 		// those of an estimate to its customer (--from-estimate)
-		foreign = a.dropForeignRefs(c, ws, body, "--input", movedCustomerRefs(moved))
+		foreign = a.dropForeignRefs(c, ws, body, "--input", movedCustomerRefs(moved), nil)
 	}
 
 	sets, err := a.flagSets(c, e.Resource, ws)
