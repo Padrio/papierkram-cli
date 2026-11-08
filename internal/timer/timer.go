@@ -44,14 +44,17 @@ const DirectName = config.DirectFileName
 // user and comment ("" without one). BaseURL is the API base URL of the
 // account the timer was started for (controller ruling, beyond the
 // brief's fields): task and user IDs belong to that account. A state of
-// the first format has none ("").
+// the first format has none (""). Unbillable is the checked value of
+// time start --unbillable (task 12), nil when it was not given (also in a
+// state of an older version): time stop then sends no unbillable.
 type State struct {
-	Context   string    `json:"context"`
-	StartedAt time.Time `json:"started_at"`
-	Task      int64     `json:"task"`
-	User      int64     `json:"user"`
-	Comment   string    `json:"comment,omitempty"`
-	BaseURL   string    `json:"base_url,omitempty"`
+	Context    string    `json:"context"`
+	StartedAt  time.Time `json:"started_at"`
+	Task       int64     `json:"task"`
+	User       int64     `json:"user"`
+	Comment    string    `json:"comment,omitempty"`
+	BaseURL    string    `json:"base_url,omitempty"`
+	Unbillable *bool     `json:"unbillable,omitempty"`
 }
 
 // Path is the state file of the context ctx below cacheDir (os.UserCacheDir()
@@ -282,13 +285,22 @@ func Release(path string) error {
 func LoadStopping(path string) (*State, error) { return Load(StoppingPath(path)) }
 
 // Equal reports whether s and o are the same timer: all fields equal, the
-// start as the same instant (its zone may differ).
+// start as the same instant (its zone may differ), unbillable by its
+// value (both nil, or both set to the same value).
 func (s State) Equal(o State) bool {
-	if !s.StartedAt.Equal(o.StartedAt) {
+	if !s.StartedAt.Equal(o.StartedAt) || !sameBool(s.Unbillable, o.Unbillable) {
 		return false
 	}
-	o.StartedAt = s.StartedAt
+	o.StartedAt, o.Unbillable = s.StartedAt, s.Unbillable
 	return s == o
+}
+
+// sameBool reports whether a and b are both nil or point to equal values.
+func sameBool(a, b *bool) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // Delete removes the state file at path (a symbolic link itself, never

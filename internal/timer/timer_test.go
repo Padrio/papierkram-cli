@@ -531,12 +531,66 @@ func TestStateEqual(t *testing.T) {
 		"user":    func(s *State) { s.User++ },
 		"comment": func(s *State) { s.Comment = "x" },
 		"base":    func(s *State) { s.BaseURL = "x" },
+		"unbillable set": func(s *State) {
+			v := false
+			s.Unbillable = &v
+		},
 	} {
 		c := a
 		mod(&c)
 		if a.Equal(c) {
 			t.Errorf("%s: equal", name)
 		}
+	}
+	// unbillable compares the value, not the pointer
+	yes, yes2, no := true, true, false
+	a.Unbillable, b.Unbillable = &yes, &yes2
+	if !a.Equal(b) {
+		t.Error("unbillable true and true: not equal")
+	}
+	b.Unbillable = &no
+	if a.Equal(b) {
+		t.Error("unbillable true and false: equal")
+	}
+}
+
+// Task 12: unbillable is stored when set (true and false) and missing in
+// the file when not; a state file of an older version without it loads
+// with nil, and Claim accepts it as the timer it read.
+func TestStateUnbillable(t *testing.T) {
+	for name, v := range map[string]*bool{"nil": nil, "true": new(true), "false": new(false)} {
+		path := Path(t.TempDir(), "firma")
+		want := state(t)
+		want.Unbillable = v
+		if err := Save(path, want); err != nil {
+			t.Fatal(err)
+		}
+		data, _ := os.ReadFile(path)
+		if has := bytes.Contains(data, []byte(`"unbillable"`)); has != (v != nil) {
+			t.Errorf("%s: file %s", name, data)
+		}
+		got, err := Load(path)
+		if err != nil || got == nil || !got.Equal(want) {
+			t.Errorf("%s: Load = %+v, %v", name, got, err)
+		}
+	}
+	path := Path(t.TempDir(), "firma")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"context":"firma","started_at":"2026-11-04T09:00:12+01:00","task":545,"user":1,"comment":"Abstimmung","base_url":"https://firma.papierkram.de/api/v1"}` + "\n"
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil || got == nil || got.Unbillable != nil || !got.Equal(state(t)) {
+		t.Fatalf("Load of an old state = %+v, %v", got, err)
+	}
+	if err := Claim(path, state(t)); err != nil {
+		t.Errorf("Claim of an old state = %v", err)
+	}
+	if data, _ := os.ReadFile(StoppingPath(path)); string(data) != old {
+		t.Errorf("claim = %s, want the old bytes", data)
 	}
 }
 
