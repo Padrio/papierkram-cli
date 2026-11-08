@@ -504,7 +504,15 @@ func extensionPaths(t *testing.T, key string) []extension {
 		if o.op.RequestBody == nil {
 			continue
 		}
-		for _, mt := range o.op.RequestBody.Value.Content {
+		if o.op.RequestBody.Value == nil {
+			t.Errorf("%s: request body without value", o.op.OperationID)
+			continue
+		}
+		for ct, mt := range o.op.RequestBody.Value.Content {
+			if mt == nil || mt.Schema == nil || mt.Schema.Value == nil {
+				t.Errorf("%s: request body %s without schema", o.op.OperationID, ct)
+				continue
+			}
 			collectExtension(mt.Schema.Value, key, o.op.OperationID, &found)
 		}
 	}
@@ -522,11 +530,16 @@ func extensionPaths(t *testing.T, key string) []extension {
 }
 
 func collectExtension(s *openapi3.Schema, key, path string, found *[]extension) {
+	if s == nil {
+		return // an unresolved reference; walk below still counts the key
+	}
 	if v, ok := s.Extensions[key]; ok {
 		*found = append(*found, extension{path: path, value: v})
 	}
 	for name, p := range s.Properties {
-		collectExtension(p.Value, key, path+"."+name, found)
+		if p != nil {
+			collectExtension(p.Value, key, path+"."+name, found)
+		}
 	}
 	if s.Items != nil {
 		collectExtension(s.Items.Value, key, path+"[]", found)
@@ -568,12 +581,7 @@ func TestQueryIDParamsInt64(t *testing.T) {
 
 func TestSupplierRuleExamplesKept(t *testing.T) {
 	doc := loadDoc(t, generatedPath)
-	cases := map[string]string{
-		"CreateVoucher":  "Lieferant muss ein Lieferant sein",
-		"CreateEstimate": "",
-		"CreateInvoice":  "",
-	}
-	for id := range cases {
+	for _, id := range []string{"CreateVoucher", "CreateEstimate", "CreateInvoice"} {
 		o := opByID(t, doc, id).op
 		for code, r := range o.Responses.Map() {
 			if code == "201" {

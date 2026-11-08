@@ -1,8 +1,11 @@
 package spec
 
 import (
+	"maps"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -15,6 +18,58 @@ func TestEmbeddedSpecLoads(t *testing.T) {
 	d := Doc()
 	if d == nil || d != Doc() {
 		t.Fatal("Doc() must return one parsed document")
+	}
+}
+
+// loadPanic returns the value load panics with, nil when it returns.
+func loadPanic() (v any) {
+	defer func() { v = recover() }()
+	load()
+	return nil
+}
+
+// useSpec makes the package index data instead of the embedded spec at
+// the next call; the embedded spec is indexed again after the test.
+func useSpec(t *testing.T, data []byte) {
+	t.Helper()
+	load()
+	orig := raw
+	t.Cleanup(func() {
+		raw, docOnce, ops, loadErr = orig, sync.Once{}, nil, ""
+		load()
+	})
+	raw, docOnce, ops, loadErr = data, sync.Once{}, nil, ""
+}
+
+// L59: a spec that does not load panics at the first call and with the
+// same message at every later one; a sync.Once alone would let later
+// calls go on with nil (or stale) indexes.
+func TestLoadPanicRepeats(t *testing.T) {
+	useSpec(t, []byte("{kein JSON"))
+	first := loadPanic()
+	msg, ok := first.(string)
+	if !ok || !strings.HasPrefix(msg, "spec: embedded openapi.gen.json does not load") {
+		t.Fatalf("first call: panic %v, want the load error", first)
+	}
+	for i := range 3 {
+		if got := loadPanic(); got != first {
+			t.Errorf("call %d: panic %v, want %q", i+2, got, msg)
+		}
+	}
+	for name, call := range map[string]func(){
+		"Doc":           func() { Doc() },
+		"Operations":    func() { Operations() },
+		"OperationByID": func() { OperationByID("GetInvoice") },
+		"MatchPath":     func() { MatchPath("GET", "/income/invoices/1") },
+	} {
+		func() {
+			defer func() {
+				if got := recover(); got != first {
+					t.Errorf("%s: panic %v, want %q", name, got, msg)
+				}
+			}()
+			call()
+		}()
 	}
 }
 
@@ -87,8 +142,9 @@ func TestMatchPathRoundTrip(t *testing.T) {
 		var want []int64
 		for _, s := range splitPath(o.Path) {
 			if isParam(s) {
-				want = append(want, int64(10+len(want)))
-				s = "1" + string(rune('0'+len(want)-1))
+				id := int64(10 + len(want))
+				want = append(want, id)
+				s = strconv.FormatInt(id, 10)
 			}
 			segs = append(segs, s)
 		}
@@ -232,16 +288,56 @@ func TestQueryParams(t *testing.T) {
 	}
 }
 
+// L59: the operation's parameter wins over the path item's of the same
+// name; path and header parameters and nil entries are left out. The
+// embedded spec declares only path parameters on path items, so the rule
+// is checked on the merge itself.
+func TestQueryParamsOperationWins(t *testing.T) {
+	param := func(name, in, desc string) *openapi3.ParameterRef {
+		return &openapi3.ParameterRef{Value: &openapi3.Parameter{Name: name, In: in, Description: desc}}
+	}
+	pathItem := openapi3.Parameters{param("page", "query", "path item"), param("sort", "query", "path item"), param("id", "path", "path item"), nil, {}}
+	operation := openapi3.Parameters{param("page", "query", "operation"), param("x-trace", "header", "operation"), param("filter", "query", "operation")}
+	got := queryParams(pathItem, operation)
+	want := map[string]string{"page": "operation", "sort": "path item", "filter": "operation"}
+	if len(got) != len(want) {
+		t.Errorf("params = %v, want %v", slices.Sorted(maps.Keys(got)), want)
+	}
+	for name, from := range want {
+		if p := got[name]; p == nil || p.Description != from {
+			t.Errorf("%s: %+v, want the one of the %s", name, p, from)
+		}
+	}
+}
+
 func splitPath(p string) []string { return strings.Split(strings.Trim(p, "/"), "/") }
 func joinPath(s []string) string  { return strings.Join(s, "/") }
 
-func TestMatchPathCandidatesSorted(t *testing.T) {
-	load()
-	for key, ts := range byShape {
-		for i := 1; i < len(ts); i++ {
-			if ts[i-1].op.Path > ts[i].op.Path {
-				t.Errorf("%s: candidates not sorted by path: %s before %s", key, ts[i-1].op.Path, ts[i].op.Path)
-			}
+// tieSpec has templates with equal literal counts that fit one concrete
+// path: /a/1/2 fits /a/1/{y} and /a/{x}/2 (and /a/{x}/{y} with fewer
+// literals), /b/c/c fits /b/{x}/c and /b/c/{y} only loosely.
+const tieSpec = `{"openapi":"3.0.3","info":{"title":"t","version":"1"},"paths":{
+"/a/{x}/2":{"get":{"operationId":"A2","responses":{"200":{"description":"ok"}}}},
+"/a/1/{y}":{"get":{"operationId":"A1","responses":{"200":{"description":"ok"}}}},
+"/a/{x}/{y}":{"get":{"operationId":"AXY","responses":{"200":{"description":"ok"}}}},
+"/b/{x}/c":{"get":{"operationId":"BXC","responses":{"200":{"description":"ok"}}}},
+"/b/c/{y}":{"get":{"operationId":"BCY","responses":{"200":{"description":"ok"}}}}}}`
+
+// L66: on a tie the lexically smallest template wins, whatever the map
+// order the candidates were indexed in (reindexed many times), through
+// the public MatchPath and MatchPathLoose.
+func TestMatchPathTieBreakDeterministic(t *testing.T) {
+	useSpec(t, []byte(tieSpec))
+	for range 30 {
+		docOnce, ops = sync.Once{}, nil
+		if op, ids, ok := MatchPath("GET", "/a/1/2"); !ok || op.ID != "A1" || !slices.Equal(ids, []int64{2}) {
+			t.Fatalf("MatchPath /a/1/2 = %s %v %v, want A1 [2] (/a/1/{y} < /a/{x}/2)", op.ID, ids, ok)
+		}
+		if op, ids, ok := MatchPath("GET", "/a/3/4"); !ok || op.ID != "AXY" || !slices.Equal(ids, []int64{3, 4}) {
+			t.Fatalf("MatchPath /a/3/4 = %s %v %v, want AXY [3 4]", op.ID, ids, ok)
+		}
+		if op, canonical, ok := MatchPathLoose("GET", "/b/c/c"); !ok || op.ID != "BCY" || canonical != "/b/c/{y}" {
+			t.Fatalf("MatchPathLoose /b/c/c = %s %q %v, want BCY /b/c/{y} (/b/c/{y} < /b/{x}/c)", op.ID, canonical, ok)
 		}
 	}
 }

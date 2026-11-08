@@ -23,6 +23,9 @@ const apiPrefix = "/api/v1"
 
 var (
 	docOnce sync.Once
+	// loadErr is the panic message of a failed load, repeated by every
+	// later call (a sync.Once does not run its function again).
+	loadErr string
 	doc     *openapi3.T
 	ops     []Operation
 	byID    map[string]Operation
@@ -51,11 +54,15 @@ type template struct {
 	literals int
 }
 
+// load parses and indexes the embedded spec once. A spec that does not
+// load panics, at the first call and with the same message at every later
+// one, so no caller ever sees the empty indexes.
 func load() {
 	docOnce.Do(func() {
 		d, err := openapi3.NewLoader().LoadFromData(raw)
 		if err != nil {
-			panic(fmt.Sprintf("spec: embedded openapi.gen.json does not load (run `go generate ./internal/spec/`): %v", err))
+			loadErr = fmt.Sprintf("spec: embedded openapi.gen.json does not load (run `go generate ./internal/spec/`): %v", err)
+			return
 		}
 		doc = d
 		byID = map[string]Operation{}
@@ -88,6 +95,9 @@ func load() {
 			return ops[i].Method < ops[j].Method
 		})
 	})
+	if loadErr != "" {
+		panic(loadErr)
+	}
 }
 
 func isParam(segment string) bool {
@@ -340,15 +350,20 @@ func QueryParams(opID string) map[string]*openapi3.Parameter {
 	if !ok {
 		return nil
 	}
+	return queryParams(Doc().Paths.Value(o.Path).Parameters, o.Op.Parameters)
+}
+
+// queryParams merges the query parameters of a path item and of one of
+// its operations by name; a parameter of the operation replaces one of the
+// path item with the same name (OpenAPI 3.0, Path Item Object).
+func queryParams(pathItem, operation openapi3.Parameters) map[string]*openapi3.Parameter {
 	params := map[string]*openapi3.Parameter{}
-	add := func(list openapi3.Parameters) {
+	for _, list := range []openapi3.Parameters{pathItem, operation} {
 		for _, p := range list {
-			if p.Value != nil && p.Value.In == "query" {
+			if p != nil && p.Value != nil && p.Value.In == "query" {
 				params[p.Value.Name] = p.Value
 			}
 		}
 	}
-	add(Doc().Paths.Value(o.Path).Parameters)
-	add(o.Op.Parameters)
 	return params
 }
