@@ -3,7 +3,7 @@ module github.com/Padrio/papierkram-cli
 go 1.26.0
 
 require (
-	github.com/cpuguy83/go-md2man/v2 v2.0.6
+	github.com/cpuguy83/go-md2man/v2 v2.0.7
 	github.com/getkin/kin-openapi v0.152.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/itchyny/gojq v0.12.19
