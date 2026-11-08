@@ -175,7 +175,7 @@ Den Abrechnungsstatus der Zeiteinträge kann das CLI nicht setzen (`papierkram s
 | Exit | `code` | Was der Agent tut |
 |---|---|---|
 | 0 | – | Ergebnis auswerten, `warnings[]` und stderr lesen |
-| 1 | `error`, `server_error` | Lesen: später einmal erneut. Änderung: erst per `describe`/`list` prüfen. „Befehl ausgeführt, Ausgabe fehlgeschlagen“: angekommen, nicht wiederholen |
+| 1 | `error`, `server_error` | Lesen: später einmal erneut. Änderung: erst per `describe`/`list` prüfen. „Befehl ausgeführt, Ausgabe fehlgeschlagen“ oder „Antwort größer als 64 MiB; die Änderung wurde ausgeführt“: angekommen, nicht wiederholen |
 | 2 | `usage` | Befehl nach `Hinweis` korrigieren; nichts gesendet |
 | 3 | `auth` | abbrechen, Menschen um `papierkram auth login` bitten |
 | 4 | `not_found` | ID und Kontext per `list` prüfen |
