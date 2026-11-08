@@ -328,7 +328,7 @@ func unknownLine(u unknownField) string {
 func unknownHint(us []unknownField) string {
 	paths := make([]string, len(us))
 	for i, u := range us {
-		paths[i] = jqPath(u.parent) + jqKey(u.key)
+		paths[i] = jqPath(u.parent) + jqKey(u.key, u.parent == "")
 	}
 	lead := "stammt das Feld"
 	if len(us) > 1 {
@@ -348,9 +348,9 @@ func jqPath(path string) string {
 		return ""
 	}
 	var b strings.Builder
-	for _, seg := range strings.Split(path, ".") {
+	for i, seg := range strings.Split(path, ".") {
 		key, arrays, _ := strings.Cut(seg, "[")
-		b.WriteString(jqKey(key))
+		b.WriteString(jqKey(key, i == 0))
 		if arrays != "" {
 			b.WriteString("[" + arrays)
 		}
@@ -359,10 +359,12 @@ func jqPath(path string) string {
 }
 
 // jqKey is the jq path step to key: .key for a jq identifier, else
-// .["key"] with key JSON-quoted (dots, brackets, spaces, umlauts, digits
+// ["key"] with key JSON-quoted (dots, brackets, spaces, umlauts, digits
 // first) and ' as \u0027, so that the step fits into the single-quoted
-// jq argument of a shell.
-func jqKey(key string) string {
+// jq argument of a shell. At the top level (top) the step is .["key"];
+// below it is appended without a dot (.customer["c.d"]), since jq 1.6
+// rejects .customer.["c.d"] (ruling T17-A).
+func jqKey(key string, top bool) string {
 	if jqIdentRe.MatchString(key) {
 		return "." + key
 	}
@@ -371,7 +373,10 @@ func jqKey(key string) string {
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(key) // a string always encodes
 	q := strings.ReplaceAll(strings.TrimSuffix(b.String(), "\n"), "'", `\u0027`)
-	return ".[" + q + "]"
+	if top {
+		return ".[" + q + "]"
+	}
+	return "[" + q + "]"
 }
 
 func unknownFieldsError(us []unknownField) *clierr.Error {

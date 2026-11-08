@@ -88,8 +88,9 @@ func (a *App) mustAsk(e registry.Entry, s Summary) (bool, error) {
 // confirm asks for the confirmation of a destructive or send action
 // (spec 8.2) on stderr: delete wants the ID typed in, other actions
 // ja/yes/j/y (any case). Declining, an empty answer, a wrong ID or an
-// interrupt of the prompt is exit 8. Without a terminal or with --no-input it is exit 8
-// with the hint on --yes; --yes and the other classes pass without asking.
+// interrupt of the prompt is exit 8. Without a terminal or with --no-input
+// it is exit 8 with the hint on --yes; --yes and the other classes pass
+// without asking.
 func (a *App) confirm(ctx context.Context, e registry.Entry, s Summary) error {
 	ask, err := a.mustAsk(e, s)
 	if err != nil || !ask {

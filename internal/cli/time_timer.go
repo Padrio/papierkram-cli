@@ -755,7 +755,7 @@ func (a *App) confirmDiscard(ctx context.Context, what string) error {
 	_, _ = fmt.Fprintln(a.Err, printable(what))
 	answer, eof, err := a.ask(ctx, "Timer verwerfen? Die erfasste Zeit geht verloren. [j/N]: ")
 	if err != nil {
-		return err
+		return interruptedHint(err, nothingChanged+". Der Timer läuft weiter")
 	}
 	if eof {
 		_, _ = fmt.Fprintln(a.Err)

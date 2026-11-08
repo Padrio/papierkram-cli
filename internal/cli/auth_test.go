@@ -110,7 +110,7 @@ func TestAuthLoginTTYPromptInterrupted(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("Unterbrechung beendet die Token-Eingabe nicht")
 	}
-	wantInterruptedPrompt(t, app)
+	wantInterruptedPrompt(t, app, "Nichts gesendet oder geändert")
 	if !restored {
 		t.Error("Terminalzustand nicht wiederhergestellt")
 	}

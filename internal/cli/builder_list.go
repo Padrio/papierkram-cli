@@ -505,8 +505,8 @@ func unexpectedList(err error) error {
 // confirmAll asks "Fortfahren? [j/N]" when stdin is a terminal and neither
 // --yes nor --no-input is given; without a terminal --all proceeds (the
 // warning is on stderr). Declining and an interrupt are exit 8 (nothing
-// was sent; page 1 was only read). via is
-// the flag that loads all pages (--all or a local filter).
+// was sent; page 1 was only read). via is the flag that loads all pages
+// (--all or a local filter).
 func (a *App) confirmAll(ctx context.Context, via string) error {
 	if !a.StdinTTY || a.Flags.Yes || a.Flags.NoInput {
 		return nil

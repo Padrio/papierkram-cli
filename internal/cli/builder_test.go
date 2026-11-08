@@ -531,8 +531,8 @@ func newBlockingReader(t *testing.T, onRead func()) *blockingReader {
 }
 
 // wantInterruptedPrompt checks the error of a prompt ended by Ctrl+C
-// (task 17): exit 8, confirmation_required, nothing sent.
-func wantInterruptedPrompt(t *testing.T, app *App) {
+// (task 17): exit 8, confirmation_required, the hint of the prompt.
+func wantInterruptedPrompt(t *testing.T, app *App, hint string) {
 	t.Helper()
 	_, errs := bufs(app)
 	lines := strings.Split(strings.TrimSpace(errs), "\n")
@@ -548,7 +548,7 @@ func wantInterruptedPrompt(t *testing.T, app *App) {
 		t.Fatalf("kein JSON-Fehler: %v\n%s", err, errs)
 	}
 	if e.Error.Code != "confirmation_required" || e.Error.ExitCode != 8 ||
-		e.Error.Message != "Abgebrochen: Eingabe durch Unterbrechung beendet" || e.Error.Hint != "Nichts gesendet" {
+		e.Error.Message != "Abgebrochen: Eingabe durch Unterbrechung beendet" || e.Error.Hint != hint {
 		t.Errorf("Fehler = %+v", e.Error)
 	}
 }
@@ -582,7 +582,7 @@ func TestListAllPromptInterrupted(t *testing.T) {
 	if out != "" || !strings.Contains(errs, "Fortfahren? [j/N] \nFehler: Abgebrochen: Eingabe durch Unterbrechung beendet\nHinweis: Nichts gesendet\n") {
 		t.Errorf("stdout = %q, stderr = %q", out, errs)
 	}
-	wantInterruptedPrompt(t, app)
+	wantInterruptedPrompt(t, app, "Nichts gesendet")
 	if !restored {
 		t.Error("Terminalzustand nicht wiederhergestellt")
 	}

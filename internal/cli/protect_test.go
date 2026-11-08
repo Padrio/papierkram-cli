@@ -286,7 +286,7 @@ func TestConfirmPromptInterrupted(t *testing.T) {
 	if r := wantRequests(t, srv, 1)[0]; r.Method != "GET" {
 		t.Errorf("request = %s %s", r.Method, r.Path)
 	}
-	wantInterruptedPrompt(t, app)
+	wantInterruptedPrompt(t, app, "Nichts gesendet")
 }
 
 // Prompts share one buffered reader: a second prompt on piped stdin gets

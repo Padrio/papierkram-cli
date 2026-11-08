@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -16,8 +17,27 @@ import (
 // sent and a human declined, as spec 10.4 line 8 says; exit 10 would tell
 // agents to retry later. An interrupt during a request stays exit 10/12.
 func errInterrupted() *clierr.Error {
-	return clierr.New(clierr.CodeConfirmation, "Abgebrochen: Eingabe durch Unterbrechung beendet", "Nichts gesendet")
+	return clierr.New(clierr.CodeConfirmation, interruptedMsg, "Nichts gesendet")
 }
+
+const interruptedMsg = "Abgebrochen: Eingabe durch Unterbrechung beendet"
+
+// interruptedHint gives errInterrupted in err the hint of its prompt: one
+// that would only change local state (token, project file, timer) says
+// that nothing changed either. Other errors pass unchanged.
+func interruptedHint(err error, hint string) error {
+	var ce *clierr.Error
+	if errors.As(err, &ce) && ce.Code == clierr.CodeConfirmation && ce.Message == interruptedMsg {
+		withHint := *ce
+		withHint.Hint = hint
+		return &withHint
+	}
+	return err
+}
+
+// nothingChanged is the hint of an interrupted prompt that only changes
+// local state.
+const nothingChanged = "Nichts gesendet oder geändert"
 
 // readCtx runs the blocking read in a goroutine and returns its result, or
 // errInterrupted as soon as ctx is cancelled: the interrupt signal is

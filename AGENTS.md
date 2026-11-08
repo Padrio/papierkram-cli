@@ -119,7 +119,7 @@ papierkram voucher create --name "Büromaterial" --provenance domestic --credito
 | 7 | `conflict` | 409, Timer läuft schon oder wird gerade gestoppt | Zustand lesen (`describe`, `time status`) |
 | 8 | `confirmation_required` | Bestätigung fehlt oder abgelehnt, oder ein Mensch hat eine Rückfrage mit Strg+C abgebrochen; nichts gesendet | Menschen fragen; `--yes` nur mit Freigabe |
 | 9 | `read_only` | Schreibschutz; nichts gesendet | abbrechen und melden; den Schutz nie umgehen (kein anderer Kontext, keine Variable ändern) |
-| 10 | `network` | Netzwerkfehler beim Lesen oder **bevor** eine Änderung gesendet wurde | später erneut versuchen; die Änderung ist nicht angekommen |
+| 10 | `network` | Netzwerkfehler beim Lesen oder **bevor** eine Änderung gesendet wurde; auch Strg+C während einer Leseanfrage | später erneut versuchen; die Änderung ist nicht angekommen |
 | 11 | `partial` | mehrstufiger Befehl teilweise ausgeführt | `hint` lesen, prüfen, dann höchstens den genannten Nachholschritt; nie den ganzen Befehl (siehe unten) |
 | 12 | `outcome_unknown` | Verbindung brach ab, **nachdem** eine Änderung gesendet wurde, oder Weiterleitung (3xx) auf eine Änderung (das CLI folgt ihr nicht) | **nicht wiederholen**: `hint` lesen, mit `describe`/`list` prüfen, ob die Änderung angekommen ist (siehe unten) |
 

@@ -262,7 +262,7 @@ func (a *App) askLocalInit(ctx context.Context, f *projectfile.File, path string
 		for {
 			answer, err := a.prompt(ctx, q+": ")
 			if err != nil {
-				return in, err
+				return in, interruptedHint(err, nothingChanged)
 			}
 			answer = strings.TrimSpace(answer)
 			if answer == "" {
@@ -288,7 +288,7 @@ func (a *App) askLocalInit(ctx context.Context, f *projectfile.File, path string
 	for {
 		answer, err := a.prompt(ctx, q+": ")
 		if err != nil {
-			return in, err
+			return in, interruptedHint(err, nothingChanged)
 		}
 		answer = strings.TrimSpace(answer)
 		if answer == "" {

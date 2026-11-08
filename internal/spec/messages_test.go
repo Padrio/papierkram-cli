@@ -2,9 +2,12 @@ package spec
 
 import (
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/itchyny/gojq"
 )
 
 // Body values in messages read as JSON, never as Go syntax (task 17,
@@ -93,9 +96,11 @@ func TestAttrHintFollowsPattern(t *testing.T) {
 	}
 }
 
-// Keys that are no jq identifiers appear as .["…"] (JSON-quoted, with ' as a JSON unicode
-// escape for the single-quoted shell argument) in the jq hint (task 17,
-// L188).
+// Keys that are no jq identifiers appear as .["…"] at the top level and
+// as ["…"] below (ruling T17-A: jq 1.6 rejects .a.["k"]), JSON-quoted with
+// ' as a JSON unicode escape for the single-quoted shell argument (task
+// 17, L188). The hint's jq program, run by gojq on the body, removes
+// exactly the unknown fields.
 func TestUnknownFieldJQPathQuoting(t *testing.T) {
 	body := map[string]any{
 		"name": "R", "12": 1, "a.b": 1, "x[1]": 1, "it's": 1, "with space": 1, "ä": 1, "ok_1": 1,
@@ -104,8 +109,35 @@ func TestUnknownFieldJQPathQuoting(t *testing.T) {
 	}
 	_, err := Prune(body, RequestSchema("CreateInvoice"), ResourceResponseSchema("CreateInvoice"))
 	ce := validationError(t, err)
-	want := `stammen die Felder aus einer describe-Ausgabe: mit jq 'del(.["12"], .["a.b"], .customer.["c.d"], .["it\u0027s"], .line_items[].["e f"], .ok_1, .["with space"], .["x[1]"], .["ä"])' entfernen oder die CLI aktualisieren`
+	want := `stammen die Felder aus einer describe-Ausgabe: mit jq 'del(.["12"], .["a.b"], .customer["c.d"], .["it\u0027s"], .line_items[]["e f"], .ok_1, .["with space"], .["x[1]"], .["ä"])' entfernen oder die CLI aktualisieren`
 	if ce.Hint != want {
 		t.Errorf("hint =\n%s\nwant\n%s", ce.Hint, want)
+	}
+	i, j := strings.Index(ce.Hint, "jq '"), strings.LastIndex(ce.Hint, "'")
+	if i < 0 || j <= i+4 {
+		t.Fatalf("no jq program in %q", ce.Hint)
+	}
+	prog := ce.Hint[i+4 : j]
+	q, err := gojq.Parse(prog)
+	if err != nil {
+		t.Fatalf("gojq parses %q not: %v", prog, err)
+	}
+	got, ok := q.Run(body).Next()
+	if !ok {
+		t.Fatal("no result")
+	}
+	if err, isErr := got.(error); isErr {
+		t.Fatalf("gojq %q: %v", prog, err)
+	}
+	clean := map[string]any{
+		"name":       "R",
+		"customer":   map[string]any{"id": json.Number("1")},
+		"line_items": []any{map[string]any{"name": "a"}},
+	}
+	if !reflect.DeepEqual(got, clean) {
+		t.Errorf("gojq %q: %#v, want %#v", prog, got, clean)
+	}
+	if _, err := Prune(got.(map[string]any), RequestSchema("CreateInvoice"), ResourceResponseSchema("CreateInvoice")); err != nil {
+		t.Errorf("Prune after jq: %v", err)
 	}
 }
