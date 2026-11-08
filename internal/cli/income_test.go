@@ -2,12 +2,14 @@ package cli
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/Padrio/papierkram-cli/internal/testutil/golden"
+	"github.com/Padrio/papierkram-cli/internal/testutil/mockapi"
 )
 
 // invoice and estimate commands (spec 7.1, 15 no. 30–37, 40–47). deliver
@@ -22,16 +24,20 @@ func TestIncomeCommandsGolden(t *testing.T) {
 		args  []string
 		path  string
 		query url.Values
+		body  []byte // answer instead of the spec example; nil: example
 	}{
-		{"invoice-list", []string{"invoice", "list"}, "/income/invoices", url.Values{"page_size": {"25"}}},
-		{"invoice-describe", []string{"invoice", "describe", "459"}, "/income/invoices/459", url.Values{}},
-		{"estimate-list", []string{"estimate", "list"}, "/income/estimates", url.Values{"page_size": {"25"}}},
-		{"estimate-describe", []string{"estimate", "describe", "349"}, "/income/estimates/349", url.Values{}},
+		{"invoice-list", []string{"invoice", "list"}, "/income/invoices", url.Values{"page_size": {"25"}}, invoiceListWithDates(t)},
+		{"invoice-describe", []string{"invoice", "describe", "459"}, "/income/invoices/459", url.Values{}, nil},
+		{"estimate-list", []string{"estimate", "list"}, "/income/estimates", url.Values{"page_size": {"25"}}, nil},
+		{"estimate-describe", []string{"estimate", "describe", "349"}, "/income/estimates/349", url.Values{}, nil},
 	}
 	for _, tc := range cases {
 		for _, format := range []string{"table", "wide", "json", "yaml"} {
 			t.Run(tc.name+"/"+format, func(t *testing.T) {
 				app, srv := apiApp(t)
+				if tc.body != nil {
+					srv.On("GET", tc.path, http.StatusOK, tc.body)
+				}
 				wantExit(t, app, Run(app, append(tc.args, "-o", format)), 0)
 				r := wantRequests(t, srv, 1)[0]
 				if r.Method != "GET" || r.Path != tc.path || r.Query.Encode() != tc.query.Encode() {
@@ -46,6 +52,43 @@ func TestIncomeCommandsGolden(t *testing.T) {
 			})
 		}
 	}
+}
+
+// invoiceListWithDates is the default answer of the mock for ListInvoices
+// (its spec example) with real values for sent_on and paid_at_date (the
+// example has null), so the wide columns VERSENDET and BEZAHLT AM show a
+// date and a date-time (L235). Numbers keep their literals (226.0).
+func invoiceListWithDates(t *testing.T) []byte {
+	t.Helper()
+	srv := mockapi.New(t)
+	req, err := http.NewRequest(http.MethodGet, srv.URL()+"/income/invoices", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-token-income")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	dec := json.NewDecoder(resp.Body)
+	dec.UseNumber()
+	var list map[string]any
+	if err := dec.Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := list["entries"].([]any)
+	if len(entries) != 2 {
+		t.Fatalf("example has %d entries, want 2", len(entries))
+	}
+	first, second := entries[0].(map[string]any), entries[1].(map[string]any)
+	first["sent_on"], first["paid_at_date"] = "2020-05-02", "2020-05-20"
+	second["sent_on"] = "2026-08-29T10:15:00+02:00"
+	raw, err := json.Marshal(list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }
 
 func TestIncomeAliases(t *testing.T) {
@@ -251,6 +294,26 @@ func TestIncomeDescribeUpdateRoundTrip(t *testing.T) {
 				if !strings.Contains(errs, field) {
 					t.Errorf("Hinweis nennt %q nicht: %q", field, errs)
 				}
+			}
+		})
+	}
+}
+
+// L235: custom_template: null in --input (an answer of describe for a
+// document without template) is not allowed by the request schema; update
+// leaves it out, so the template stays as it is, and names it in a hint.
+func TestIncomeUpdateDropsCustomTemplateNull(t *testing.T) {
+	for _, tc := range []struct{ resource, id, path, input, want string }{
+		{"invoice", "459", "/income/invoices/459", `{"name":"Neu","custom_template":null,"payment_term":{"id":1130}}`, `{"name":"Neu","payment_term":{"id":1130}}`},
+		{"estimate", "349", "/income/estimates/349", `{"name":"Neu","custom_template":null}`, `{"name":"Neu"}`},
+	} {
+		t.Run(tc.resource, func(t *testing.T) {
+			app, srv := apiApp(t)
+			app.In = strings.NewReader(tc.input)
+			wantExit(t, app, Run(app, []string{tc.resource, "update", tc.id, "--input", "-", "-o", "json"}), 0)
+			wantBody(t, srv, "PUT", tc.path, tc.want)
+			if _, errs := bufs(app); errs != "Hinweis: null ignoriert (Feld bleibt unverändert): custom_template\n" {
+				t.Errorf("stderr = %q", errs)
 			}
 		})
 	}
@@ -486,8 +549,8 @@ func TestIncomeMutationsReadOnly(t *testing.T) {
 		)
 	}
 	for _, args := range cases {
-		if args[0] == "estimate" && slices.Contains(args, "--payment-term") {
-			args = slices.Delete(args, 4, 6) // estimates have no payment term
+		if i := slices.Index(args, "--payment-term"); args[0] == "estimate" && i >= 0 {
+			args = slices.Delete(args, i, i+2) // estimates have no payment term
 		}
 		app, srv := mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-ro", "PAPIERKRAM_READ_ONLY": "1"})
 		wantExit(t, app, Run(app, args), 9)
