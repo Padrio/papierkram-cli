@@ -141,5 +141,5 @@ func (s *liveSuite) followUp(t *testing.T, resource, action, target string, body
 		name = s.prefix + "folgeobjekt-" + ids(f.ID)
 	}
 	s.deviatef(t, "%s %s %s: Antwort nennt ein anderes Objekt %d (Folgeobjekt), zum Aufräumen registriert", resource, action, target, f.ID)
-	s.track(object{resource: resource, id: f.ID, name: name, followUpOf: of})
+	s.track(object{resource: resource, id: f.ID, name: name, followUpOf: of, followUpType: f.Type})
 }

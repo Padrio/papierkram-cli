@@ -77,10 +77,17 @@
 // cost no longer fits. TestMain releases the reserve for the cleanup and
 // prints the total at the end.
 //
+// Quota: a CLI run that hits HTTP 429 (exit 6, e2eguard.QuotaHit) stops
+// the tests like an exhausted budget: no further request in the tests,
+// every later test skips, no coverage gate (AGENTS.md rule 7). The cleanup
+// still tries once; a 429 there stops it without a further request. Such
+// a run always ends with exit 1.
+//
 // Coverage: the transport also records which operation each answered
 // request reached (e2eguard.Coverage). After the cleanup TestMain prints
 // one ABDECKUNG line per finding against e2eguard.CoveragePlan and fails
-// a full run (no -run or -skip, budget not exhausted, no failure so far)
+// a full run (no -run, -skip or -list, budget and quota not exhausted, no
+// failure so far)
 // that missed an expected operation; pending ones never fail it.
 //
 // Measurements (MESSUNG in the log) answer the open points of spec 17 and
@@ -97,7 +104,9 @@
 //	  8 (PDF download Accept/Content-Type), 9 (price_gross 0.0 with
 //	  gross=false), 11 (duration = wall clock difference on a normal day),
 //	  12 (time log --from 23:00 --to 00:00 and --to 24:00: exit 0 and
-//	  duration 3600; ended_at and the sent end measured);
+//	  duration 3600; ended_at and the sent end measured); open point 13:
+//	  the round trip with payment_term in the body sends no read before
+//	  the PUT;
 //	  invoice flow: deliver --via pdf, pdf (%PDF file), archive and
 //	  unarchive exit 0; voucher flow: create --file (exit 0, upload
 //	  2xx), exactly one document, pdf, document delete, archive and
@@ -198,9 +207,16 @@ func TestMain(m *testing.M) {
 		code = 1
 	}
 	_ = os.RemoveAll(s.mainDir)
+	if s.quota || s.quotaCleanup {
+		// external stop (AGENTS.md rule 7): the run is incomplete, a
+		// human decides; never green
+		s.stderrf("Lauf durch das Kontingent (HTTP 429) abgebrochen: nicht wiederholen, bevor ein Mensch das Kontingent geprüft hat")
+		code = max(code, 1)
+	}
 	rep := s.coverageSummary()
 	// only a full run must cover every expected operation: not one
-	// narrowed by -run or -skip, stopped by the budget or failed already
+	// narrowed by -run, -skip or -list, stopped by the budget or the
+	// quota, or failed already
 	if len(rep.Missing) > 0 && fullRun() && !s.exhausted && code == 0 {
 		s.stderrf("Abdeckung unvollständig: %d Operation(en) fehlen", len(rep.Missing))
 		code = 1
@@ -210,15 +226,16 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// fullRun reports whether no test was selected or skipped by name
-// (-run, -skip): only then does the coverage gate of TestMain apply.
+// fullRun reports whether no test was selected, skipped or only listed
+// by name (-run, -skip, -list; e2eguard.FullRun): only then does the
+// coverage gate of TestMain apply.
 func fullRun() bool {
-	for _, name := range []string{"test.run", "test.skip"} {
-		if f := flag.Lookup(name); f != nil && f.Value.String() != "" {
-			return false
+	return e2eguard.FullRun(func(name string) string {
+		if f := flag.Lookup(name); f != nil {
+			return f.Value.String()
 		}
-	}
-	return true
+		return ""
+	})
 }
 
 // leftoverKinds are the resources TestE2E_CleanupLeftovers searches, in
@@ -291,9 +308,12 @@ func TestE2E_CleanupLeftovers(t *testing.T) {
 			s.need(t, 4)
 			what, ok := s.remove(t.TempDir(), object{resource: k.resource, id: idOf(e), name: name})
 			s.logf(t, "Rest %s %d (%s): %s", k.resource, idOf(e), name, what)
-			if ok {
+			switch {
+			case ok:
 				removed++
-			} else {
+			case s.quota:
+				s.skipf(t, "Rest %s %d nicht entfernt: Kontingent erschöpft (HTTP 429), Test übersprungen", k.resource, idOf(e))
+			default:
 				kept++
 				s.errorf(t, "Rest %s %d nicht entfernt: %s", k.resource, idOf(e), what)
 			}
@@ -391,7 +411,7 @@ func (s *liveSuite) deliverPDF(t *testing.T) *deliverRun {
 		return delivered
 	}
 	if s.exhausted {
-		s.skipf(t, "Credit-Budget für Tests erschöpft: kein deliver --via pdf")
+		s.skipf(t, "%s: kein deliver --via pdf", s.stopReason())
 	}
 	if s.failed["deliver"] {
 		s.fatalf(t, "deliver --via pdf ist bereits gescheitert")

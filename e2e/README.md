@@ -202,6 +202,15 @@ Aufräumen bis zu 2 Credits mehr, bei den 4 Stornos und Gegenbuchungen der
 Suite zusammen höchstens 8 aus dem Puffer der Reserve.
 Am Ende steht die Summe im Log.
 
+Antwortet die API mit 429 (Exit 6, Monatskontingent erschöpft), sendet die
+Suite in den Tests keine weitere Anfrage: Alle folgenden Tests werden
+übersprungen (einmal im Log: `e2e: Kontingent erschöpft (HTTP 429): weitere
+Tests übersprungen`), das Abdeckungs-Gate entfällt. Das Aufräumen am Ende
+versucht es trotzdem; antwortet auch dort die API mit 429, bricht es ohne
+weitere Anfrage ab und nennt die übrigen Objekte (sie räumt
+`TestE2E_CleanupLeftovers` des nächsten Laufs auf). Ein solcher Lauf endet
+immer mit Exit 1 und wird nicht automatisch wiederholt.
+
 ## Abdeckung
 
 Der Transport der Suite ordnet jede beantwortete Anfrage über ihren Pfad
@@ -232,8 +241,8 @@ Sandbox-Account (gemessen)`; das entschuldigt nur diese beiden Operationen.
 
 Gate: Fehlt eine erwartete Operation, endet der Lauf mit Exit 1 und
 `e2e: Abdeckung unvollständig: <n> Operation(en) fehlen`, aber nur bei einem
-vollständigen Lauf: kein `-run` und kein `-skip`, Budget nicht erschöpft und
-bis dahin kein Fehler. Sonst stehen nur die Zeilen im Log. Ausstehende
+vollständigen Lauf: kein `-run`, kein `-skip` und kein `-list`, Budget und
+Kontingent nicht erschöpft und bis dahin kein Fehler. Sonst stehen nur die Zeilen im Log. Ausstehende
 Operationen lassen den Lauf nie scheitern.
 
 ## Bewusst nicht gemessen
@@ -263,4 +272,7 @@ wie jede Rechnung; ein 422 ist eine `ABWEICHUNG`), Nr. 10 sendet per
 `supply_date` per `--supply-date` und schickt die `describe`-Ausgabe im
 Rundlauf zurück, Nr. 12 setzt eine Bewirtungsperson am Beleg und sendet
 danach `[]` („geleert“ oder „unverändert“). Antwortet ein Schritt mit 429,
-endet der Subtest ohne weitere Anfrage.
+endet der Subtest ohne weitere Anfrage (und alle folgenden Tests werden
+übersprungen, siehe Credit-Budget). Hart fehlschlagen lässt nur Nr. 13, wenn
+`invoice update` im Rundlauf (`payment_term` im Body) die Rechnung vor dem
+`PUT` liest: Das ist Verhalten des CLI, kein Messwert der API.

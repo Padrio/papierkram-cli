@@ -42,9 +42,16 @@ type liveSuite struct {
 	// whose creation failed, so later tests fail fast instead of retrying.
 	fixtures map[string]map[string]any
 	failed   map[string]bool
-	// exhausted is set once the budget stopped a test; all later tests
-	// skip.
+	// exhausted is set once the budget or the quota stopped a test; all
+	// later tests skip, and the coverage gate does not apply.
 	exhausted bool
+	// quota is set by the first CLI run of the tests that hit the monthly
+	// quota (HTTP 429, exit 6: e2eguard.QuotaHit), quotaCleanup by one of
+	// the cleanup; cleaning is set when the cleanup starts. After a hit
+	// execAt sends nothing more in that phase: the cleanup still tries
+	// once after a hit in the tests. The tests run one after another (no
+	// t.Parallel), so plain fields suffice.
+	quota, quotaCleanup, cleaning bool
 	// deviations are the ABWEICHUNG lines of the run (deviatef).
 	deviations []string
 	// sent holds the request body of every create by "resource/id", so
@@ -62,6 +69,9 @@ type object struct {
 	// followUpOf is the id of the object of this run whose cancel or
 	// reverse answered with this object (cancelMeasured); 0 otherwise.
 	followUpOf int64
+	// followUpType is the type of that answer (e2eguard.JudgeFollowUp);
+	// remove touches a follow-up only when it is the type of resource.
+	followUpType string
 }
 
 // newLiveSuite prepares a run. It sends nothing.
@@ -108,6 +118,9 @@ type result struct {
 	stdout, stderr string
 	// exchanges are the HTTP requests of this run.
 	exchanges []e2eguard.Exchange
+	// refused is set when execAt did not run the CLI because the quota
+	// was hit before (code 6, no request).
+	refused bool
 }
 
 // exec runs the real CLI (cli.Run) with config and cache below dir. The
@@ -120,8 +133,13 @@ func (s *liveSuite) exec(dir, stdin string, args ...string) result {
 
 // execAt is exec with the clock now of the CLI (App.Now): the local timer
 // (time start, status, stop, discard) reads it, and its state file lies
-// below <dir>/cache/papierkram/.
+// below <dir>/cache/papierkram/. A run that hits the quota (HTTP 429, exit
+// 6) marks the suite (markQuota); once marked, execAt runs nothing more in
+// that phase and returns code 6 with refused set.
 func (s *liveSuite) execAt(dir string, now func() time.Time, stdin string, args ...string) result {
+	if s.quotaNow() {
+		return result{code: 6, stderr: quotaRefused + "\n", refused: true}
+	}
 	cfg, cache := filepath.Join(dir, "config"), filepath.Join(dir, "cache")
 	env := map[string]string{
 		"PAPIERKRAM_SUBDOMAIN":  s.sub,
@@ -145,7 +163,47 @@ func (s *liveSuite) execAt(dir string, now func() time.Time, stdin string, args 
 	}
 	n := s.tr.Len()
 	code := cli.Run(app, append([]string{"--no-input"}, args...))
-	return result{code: code, stdout: out.String(), stderr: errb.String(), exchanges: s.tr.Since(n)}
+	r := result{code: code, stdout: out.String(), stderr: errb.String(), exchanges: s.tr.Since(n)}
+	if e2eguard.QuotaHit(r.code, r.exchanges) {
+		s.markQuota()
+	}
+	return r
+}
+
+// quotaRefused is the stderr of a CLI run execAt did not start.
+const quotaRefused = "e2e: Kontingent erschöpft (HTTP 429): nicht gesendet"
+
+// quotaNow reports whether the quota was hit in the current phase (tests
+// or cleanup).
+func (s *liveSuite) quotaNow() bool {
+	if s.cleaning {
+		return s.quotaCleanup
+	}
+	return s.quota
+}
+
+// markQuota records a hit of the quota in the current phase and logs it
+// once (quotaNotice): a hit in the tests stops all later tests like an
+// exhausted budget (AGENTS.md rule 7: never retry a 429).
+func (s *liveSuite) markQuota() {
+	if s.quotaNow() {
+		return
+	}
+	if s.cleaning {
+		s.quotaCleanup = true
+	} else {
+		s.quota = true
+	}
+	s.exhausted = true
+	s.quotaNotice()
+}
+
+// stopReason is why no further test runs: the quota or the budget.
+func (s *liveSuite) stopReason() string {
+	if s.quota {
+		return "Kontingent erschöpft (HTTP 429)"
+	}
+	return "Credit-Budget für Tests erschöpft"
 }
 
 // run is exec in a test: own directories, and the CLI output must never
@@ -160,6 +218,9 @@ func (s *liveSuite) run(t *testing.T, stdin string, args ...string) result {
 func (s *liveSuite) runIn(t *testing.T, dir string, now func() time.Time, stdin string, args ...string) result {
 	t.Helper()
 	r := s.execAt(dir, now, stdin, args...)
+	if r.refused {
+		s.skipf(t, "Kontingent erschöpft (HTTP 429): %q nicht gesendet, Test übersprungen", commandOf(args))
+	}
 	if s.red.Contains(r.stdout) || s.red.Contains(r.stderr) {
 		// only the command (resource and action): no ids or values
 		s.errorf(t, "CLI-Ausgabe von %q enthält das Token", commandOf(args))
@@ -211,6 +272,9 @@ func (s *liveSuite) decode(t *testing.T, raw string) map[string]any {
 // at the end always gets to run.
 func (s *liveSuite) need(t *testing.T, n int) {
 	t.Helper()
+	if s.quota {
+		s.skipf(t, "Kontingent erschöpft (HTTP 429): Test übersprungen")
+	}
 	if s.exhausted {
 		s.skipf(t, "Credit-Budget für Tests erschöpft (%d von %d verbraucht, %d fürs Aufräumen reserviert); Test übersprungen",
 			s.meter.Spent(), s.meter.Budget(), s.meter.Reserved())
@@ -245,7 +309,7 @@ func (s *liveSuite) fixture(t *testing.T, key string, mk func() map[string]any) 
 		return v
 	}
 	if s.exhausted {
-		s.skipf(t, "Credit-Budget für Tests erschöpft: Vorbedingung %s nicht angelegt", key)
+		s.skipf(t, "%s: Vorbedingung %s nicht angelegt", s.stopReason(), key)
 	}
 	if s.failed[key] {
 		s.fatalf(t, "Vorbedingung %s ist bereits gescheitert", key)
@@ -389,12 +453,18 @@ var noArchive = map[string]bool{"person": true}
 // suite, or when o is a follow-up object (followUpOf): the API may name
 // that one itself, but its id was read verbatim from the answer to a
 // cancel or reverse of an object of this run (ownTarget), its type is
-// that of the resource, and only that id is touched. A follow-up is never
-// cancelled (it is a cancellation or reverse entry itself; its cancel
-// could create yet another object), only deleted or archived. It returns
-// what happened and false when o is still active.
+// that of the resource (followUpType, checked here again besides the only
+// place that registers a follow-up), and only that id is touched. A
+// follow-up is never cancelled (it is a cancellation or reverse entry
+// itself; its cancel could create yet another object), only deleted or
+// archived. After a hit of the quota (HTTP 429) it sends nothing more. It
+// returns what happened and false when o is still active.
 func (s *liveSuite) remove(dir string, o object) (string, bool) {
 	switch {
+	case s.quotaNow():
+		return "nicht angefasst: Kontingent erschöpft (HTTP 429)", false
+	case o.followUpOf != 0 && !e2eguard.IsFollowUpType(o.resource, o.followUpType):
+		return fmt.Sprintf("nicht angefasst: Folgeobjekt mit Typ %q, nicht dem Typ von %s", o.followUpType, o.resource), false
 	case o.followUpOf != 0 && !s.ownTarget(o):
 		return fmt.Sprintf("nicht angefasst: Folgeobjekt von %s %d, das dieser Lauf nicht angelegt hat", o.resource, o.followUpOf), false
 	case o.followUpOf == 0 && !e2eguard.Owned(o.name):
@@ -413,6 +483,12 @@ func (s *liveSuite) remove(dir string, o object) (string, bool) {
 		return "gelöscht", true
 	}
 	steps := []string{fmt.Sprintf("delete Exit %d", r.code)}
+	quotaStopped := func() (string, bool) {
+		return strings.Join(steps, ", ") + ": Kontingent erschöpft (HTTP 429), abgebrochen", false
+	}
+	if s.quotaNow() {
+		return quotaStopped()
+	}
 	if cleanupDocs[o.resource] && o.followUpOf == 0 {
 		if c := do("cancel"); c.code == 0 {
 			steps = append(steps, "storniert")
@@ -421,6 +497,9 @@ func (s *liveSuite) remove(dir string, o object) (string, bool) {
 			}
 		} else {
 			steps = append(steps, fmt.Sprintf("cancel Exit %d", c.code))
+		}
+		if s.quotaNow() {
+			return quotaStopped()
 		}
 	}
 	if noArchive[o.resource] {
@@ -448,6 +527,7 @@ func (s *liveSuite) ownTarget(o object) bool {
 // cleanup removes all objects of this run, newest first (children before
 // their parents). It reports whether every object is gone or archived.
 func (s *liveSuite) cleanup() bool {
+	s.cleaning = true
 	all := true
 	for i := len(s.created) - 1; i >= 0; i-- {
 		o := s.created[i]

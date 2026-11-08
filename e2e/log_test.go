@@ -81,6 +81,17 @@ func (s *liveSuite) stderrf(format string, args ...any) {
 	_, _ = fmt.Fprintln(os.Stderr, s.safe("e2e: "+fmt.Sprintf(format, args...)))
 }
 
+// quotaNotice writes the line for a hit of the quota (markQuota, once per
+// phase) to stderr: the CLI run that hit it may lie in the cleanup, where
+// there is no testing.T.
+func (s *liveSuite) quotaNotice() {
+	if s.cleaning {
+		s.stderrf("Kontingent erschöpft (HTTP 429) beim Aufräumen: keine weitere Anfrage; Objekte mit Präfix %s räumt CleanupLeftovers des nächsten Laufs auf", s.prefix)
+		return
+	}
+	s.stderrf("Kontingent erschöpft (HTTP 429): weitere Tests übersprungen")
+}
+
 // deviationSummary writes the collected deviations to stderr (TestMain).
 func (s *liveSuite) deviationSummary() {
 	if len(s.deviations) == 0 {

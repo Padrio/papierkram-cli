@@ -13,16 +13,21 @@ import (
 // TestE2E_OpenMeasurements measures the open points 28, 10, 13 and 12 of
 // docs/offene-punkte.md, one subtest each. All of them are measurements:
 // a result that differs from what the CLI assumes is logged as ABWEICHUNG
-// (deviatef) and never fails the run. A step that answers with 429 (exit
-// 6) ends its subtest without a further request.
+// (deviatef) and never fails the run; only a read before the PUT of the
+// round trip in no. 13 fails it (CLI behaviour, not a value of the API). A
+// step that answers with 429 (exit 6) ends its subtest without a further
+// request and stops all later tests (markQuota).
 func TestE2E_OpenMeasurements(t *testing.T) {
 	s := live(t)
 
 	// 28. POST /income/invoices without document_date: the CLI treats the
 	// field as optional for invoices (the estimate requires it, measured
 	// 2026-11-04). Accepted: the invoice is registered for the cleanup and
-	// its document_date logged. Rejected (422 expected like the estimate):
-	// exit, HTTP status and message of the API; a 422 is an ABWEICHUNG.
+	// its document_date logged; accepted without an id in the output (no
+	// JSON, or e.g. {"ok":true}) is reported as such, the next run's
+	// CleanupLeftovers removes it. Rejected (422 expected like the
+	// estimate): exit, HTTP status and message of the API; a 422 is an
+	// ABWEICHUNG.
 	t.Run("28_InvoiceWithoutDocumentDate", func(t *testing.T) {
 		c, pt := s.customer(t), idOf(s.paymentTerms(t)[0])
 		s.need(t, 50)
@@ -30,13 +35,19 @@ func TestE2E_OpenMeasurements(t *testing.T) {
 		r := s.run(t, "", "invoice", "create", "--name", name, "--customer", ids(c), "--payment-term", ids(pt),
 			"--item", "name="+pos19+",qty=1,price=100,vat=19", "-o", "json")
 		m := tryDecode(r.stdout)
-		if id := idOf(m); id != 0 {
+		id := idOf(m)
+		if id != 0 {
 			s.track(object{resource: "invoice", id: id, name: name})
 			s.logf(t, "angelegt: invoice %d (%s)", id, name)
 		}
 		if r.code == 0 {
-			if m == nil {
-				s.measuref(t, "Rechnung ohne document_date", "angenommen (Exit 0), aber keine JSON-Ausgabe: id unbekannt, CleanupLeftovers des nächsten Laufs räumt sie auf")
+			if id == 0 {
+				what := "keine JSON-Ausgabe"
+				if m != nil {
+					what = "Ausgabe ohne id"
+				}
+				s.measuref(t, "Rechnung ohne document_date", "angenommen (Exit 0, %s), aber %s: id unbekannt, CleanupLeftovers des nächsten Laufs räumt sie auf",
+					outcome(r, "POST", "/income/invoices"), what)
 				return
 			}
 			s.measuref(t, "Rechnung ohne document_date", "angenommen (%s): document_date %v (%s)",
@@ -59,7 +70,9 @@ func TestE2E_OpenMeasurements(t *testing.T) {
 	// the draft invoice. Logged: HTTP status and due_date before and
 	// after; a changed due_date is an ABWEICHUNG (invoice update --input
 	// removes the field as read only). Should api end locally with exit 5
-	// (nothing sent), that is logged as "lokal abgelehnt".
+	// (nothing sent), that is logged as "lokal abgelehnt". After exit 12
+	// (PUT sent, outcome unknown) the second describe still runs: due_date
+	// before and after tells whether the PUT arrived.
 	t.Run("10_InvoiceDueDatePut", func(t *testing.T) {
 		inv := idOf(s.invoice(t))
 		s.need(t, 3)
@@ -77,7 +90,7 @@ func TestE2E_OpenMeasurements(t *testing.T) {
 		case x == nil && r.code == 5:
 			s.measuref(t, "due_date per PUT", "lokal abgelehnt (Exit 5, nichts gesendet): %s", firstLine(r.stderr))
 			return
-		case x == nil:
+		case x == nil && r.code != 12:
 			s.measuref(t, "due_date per PUT", "keine Antwort (Exit %d): %s", r.code, firstLine(r.stderr))
 			return
 		case s.quotaStop(t, r):
@@ -99,7 +112,8 @@ func TestE2E_OpenMeasurements(t *testing.T) {
 	// the invoice for its payment term), describe (1), the round trip
 	// with exactly that output (1: payment_term in the body, no read),
 	// describe (1). A failed step or a changed supply_date is an
-	// ABWEICHUNG.
+	// ABWEICHUNG. A read before the PUT of the round trip is a failure:
+	// with payment_term in the body the CLI must not read the invoice.
 	t.Run("13_InvoiceSupplyDate", func(t *testing.T) {
 		inv := idOf(s.invoice(t))
 		s.need(t, 5)
@@ -122,9 +136,13 @@ func TestE2E_OpenMeasurements(t *testing.T) {
 			s.deviatef(t, "supply_date gesendet %s, Antwort %q", supply, str(got))
 		}
 		rt := s.run(t, desc.stdout, "invoice", "update", ids(inv), "--input", "-", "-o", "json")
+		reads := countMethod(rt, "GET")
 		if x := lastExchange(rt, "PUT", path); x != nil {
 			s.measuref(t, "supply_date", "Rundlauf: gesendet supply_date %q, %d Leseanfrage(n) davor, HTTP %d",
-				str(get(lastBody(x), "supply_date")), countMethod(rt, "GET"), x.Status)
+				str(get(lastBody(x), "supply_date")), reads, x.Status)
+		}
+		if reads != 0 {
+			s.errorf(t, "Rundlauf mit payment_term im Body: %d Leseanfrage(n) vor dem PUT, erwartet 0 (invoice update liest nur ohne payment_term)", reads)
 		}
 		if rt.code != 0 {
 			if !s.quotaStop(t, rt) {
