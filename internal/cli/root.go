@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
@@ -295,7 +296,7 @@ func executeContext(ctx context.Context, app *App, root *cobra.Command, args []s
 		ce = &clierr.Error{Code: ce.Code, Message: "Abgebrochen: Anfrage durch Unterbrechung beendet", Hint: api.WithoutNetworkHint(ce.Hint), Cause: err}
 	}
 	if app.flagParseFailed {
-		app.errorFormatFromArgs(args)
+		app.errorFormatFromArgs(cmd, args)
 	}
 	// The format of the error output is the resolved one (context output
 	// value) when the configuration was resolved, otherwise the flag.
@@ -309,8 +310,11 @@ func executeContext(ctx context.Context, app *App, root *cobra.Command, args []s
 // line (AGENTS contract, review C-I2). It reads -o X, -oX, -o=X,
 // --output X, --output=X, --jq X and --jq=X up to a "--"; the last one
 // wins as in a full parse, and an -o value that is no format is ignored
-// (the format then stays as parsed).
-func (a *App) errorFormatFromArgs(args []string) {
+// (the format then stays as parsed). The value of another flag of cmd
+// that takes one (--name X, -O X; not --name=X) is skipped like pflag
+// takes it, even when it starts with "-": --name -ojson names, it sets no
+// format. Without cmd every other argument is read as it is.
+func (a *App) errorFormatFromArgs(cmd *cobra.Command, args []string) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
@@ -326,6 +330,8 @@ func (a *App) errorFormatFromArgs(args []string) {
 		var out, jq string
 		var hasOut, hasJQ bool
 		switch {
+		case takesValue(cmd, arg):
+			next()
 		case arg == "-o" || arg == "--output":
 			out, hasOut = next()
 		case strings.HasPrefix(arg, "--output="):
@@ -344,6 +350,30 @@ func (a *App) errorFormatFromArgs(args []string) {
 			a.Flags.JQ = jq
 		}
 	}
+}
+
+// takesValue reports whether arg is a flag of cmd (own or inherited)
+// written as --name or -n whose value is the next argument: a flag that
+// is no -o/--output or --jq and has no value without one (NoOptDefVal,
+// e.g. a bool). Unknown flags take nothing.
+func takesValue(cmd *cobra.Command, arg string) bool {
+	if cmd == nil || arg == "-" || !strings.HasPrefix(arg, "-") || strings.Contains(arg, "=") {
+		return false
+	}
+	var f *pflag.Flag
+	switch name, long := strings.CutPrefix(arg, "--"); {
+	case long:
+		f = cmd.Flags().Lookup(name)
+		if f == nil {
+			f = cmd.InheritedFlags().Lookup(name)
+		}
+	case len(arg) == 2:
+		f = cmd.Flags().ShorthandLookup(arg[1:])
+		if f == nil {
+			f = cmd.InheritedFlags().ShorthandLookup(arg[1:])
+		}
+	}
+	return f != nil && f.NoOptDefVal == "" && f.Name != "output" && f.Name != "jq"
 }
 
 // completeArgsErr is err of cmd, but for cobra's own __complete command

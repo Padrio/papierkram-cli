@@ -29,6 +29,15 @@ func TestFlagErrorFormatFromRawArgs(t *testing.T) {
 		{"invalid format", []string{"user", "list", "--bogus", "-o", "xml"}, "text"},
 		{"after --", []string{"api", "GET", "/users", "--bogus", "--", "-o", "json"}, "text"},
 		{"without format", []string{"user", "list", "--bogus"}, "text"},
+		// the value of a value flag is no format, as in a full parse
+		// (pflag takes the next argument even if it starts with "-")
+		{"value of --name", []string{"company", "create", "--name", "-ojson", "--bogus"}, "text"},
+		{"value of --context", []string{"user", "list", "--context", "-ojson", "--bogus"}, "text"},
+		{"value of -O", []string{"invoice", "pdf", "459", "-O", "-ojson", "--bogus"}, "text"},
+		{"value of --name, then -o", []string{"company", "create", "--name", "-ojson", "-o", "yaml", "--bogus"}, "yaml"},
+		{"--name=value", []string{"company", "create", "--name=x", "-o", "json", "--bogus"}, "json"},
+		{"--limit value", []string{"user", "list", "--limit", "5", "-o", "json", "--bogus"}, "json"},
+		{"bool flag", []string{"user", "list", "--all", "-o", "json", "--bogus"}, "json"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, out, errb := newTestApp(t)
