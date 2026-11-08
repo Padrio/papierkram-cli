@@ -943,3 +943,13 @@ func TestMarkSchemaBounds(t *testing.T) {
 		}
 	}
 }
+
+// The --json sentence of commands --help lists the flag details once,
+// without a double "und" (task 17, T16-M4).
+func TestCommandsLongWording(t *testing.T) {
+	want := "Flags mit Kurzform, Typ, Pflicht (mit gleichwertigen Flags unter alternatives), Wiederholbarkeit, erlaubten Werten, " +
+		"Standardwert wie „Standard:“ in der Hilfe (Feld default), geprüften Grenzen (Felder minimum, maximum) und Hilfetext, dazu Beispiele;"
+	if !strings.Contains(commandsLong, want) {
+		t.Errorf("commandsLong ohne %q:\n%s", want, commandsLong)
+	}
+}

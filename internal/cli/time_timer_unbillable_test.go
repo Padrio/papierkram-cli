@@ -192,3 +192,27 @@ func TestTimeUnbillableFlagShared(t *testing.T) {
 		t.Errorf("--unbillable: time log %q, time start %q", defs[0], defs[1])
 	}
 }
+
+// The help of time stop and time status names the unbillable of the timer
+// (task 17, T12-M1).
+func TestTimerHelpNamesUnbillable(t *testing.T) {
+	for args, wants := range map[string][]string{
+		"time stop --help": {
+			"den beim Start mit --unbillable gespeicherten Wert als unbillable (ohne --unbillable beim Start keinen)",
+		},
+		"time status --help": {
+			"ob der Eintrag nicht abrechenbar ist (JSON unbillable, -o wide Spalte NICHT ABRECHENBAR;",
+		},
+	} {
+		app, out, _ := newTestApp(t)
+		if code := Run(app, strings.Fields(args)); code != 0 {
+			t.Fatalf("%s: exit = %d", args, code)
+		}
+		help := strings.Join(strings.Fields(out.String()), " ")
+		for _, w := range wants {
+			if !strings.Contains(help, w) {
+				t.Errorf("%s: Hilfe ohne %q:\n%s", args, w, out.String())
+			}
+		}
+	}
+}

@@ -71,7 +71,8 @@ func (a *App) newTimeStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Laufenden Timer anzeigen",
 		Long: "Zeigt den Timer des wirksamen Kontexts: Start, bisherige Dauer (h:mm nach Uhrzeit, wie time stop sie bucht, auch an Tagen der Zeitumstellung), " +
-			"Aufgabe, Benutzer, Kommentar und das Konto (Host), für das er gestartet wurde (-o wide, JSON account; " +
+			"Aufgabe, Benutzer, Kommentar, ob der Eintrag nicht abrechenbar ist (JSON unbillable, -o wide Spalte NICHT ABRECHENBAR; " +
+			"false bzw. leer auch ohne --unbillable beim Start) und das Konto (Host), für das er gestartet wurde (-o wide, JSON account; " +
 			"gilt jetzt ein anderes, warnt der Befehl, denn time stop bucht dann nicht). Läuft gerade ein time stop oder wurde einer nicht abgeschlossen, zeigt der Befehl dessen Timer mit einer Warnung. Ohne Timer: „Kein Timer läuft“, mit -o json {\"running\":false} (Exit 0). " +
 			"Sendet keine Anfrage. " + timerNote,
 		Example:     "  papierkram time status\n  papierkram time status -o json",
@@ -88,6 +89,8 @@ func (a *App) newTimeStopCmd() *cobra.Command {
 		Short: "Timer stoppen und als Zeiteintrag buchen",
 		Long: "Bucht die Zeit des Timers wie time log: Datum und Uhrzeit des Starts bis jetzt (in ganzen Minuten), " +
 			"Aufgabe, Benutzer und Kommentar des Timers; -m ersetzt den Kommentar. " +
+			"Außerdem sendet er den beim Start mit --unbillable gespeicherten Wert als unbillable (ohne --unbillable beim Start keinen); " +
+			"time stop selbst hat kein --unbillable. " +
 			"Stoppt der Timer in der ersten Minute des Folgetags (00:00:00 bis 00:00:59), endet der Eintrag um 24:00 des Starttags; " +
 			"andere Einträge über Mitternacht und Einträge unter einer Minute werden abgelehnt (Exit 2). " +
 			"Start und Ende gelten in der Zeitzone des Rechners beim Stoppen: Wechselt die Zeitzone zwischen time start und time stop " +
