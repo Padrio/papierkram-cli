@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -346,21 +347,52 @@ func TestListFlagValidation(t *testing.T) {
 }
 
 // pagedUsers answers GET /users with total pages of one user each and
-// echoes the requested page size; ids of page p are 9007199254740990+p, so
-// exact merging is visible.
+// echoes the requested page size (25 without one, the CLI default); ids of
+// page p are 9007199254740990+p, so exact merging is visible. The mock
+// has validated page and page_size as integers already.
 func pagedUsers(srv *mockapi.Server, total int) {
 	srv.OnFunc("GET", "/users", func(w http.ResponseWriter, r *http.Request) {
-		p := r.URL.Query().Get("page")
-		if p == "" {
-			p = "1"
+		n, size := 1, 25
+		if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil {
+			n = p
 		}
-		var n int
-		_, _ = fmt.Sscan(p, &n)
+		if s, err := strconv.Atoi(r.URL.Query().Get("page_size")); err == nil {
+			size = s
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"type":"list","page":%d,"page_size":%s,"total_pages":%d,"total_entries":%d,"has_more":%t,`+
+		_, _ = fmt.Fprintf(w, `{"type":"list","page":%d,"page_size":%d,"total_pages":%d,"total_entries":%d,"has_more":%t,`+
 			`"entries":[{"id":%d,"full_name":"Nutzer <%d> & Co","email":"u%d@example.org","role":"owner","rate":19.90}]}`,
-			n, r.URL.Query().Get("page_size"), total, total, n < total, int64(9007199254740990)+int64(n), n, n)
+			n, size, total, total, n < total, int64(9007199254740990)+int64(n), n, n)
 	})
+}
+
+// L202: the pagedUsers mock answers valid JSON with a numeric page_size,
+// also for a request without page_size (25, the CLI default).
+func TestPagedUsersMockValidJSON(t *testing.T) {
+	_, srv := apiApp(t)
+	pagedUsers(srv, 2)
+	for query, size := range map[string]float64{"": 25, "?page=2": 25, "?page=1&page_size=50": 50} {
+		req, err := http.NewRequest(http.MethodGet, srv.URL()+"/users"+query, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer test-token-builder")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var page struct {
+			PageSize *float64 `json:"page_size"`
+		}
+		if err := json.Unmarshal(body, &page); err != nil || page.PageSize == nil || *page.PageSize != size {
+			t.Errorf("%q: page_size %v (%v), want %v:\n%s", query, page.PageSize, err, size, body)
+		}
+	}
 }
 
 func TestListAllMergesPagesExactly(t *testing.T) {
