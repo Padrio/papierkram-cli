@@ -208,10 +208,11 @@ func TestInvalidFlagValuesGermanEverywhere(t *testing.T) {
 
 // Review T19a-M1: every argument error is typed (exit 2, German). The
 // validators of the built tree, the help command included, return a
-// *clierr.Error for every count of arguments they reject; the commands
+// *clierr.Error for every count of arguments they reject; the command
 // cobra adds only when it executes (__complete and its alias
-// __completeNoDesc, Args cobra.MinimumNArgs(1)) end with exit 2 too, like
-// the own completion and help commands run with wrong arguments.
+// __completeNoDesc, with cobra's own check for at least one argument)
+// ends with exit 2 too, like the own completion and help commands run
+// with wrong arguments.
 func TestArgsErrorsTyped(t *testing.T) {
 	const completeErr = "Fehler: zu wenige Argumente für \"papierkram __complete\" (erwartet: mindestens 1, erhalten: 0)\n" +
 		"Hinweis: Interner Befehl der Shell-Vervollständigung; einrichten mit papierkram completion <shell>\n"

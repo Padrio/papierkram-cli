@@ -295,11 +295,11 @@ func executeContext(ctx context.Context, app *App, root *cobra.Command, args []s
 // completeArgsErr is err of cmd, but for cobra's own __complete command
 // (also called as __completeNoDesc) the German argument error of
 // minArgs(1) instead of an untyped one. ExecuteC creates that command
-// itself, with Args cobra.MinimumNArgs(1), right before it runs it, so no
-// code of ours can set its Args before the check (review T19a-M1). Its
-// flags are not parsed and its Run returns nothing, and the root's
-// PersistentPreRunE returns nil for it: an untyped error of it is that
-// check, which fails only without arguments.
+// itself, with cobra's validator for at least one argument, right before
+// it runs it, so no code of ours can set its Args before the check
+// (review T19a-M1). Its flags are not parsed, its Run returns nothing and
+// the root's PersistentPreRunE returns nil for it: an untyped error of it
+// is that check, which fails only without arguments.
 func completeArgsErr(cmd *cobra.Command, err error) error {
 	var ce *clierr.Error
 	if cmd == nil || !isCompletionCmd(cmd) || errors.As(err, &ce) {
