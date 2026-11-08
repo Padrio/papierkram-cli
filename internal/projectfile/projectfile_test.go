@@ -558,3 +558,106 @@ func hostileName(base string) string {
 	}
 	return base + "\x1b[2J"
 }
+
+// sameFile reports whether a and b name the same file (a temporary
+// directory may be reached through a symbolic link, /var on macOS).
+func sameFile(t *testing.T, a, b string) bool {
+	t.Helper()
+	sa, errA := os.Stat(a)
+	sb, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(sa, sb)
+}
+
+// L81: a relative working directory is made absolute first, so the
+// search up to the Git root works from it as from an absolute one, and
+// the path found is absolute.
+func TestFind_RelativeCwd(t *testing.T) {
+	root := t.TempDir()
+	mkdir(t, filepath.Join(root, ".git"))
+	want := write(t, root, FileName, "project = 34\n")
+	mkdir(t, filepath.Join(root, "a", "b"))
+	t.Chdir(root)
+	for _, cwd := range []string{".", filepath.Join("a", "b"), filepath.Join("a", "..", "a", "b") + string(filepath.Separator)} {
+		got, ok := Find(cwd)
+		if !ok || !filepath.IsAbs(got) || filepath.Base(got) != FileName || !sameFile(t, got, want) {
+			t.Errorf("Find(%q) = %q, %v; want %q", cwd, got, ok, want)
+		}
+	}
+	// outside Git only the relative directory itself is checked
+	outside := t.TempDir()
+	mkdir(t, filepath.Join(outside, "sub"))
+	write(t, outside, FileName, "")
+	t.Chdir(outside)
+	if got, ok := Find("sub"); ok {
+		t.Errorf("Find(sub) outside Git = %q, want no hit", got)
+	}
+}
+
+// L81: a project file that is a symbolic link to a regular file (a shared
+// file in a monorepo) is found and read through the link; Path stays the
+// link. A link to a directory is no project file.
+func TestFind_SymlinkToFile(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "shared"), "papierkram.toml", "project = 34\n[tasks]\ntickets = 57\n")
+	link := filepath.Join(root, FileName)
+	if err := os.Symlink(filepath.Join("shared", "papierkram.toml"), link); err != nil {
+		t.Skipf("no symlinks: %v", err)
+	}
+	got, ok := Find(root)
+	if !ok || got != link {
+		t.Fatalf("Find = %q, %v; want %q", got, ok, link)
+	}
+	f, err := Load(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Path != link || f.Project != 34 || f.Tasks["tickets"] != 57 {
+		t.Errorf("Load through the link: %+v", f)
+	}
+
+	dirLink := t.TempDir()
+	if err := os.Symlink(mkdir(t, filepath.Join(root, "dir")), filepath.Join(dirLink, FileName)); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := Find(dirLink); ok {
+		t.Errorf("link to a directory matched: %q", got)
+	}
+}
+
+// L81: an alias defined twice in [tasks] (also once quoted) is a TOML
+// error: exit 2 naming the line of the second definition.
+func TestLoad_DuplicateAlias(t *testing.T) {
+	for name, body := range map[string]string{
+		"bare":   "[tasks]\ntickets = 57\ntickets = 58\n",
+		"quoted": "[tasks]\ntickets = 57\n\"tickets\" = 58\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := write(t, t.TempDir(), FileName, body)
+			_, err := Load(p)
+			ce := usageErr(t, err)
+			if ce.Message != "Projektdatei "+p+" ist ungültig" || ce.Hint != "TOML-Syntax in Zeile 3, Spalte 1 prüfen, z. B. project = 34" {
+				t.Errorf("message %q, hint %q", ce.Message, ce.Hint)
+			}
+		})
+	}
+}
+
+// L81: an empty alias ("" = 57, valid TOML) is loaded as written, like a
+// blank one (" "); ResolveTask("") finds it. In the CLI only an explicit
+// empty value reaches it (time log --task ""); an empty PAPIERKRAM_TASK
+// counts as unset, and local init rejects --task "" and skips an empty
+// answer.
+func TestLoad_EmptyAlias(t *testing.T) {
+	f, err := Load(write(t, t.TempDir(), FileName, "[tasks]\n\"\" = 57\n\" \" = 58\ntickets = 59\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(f.Tasks, map[string]int64{"": 57, " ": 58, "tickets": 59}) {
+		t.Fatalf("Tasks = %v", f.Tasks)
+	}
+	for alias, want := range map[string]int64{"": 57, " ": 58, "tickets": 59} {
+		if id, err := f.ResolveTask(alias); err != nil || id != want {
+			t.Errorf("ResolveTask(%q) = %d, %v; want %d", alias, id, err, want)
+		}
+	}
+}
