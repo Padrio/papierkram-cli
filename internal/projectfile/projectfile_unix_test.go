@@ -43,3 +43,31 @@ func TestLoad_DeviceAndFIFORejectedQuickly(t *testing.T) {
 		t.Errorf("Find = %q, %v", got, ok)
 	}
 }
+
+// L81: a project file that is found but cannot be read is an error of the
+// CLI (exit 1) whose hint names the file (printable) to check or remove.
+func TestLoad_ReadErrorIsCLIError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads files without read permission")
+	}
+	dir := filepath.Join(t.TempDir(), "repo\x1b[31m")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, FileName)
+	if err := os.WriteFile(p, []byte("project = 34\n"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(p)
+	var ce *clierr.Error
+	if !errors.As(err, &ce) || ce.Code != clierr.CodeError || ce.Exit() != 1 {
+		t.Fatalf("Load = %#v", err)
+	}
+	shown := strings.ReplaceAll(p, "\x1b", " ")
+	if want := "Projektdatei " + shown + " prüfen oder entfernen"; ce.Hint != want {
+		t.Errorf("hint = %q, want %q", ce.Hint, want)
+	}
+	if !strings.Contains(ce.Message, "permission denied") || strings.Contains(ce.Message, "\x1b") || !errors.Is(err, os.ErrPermission) {
+		t.Errorf("message = %q, cause = %v", ce.Message, ce.Cause)
+	}
+}

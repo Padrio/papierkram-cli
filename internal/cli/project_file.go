@@ -1,12 +1,10 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/projectfile"
 )
@@ -46,12 +44,7 @@ func (a *App) loadProjectFile() (*projectfile.File, error) {
 	}
 	f, err := projectfile.Load(path)
 	if err != nil {
-		var ce *clierr.Error
-		if !errors.As(err, &ce) {
-			ce = clierr.New(clierr.CodeError, err.Error(), "Projektdatei prüfen: "+printable(path))
-			ce.Cause = err
-		}
-		return nil, ce
+		return nil, err // a *clierr.Error naming the file
 	}
 	if len(f.Unknown) > 0 {
 		// spec 9.8: a warning, no error; once per invocation, since the

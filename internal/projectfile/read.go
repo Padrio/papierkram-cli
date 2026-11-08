@@ -34,7 +34,12 @@ func readRegular(path string, follow bool) ([]byte, error) {
 			fmt.Sprintf("Projektdatei %s ist zu groß (mehr als %d KiB)", output.Printable(path), MaxSize>>10),
 			"Die Projektdatei enthält nur wenige IDs und Aliase; Datei prüfen")
 	}
-	return nil, fileErr(path, "lesen", err)
+	// found but not readable (permissions, I/O): an error of the CLI
+	// (exit 1) whose hint names the file (L81)
+	e := clierr.New(clierr.CodeError, fileErr(path, "lesen", err).Error(),
+		fmt.Sprintf("Projektdatei %s prüfen oder entfernen", output.Printable(path)))
+	e.Cause = err
+	return nil, e
 }
 
 // notRegular is the usage error for a project file that is no regular
