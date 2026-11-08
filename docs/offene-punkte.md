@@ -39,7 +39,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 24 | `deliver` antwortet mit leerem Body | leerer 2xx-Body ist Erfolg | `TestE2E_DeliverPdfEmptyBody` | hart (2xx, Exit 0); Body: Messung |
 | 25 | Quota-Header `X-Remaining-Quota`, `X-Consumed-Quota` | vorhanden und ganzzahlig | `TestE2E_QuotaHeadersPresent` | hart |
 | 26 | Person `default` als String | Request `"true"`/`"false"`; Antwort Boolean (gemessen) | `TestE2E_PersonDefaultIsString` | hart |
-| 27 | **Entscheidung offen (Pascal):** `PAPIERKRAM_COMPANY`/`company` aus der Projektdatei als Default für `person … --company`? | keine Voreinstellung; nur Anzeige in `local show` | – | keine API-Frage, nicht gemessen |
+| 27 | `PAPIERKRAM_COMPANY`/`company` aus der Projektdatei als Default für `person … --company` | Voreinstellung wie die übrigen: Flag > `PAPIERKRAM_COMPANY` > Projektdatei; ohne Wert Exit 2 | – | entschieden und umgesetzt (Task 9); keine API-Frage, nicht gemessen |
 | 28 | `document_date` Pflicht beim Anlegen | Angebot: Pflicht (gemessen); Rechnung: nicht Pflicht | `TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate` (Rechnung); Angebot indirekt in `TestE2E_DeliverPdfEmptyBody` | Messung |
 | 29 | `invoice update --customer X` ohne Kontaktperson/Projekt | gleicher Kunde: Kontaktperson und Projekt aus der gelesenen Rechnung mitgesendet; anderer Kunde: entfallen (Hinweis) | `TestE2E_Carries/14_InvoiceUpdateSameCustomer` | entschieden und umgesetzt (Task 8); hart |
 
@@ -230,11 +230,11 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **E2E:** `TestE2E_PersonDefaultIsString` (hart).
 - **Gemessen 2026-11-04 (erster Live-Lauf):** `person create --default` (gesendet als String `"true"`) wurde angenommen und gespeichert; die Antwort liefert `default` als **Boolean** `true` (JSON-Typ `boolean`), wie es das Response-Schema schon sagt. Der Request bleibt laut Spec ein String; ein Rundlauf `person describe -o json | person update --input -` wandelt das Boolean wieder in `"true"`/`"false"` um.
 
-### 27. Entscheidung offen (Pascal): `company` als Voreinstellung?
+### 27. `company` als Voreinstellung
 
-- **Offen:** Soll `PAPIERKRAM_COMPANY` bzw. `company` aus der Projektdatei künftig `--company` der `person`-Befehle (`person list|describe|create|update|delete`, dort Pflicht) vorbelegen? Spec 9.8 nennt den Schlüssel im Beispiel, aber keinen Befehl, der ihn nutzt.
-- **Stand des CLI:** Keine Voreinstellung. `local init --company` schreibt den Wert, `local show` zeigt ihn mit Herkunft an; kein Befehl verwendet ihn als Standardwert. Das README sagt das ausdrücklich.
-- **E2E:** Keine API-Frage, daher kein Test. Entscheidet Pascal für die Voreinstellung, braucht es eine eigene Task (Spec 9.8, `default_from` in `commands --json`, Tests).
+- **Frage:** Soll `PAPIERKRAM_COMPANY` bzw. `company` aus der Projektdatei `--company` der `person`-Befehle (`person list|describe|create|update|delete`, dort Pflicht) vorbelegen? Spec 9.8 nannte den Schlüssel im Beispiel, aber keinen Befehl, der ihn nutzt.
+- **Entschieden und umgesetzt (Task 9):** Ja, mit derselben Mechanik und Priorität wie die übrigen Voreinstellungen: Flag > `PAPIERKRAM_COMPANY` > `company` der Projektdatei (nur im Kontext der Datei, sonst Warnung) > keine; einen Kontext-Default gibt es nicht. Ein genutzter Wert steht als Hinweis auf stderr („Hinweis: Firma 2843 aus PAPIERKRAM_COMPANY“). Ohne Wert bleibt es Exit 2 („Pflichtangabe --company fehlt“, Hinweis auf die Quellen); ein ungültiger Wert in `PAPIERKRAM_COMPANY` ist Exit 2 ohne Anfrage. Die Person-ID bleibt Pflicht. `commands --json` nennt für `--company` `default_from` (`flag`, `env`, `projectfile`) und `env` `PAPIERKRAM_COMPANY`; `required` bleibt `true`.
+- **E2E:** Keine API-Frage, daher kein Live-Test; die Tests in `internal/cli` decken alle fünf Befehle ab.
 
 ### 28. `document_date` Pflicht beim Anlegen
 

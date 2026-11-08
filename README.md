@@ -159,10 +159,10 @@ papierkram local show
 ```
 
 - **Suche:** im aktuellen Verzeichnis; liegt es in einem Git-Repository, aufwärts bis einschließlich zur Git-Wurzel, nie darüber hinaus. Außerhalb von Git nur im aktuellen Verzeichnis.
-- **Vorrang:** Flag > Umgebungsvariable (`PAPIERKRAM_PROJECT`, `PAPIERKRAM_TASK`, `PAPIERKRAM_USER`) > Projektdatei > Kontext (nur `user`).
-- **Genutzt von:** `time log` und `time start` (Aufgabe, Benutzer; `--task` nimmt auch einen Alias aus `[tasks]`), `time list`, `task list`, `task create` und `project describe` ohne ID (Projekt). `company` ist **keine** Voreinstellung: kein Befehl nutzt sie, `local show` zeigt sie nur an (ob sie künftig `person … --company` vorbelegt, ist offen, siehe [offene Punkte](docs/offene-punkte.md)).
+- **Vorrang:** Flag > Umgebungsvariable (`PAPIERKRAM_COMPANY`, `PAPIERKRAM_PROJECT`, `PAPIERKRAM_TASK`, `PAPIERKRAM_USER`) > Projektdatei > Kontext (nur `user`).
+- **Genutzt von:** `person list|create|describe|update|delete` (Firma für `--company`; die Person-ID bleibt Pflicht), `time log` und `time start` (Aufgabe, Benutzer; `--task` nimmt auch einen Alias aus `[tasks]`), `time list`, `task list`, `task create` und `project describe` ohne ID (Projekt).
 - **Kontextbindung:** Nennt die Datei einen `context`, gelten ihre IDs nur, wenn genau dieser Kontext wirksam ist. Wählt `--context` oder `PAPIERKRAM_CONTEXT` einen anderen, ignoriert das CLI die Werte der Datei mit einer Warnung, damit keine ID im falschen Account landet.
-- `papierkram local show` zeigt die wirksamen Werte mit Herkunft (`flag`, `env`, `projectfile`, `config`, `context`, `default`). Die Zeile `company` (aus `PAPIERKRAM_COMPANY` oder der Projektdatei) ist nur Anzeige und wird von keinem Befehl als Standardwert verwendet. `local init` fragt im Terminal ohne Flags jeden Wert ab.
+- `papierkram local show` zeigt die wirksamen Werte mit Herkunft (`flag`, `env`, `projectfile`, `config`, `context`, `default`). Die Zeile `company` (aus `PAPIERKRAM_COMPANY` oder der Projektdatei) ist der Wert, den `person … --company` ohne Flag nutzt. `local init` fragt im Terminal ohne Flags jeden Wert ab.
 
 **Sicherheitshinweise:** Eine Projektdatei kann aus einem fremden, geklonten Repository stammen. Das CLI behandelt sie deshalb als nicht vertrauenswürdig:
 
@@ -300,7 +300,7 @@ Zusammengesetzte Befehle kosten die Summe: `deliver` 2 (Versand und Nachlesen), 
 | `PAPIERKRAM_PROJECT` | Projekt-ID für `time list`, `task list`, `task create` und `project describe` ohne ID (vor der Projektdatei) |
 | `PAPIERKRAM_TASK` | Aufgabe (ID oder Alias aus `[tasks]`) für `time log` und `time start` |
 | `PAPIERKRAM_USER` | Benutzer-ID für `time log` und `time start` |
-| `PAPIERKRAM_COMPANY` | Firmen-ID, **keine** Voreinstellung: wird nur von `local show` angezeigt, kein Befehl verwendet sie als Standardwert |
+| `PAPIERKRAM_COMPANY` | Firmen-ID für `--company` von `person list\|create\|describe\|update\|delete` (vor der Projektdatei) |
 | `NO_COLOR` | nicht leer: keine Farben |
 
 Die Variablen `PAPIERKRAM_E2E_*` nutzt nur die Live-E2E-Suite, siehe [e2e/README.md](e2e/README.md).

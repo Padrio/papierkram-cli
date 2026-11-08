@@ -121,7 +121,7 @@ Die zweite Zeile listet überfällige Rechnungen (Fälligkeit vor heute, UTC), d
 
 ## Ablauf 4: Zeiten erfassen und abrechnen
 
-Standardwerte für ein Verzeichnis (Projekt, Aufgabe, Benutzer) legt die Projektdatei `.papierkram.toml` fest; `local show` zeigt, was gilt. Aufgaben-Aliase aus `[tasks]` gehen statt IDs. `local init` nur auf Wunsch des Nutzers: Es schreibt die Projektdatei neu (Kommentare gehen verloren) und kennt kein `--dry-run`; deshalb vorher `local show` lesen und die geplante Änderung nennen:
+Standardwerte für ein Verzeichnis (Firma, Projekt, Aufgabe, Benutzer) legt die Projektdatei `.papierkram.toml` fest; `local show` zeigt, was gilt. Aufgaben-Aliase aus `[tasks]` gehen statt IDs. `local init` nur auf Wunsch des Nutzers: Es schreibt die Projektdatei neu (Kommentare gehen verloren) und kennt kein `--dry-run`; deshalb vorher `local show` lesen und die geplante Änderung nennen:
 
 ```sh
 papierkram local show -o json --no-input

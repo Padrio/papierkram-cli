@@ -345,7 +345,7 @@ maintenance = 58
 ```
 - Suche: aktuelles Verzeichnis; liegt es in einem Git-Repo, aufwärts bis einschließlich Git-Wurzel; außerhalb von Git nur das aktuelle Verzeichnis. Nie darüber hinaus.
 - Priorität: Flag > Env (`PAPIERKRAM_PROJECT`, `PAPIERKRAM_TASK`, …) > Projektdatei > Kontext-Defaults > eingebauter Default.
-- Genutzt von `time log|start|stop|list`, `task list|create`, `project describe` ohne ID **[Call]**. `--task` akzeptiert ID oder Alias aus `[tasks]`.
+- Genutzt von `time log|start|stop|list`, `task list|create`, `project describe` ohne ID **[Call]**, `person list|create|describe|update|delete` (`--company`; offener Punkt 27, entschieden: Pfad-Flag, bleibt Pflicht, Person-ID bleibt Pflicht, Quellen Flag > `PAPIERKRAM_COMPANY` > `company` der Projektdatei, kein Kontext-Default; `default_from` in `commands --json`). `--task` akzeptiert ID oder Alias aus `[tasks]`.
 - Enthält keine Secrets; unbekannte Schlüssel → Warnung, kein Fehler.
 - `papierkram local show` zeigt die wirksamen Werte mit Herkunft.
 

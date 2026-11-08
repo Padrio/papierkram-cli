@@ -197,6 +197,7 @@ Papierkram berechnet Monats-Credits; danach 429 (Exit 6). `credits` in `commands
 
 - Kontexte: `--context <name>` wählt einen Kontext; `papierkram auth status -o json` zeigt den wirksamen Kontext, Token-Quelle und Schreibschutz (`read_only`, `read_only_source`).
 - IDs statt Namen: Flags nehmen IDs (`--customer 3214`), keine Namen. IDs liefert `list`.
+- Voreinstellungen: Fehlt ein Flag mit `default_from` in `commands --json`, nimmt das CLI den Wert aus den dort genannten Quellen: der Variablen aus `env` (z. B. `PAPIERKRAM_COMPANY` für `person … --company`), der Projektdatei `.papierkram.toml` und bei `user` dem Kontext. Die Quelle steht auf stderr (`Hinweis: Firma 2843 aus PAPIERKRAM_COMPANY`). Fehlt der Wert einer Pflichtangabe überall, sendet der Befehl nichts (`person … --company`: Exit 2). Vor einer Änderung `papierkram local show -o json` lesen, damit keine unerwartete Voreinstellung greift.
 - Steuersätze: `vat=19`, `19%`, `0.19` und `0,19` ergeben 0.19.
 - Relative Daten (`heute`/`today`, `gestern`/`yesterday`), eine Regel: Zeiterfassung (`time …`): Tag der Rechneruhr; Belege, Zahlungen, Datumsfilter: Berliner Tag (Europe/Berlin, auch in einem UTC-Container). Zur Zeiterfassung gehören `time create`, `time update`, `time log`, `time stop` und `time list --since`/`--until`; so passen Datum und Uhrzeiten eines Eintrags zusammen, und `time list --since heute` findet den gerade gebuchten Eintrag.
 - Positionen ändern: `update` mit `--item`/`--items` verlangt `--replace-items` und ersetzt **alle** Positionen.
