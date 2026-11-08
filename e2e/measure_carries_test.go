@@ -305,6 +305,38 @@ func TestE2E_Carries(t *testing.T) {
 		slices.Sort(paths)
 		s.measuref(t, "GET /info Struktur", "%s", strings.Join(paths, ", "))
 	})
+
+	// 14. invoice update --customer with the invoice's own customer keeps
+	// contact person and project (open point 29, task 8): the CLI reads
+	// the invoice (with its payment term) and sends both below customer.
+	// Run 2 (2026-11-04) measured that a PUT without them clears both.
+	// The keys of the sent body are logged (no values). Hard.
+	t.Run("14_InvoiceUpdateSameCustomer", func(t *testing.T) {
+		inv := idOf(s.invoice(t))
+		s.need(t, 4)
+		before := s.ok(t, "", "invoice", "describe", ids(inv))
+		cust := str(get(before, "customer", "id"))
+		if cust == "" {
+			s.fatalf(t, "Rechnung ohne customer.id: nicht prüfbar")
+		}
+		r := s.run(t, "", "invoice", "update", ids(inv), "--customer", cust, "-o", "json")
+		if x := lastExchange(r, "PUT", "/income/invoices/"+ids(inv)); x != nil {
+			s.measuref(t, "Rechnung gleicher Kunde", "gesendet Schlüssel %s", keyShape(lastBody(x)))
+		}
+		if r.code != 0 {
+			s.fatalf(t, "invoice update --customer (gleicher Kunde): Exit %d\n%s", r.code, r.stderr)
+		}
+		after := s.ok(t, "", "invoice", "describe", ids(inv))
+		for _, k := range []string{"contact_person", "project"} {
+			b, a := str(get(before, k, "id")), str(get(after, k, "id"))
+			s.measuref(t, "Rechnung gleicher Kunde", "%s vorher %q, nachher %q", k, b, a)
+			if b == "" {
+				s.errorf(t, "Rechnung aus dem Angebot ohne %s: nicht prüfbar", k)
+			} else if a != b {
+				s.errorf(t, "invoice update --customer (gleicher Kunde) verliert %s (%s → %q)", k, b, a)
+			}
+		}
+	})
 }
 
 // lastBody is the decoded request body of x; nil without x or JSON.

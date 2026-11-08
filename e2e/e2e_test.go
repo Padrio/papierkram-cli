@@ -45,8 +45,8 @@
 //	  delete 1, archive + unarchive 2, reverse + describe 2,
 //	  cancel + describe 2                                          69
 //	Carries: 13 subtests 37 (2 time entries of 10 in no. 12,
-//	  describe, update, describe in no. 6), no. 14 (geplant,
-//	  Task 8) 4                                                    41
+//	  describe, update, describe in no. 6), no. 14 describe,
+//	  read + update, describe 4                                    41
 //	OpenMeasurements (4 subtests): no. 28 invoice create without
 //	  document_date 50; no. 10 describe, api PUT, describe 3;
 //	  no. 13 read + update, describe, round trip update,
