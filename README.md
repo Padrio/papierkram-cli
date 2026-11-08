@@ -104,7 +104,7 @@ Jede Ressource ist ein Befehl mit Unterbefehlen (`list`, `describe`, `create`, `
 | `person` | `kontaktperson` | Kontaktpersonen einer Firma (`--company`, auch aus `PAPIERKRAM_COMPANY` oder der Projektdatei) |
 | `invoice` | `rechnung` | Rechnungen: anlegen (auch `--from-estimate`), ändern, `deliver`, `pdf`, `cancel`, archivieren, löschen |
 | `estimate` | `angebot` | Angebote: anlegen, ändern, `deliver`, `pdf`, `cancel`, archivieren, löschen |
-| `voucher` | `beleg`, `expense` | Belege (Ausgaben): anlegen (auch `--file`), `upload`, `document delete`, `pay`, `reverse`, `cancel`, `pdf`, archivieren, löschen |
+| `voucher` | `beleg`, `expense` | Belege (Ausgaben): anlegen (auch `--file`), ändern, `upload`, `document delete`, `pay`, `reverse`, `cancel`, `pdf`, archivieren, löschen |
 | `proposition` | `artikel`, `leistung` | Artikel und Leistungen für Positionen |
 | `payment-term` | `zahlungsbedingung` | Zahlungsbedingungen anzeigen (nur lesen) |
 | `project` | `projekt` | Projekte |
@@ -117,7 +117,7 @@ Jede Ressource ist ein Befehl mit Unterbefehlen (`list`, `describe`, `create`, `
 | `info` | – | Account-Informationen inkl. Rechnungsvorlagen |
 | `api` | – | beliebige Anfrage an die API (wie `gh api`), mit denselben Schutzregeln |
 
-Dazu kommen die lokalen Befehle `context`, `auth`, `local`, `commands`, `schema`, `completion` und `version`.
+Dazu kommen `context`, `local`, `commands`, `schema`, `completion` und `version` (lokal, ohne Credits) sowie `auth` (`login` und `status` prüfen per `GET /info`, je 1 Credit; `logout` ist lokal).
 
 ## Kontexte
 
@@ -373,14 +373,14 @@ Fehler stehen auf stderr als `Fehler: …` mit `Hinweis: …` und ggf. `Correlat
 
 ## Eigenheiten der API
 
-Live gemessen gegen einen Sandbox-Account (Läufe 1 bis 4 am 2026-11-04; die Messungen der Läufe danach und alle Einzelheiten stehen in [docs/offene-punkte.md](docs/offene-punkte.md)):
+Gemessen gegen einen Sandbox-Account (Läufe 1 bis 4 am 2026-11-04) bzw. entschieden, wie das CLI damit umgeht; Einzelheiten und spätere Messungen stehen in [docs/offene-punkte.md](docs/offene-punkte.md):
 
 - **Angebote brauchen ein Datum:** `estimate create` ohne `--document-date` lehnt die API ab und berechnet trotzdem 50 Credits; das CLI prüft das deshalb vorher (Exit 5).
 - **Abgelehnte Anfragen kosten:** Auch ein mit 422 abgelehntes Anlegen kostet die vollen Credits.
 - **Rechnung ändern:** Ein `PUT` ohne Zahlungsbedingung stellt eine Rechnung auf die Standard-Zahlungsbedingung des Accounts um und ändert das Fälligkeitsdatum. `invoice update` liest die Rechnung deshalb vorher und sendet ihre aktuelle Zahlungsbedingung mit (1 Credit mehr; nicht mit `--payment-term` oder `payment_term` in `--input`). `papierkram api PUT` liest nicht.
 - **Kontaktperson und Projekt einer Rechnung** (offener Punkt 29): Ein `PUT`, dessen Kunde keine Kontaktperson und kein Projekt nennt, leert beide, auch beim selben Kunden. `invoice update --customer` ohne `--contact-person`/`--customer-project` nutzt dasselbe Lesen: Beim Kunden der Rechnung sendet es Kontaktperson und Projekt mit, bei einem anderen Kunden entfallen sie (Hinweis auf stderr; neu setzen per `--contact-person`/`--customer-project`); `papierkram api PUT` tut das nicht.
 - **Firma für Kontaktpersonen** (Punkt 27): Die API erwartet die Firma im Pfad jedes `person`-Befehls; `--company` kommt ohne Flag aus `PAPIERKRAM_COMPANY` oder `company` der Projektdatei (Hinweis auf stderr), fehlt der Wert überall, endet der Befehl mit Exit 2 ohne Anfrage.
-- **Ende um Mitternacht** (Punkt 22): Die API nimmt `ended_at_time` `00:00` und `24:00` nach einem Beginn um 23:00 an, je als eine Stunde. Das CLI sendet ein Ende genau um Mitternacht immer als `24:00` und lehnt andere Einträge über Mitternacht ab (Exit 2), weil ein Zeiteintrag nur ein Datum hat.
+- **Ende um Mitternacht** (Punkt 22): Die API nimmt `ended_at_time` `00:00` und `24:00` nach einem Beginn um 23:00 an, je als eine Stunde. `time log` und `time stop` senden ein Ende genau um Mitternacht als `24:00` (`time create|update` senden `--ended-at-time` unverändert); andere Einträge über Mitternacht lehnen `time log` und `time stop` ab (Exit 2), weil ein Zeiteintrag nur ein Datum hat.
 - **Der Timer ist lokal:** Papierkram kennt keinen laufenden Timer und sperrt nichts; zwei `time stop` desselben Timers würden zwei Einträge buchen. `time stop` beansprucht den Timer deshalb direkt vor dem Senden; ein zweiter Stopp endet mit Exit 7 ohne Anfrage (siehe [Zeiterfassung](#zeiterfassung)).
 - **`--billable-duration` ist wirkungslos:** Gemessen wurde 1800 Sekunden bei einem Eintrag von 90 Minuten; gespeichert war beim Anlegen und beim Ändern die Dauer (5400).
 - **PDF-Versand:** `deliver --via pdf` vergibt die Nummer und setzt den Status (z. B. `sent`), aber weder `sent_on` noch `sent_via`.

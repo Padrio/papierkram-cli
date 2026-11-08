@@ -7,14 +7,14 @@ Die Suite unterscheidet zwei Arten von Prüfungen:
 - **hart:** Das CLI verlässt sich auf das Verhalten; weicht die API ab, schlägt der Test fehl.
 - **Messung:** Das Ergebnis steht im Log mit dem Präfix `MESSUNG`; weicht es von der Annahme des CLI ab, zusätzlich mit `ABWEICHUNG:` und in der Zusammenfassung am Ende des Laufs. Eine Messung schlägt nicht fehl.
 
-Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -tags e2e -run 'TestE2E_Carries/01_DeadlineISO' ./e2e/...`). Stand: Die Live-Läufe 1 bis 4 gegen einen Sandbox-Account fanden am 2026-11-04 statt; ihre Ergebnisse stehen bei den Punkten unter **Gemessen 2026-11-04**. Live-Lauf 5 mit den neuen Prüfungen (`TestE2E_InvoiceFlow`, `TestE2E_VoucherFlow`, `TestE2E_TimeFlow`, `TestE2E_MasterDataArchive`, `TestE2E_ReadCommands`, `TestE2E_OpenMeasurements`) steht aus; Punkte, die er misst, tragen „Messung in Live-Lauf 5 ausstehend“. Viele Prüfungen scheiterten in diesem Lauf an einer Vorbedingung (Angebot ohne `document_date`, Account als Kleinunternehmer ohne Umsatzsteuer); diese Punkte sind weiterhin **nicht live beantwortet**.
+Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -tags e2e -run 'TestE2E_Carries/01_DeadlineISO' ./e2e/...`). Stand: Die Live-Läufe 1 bis 4 gegen einen Sandbox-Account fanden am 2026-11-04 statt; ihre Ergebnisse stehen bei den Punkten unter **Gemessen 2026-11-04**. Live-Lauf 5 mit den neuen Prüfungen (`TestE2E_InvoiceFlow`, `TestE2E_VoucherFlow`, `TestE2E_TimeFlow`, `TestE2E_MasterDataArchive`, `TestE2E_ReadCommands`, `TestE2E_OpenMeasurements`, `TestE2E_Carries/12_MidnightEnd` in der Form über `time log`, `TestE2E_Carries/14_InvoiceUpdateSameCustomer`) steht aus; Punkte, die er misst, tragen „Messung in Live-Lauf 5 ausstehend“. Viele Prüfungen scheiterten in diesem Lauf an einer Vorbedingung (Angebot ohne `document_date`, Account als Kleinunternehmer ohne Umsatzsteuer); diese Punkte sind weiterhin **nicht live beantwortet**.
 
 ## Übersicht
 
 | Nr. | Punkt | Annahme des CLI | E2E-Test | Art |
 |---|---|---|---|---|
 | 1 | Statuswerte (`state`) der Belege | `state` wird roh angezeigt, nicht geprüft | `TestE2E_VoucherStateValues`, `TestE2E_InvoiceFlow`, `TestE2E_VoucherFlow` | Messung (Lebenszyklus: Lauf 5 ausstehend) |
-| 2 | Erlaubte Upload-MIME-Typen | keine lokale Einschränkung; gemessen: PDF, PNG, JPG ja, TXT HTTP 500 | `TestE2E_UploadMimeTypes`, `TestE2E_VoucherFlow` | PDF hart, sonst Messung |
+| 2 | Erlaubte Upload-MIME-Typen | keine lokale Einschränkung; gemessen: PDF, PNG, JPG ja, TXT HTTP 500 | `TestE2E_UploadMimeTypes`, `TestE2E_VoucherFlow` | PDF hart, sonst Messung (`TestE2E_VoucherFlow`: Lauf 5 ausstehend) |
 | 3 | Maximale Upload-Dateigröße | keine lokale Grenze | – | **bewusst nicht gemessen** |
 | 4 | `0.19` ergibt 19 % (Position und Artikel) | `0.19` als Zahl bzw. beim Artikel als String `"0.19"` | `TestE2E_VatRate019Is19Percent/Position`, `TestE2E_VatRate019Is19Percent/Artikel` | hart |
 | 5 | Kosten von `GET /info` | 1 Credit | `TestE2E_InfoCreditCost` | Messung |
@@ -28,20 +28,20 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 13 | `supply_date` im Antwortformat und Kontaktperson/Projekt im Rundlauf | Kontaktperson und Projekt werden unter `customer` mitgesendet und bleiben (gemessen Lauf 3 und 4); `supply_date` kommt im Rundlauf unverändert zurück | `TestE2E_OpenMeasurements/13_InvoiceSupplyDate` (`supply_date`); Kontaktperson und Projekt hart in `TestE2E_Carries/02_InvoiceRoundTrip` | Messung (`supply_date`: Lauf 5 ausstehend) |
 | 14 | Werte von `due_time_unit` | meist `day`; die Tabelle zeigt `ZIEL` und `EINHEIT` getrennt | `TestE2E_Carries/05_PaymentTermUnits` | Messung |
 | 15 | Einheit von `billable_duration` | Sekunden; die API ignoriert den Wert beim Anlegen und Ändern (gemessen) | `TestE2E_Carries/06_BillableDurationSeconds` | Messung |
-| 16 | Setzt `deliver --via pdf` `sent_on`? | nein (gemessen); abgebrochener PDF-Versand endet mit Exit 12 | `TestE2E_Carries/07_DeliverPdfSentOn`, `TestE2E_InvoiceFlow` | Messung |
+| 16 | Setzt `deliver --via pdf` `sent_on`? | nein (gemessen); abgebrochener PDF-Versand endet mit Exit 12 | `TestE2E_Carries/07_DeliverPdfSentOn`, `TestE2E_InvoiceFlow` | Messung (Rechnung: Lauf 5 ausstehend) |
 | 17 | `Accept` beim PDF-Download | `application/pdf, application/json;q=0.9` ergibt 200 `application/pdf` | `TestE2E_Carries/08_PDFDownloadAccept` | hart |
 | 18 | `price_gross: 0.0` bei `gross: false` (`--from-estimate`) | wird akzeptiert | `TestE2E_Carries/09_FromEstimatePriceGrossZero` | hart |
 | 19 | `voucher pay`: `value: null` mit Bankumsatz | wird akzeptiert | `TestE2E_Carries/10_VoucherPayValueNull` | Messung |
 | 20 | `voucher pay`: Betrag und Bankumsatz zusammen | beide werden gesendet | – | **bewusst nicht gemessen** |
 | 21 | Dauer an Tagen der Zeitumstellung | Wanduhr-Differenz | `TestE2E_Carries/11_DurationWallClock` (nur normaler Tag) | hart; Umstellungstag **bewusst nicht gemessen** |
-| 22 | Ende um Mitternacht (`00:00`, `24:00`) | erlaubt: `time log --to 00:00`/`24:00` und `time stop` in der ersten Minute nach Mitternacht senden `24:00`; andere Einträge über Mitternacht Exit 2 | `TestE2E_Carries/12_MidnightEnd` | entschieden und umgesetzt (Task 10); hart |
+| 22 | Ende um Mitternacht (`00:00`, `24:00`) | erlaubt: `time log --to 00:00`/`24:00` und `time stop` in der ersten Minute nach Mitternacht senden `24:00`; andere Einträge über Mitternacht Exit 2 | `TestE2E_Carries/12_MidnightEnd` | entschieden und umgesetzt (Task 10); hart (über `time log`: Lauf 5 ausstehend) |
 | 23 | Antwort von `GET /info` ohne Schema | JSON wird unverändert ausgegeben | `TestE2E_Carries/13_InfoStructure` | Messung |
 | 24 | `deliver` antwortet mit leerem Body | leerer 2xx-Body ist Erfolg | `TestE2E_DeliverPdfEmptyBody` | hart (2xx, Exit 0); Body: Messung |
 | 25 | Quota-Header `X-Remaining-Quota`, `X-Consumed-Quota` | vorhanden und ganzzahlig | `TestE2E_QuotaHeadersPresent` | hart |
 | 26 | Person `default` als String | Request `"true"`/`"false"`; Antwort Boolean (gemessen) | `TestE2E_PersonDefaultIsString` | hart |
 | 27 | `PAPIERKRAM_COMPANY`/`company` aus der Projektdatei als Default für `person … --company` | Voreinstellung wie die übrigen: Flag > `PAPIERKRAM_COMPANY` > Projektdatei; ohne Wert Exit 2 | – | entschieden und umgesetzt (Task 9); keine API-Frage, nicht gemessen |
 | 28 | `document_date` Pflicht beim Anlegen | Angebot: Pflicht (gemessen); Rechnung: nicht Pflicht | `TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate` (Rechnung); Angebot indirekt in `TestE2E_DeliverPdfEmptyBody` | Messung (Rechnung: Lauf 5 ausstehend) |
-| 29 | `invoice update --customer X` ohne Kontaktperson/Projekt | gleicher Kunde: Kontaktperson und Projekt aus der gelesenen Rechnung mitgesendet; anderer Kunde: entfallen (Hinweis) | `TestE2E_Carries/14_InvoiceUpdateSameCustomer` | entschieden und umgesetzt (Task 8); hart |
+| 29 | `invoice update --customer X` ohne Kontaktperson/Projekt | gleicher Kunde: Kontaktperson und Projekt aus der gelesenen Rechnung mitgesendet; anderer Kunde: entfallen (Hinweis) | `TestE2E_Carries/14_InvoiceUpdateSameCustomer` | entschieden und umgesetzt (Task 8); hart (Lauf 5 ausstehend) |
 
 ## Punkte im Einzelnen
 
@@ -59,6 +59,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Annahme:** Keine lokale Einschränkung. Der MIME-Typ folgt aus der Dateiendung, unbekannte Endungen werden als `application/octet-stream` gesendet. Eine Ablehnung mit 4xx käme als Exit 5; gemessen lehnt die API TXT aber mit HTTP 500 ab (Exit 1, siehe unten).
 - **E2E:** `TestE2E_UploadMimeTypes` lädt PDF, PNG, JPG und TXT per `voucher upload` hoch. Hart nur für PDF, die übrigen sind Messung. `TestE2E_VoucherFlow` prüft hart, dass `voucher create --file beleg.pdf` mit Exit 0 endet (kein Exit 11) und der Beleg danach genau ein Dokument hat; die Schlüssel dieses Dokuments (ohne Werte) und der PDF-Download des Belegs (`voucher pdf`: Content-Type, Größe, beginnt mit `%PDF`) sind Messung.
 - **Gemessen 2026-11-04 (Lauf 2):** PDF, PNG und JPG nimmt die API an (HTTP 201). TXT lehnt sie mit **HTTP 500** („Internal server error.“) ab statt mit 4xx (andere Typen nicht gemessen); das CLI meldet das als Exit 1 (`server_error`), bei `voucher create --file` als Exit 11 mit „Ergebnis des Hochladens unbekannt“. Ein Upload eines nicht unterstützten Typs ist also nicht vorübergehend: nicht blind wiederholen, sondern den Dateityp ändern.
+- **Stand:** Prüfung von `voucher create --file` (`TestE2E_VoucherFlow`) in Live-Lauf 5 ausstehend.
 
 ### 3. Maximale Upload-Dateigröße — bewusst nicht gemessen
 
@@ -163,6 +164,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Annahme:** Bricht die Verbindung nach dem Senden ab, liest `deliver` den Beleg nach: `sent_on` von heute ergibt Exit 0 mit Warnung, sonst Exit 12. Setzt die API `sent_on` bei `--via pdf` nicht, endet dieser Fall immer mit Exit 12 (sicher, aber unnötig vorsichtig).
 - **E2E:** `TestE2E_Carries/07_DeliverPdfSentOn` (Messung, Angebot); `TestE2E_InvoiceFlow` misst dasselbe für eine Rechnung (`sent_on`, `sent_via`, `state`, `invoice_no` nach `invoice deliver --via pdf`).
 - **Gemessen 2026-11-04 (Lauf 2):** **nein.** `deliver --via pdf` antwortet 204 ohne Body; danach sind `sent_on`, `sent_via` und `sent_to` `null`, `state` ist `sent`, die Nummer (`A-00001`) ist vergeben. Folge: Bricht die Verbindung bei einem PDF-Versand ab, endet `deliver` immer mit Exit 12; die Meldung sagt jetzt, dass die API bei `--via pdf` kein `sent_on` setzt, und nennt `state`. `state` allein ist kein Beweis (der Beleg kann schon früher versendet worden sein), deshalb bleibt es bei Exit 12.
+- **Stand:** Messung an einer Rechnung (`TestE2E_InvoiceFlow`) in Live-Lauf 5 ausstehend.
 
 ### 17. `Accept` beim PDF-Download
 
@@ -204,6 +206,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Gemessen 2026-11-04 (Lauf 2, über `papierkram api`):** Die API nimmt beide an: 23:00–00:00 und 23:00–24:00 ergeben je `duration` 3600 und `ended_at` 00:00 des Folgetags. Damals lehnte das CLI ein Ende um Mitternacht mit Exit 2 ab (Ruling E2E-Mitternacht, inzwischen ersetzt).
 - **Entschieden und umgesetzt (Task 10):** Ein Ende genau um Mitternacht ist erlaubt. `time log --to 24:00` und, bei Beginn nach 00:00, `--to 00:00` enden um Mitternacht am Ende des Datums, ebenso `--from 23:00 --duration 1h`; gesendet wird `ended_at_time` `"24:00"` (eindeutig als Tagesende). `--from 00:00 --to 24:00` ist der ganze Tag (00:00–24:00 live nicht gemessen; gemessen sind nur 23:00–00:00 und 23:00–24:00), `--from 00:00 --to 00:00` bleibt Dauer 0 und `--from 24:00` ungültig (je Exit 2). `time stop` bucht einen Timer, der zwischen 00:00:00 und 00:00:59 des Folgetags stoppt, bis `24:00` des Starttags. Andere Einträge über Mitternacht bleiben Exit 2; der Hinweis nennt die zwei Einträge (bis `24:00` und ab `00:00` am Folgetag). Das Overlay (Abschnitt 14) erlaubt `24:00` nur für `ended_at_time` (POST und PUT), sodass auch `time create|update --ended-at-time 24:00` gesendet wird; `--started-at-time 24:00` ist Exit 5.
 - **E2E:** `TestE2E_Carries/12_MidnightEnd` (hart, 22 Credits): `time log --date 2026-06-10 --from 23:00 --to 00:00` und `--to 24:00` müssen mit Exit 0 enden und in ihrer Antwort `duration` 3600 haben; `ended_at` und das gesendete `ended_at_time` stehen als Messung im Log.
+- **Stand:** Prüfung über `time log` in Live-Lauf 5 ausstehend (gemessen ist bisher nur die API selbst, Lauf 2).
 
 ### 23. Antwort von `GET /info`
 
@@ -253,4 +256,5 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 
 - **Gemessen 2026-11-04 (Lauf 2):** Ein Rechnungs-`PUT` mit `customer` ohne `contact_person`/`project` leert beide, auch beim selben Kunden (damals im Rundlauf, der `customer` als `{id}` sendete).
 - **Entschieden und umgesetzt (Task 8):** `invoice update --customer X` ohne `--contact-person`/`--customer-project` nutzt das Lesen der Zahlungsbedingung (Spec 9.4a), einmal für beide Zwecke. Ist X der Kunde der Rechnung, sendet es deren Kontaktperson und Projekt als `{id}` unter `customer` mit (Hinweis „Kontaktperson <id> und Projekt <id> der Rechnung mitgesendet (gleicher Kunde; ohne sie leert die API beide)“); bei einem anderen Kunden entfallen sie wie beim Rundlauf (Hinweis „Kunde X statt Y aus der Rechnung: … nicht übernommen“). Ein gesetztes Flag gewinnt. Das Lesen kostet 1 Credit, auch mit `--payment-term`.
-- **Live-Prüfung:** `TestE2E_Carries/14_InvoiceUpdateSameCustomer` (hart, 4 Credits): `invoice describe`, `invoice update <id> --customer <eigener Kunde>`, `invoice describe`; Kontaktperson und Projekt müssen unverändert sein.
+- **E2E:** `TestE2E_Carries/14_InvoiceUpdateSameCustomer` (hart, 4 Credits): `invoice describe`, `invoice update <id> --customer <eigener Kunde>`, `invoice describe`; Kontaktperson und Projekt müssen unverändert sein.
+- **Stand:** Prüfung in Live-Lauf 5 ausstehend.
