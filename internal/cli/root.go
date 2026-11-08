@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -82,8 +83,53 @@ var (
 		"time: invalid duration", "ungültige Dauer",
 		"invalid syntax", "ungültiges Format",
 		"value out of range", "Wert außerhalb des Bereichs",
+		// pflag (since 1.1.0) without the parser's error; reparseCause
+		// restores the detail, these are the fallback
+		"must be a non-negative integer", "ganze Zahl ab 0 erwartet",
+		"must be an integer", "ganze Zahl erwartet",
+		"must be a number", "Zahl erwartet (z. B. 12.5)",
+		"must be true or false", "Wahrheitswert erwartet (true oder false)",
+		`must be a duration like "30s" or "5m"`, "Dauer erwartet (z. B. 30s oder 5m)",
 	)
 )
+
+// reparseCause parses value (as quoted in the pflag error) the way pflag
+// does for a flag of pflag type typ and returns the parser's error. pflag
+// 1.1.0 replaced that error by a short text ("must be an integer"); the
+// parser's error keeps the detail (range, unit of a duration) that
+// germanCause translates. ok is false when typ is no scalar type of
+// pflag or value parses.
+func reparseCause(value, typ string) (cause string, ok bool) {
+	v, err := strconv.Unquote(value)
+	if err != nil {
+		return "", false
+	}
+	switch typ {
+	case "duration":
+		_, err = time.ParseDuration(v)
+	case "bool":
+		_, err = strconv.ParseBool(v)
+	case "int", "int8", "int16", "int32", "int64":
+		_, err = strconv.ParseInt(v, 0, bitSize(typ, "int"))
+	case "uint", "uint8", "uint16", "uint32", "uint64":
+		_, err = strconv.ParseUint(v, 0, bitSize(typ, "uint"))
+	case "float32", "float64":
+		_, err = strconv.ParseFloat(v, bitSize(typ, "float"))
+	default:
+		return "", false
+	}
+	if err == nil {
+		return "", false
+	}
+	return err.Error(), true
+}
+
+// bitSize is the bit size in a pflag type name ("int32" → 32; "int" → 0,
+// the size of int).
+func bitSize(typ, prefix string) int {
+	n, _ := strconv.Atoi(strings.TrimPrefix(typ, prefix))
+	return n
+}
 
 // expectedValue names what a flag of pflag type typ takes, for a value
 // strconv rejects ("invalid syntax"); "" for other types.
@@ -100,8 +146,13 @@ func expectedValue(typ string) string {
 }
 
 // germanCause translates the cause part of a pflag "invalid argument"
-// error of a flag of pflag type typ.
-func germanCause(s, typ string) string {
+// error for value (quoted as in the error) of a flag of pflag type typ.
+func germanCause(s, value, typ string) string {
+	if strings.HasPrefix(s, "must be ") {
+		if c, ok := reparseCause(value, typ); ok {
+			s = c
+		}
+	}
 	if strings.HasSuffix(s, ": invalid syntax") && expectedValue(typ) != "" {
 		return expectedValue(typ)
 	}
@@ -138,7 +189,7 @@ func germanFlagError(c *cobra.Command, err error) error {
 		msg = "ungültige Flag-Syntax: " + strings.TrimPrefix(msg, "bad flag syntax: ")
 	case invalidValueRe.MatchString(msg):
 		m := invalidValueRe.FindStringSubmatch(msg)
-		msg = fmt.Sprintf("ungültiger Wert %s für %s: %s", m[1], m[2], germanCause(m[3], flagTypeOf(c, m[2])))
+		msg = fmt.Sprintf("ungültiger Wert %s für %s: %s", m[1], m[2], germanCause(m[3], m[1], flagTypeOf(c, m[2])))
 	}
 	return clierr.New(clierr.CodeUsage, msg, usageHint(c))
 }

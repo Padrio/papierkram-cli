@@ -306,11 +306,20 @@ func TestGermanFlagUsagesAllTypes(t *testing.T) {
 	if m := englishFlagTypeRe.FindString(got); m != "" {
 		t.Errorf("englischer Typname %q:\n%s", m, got)
 	}
-	// Without type names and defaults the layout matches pflag exactly.
+	// Without type names and defaults the layout matches pflag exactly,
+	// except that pflag (since 1.1.0) writes bool flags as
+	// --yes[=true|false]; the help keeps the short form.
 	plain := pflag.NewFlagSet("y", pflag.ContinueOnError)
 	plain.BoolP("yes", "y", false, "bejahen")
 	plain.Bool("no-color", false, "Farben aus\nzweite Zeile")
-	if g, w := germanFlagUsages(plain), plain.FlagUsages(); g != w {
+	want := plain.FlagUsages()
+	if strings.Contains(want, "[=true|false]") {
+		// every row here is a bool, so the column shrinks by the suffix;
+		// continuation lines are indented to the column
+		want = strings.ReplaceAll(want, "[=true|false]", "")
+		want = strings.ReplaceAll(want, "\n"+strings.Repeat(" ", len("[=true|false]")), "\n")
+	}
+	if g, w := germanFlagUsages(plain), want; g != w {
 		t.Errorf("Layout weicht von pflag ab:\n%q\n%q", g, w)
 	}
 }
@@ -503,5 +512,25 @@ func TestGlobalFlagsRecordWhetherSet(t *testing.T) {
 	}
 	if !app.Flags.OutputSet || !app.Flags.TimeoutSet {
 		t.Errorf("explicit flags must count as set: %+v", app.Flags)
+	}
+}
+
+func TestGermanCauseReparse(t *testing.T) {
+	for _, tc := range []struct{ cause, value, typ, want string }{
+		{"must be an integer", `"abc"`, "int", "ganze Zahl erwartet"},
+		{"must be an integer", `"99999999999999999999"`, "int", "Wert außerhalb des Bereichs"},
+		{"must be a non-negative integer", `"-1"`, "uint", "ganze Zahl erwartet"},
+		{"must be a number", `"x"`, "float64", "Zahl erwartet (z. B. 12.5)"},
+		{"must be true or false", `"maybe"`, "bool", "Wahrheitswert erwartet (true oder false)"},
+		{`must be a duration like "30s" or "5m"`, `"1x"`, "duration", `ungültige Dauer "1x": unbekannte Einheit "x" (erlaubt: ms, s, m, h)`},
+		{`must be a duration like "30s" or "5m"`, `"30"`, "duration", `ungültige Dauer "30": Einheit fehlt (z. B. 30s)`},
+		// fallback: no scalar type to reparse
+		{"must be an integer", `"abc"`, "", "ganze Zahl erwartet"},
+		{"must be a non-negative integer", `"x"`, "", "ganze Zahl ab 0 erwartet"},
+		{`must be a duration like "30s" or "5m"`, `"x"`, "", "Dauer erwartet (z. B. 30s oder 5m)"},
+	} {
+		if got := germanCause(tc.cause, tc.value, tc.typ); got != tc.want {
+			t.Errorf("germanCause(%q, %s, %q) = %q, erwartet %q", tc.cause, tc.value, tc.typ, got, tc.want)
+		}
 	}
 }

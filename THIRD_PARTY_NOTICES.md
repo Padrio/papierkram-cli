@@ -16,7 +16,7 @@ Diese Module bindet `go build` in das Binary `papierkram` der Release-Ziele (dar
 |---|---|---|---|
 | Go (Standardbibliothek und Laufzeit) | Version der Go-Toolchain des Builds (`papierkram version`) | BSD-3-Clause | alle |
 | `github.com/apapsch/go-jsonmerge/v2` | v2.0.0 | MIT | alle |
-| `github.com/cpuguy83/go-md2man/v2` | v2.0.6 | MIT | alle |
+| `github.com/cpuguy83/go-md2man/v2` | v2.0.7 | MIT | alle |
 | `github.com/danieljoos/wincred` | v1.2.3 | MIT | nur windows |
 | `github.com/getkin/kin-openapi` | v0.152.0 | MIT | alle |
 | `github.com/go-openapi/jsonpointer` | v0.23.1 | Apache-2.0 | alle |
@@ -25,8 +25,8 @@ Diese Module bindet `go build` in das Binary `papierkram` der Release-Ziele (dar
 | `github.com/godbus/dbus/v5` | v5.2.2 | BSD-2-Clause | nur linux |
 | `github.com/google/uuid` | v1.6.0 | BSD-3-Clause | alle |
 | `github.com/inconshreveable/mousetrap` | v1.1.0 | Apache-2.0 | nur windows |
-| `github.com/itchyny/gojq` | v0.12.19 | MIT | alle |
-| `github.com/itchyny/timefmt-go` | v0.1.8 | MIT | alle |
+| `github.com/itchyny/gojq` | v0.12.20 | MIT | alle |
+| `github.com/itchyny/timefmt-go` | v0.1.9 | MIT | alle |
 | `github.com/oapi-codegen/runtime` | v1.8.0 | Apache-2.0 | alle |
 | `github.com/oasdiff/yaml` | v0.1.1 | MIT AND BSD-3-Clause | alle |
 | `github.com/oasdiff/yaml3` | v0.0.14 | MIT AND Apache-2.0 | alle |
@@ -34,7 +34,7 @@ Diese Module bindet `go build` in das Binary `papierkram` der Release-Ziele (dar
 | `github.com/russross/blackfriday/v2` | v2.1.0 | BSD-2-Clause | alle |
 | `github.com/santhosh-tekuri/jsonschema/v6` | v6.0.3 | Apache-2.0 | alle |
 | `github.com/spf13/cobra` | v1.10.2 | Apache-2.0 | alle |
-| `github.com/spf13/pflag` | v1.0.9 | BSD-3-Clause | alle |
+| `github.com/spf13/pflag` | v1.1.0 | BSD-3-Clause | alle |
 | `github.com/zalando/go-keyring` | v0.2.8 | MIT | alle |
 | `golang.org/x/sys` | v0.49.0 | BSD-3-Clause | alle |
 | `golang.org/x/term` | v0.47.0 | BSD-3-Clause | alle |
@@ -146,7 +146,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### github.com/cpuguy83/go-md2man/v2 v2.0.6 – LICENSE.md
+### github.com/cpuguy83/go-md2man/v2 v2.0.7 – LICENSE.md
 
 ```text
 The MIT License (MIT)
@@ -975,7 +975,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
    limitations under the License.
 ```
 
-### github.com/itchyny/gojq v0.12.19 – LICENSE
+### github.com/itchyny/gojq v0.12.20 – LICENSE
 
 ```text
 The MIT License (MIT)
@@ -1001,12 +1001,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### github.com/itchyny/timefmt-go v0.1.8 – LICENSE
+### github.com/itchyny/timefmt-go v0.1.9 – LICENSE
 
 ```text
 The MIT License (MIT)
 
-Copyright (c) 2020-2025 itchyny
+Copyright (c) 2020-2026 itchyny
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1781,7 +1781,7 @@ Blackfriday is distributed under the Simplified BSD License:
       of your accepting any such warranty or additional liability.
 ```
 
-### github.com/spf13/pflag v1.0.9 – LICENSE
+### github.com/spf13/pflag v1.1.0 – LICENSE
 
 ```text
 Copyright (c) 2012 Alex Ogier. All rights reserved.
