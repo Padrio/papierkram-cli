@@ -6,15 +6,16 @@ updates:
     directory: /
     schedule:
       interval: weekly
-  # Direct requirements of go.mod only: no pull request for indirect
-  # modules, the tool oapi-codegen included (it is listed as indirect;
-  # bump it by hand, together with speakeasy-api/openapi).
+  # Version updates cover the direct requirements of go.mod (Dependabot's
+  # default for gomod): no pull request for indirect modules, the tool
+  # oapi-codegen included (it is listed as indirect; bump it by hand,
+  # together with speakeasy-api/openapi). No allow list on purpose: it
+  # would change nothing for version updates but also restrict security
+  # updates, which then could not fix a vulnerable indirect module.
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
-    allow:
-      - dependency-type: direct
     ignore:
       # pinned in go.mod: oapi-codegen v2.8.2 does not compile against
       # newer versions; bump only together with oapi-codegen
