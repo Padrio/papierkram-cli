@@ -113,8 +113,10 @@
 //	  unarchive exit 0; time flow: time log, the entry in time list
 //	  --since heute, archive and unarchive exit 0, the timer (start,
 //	  status, stop, status, stop again exit 2, start, discard; all but
-//	  stop without a request), the stopped entry 11:00-11:02 of today
-//	  with duration 120; master data: archive and unarchive of
+//	  stop without a request), the stopped entry from 10 to 8 minutes
+//	  before the start of the test (Berlin, same day; the test fails
+//	  before its first request when started before 01:15) with duration
+//	  120; master data: archive and unarchive of
 //	  company, project, task, proposition, custom attribute and
 //	  estimate exit 0; read commands: the person of the run in person
 //	  list, user and payment-term describe answer with the asked id,
