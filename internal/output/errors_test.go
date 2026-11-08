@@ -156,7 +156,7 @@ func TestPrintableDropsHarmlessFormatCharacters(t *testing.T) {
 // some terminals like \n: they become spaces like the other line
 // separators (\r, \v, \f), also in messages (L158).
 func TestPrintableLineSeparators(t *testing.T) {
-	for _, in := range []string{"a b", "a b"} {
+	for _, in := range []string{"a\u2028b", "a\u2029b"} {
 		if got := Printable(in); got != "a b" {
 			t.Errorf("Printable(%q) = %q", in, got)
 		}
