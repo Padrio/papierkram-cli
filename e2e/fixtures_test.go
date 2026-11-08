@@ -109,6 +109,19 @@ func (s *liveSuite) supplier(t *testing.T) int64 {
 	}))
 }
 
+// stornoSupplier is the creditor of TestE2E_VoucherFlow only: its voucher
+// is reversed and cancelled, so this company can at most be archived in
+// the cleanup, while s.supplier stays deletable (DeleteCompany 2xx,
+// ruling FR-C).
+func (s *liveSuite) stornoSupplier(t *testing.T) int64 {
+	return idOf(s.fixture(t, "storno-supplier", func() map[string]any {
+		s.need(t, 10)
+		name := s.prefix + "lieferant-storno"
+		return s.create(t, object{resource: "company", name: name},
+			"company", "create", "--name", name, "--contact-type", "supplier")
+	}))
+}
+
 // person is a contact person of the customer, created with --default
 // (sent as the string "true", spec 4.4).
 func (s *liveSuite) person(t *testing.T) map[string]any {

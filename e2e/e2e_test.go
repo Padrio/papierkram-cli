@@ -41,9 +41,9 @@
 //	  1; at most                                                    8
 //	TimeFlow: time log 10, list 1, archive + unarchive 2, stop
 //	  10, describe 1 (start, status, discard local: 0)             24
-//	VoucherFlow: create --file 60, describe 1, pdf 1, document
-//	  delete 1, archive + unarchive 2, reverse + describe 2,
-//	  cancel + describe 2                                          69
+//	VoucherFlow: own creditor 10, create --file 60, describe 1,
+//	  pdf 1, document delete 1, archive + unarchive 2, reverse +
+//	  describe 2, cancel + describe 2                              79
 //	Carries: 13 subtests 37 (2 time entries of 10 in no. 12,
 //	  describe, update, describe in no. 6), no. 14 describe,
 //	  read + update, describe 4                                    41
@@ -52,24 +52,26 @@
 //	  no. 13 read + update, describe, round trip update,
 //	  describe 5; no. 12 voucher update, describe, update,
 //	  describe 4                                                   62
-//	final cleanup: 1 delete per object (7 documents and 12 other
-//	  objects = 19); each of up to 3 final documents costs up to 3
-//	  more (cancel, delete, archive)                               28
-//	                                                     total    683
+//	final cleanup: 1 delete per object (7 documents and 13 other
+//	  objects = 20); the customer (and possibly the creditor of
+//	  VoucherFlow) can only be archived: +1 each, 2; each of up
+//	  to 3 final documents costs up to 3 more (cancel, delete,
+//	  archive), 9                                                  31
+//	                                                     total    696
 //
 // Not counted: a cancel or reverse (InvoiceFlow, VoucherFlow; 4 in all)
 // whose answer names an object other than its target registers that
 // follow-up object for the cleanup (followUp; none expected). Each costs
 // up to 2 there (delete, archive; never cancel), together at most 8, taken
-// from the margin of the reserve: worst case 691 in all, cleanup 60 of 62.
+// from the margin of the reserve: worst case 704 in all, cleanup 62 of 64.
 //
-// Of the budget, cleanupReserve = 62 is kept for the final cleanup: the
+// Of the budget, cleanupReserve = 64 is kept for the final cleanup: the
 // documented worst case (e2eguard.CleanupReserve) for the 7 documents
-// (2 estimates, up to 3 invoices, 2 vouchers; 4 each) and up to 12 other
-// objects (customer, supplier, person, project, task, article, custom
-// attribute, time entry fixture, 2 midnight time entries, the entries of
-// time log and time stop; 2 each), plus a margin of 10. Tests may use
-// 760 - 62 = 698 (planned: 655, margin 43). The meter (e2eguard.Meter)
+// (2 estimates, up to 3 invoices, 2 vouchers; 4 each) and up to 13 other
+// objects (customer, supplier, creditor of VoucherFlow, person, project,
+// task, article, custom attribute, time entry fixture, 2 midnight time
+// entries, the entries of time log and time stop; 2 each), plus a margin
+// of 10. Tests may use 760 - 64 = 696 (planned: 665, margin 31). The meter (e2eguard.Meter)
 // counts every sent request, rejected ones too, with max(documented cost,
 // X-Consumed-Quota), the header being the cost of that one request;
 // before the cleanup the transport refuses every request that would cut
@@ -182,8 +184,8 @@ const creditBudget = 760
 const _ = uint(799 - creditBudget)
 
 // cleanupReserve is the part of the budget kept for the final cleanup
-// (see the header): 7 documents, 12 other objects, margin 10 = 62.
-var cleanupReserve = e2eguard.CleanupReserve(7, 12, 10)
+// (see the header): 7 documents, 13 other objects, margin 10 = 64.
+var cleanupReserve = e2eguard.CleanupReserve(7, 13, 10)
 
 // suite is the live run; nil when the suite is skipped (skipReason).
 var (

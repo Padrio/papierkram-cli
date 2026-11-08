@@ -19,12 +19,16 @@ import (
 //
 // reverse runs before cancel on the same voucher (no second voucher, saves
 // 50 credits): both are status changes whose precondition is not known
-// live, so the measurement shows which state allows them.
+// live, so the measurement shows which state allows them. The voucher
+// books on a creditor of its own (stornoSupplier, 10 credits): after
+// reverse and cancel that company may only be archivable, and s.supplier
+// stays deletable for the cleanup (DeleteCompany).
 func TestE2E_VoucherFlow(t *testing.T) {
 	s := live(t)
 
-	// 1. create --file: create 50 and upload 10, hard exit 0
-	sup := s.supplier(t)
+	// 1. own creditor (10), then create --file: create 50 and upload 10,
+	// hard exit 0
+	sup := s.stornoSupplier(t)
 	file := filepath.Join(t.TempDir(), "beleg.pdf")
 	if err := os.WriteFile(file, minimalPDF, 0o600); err != nil {
 		s.fatalf(t, "%v", err)

@@ -142,7 +142,10 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
   Rechnung (`TestE2E_InvoiceFlow`), beide nur als PDF; danach versucht die
   Suite, beide zu stornieren. Die Rechnung erhält dabei eine Nummer aus dem
   Rechnungsnummernkreis der Sandbox. Einen eigenen Beleg bucht
-  `TestE2E_VoucherFlow` gegen (`reverse`) und storniert ihn.
+  `TestE2E_VoucherFlow` gegen (`reverse`) und storniert ihn; er gehört zu
+  einem eigenen Lieferanten (`pk-e2e-<runid>-lieferant-storno`), der danach
+  womöglich nur archiviert werden kann, damit der gemeinsame Lieferant
+  löschbar bleibt (`DeleteCompany` in der Abdeckung).
 - Nennt die Antwort auf `cancel` oder `reverse` ein anderes Objekt als das
   stornierte (ein Folgeobjekt mit eigener ID, z. B. eine Gegenbuchung), steht
   das als `ABWEICHUNG` im Log. Hat es denselben Typ (`type` der Antwort)
@@ -187,7 +190,7 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
 ## Credit-Budget
 
 Ein voller Lauf kostet nach den dokumentierten Preisen (Abschnitt 4.3) etwa
-**683 Credits** (Tests 655, Aufräumen 28; jede Zeile im Kopf von
+**696 Credits** (Tests 665, Aufräumen 31; jede Zeile im Kopf von
 `e2e_test.go` gehört zu einem vorhandenen Test, keine ist mehr geplant); das
 Budget je Lauf ist **760** (Zielwert unter 800, die Aufschlüsselung steht
 im Kopf von `e2e_test.go`). Jede gesendete Anfrage
@@ -198,10 +201,10 @@ genau dieser einen Anfrage nennt (kein laufender Zähler); fehlt der Header
 oder kommt keine Antwort (Netzwerkfehler), zählen die dokumentierten
 Kosten.
 
-Vom Budget sind **62 Credits fürs Aufräumen reserviert** (dokumentierter
+Vom Budget sind **64 Credits fürs Aufräumen reserviert** (dokumentierter
 Höchstaufwand: je Rechnung/Angebot/Beleg 4, je anderem Objekt 2, plus 10
-Puffer; bei 7 Rechnungen, Angeboten und Belegen und 12 anderen Objekten).
-Die Tests dürfen also höchstens 698 Credits verbrauchen (geplant: 655): Eine
+Puffer; bei 7 Rechnungen, Angeboten und Belegen und 13 anderen Objekten).
+Die Tests dürfen also höchstens 696 Credits verbrauchen (geplant: 665): Eine
 Anfrage, die in die Reserve greifen würde, wird nicht gesendet, und reicht das
 Budget für einen Test nicht mehr, werden dieser und alle folgenden Tests mit
 Begründung übersprungen. Erst das Aufräumen am Ende darf die Reserve nutzen.
