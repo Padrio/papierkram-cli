@@ -435,7 +435,7 @@ read_only = true
 | 7 | `conflict` | 409, laufender Timer, Timer von einem anderen `time stop` beansprucht oder `….stopping` liegt noch (9.6) | |
 | 8 | `confirmation_required` | Bestätigung fehlt/abgelehnt oder Rückfrage mit Strg+C abgebrochen (alle Rückfragen liegen vor jeder Änderung) | „`--yes` verwenden“; bei Strg+C „Nichts gesendet“, bei Rückfragen, die nur lokal ändern (Token-Eingabe, `local init`, `time discard`), „Nichts gesendet oder geändert“ |
 | 9 | `read_only` | Schreibversuch im `read_only`-Kontext | „anderen Kontext wählen“ |
-| 10 | `network` | Timeout, DNS, TLS **bevor** eine Mutation gesendet wurde, oder bei GET (auch Strg+C während eines GET) | „Subdomain und Verbindung prüfen“ |
+| 10 | `network` | Timeout, DNS, TLS **bevor** eine Mutation gesendet wurde, oder bei GET (auch Strg+C während eines GET) | „Subdomain und Verbindung prüfen“; nach Strg+C „Abgebrochen: Anfrage durch Unterbrechung beendet“ ohne diesen Hinweis (nur der Hinweis des Befehls bleibt, z. B. bei `time stop`) |
 | 11 | `partial` | mehrstufiges Command teilweise erfolgreich (9.3) | Ausgabe nennt erledigte/fehlgeschlagene Schritte und den Befehl zum Nachholen; **nicht** das ganze Command wiederholen |
 | 12 | `outcome_unknown` | Timeout/Verbindungsabbruch, **nachdem** POST/PUT/DELETE gesendet wurde, oder Weiterleitung (3xx) auf POST/PUT/DELETE (wird nicht verfolgt) | „Ergebnis unbekannt – vor Wiederholung per `describe`/`list` prüfen“ |
 

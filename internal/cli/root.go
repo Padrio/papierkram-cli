@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Padrio/papierkram-cli/internal/api"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/output"
@@ -288,9 +289,10 @@ func executeContext(ctx context.Context, app *App, root *cobra.Command, args []s
 	}
 	if ce.Code == clierr.CodeNetwork && ctx.Err() != nil && errors.Is(err, context.Canceled) {
 		// The request did not fail, it was interrupted (Ctrl+C). The hint
-		// stays: a command may have added how to go on (time stop: the
-		// timer stays, review B-M1).
-		ce = &clierr.Error{Code: ce.Code, Message: "Abgebrochen: Anfrage durch Unterbrechung beendet", Hint: ce.Hint, Cause: err}
+		// stays without the network hint: a command may have added how to
+		// go on (time stop: the timer stays, review B-M1), but subdomain
+		// and connection are not the cause.
+		ce = &clierr.Error{Code: ce.Code, Message: "Abgebrochen: Anfrage durch Unterbrechung beendet", Hint: api.WithoutNetworkHint(ce.Hint), Cause: err}
 	}
 	if app.flagParseFailed {
 		app.errorFormatFromArgs(args)

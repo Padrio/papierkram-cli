@@ -580,7 +580,9 @@ func TestTimerStopInterruptedBeforeSendKeepsHint(t *testing.T) {
 	if msg != "Abgebrochen: Anfrage durch Unterbrechung beendet" {
 		t.Errorf("message %q", msg)
 	}
-	if !strings.Contains(hint, "Der Timer läuft weiter: erneut papierkram time stop oder von Hand buchen mit "+
+	// the network hint of the interrupted request is gone, the hint of
+	// time stop stays
+	if !strings.HasPrefix(hint, "Der Timer läuft weiter: erneut papierkram time stop oder von Hand buchen mit "+
 		"papierkram time log --task 545 --user 1 --date 2026-11-04 --from 09:00 --to 10:47, danach papierkram time discard") {
 		t.Errorf("hint %q", hint)
 	}

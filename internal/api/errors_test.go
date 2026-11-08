@@ -203,3 +203,22 @@ func TestTLSCertificateErrorIsNetwork(t *testing.T) {
 		t.Errorf("raw Go error in message: %q", ce.Message)
 	}
 }
+
+// After an interrupt only the network hint at the start goes; what a
+// command added after it stays, any other hint is unchanged.
+func TestWithoutNetworkHint(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{hintNetwork, ""},
+		{hintNetwork + ".", ""},
+		{hintNetwork + ". Der Timer läuft weiter", "Der Timer läuft weiter"},
+		{hintNetwork + "; Wert prüfen", "Wert prüfen"},
+		{hintNetwork + "en", hintNetwork + "en"},
+		{"Nichts gesendet", "Nichts gesendet"},
+		{"Erst " + hintNetwork, "Erst " + hintNetwork},
+		{"", ""},
+	} {
+		if got := WithoutNetworkHint(tc.in); got != tc.want {
+			t.Errorf("WithoutNetworkHint(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

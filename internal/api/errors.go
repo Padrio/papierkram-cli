@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/Padrio/papierkram-cli/internal/clierr"
 )
@@ -32,6 +33,28 @@ const (
 	hintTooLarge       = "Antwort zu groß für das CLI; Ergebnis nicht verwertbar"
 	hintTooLargeChange = "NICHT wiederholen; Ergebnis per describe/list prüfen"
 )
+
+// WithoutNetworkHint is hint without the network hint of a transport
+// error at its start (and the separator a command put after it: ". " or
+// "; "): after an interrupt (Ctrl+C) the request did not fail, so
+// checking subdomain and connection is no advice; what a command added
+// stays. Any other hint is returned unchanged.
+func WithoutNetworkHint(hint string) string {
+	rest, ok := strings.CutPrefix(hint, hintNetwork)
+	if !ok {
+		return hint
+	}
+	for _, sep := range []string{". ", "; ", "."} {
+		if r, ok := strings.CutPrefix(rest, sep); ok {
+			return r
+		}
+	}
+	if rest != "" {
+		// the constant continues as another word: not the network hint
+		return hint
+	}
+	return ""
+}
 
 // ErrResponseTooLarge is the cause of the error of a 2xx answer longer
 // than MaxResponseSize (tooLargeError); callers test it with errors.Is.

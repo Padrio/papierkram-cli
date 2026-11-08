@@ -667,7 +667,9 @@ func TestListInterruptAbortsRequest(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("Abbruch beendet die Anfrage nicht")
 	}
-	if _, errs := bufs(app); !strings.Contains(errs, "Fehler: Abgebrochen") {
+	// an interrupt is no network failure: no hint to check the
+	// subdomain and connection
+	if _, errs := bufs(app); !strings.Contains(errs, "Fehler: Abgebrochen") || strings.Contains(errs, "Subdomain") || strings.Contains(errs, "Hinweis:") {
 		t.Errorf("stderr = %q", errs)
 	}
 }
