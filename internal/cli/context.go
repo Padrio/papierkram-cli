@@ -114,7 +114,7 @@ func newContextCreateCmd(app *App) *cobra.Command {
 			if activated {
 				cfg.ActiveContext = args[0]
 			}
-			if err := wrapConfigErr(cfg.Save(path), path); err != nil {
+			if err := wrapConfigErr(app.save(cfg, path), path); err != nil {
 				return err
 			}
 			msg := fmt.Sprintf("Kontext %q angelegt.\n", args[0])
@@ -150,7 +150,7 @@ func newContextUseCmd(app *App) *cobra.Command {
 			if err := cfg.Use(args[0]); err != nil {
 				return err
 			}
-			if err := wrapConfigErr(cfg.Save(path), path); err != nil {
+			if err := wrapConfigErr(app.save(cfg, path), path); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(app.Out, "Aktiver Kontext: %s\n", args[0])
@@ -306,7 +306,7 @@ func newContextDeleteCmd(app *App) *cobra.Command {
 			if err := app.refuseWithTimer(name); err != nil {
 				return err
 			}
-			if err := wrapConfigErr(cfg.Save(path), path); err != nil {
+			if err := wrapConfigErr(app.save(cfg, path), path); err != nil {
 				return err
 			}
 			app.removeCompletionCaches(name)
@@ -371,7 +371,7 @@ func newContextRenameCmd(app *App) *cobra.Command {
 			default:
 				return keyringErr(err, "Token konnte nicht gelesen werden, Konfiguration unverändert")
 			}
-			if err := wrapConfigErr(cfg.Save(path), path); err != nil {
+			if err := wrapConfigErr(app.save(cfg, path), path); err != nil {
 				if moved {
 					_ = app.Keyring.Delete(newName)
 				}

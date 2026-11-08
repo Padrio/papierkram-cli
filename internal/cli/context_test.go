@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Padrio/papierkram-cli/internal/auth"
+	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/timer"
 )
 
@@ -565,7 +567,7 @@ func TestContextRenameDeleteRefuseWithTimer(t *testing.T) {
 	}
 }
 
-// L120: context create and context rename report an unavailable keychain
+// L120: context create, rename and delete report an unavailable keychain
 // as a warning (like auth logout) instead of going on silently; the exit
 // code stays 0 and the configuration is written.
 func TestContextKeychainUnavailableWarns(t *testing.T) {
@@ -593,5 +595,119 @@ func TestContextKeychainUnavailableWarns(t *testing.T) {
 	cfg, _, err := app.loadConfig()
 	if err != nil || cfg.Contexts["neuer"] == nil || cfg.Contexts["neu"] != nil {
 		t.Errorf("rename: config %+v, %v", cfg, err)
+	}
+
+	// context delete warns the same way (L86, L139)
+	errb.Reset()
+	if code := Run(app, []string{"context", "delete", "neuer"}); code != 0 {
+		t.Fatalf("delete: exit %d: %s", code, errb.String())
+	}
+	if want := "Warnung: Schlüsselbund nicht verfügbar, Token von \"neuer\" wurde nicht entfernt.\n"; errb.String() != want {
+		t.Errorf("delete: stderr = %q, want %q", errb.String(), want)
+	}
+	if cfg, _, err := app.loadConfig(); err != nil || cfg.Contexts["neuer"] != nil {
+		t.Errorf("delete: config %+v, %v", cfg, err)
+	}
+}
+
+// saveFails makes every write of config.toml fail (the App.save seam).
+func saveFails(app *App) {
+	app.saveConfig = func(*config.Config, string) error { return errors.New("Datenträger voll") }
+}
+
+// L139: the context commands write config.toml through App.save. A failed
+// write is exit 1 naming the file, leaves config.toml as it was and the
+// keychain too: rename moves the token back (L86), delete removes it only
+// after the write.
+func TestContextCommandsSaveFailure(t *testing.T) {
+	for name, args := range map[string][]string{
+		"create": {"context", "create", "neu", "--subdomain", "firma-neu"},
+		"use":    {"context", "use", "b"},
+		"delete": {"context", "delete", "b"},
+		"rename": {"context", "rename", "a", "neu"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, out, errb := newTestApp(t)
+			writeCfg(t, app, twoCtx)
+			for _, ctx := range []string{"a", "b"} {
+				if err := app.Keyring.Set(ctx, "test-token-"+ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+			saveFails(app)
+			if code := Run(app, append(args, "-o", "json")); code != 1 {
+				t.Fatalf("exit %d, erwartet 1: %s", code, errb.String())
+			}
+			e, ok := lastJSONError(t, errb.String())
+			if !ok || e.Code != "error" || e.Message != "Datenträger voll" || e.Hint != "Konfigurationsdatei prüfen: "+cfgFile(t, app) {
+				t.Errorf("Fehler = %+v (%v)\n%s", e, ok, errb.String())
+			}
+			if out.Len() != 0 {
+				t.Errorf("stdout = %q", out.String())
+			}
+			if data, _ := os.ReadFile(cfgFile(t, app)); string(data) != twoCtx {
+				t.Errorf("config.toml verändert:\n%s", data)
+			}
+			for _, ctx := range []string{"a", "b"} {
+				if tok, err := app.Keyring.Get(ctx); err != nil || tok != "test-token-"+ctx {
+					t.Errorf("Schlüsselbund %s: %q, %v", ctx, tok, err)
+				}
+			}
+			if _, err := app.Keyring.Get("neu"); !errors.Is(err, auth.ErrNotFound) {
+				t.Errorf("Schlüsselbund neu: %v, erwartet ErrNotFound", err)
+			}
+			assertNoToken(t, app)
+		})
+	}
+}
+
+// L139: auth logout clears the token in config.toml through App.save. A
+// failed write is exit 1 naming the file: the keychain entry is already
+// removed, the token in config.toml stays, and "Abgemeldet" is not
+// printed.
+func TestAuthLogoutSaveFailure(t *testing.T) {
+	app, out, errb := newTestApp(t)
+	cfg := twoCtx + "token = \"test-token-cfg\"\n"
+	writeCfg(t, app, cfg)
+	if err := app.Keyring.Set("b", "test-token-b"); err != nil {
+		t.Fatal(err)
+	}
+	saveFails(app)
+	if code := Run(app, []string{"auth", "logout", "--context", "b", "-o", "json"}); code != 1 {
+		t.Fatalf("exit %d, erwartet 1: %s", code, errb.String())
+	}
+	e, ok := lastJSONError(t, errb.String())
+	if !ok || e.Message != "Datenträger voll" || e.Hint != "Konfigurationsdatei prüfen: "+cfgFile(t, app) {
+		t.Errorf("Fehler = %+v (%v)", e, ok)
+	}
+	if strings.Contains(errb.String(), "Abgemeldet") || out.Len() != 0 {
+		t.Errorf("stdout %q, stderr %q", out.String(), errb.String())
+	}
+	if data, _ := os.ReadFile(cfgFile(t, app)); string(data) != cfg {
+		t.Errorf("config.toml verändert:\n%s", data)
+	}
+	if _, err := app.Keyring.Get("b"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("Schlüsselbund b: %v, erwartet entfernt", err)
+	}
+	assertNoToken(t, app)
+}
+
+// L86: context active without an active context says so on stderr and
+// exits 0; -o json shows the empty value.
+func TestContextActiveWithoutContext(t *testing.T) {
+	app, out, errb := newTestApp(t)
+	if code := Run(app, []string{"context", "active"}); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if out.String() != "" || errb.String() != "Kein aktiver Kontext. Anlegen: papierkram context create <name> --subdomain <s>\n" {
+		t.Errorf("stdout %q, stderr %q", out.String(), errb.String())
+	}
+	app, out, errb = newTestApp(t)
+	writeCfg(t, app, strings.Replace(twoCtx, `active_context = "a"`, `active_context = ""`, 1))
+	if code := Run(app, []string{"context", "active", "-o", "json"}); code != 0 {
+		t.Fatalf("json: exit %d: %s", code, errb.String())
+	}
+	if out.String() != "{\n  \"active_context\": \"\"\n}\n" || errb.String() != "" {
+		t.Errorf("json: stdout %q, stderr %q", out.String(), errb.String())
 	}
 }
