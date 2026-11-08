@@ -195,10 +195,12 @@ func TestE2E_Carries(t *testing.T) {
 		}
 		s.measuref(t, "PDF-Download", "Accept %q → HTTP %d, Content-Type %q, %d Bytes",
 			x.ReqHeader.Get("Accept"), x.Status, x.RespHeader.Get("Content-Type"), len(x.RespBody))
-		data, _ := os.ReadFile(file)
+		data, err := os.ReadFile(file)
 		switch {
 		case r.code != 0:
 			s.errorf(t, "estimate pdf: Exit %d\n%s", r.code, r.stderr)
+		case err != nil:
+			s.errorf(t, "estimate pdf: Datei nicht lesbar: %v", err)
 		case x.ReqHeader.Get("Accept") != "application/pdf, application/json;q=0.9":
 			s.errorf(t, "Accept %q", x.ReqHeader.Get("Accept"))
 		case x.Status != 200 || !strings.HasPrefix(x.RespHeader.Get("Content-Type"), "application/pdf"):
