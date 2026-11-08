@@ -32,34 +32,94 @@ func testConfig() *Config {
 	}
 }
 
+// prioritySources are the four sources of the context in the order of
+// SelectContext; each names its own context, whose output, timeout and
+// read-only option differ from the others.
+var prioritySources = []struct {
+	source, context, output string
+	timeout                 time.Duration
+	readOnly                bool
+}{
+	{SourceFlag, "flag", "json", 5 * time.Second, false},
+	{SourceEnv, "envctx", "yaml", 10 * time.Second, true},
+	{SourceProjectFile, "proj", "wide", 15 * time.Second, false},
+	{SourceConfig, "active", "table", 20 * time.Second, true},
+}
+
+// L77: the resolution order over every combination of the sources flag,
+// PAPIERKRAM_CONTEXT, project file and active_context, each with and
+// without PAPIERKRAM_READ_ONLY: the first source set selects the context,
+// output and timeout come from that context (default 30s without one),
+// read-only from the environment, else from that context. (-o and
+// --timeout beat the context in internal/cli: TestOutputFormatPrecedence,
+// TestClientTimeoutPrecedence.)
 func TestResolveContextPriority(t *testing.T) {
-	tests := []struct {
-		name         string
-		flag, proj   string
-		env          map[string]string
-		wantCtx, src string
-	}{
-		{"flag wins over all", "flag", "proj", map[string]string{"PAPIERKRAM_CONTEXT": "envctx"}, "flag", "flag"},
-		{"env over project and active", "", "proj", map[string]string{"PAPIERKRAM_CONTEXT": "envctx"}, "envctx", "env"},
-		{"project over active", "", "proj", nil, "proj", "projectfile"},
-		{"active", "", "", nil, "active", "config"},
-		{"flag over active only", "flag", "", nil, "flag", "flag"},
-		{"flag over env only", "flag", "", map[string]string{"PAPIERKRAM_CONTEXT": "envctx"}, "flag", "flag"},
-		{"env over active only", "", "", map[string]string{"PAPIERKRAM_CONTEXT": "envctx"}, "envctx", "env"},
+	cfg := &Config{Contexts: map[string]*Context{}}
+	for _, s := range prioritySources {
+		cfg.Contexts[s.context] = &Context{Subdomain: "sub-" + s.context, Output: s.output, Timeout: s.timeout.String(), ReadOnly: s.readOnly}
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			r, err := Resolve(testConfig(), ResolveInput{FlagContext: tc.flag, ProjectContext: tc.proj, Env: env(tc.env), Store: auth.NewMemory()})
-			if err != nil {
-				t.Fatal(err)
+	cases := 0
+	for set := range 1 << len(prioritySources) {
+		for _, roEnv := range []string{"", "1"} {
+			var in ResolveInput
+			e := map[string]string{"PAPIERKRAM_READ_ONLY": roEnv}
+			c := *cfg
+			c.ActiveContext = ""
+			var names []string
+			for i, s := range prioritySources {
+				if set&(1<<i) == 0 {
+					continue
+				}
+				names = append(names, s.source)
+				switch s.source {
+				case SourceFlag:
+					in.FlagContext = s.context
+				case SourceEnv:
+					e["PAPIERKRAM_CONTEXT"] = s.context
+				case SourceProjectFile:
+					in.ProjectContext = s.context
+				case SourceConfig:
+					c.ActiveContext = s.context
+				}
 			}
-			if r.Context != tc.wantCtx || r.ContextSource != tc.src {
-				t.Fatalf("got %q/%q", r.Context, r.ContextSource)
+			in.Env, in.Store = env(e), auth.NewMemory()
+			name := strings.Join(names, "+")
+			if name == "" {
+				name = "keine"
 			}
-			if r.Subdomain != "sub-"+map[string]string{"flag": "flag", "envctx": "env", "proj": "proj", "active": "active"}[tc.wantCtx] {
-				t.Fatalf("subdomain %q", r.Subdomain)
+			if roEnv != "" {
+				name += "/READ_ONLY"
 			}
-		})
+			t.Run(name, func(t *testing.T) {
+				cases++
+				want := Resolved{Timeout: defaultTimeout}
+				for i, s := range prioritySources {
+					if set&(1<<i) != 0 {
+						want.Context, want.ContextSource, want.Subdomain = s.context, s.source, "sub-"+s.context
+						want.Output, want.Timeout = s.output, s.timeout
+						if s.readOnly {
+							want.ReadOnly, want.ReadOnlySource = true, SourceContext
+						}
+						break
+					}
+				}
+				if roEnv != "" {
+					want.ReadOnly, want.ReadOnlySource = true, SourceEnv
+				}
+				r, err := Resolve(&c, in)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if r.Context != want.Context || r.ContextSource != want.ContextSource || r.Subdomain != want.Subdomain ||
+					r.Output != want.Output || r.Timeout != want.Timeout ||
+					r.ReadOnly != want.ReadOnly || r.ReadOnlySource != want.ReadOnlySource {
+					t.Errorf("got  %v\nwant %v", r, want)
+				}
+			})
+		}
+	}
+	if cases != 32 {
+		t.Errorf("%d Kombinationen geprüft, erwartet 32", cases)
 	}
 }
 
