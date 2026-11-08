@@ -539,3 +539,156 @@ func TestStateEqual(t *testing.T) {
 		}
 	}
 }
+
+// withHooks sets afterClaim and removeFile for one test.
+func withHooks(t *testing.T, after func(), remove func(string) error) {
+	t.Helper()
+	oldAfter, oldRemove := afterClaim, removeFile
+	t.Cleanup(func() { afterClaim, removeFile = oldAfter, oldRemove })
+	if after != nil {
+		afterClaim = after
+	}
+	if remove != nil {
+		removeFile = remove
+	}
+}
+
+// Review of task 11: what happens between creating the claim and removing
+// the state file. A state file replaced or removed meanwhile, or one that
+// cannot be removed, leaves no claim, and nothing else is touched.
+func TestClaimBetweenCreateAndRemove(t *testing.T) {
+	want := state(t)
+	newer := want
+	newer.Task = 777
+	for _, tc := range []struct {
+		name   string
+		after  func(path string)
+		remove func(path string) func(string) error
+		check  func(t *testing.T, err error, path string)
+	}{
+		{name: "replaced",
+			after: func(path string) {
+				if err := Delete(path); err != nil {
+					t.Error(err)
+				}
+				if err := Save(path, newer); err != nil {
+					t.Error(err)
+				}
+			},
+			check: func(t *testing.T, err error, path string) {
+				if !errors.Is(err, ErrChanged) {
+					t.Errorf("Claim = %v, want ErrChanged", err)
+				}
+				if st, _ := Load(path); st == nil || !st.Equal(newer) {
+					t.Errorf("new timer changed: %+v", st)
+				}
+			}},
+		{name: "symlink swapped in",
+			after: func(path string) {
+				if err := Delete(path); err != nil {
+					t.Error(err)
+				}
+				if err := os.Symlink(filepath.Join(filepath.Dir(path), "x"), path); err != nil {
+					t.Skipf("no symlinks: %v", err)
+				}
+			},
+			check: func(t *testing.T, err error, path string) {
+				if !errors.Is(err, ErrChanged) {
+					t.Errorf("Claim = %v, want ErrChanged", err)
+				}
+				if fi, err := os.Lstat(path); err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+					t.Errorf("link removed: %v", err)
+				}
+			}},
+		{name: "removed",
+			after: func(path string) {
+				if err := Delete(path); err != nil {
+					t.Error(err)
+				}
+			},
+			check: func(t *testing.T, err error, path string) {
+				if !errors.Is(err, ErrClaimed) {
+					t.Errorf("Claim = %v, want ErrClaimed", err)
+				}
+			}},
+		{name: "remove fails",
+			remove: func(path string) func(string) error {
+				return func(p string) error {
+					if p == path {
+						return &fs.PathError{Op: "remove", Path: p, Err: fs.ErrPermission}
+					}
+					return os.Remove(p)
+				}
+			},
+			check: func(t *testing.T, err error, path string) {
+				if err == nil || errors.Is(err, ErrClaimed) || errors.Is(err, ErrChanged) || !errors.Is(err, fs.ErrPermission) ||
+					!strings.Contains(err.Error(), "nicht entfernt") {
+					t.Errorf("Claim = %v", err)
+				}
+				if st, _ := Load(path); st == nil || !st.Equal(want) {
+					t.Errorf("state file changed: %+v", st)
+				}
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := Path(t.TempDir(), "firma")
+			if err := Save(path, want); err != nil {
+				t.Fatal(err)
+			}
+			var after func()
+			if tc.after != nil {
+				after = func() { tc.after(path) }
+			}
+			var remove func(string) error
+			if tc.remove != nil {
+				remove = tc.remove(path)
+			}
+			withHooks(t, after, remove)
+			err := Claim(path, want)
+			tc.check(t, err, path)
+			if _, err := os.Lstat(StoppingPath(path)); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("claim left: %v", err)
+			}
+		})
+	}
+}
+
+// Review of task 11: the error branches of Release, all German. A claim
+// that cannot be removed after the state file is back matches
+// ErrClaimLeft: the timer runs again.
+func TestReleaseErrors(t *testing.T) {
+	path := Path(t.TempDir(), "firma")
+	if err := Release(path); !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), "fehlt") {
+		t.Errorf("Release without claim = %v", err)
+	}
+	if err := Save(StoppingPath(path), state(t)); err != nil {
+		t.Fatal(err)
+	}
+	withHooks(t, nil, func(p string) error {
+		if p == StoppingPath(path) {
+			return &fs.PathError{Op: "remove", Path: p, Err: fs.ErrPermission}
+		}
+		return os.Remove(p)
+	})
+	err := Release(path)
+	if !errors.Is(err, ErrClaimLeft) || !errors.Is(err, fs.ErrPermission) || !strings.Contains(err.Error(), "nicht gelöscht") {
+		t.Errorf("Release with a claim that cannot be removed = %v", err)
+	}
+	if st, err := Load(path); err != nil || st == nil || !st.Equal(state(t)) {
+		t.Errorf("state file not back: %+v, %v", st, err)
+	}
+	if st, _ := LoadStopping(path); st == nil {
+		t.Error("claim removed")
+	}
+	// a claim that is no regular file is not read
+	dir := Path(t.TempDir(), "firma")
+	if err := os.MkdirAll(StoppingPath(dir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := Release(dir); err == nil || !strings.Contains(err.Error(), "keine verwendbare Datei") {
+		t.Errorf("Release of a directory claim = %v", err)
+	}
+	if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("state file created: %v", err)
+	}
+}

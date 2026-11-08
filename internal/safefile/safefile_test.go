@@ -210,3 +210,25 @@ func TestCreateAtomicFallbackRemovesOnlyItsClaim(t *testing.T) {
 	}
 	assertNoTemp(t, dir)
 }
+
+// Review of task 11: a file that is being read can be removed (on Windows
+// openRead shares deletion, os.Open does not), so a reader never makes
+// the claim of time stop or its cleanup fail.
+func TestOpenReadAllowsRemove(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timer.json")
+	for _, follow := range []bool{false, true} {
+		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		f, err := openRead(path, follow)
+		if err != nil {
+			t.Fatalf("follow=%v: %v", follow, err)
+		}
+		if err := os.Remove(path); err != nil {
+			t.Errorf("follow=%v: remove while open: %v", follow, err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

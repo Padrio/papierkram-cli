@@ -177,10 +177,11 @@ func StoppingPath(path string) string { return path + ".stopping" }
 // the state file is removed, and only while it still holds the bytes that
 // were copied; otherwise the claim is removed again: ErrClaimed when the
 // file is gone, ErrChanged when it is another timer. A newly started timer
-// is thus never overwritten or removed by a claim. The state file is read
+// is thus never overwritten by a claim, and removed only when a time
+// discard and a time start fall between the check and the removal. The state file is read
 // with the rules of Load (no symbolic link, MaxSize, valid); an unusable
-// one is the error of Load. Other errors are those of the file system,
-// with nothing claimed.
+// one is the error of Load. Other errors are German, wrap the error of the
+// file system and leave nothing claimed.
 func Claim(path string, want State) error {
 	st, data, err := load(path)
 	switch {
@@ -196,46 +197,81 @@ func Claim(path string, want State) error {
 		if errors.Is(err, fs.ErrExist) {
 			return ErrClaimed
 		}
-		return err
+		return fmt.Errorf("%s nicht angelegt: %w", output.Printable(claim), err)
 	}
+	afterClaim()
 	// the claim is ours: no other claim can be created while it exists
-	now, err := safefile.ReadRegular(path, false, MaxSize)
-	switch {
-	case err == nil && bytes.Equal(now, data):
-		err = os.Remove(path)
-	case err == nil:
-		err = ErrChanged
-	}
+	err = removeIfSame(path, data)
 	if err != nil {
-		_ = os.Remove(claim)
-		if errors.Is(err, fs.ErrNotExist) {
-			return ErrClaimed
-		}
+		_ = removeFile(claim)
 		return err
 	}
 	return nil
 }
 
+// removeIfSame removes the state file at path while it holds data: a file
+// that is gone is ErrClaimed (another stop or a discard was faster), one
+// with other content or no regular file (also a symbolic link swapped in)
+// ErrChanged; other errors are German and wrap the cause.
+func removeIfSame(path string, data []byte) error {
+	now, err := safefile.ReadRegular(path, false, MaxSize)
+	switch {
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
+		return ErrClaimed
+	case errors.Is(err, safefile.ErrSymlink), errors.Is(err, safefile.ErrNotRegular), errors.Is(err, safefile.ErrTooLarge):
+		return ErrChanged
+	case err != nil:
+		return fmt.Errorf("Timer-Datei %s nicht lesbar: %w", output.Printable(path), err)
+	case !bytes.Equal(now, data):
+		return ErrChanged
+	}
+	if err := removeFile(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return ErrClaimed
+		}
+		return fmt.Errorf("Timer-Datei %s nicht entfernt: %w", output.Printable(path), err)
+	}
+	return nil
+}
+
+// afterClaim runs between creating the claim and removing the state
+// file; tests change the state file there.
+var afterClaim = func() {}
+
+// removeFile is os.Remove; tests make it fail.
+var removeFile = os.Remove
+
+// ErrClaimLeft reports that Release put the state file back but could not
+// remove the claim: the timer runs again, the claim must be deleted by
+// hand (it blocks time start and time stop).
+var ErrClaimLeft = errors.New("claim not removed after release")
+
 // Release puts the claim of path back (the stop failed, the timer keeps
 // running): the state file is created again from the claim with
 // safefile.CreateAtomic, so a state file at path (also a symbolic link)
 // is never replaced; it is an error matching fs.ErrExist and the claim
-// stays. Then the claim is removed. Without a claim the error matches
-// fs.ErrNotExist; a claim that is no regular file is not read.
+// stays. Then the claim is removed; when that fails, the error matches
+// ErrClaimLeft. Without a claim the error matches fs.ErrNotExist; a claim
+// that is no regular file is not read. Errors are German.
 func Release(path string) error {
 	claim := StoppingPath(path)
 	data, err := safefile.ReadRegular(claim, false, MaxSize)
-	if err != nil {
-		return err
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("%s fehlt: %w", output.Printable(claim), fs.ErrNotExist)
+	case errors.Is(err, safefile.ErrSymlink), errors.Is(err, safefile.ErrNotRegular), errors.Is(err, safefile.ErrTooLarge):
+		return fmt.Errorf("%s ist keine verwendbare Datei: %w", output.Printable(claim), err)
+	case err != nil:
+		return fmt.Errorf("%s nicht lesbar: %w", output.Printable(claim), err)
 	}
 	if err := safefile.CreateAtomic(path, data, 0o600); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return fmt.Errorf("Timer-Datei %s ist schon vorhanden: %w", output.Printable(path), fs.ErrExist)
 		}
-		return err
+		return fmt.Errorf("Timer-Datei %s nicht angelegt: %w", output.Printable(path), err)
 	}
-	if err := os.Remove(claim); err != nil {
-		return fmt.Errorf("Timer-Datei zurückgestellt, aber %s nicht gelöscht: %w", output.Printable(claim), err)
+	if err := removeFile(claim); err != nil {
+		return fmt.Errorf("%w: %s nicht gelöscht: %w", ErrClaimLeft, output.Printable(claim), err)
 	}
 	return nil
 }

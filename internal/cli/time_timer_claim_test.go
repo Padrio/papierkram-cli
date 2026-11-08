@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -14,14 +16,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Padrio/papierkram-cli/internal/clierr"
 	"github.com/Padrio/papierkram-cli/internal/testutil/mockapi"
 	"github.com/Padrio/papierkram-cli/internal/timer"
 )
 
-// Task 11 (C2): time stop claims the timer (renames its state file to
-// <file>.stopping) after the question and --dry-run and before the
-// request. A second stop finds the claim or no file and ends with exit 7
-// without a request; a failure after the claim puts the file back.
+// Task 11 (C2, ruling T11-A): time stop claims the timer (creates a copy
+// of its state file exclusively as <file>.stopping, then removes the
+// state file) after the question and --dry-run and before the request. A
+// second stop finds the claim, no file or another timer and ends with
+// exit 7 without a request; a failure after the claim restores the file.
 
 const (
 	claimedMsg      = "Timer wird bereits von einem anderen papierkram time stop gebucht"
@@ -503,5 +507,29 @@ func TestTimerStopClaimFailure(t *testing.T) {
 	wantRequests(t, srv, 0)
 	if !bytes.Equal(timerFile(t, app, ""), before) {
 		t.Error("state changed")
+	}
+}
+
+// Review of task 11: when only the claim cannot be deleted after the
+// state file is back, the error of the stop keeps its code and its hint
+// names the claim; any other failure to restore is exit 1 naming the
+// rename, time discard and the error before.
+func TestTimerErrNotReleased(t *testing.T) {
+	path := filepath.Join("cache", "timer-.direct.json")
+	cause := clierr.New(clierr.CodeOutcomeUnknown, "Verbindung abgebrochen", "Ergebnis unbekannt – vor Wiederholung per describe/list prüfen.")
+	left := fmt.Errorf("%w: x", timer.ErrClaimLeft)
+	ce := clierr.From(errNotReleased(path, left, cause))
+	if ce.Code != clierr.CodeOutcomeUnknown || ce.Message != "Verbindung abgebrochen" ||
+		ce.Hint != "Ergebnis unbekannt – vor Wiederholung per describe/list prüfen. Außerdem die Datei "+printable(timer.StoppingPath(path))+
+			" von Hand löschen (die Timer-Datei ist wiederhergestellt; sonst brechen time start und time stop mit Exit 7 ab)" {
+		t.Errorf("claim left: %+v", ce)
+	}
+	if cause.Hint != "Ergebnis unbekannt – vor Wiederholung per describe/list prüfen." {
+		t.Errorf("cause changed: %+v", cause)
+	}
+	ce = clierr.From(errNotReleased(path, errors.New("kaputt"), cause))
+	if ce.Code != clierr.CodeError || ce.Message != "Timer-Datei nicht zurückgestellt: kaputt" ||
+		!strings.Contains(ce.Hint, "Zuvor gescheitert: Verbindung abgebrochen. Ergebnis unbekannt") {
+		t.Errorf("not released: %+v", ce)
 	}
 }
