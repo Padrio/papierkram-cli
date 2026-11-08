@@ -102,7 +102,7 @@ func newContextCreateCmd(app *App) *cobra.Command {
 			// name must not be sent to the new subdomain.
 			switch err := app.Keyring.Delete(args[0]); {
 			case err == nil:
-				_, _ = fmt.Fprintf(app.Err, "Hinweis: Im Schlüsselbund lag noch ein Token für %q (von einem früheren Kontext gleichen Namens); es wurde entfernt. Token neu hinterlegen: papierkram auth login --context %s\n", args[0], args[0])
+				_, _ = fmt.Fprintf(app.Err, "Hinweis: Im Schlüsselbund lag noch ein Token für %q (von einem früheren Kontext gleichen Namens); es wurde entfernt. Token neu hinterlegen: papierkram auth login --context %s\n", args[0], shellWord(args[0]))
 			case errors.Is(err, auth.ErrNotFound):
 			case errors.Is(err, auth.ErrUnavailable):
 				// the text of auth logout (L120)

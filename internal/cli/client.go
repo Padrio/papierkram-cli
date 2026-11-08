@@ -173,7 +173,7 @@ func requireCredentials(r *config.Resolved) error {
 				"Anmelden: papierkram auth login --context <name> (oder PAPIERKRAM_TOKEN setzen)")
 		}
 		e := clierr.New(clierr.CodeAuth, fmt.Sprintf("Kein Token für Kontext %q gespeichert", r.Context),
-			fmt.Sprintf("Anmelden: papierkram auth login --context %s (oder PAPIERKRAM_TOKEN setzen)", r.Context))
+			fmt.Sprintf("Anmelden: papierkram auth login --context %s (oder PAPIERKRAM_TOKEN setzen)", shellWord(r.Context)))
 		e.Cause = auth.ErrNotFound
 		return e
 	}

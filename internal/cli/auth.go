@@ -227,7 +227,7 @@ func (a *App) login(c *cobra.Command, subdomain string, tokenStdin, insecure boo
 // --insecure-storage; the hint repeats context, the subdomain of a context
 // that is still to be created (newSubdomain) and the input mode.
 func noKeyringErr(name, newSubdomain string, tokenStdin bool) error {
-	cmd := "papierkram auth login --context " + name
+	cmd := "papierkram auth login --context " + shellWord(name)
 	if newSubdomain != "" {
 		cmd += " --subdomain " + newSubdomain
 	}
@@ -258,7 +258,7 @@ func loginTarget(cfg *config.Config, name, subdomain string) (created, activated
 	}
 	if subdomain == "" {
 		return false, false, clierr.New(clierr.CodeUsage, fmt.Sprintf("Kontext %q existiert nicht", name),
-			fmt.Sprintf("Mit Subdomain anlegen: papierkram auth login --context %s --subdomain <subdomain>", name))
+			fmt.Sprintf("Mit Subdomain anlegen: papierkram auth login --context %s --subdomain <subdomain>", shellWord(name)))
 	}
 	if err := cfg.Create(name, &config.Context{Subdomain: subdomain}); err != nil {
 		return false, false, err
@@ -356,7 +356,7 @@ func (a *App) logout() error {
 			// the token in config.toml is not; a second logout finishes
 			ce := *clierr.From(err)
 			ce.Hint = strings.TrimSuffix(ce.Hint, ".") + ". Das Token im Schlüsselbund ist bereits entfernt, das in config.toml noch nicht; " +
-				"danach erneut papierkram auth logout --context " + name
+				"danach erneut papierkram auth logout --context " + shellWord(name)
 			return &ce
 		}
 		removed = append(removed, "config.toml")
