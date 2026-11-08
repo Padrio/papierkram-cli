@@ -117,8 +117,8 @@ func germanFlagRows(fs *pflag.FlagSet) []flagRow {
 		}
 		if f.NoOptDefVal != "" {
 			switch f.Value.Type() {
-			case "string":
-				left += fmt.Sprintf("[=%q]", f.NoOptDefVal)
+			case "string": // like pflag: quoted, the value raw
+				left += `[="` + f.NoOptDefVal + `"]`
 			case "bool", "boolfunc":
 				if f.NoOptDefVal != "true" {
 					left += "[=" + f.NoOptDefVal + "]"

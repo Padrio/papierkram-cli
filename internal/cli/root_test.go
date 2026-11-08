@@ -200,9 +200,63 @@ func TestHelpAndUsageHintsGermanEverywhere(t *testing.T) {
 	}
 }
 
-// englishFlagTypeRe matches a pflag type placeholder directly after a flag
-// name in an option list, e.g. "--timeout duration" or "-o, --output string".
-var englishFlagTypeRe = regexp.MustCompile(`(?m)^\s+(?:-\w, )?--[\w-]+ (string|strings|stringArray|duration|int|ints|uint|uints|float|bool|bools|count|value|ip|ipMask|ipNet)\b`)
+// englishFlagTypes are the type names pflag shows after a flag name
+// (pflag's UnquoteUsage: "strings" for stringSlice, "ints" for intSlice,
+// …), the pflag types themselves and the types of the raw create/update
+// field flags (id, integer, number, date, bool).
+var englishFlagTypes = []string{
+	"string", "strings", "stringArray", "stringSlice", "stringToString", "stringToInt64",
+	"duration", "durationSlice", "count", "value", "bool", "bools", "boolSlice", "boolfunc", "func",
+	"int", "int8", "int16", "int32", "int64", "ints", "intSlice", "int32Slice", "int64Slice",
+	"uint", "uint8", "uint16", "uint32", "uint64", "uints", "uintSlice",
+	"float", "float32", "float64", "float32Slice", "float64Slice", "floats",
+	"ip", "ipSlice", "ipMask", "ipNet", "ipNetSlice", "bytesHex", "bytesBase64", "time",
+	"id", "integer", "number", "date",
+}
+
+// englishFlagTypeRe matches an English type placeholder directly after a
+// flag name in an option list, e.g. "--timeout duration" or "-o, --output
+// string".
+var englishFlagTypeRe = regexp.MustCompile(`(?m)^\s+(?:-\w, )?--[\w-]+ (` + strings.Join(englishFlagTypes, "|") + `)\b`)
+
+// englishFlagTypeRe knows every type a flag of the tree has (task 17,
+// L123): a new flag type cannot slip into the help unnoticed.
+func TestEnglishFlagTypeReCoversAllTypes(t *testing.T) {
+	types := map[string]bool{}
+	for _, c := range commandTree(t) {
+		c.Flags().VisitAll(func(f *pflag.Flag) { types[f.Value.Type()] = true })
+		c.InheritedFlags().VisitAll(func(f *pflag.Flag) { types[f.Value.Type()] = true })
+	}
+	if len(types) < 5 {
+		t.Fatalf("nur %d Typen: %v", len(types), types)
+	}
+	for typ := range types {
+		if !slices.Contains(englishFlagTypes, typ) {
+			t.Errorf("Typ %q fehlt in englishFlagTypes", typ)
+		}
+		// what pflag would show for a flag of this type
+		if line := "  --x " + typ + "   Hilfe"; !englishFlagTypeRe.MatchString(line) {
+			t.Errorf("englishFlagTypeRe erkennt %q nicht", line)
+		}
+	}
+}
+
+// The value of a flag without argument shows like pflag's: [="wert"] with
+// the value raw, no Go escaping (task 17, L123).
+func TestNoOptDefValLikePflag(t *testing.T) {
+	for _, v := range []string{"Bär", `C:\Temp`, `a"b`, "tab\tx"} {
+		fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
+		fs.String("pfad", "", "Pfad")
+		fs.Lookup("pfad").NoOptDefVal = v
+		want := `[="` + v + `"]`
+		if !strings.Contains(fs.FlagUsages(), want) {
+			t.Fatalf("pflag zeigt %q nicht: %q", want, fs.FlagUsages())
+		}
+		if got := germanFlagUsages(fs); !strings.Contains(got, "--pfad Text"+want+" ") {
+			t.Errorf("%q: %q, erwartet --pfad Text%s", v, got, want)
+		}
+	}
+}
 
 func TestFlagTypeNamesGerman(t *testing.T) {
 	app, out, _ := newTestApp(t)
