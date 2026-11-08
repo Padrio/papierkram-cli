@@ -273,6 +273,7 @@ func executeContext(ctx context.Context, app *App, root *cobra.Command, args []s
 	if err == nil {
 		return 0
 	}
+	err = completeArgsErr(cmd, err)
 	ce := clierr.From(err)
 	if ce.Code == clierr.CodeUsage && ce.Hint == "" && cmd != nil {
 		// every usage error names the way out (task 17): the usage line
@@ -289,6 +290,28 @@ func executeContext(ctx context.Context, app *App, root *cobra.Command, args []s
 	// value) when the configuration was resolved, otherwise the flag.
 	output.WriteError(app.outputOptions(context.Background(), app.outputFormat(app.resolved)), ce)
 	return ce.Exit()
+}
+
+// completeArgsErr is err of cmd, but for cobra's own __complete command
+// (also called as __completeNoDesc) the German argument error of
+// minArgs(1) instead of an untyped one. ExecuteC creates that command
+// itself, with Args cobra.MinimumNArgs(1), right before it runs it, so no
+// code of ours can set its Args before the check (review T19a-M1). Its
+// flags are not parsed and its Run returns nothing, and the root's
+// PersistentPreRunE returns nil for it: an untyped error of it is that
+// check, which fails only without arguments.
+func completeArgsErr(cmd *cobra.Command, err error) error {
+	var ce *clierr.Error
+	if cmd == nil || !isCompletionCmd(cmd) || errors.As(err, &ce) {
+		return err
+	}
+	if verr := minArgs(1)(cmd, nil); verr != nil {
+		// its use line is cobra's English one ([command-line])
+		ce := *clierr.From(verr)
+		ce.Hint = "Interner Befehl der Shell-Vervollständigung; einrichten mit papierkram completion <shell>"
+		return &ce
+	}
+	return err
 }
 
 // Main is the process entry point and returns the exit code.

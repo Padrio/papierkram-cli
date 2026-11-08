@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/Padrio/papierkram-cli/internal/clierr"
 )
 
 // usageError is the structured error of the last stderr line (-o json).
@@ -200,5 +203,59 @@ func TestInvalidFlagValuesGermanEverywhere(t *testing.T) {
 	}
 	if checked < 100 {
 		t.Errorf("nur %d Fälle geprüft", checked)
+	}
+}
+
+// Review T19a-M1: every argument error is typed (exit 2, German). The
+// validators of the built tree, the help command included, return a
+// *clierr.Error for every count of arguments they reject; the commands
+// cobra adds only when it executes (__complete and its alias
+// __completeNoDesc, Args cobra.MinimumNArgs(1)) end with exit 2 too, like
+// the own completion and help commands run with wrong arguments.
+func TestArgsErrorsTyped(t *testing.T) {
+	const completeErr = "Fehler: zu wenige Argumente für \"papierkram __complete\" (erwartet: mindestens 1, erhalten: 0)\n" +
+		"Hinweis: Interner Befehl der Shell-Vervollständigung; einrichten mit papierkram completion <shell>\n"
+	checked := 0
+	for _, c := range commandTree(t) {
+		if c.Args == nil {
+			continue
+		}
+		for n := range 7 {
+			args := make([]string, n)
+			for i := range args {
+				args[i] = "1"
+			}
+			err := c.Args(c, args)
+			if err == nil {
+				continue
+			}
+			checked++
+			var ce *clierr.Error
+			if !errors.As(err, &ce) || ce.Code != clierr.CodeUsage || ce.Exit() != 2 {
+				t.Errorf("%s mit %d Argumenten: %T %v", c.CommandPath(), n, err, err)
+			}
+		}
+	}
+	if checked < 50 {
+		t.Errorf("nur %d Argumentfehler geprüft", checked)
+	}
+
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{cobra.ShellCompRequestCmd}, completeErr},
+		{[]string{cobra.ShellCompNoDescRequestCmd}, completeErr},
+		{[]string{"completion"}, "Fehler: zu wenige Argumente für \"papierkram completion\" (erwartet: 1, erhalten: 0)\n"},
+		{[]string{"completion", "bash", "zsh"}, "Fehler: "},
+		{[]string{"help", "invoice", "x", "y"}, "Fehler: unbekannter Befehl"},
+	} {
+		app, _, _ := newTestApp(t)
+		if code := Run(app, tc.args); code != 2 {
+			t.Errorf("%v: Exit %d, erwartet 2", tc.args, code)
+		}
+		if _, errs := bufs(app); !strings.HasPrefix(errs, tc.want) || !strings.Contains(errs, "Hinweis: ") || strings.Contains(errs, "requires") {
+			t.Errorf("%v: stderr = %q", tc.args, errs)
+		}
 	}
 }
