@@ -27,10 +27,10 @@ Optionen:
       --billing-street Text           Wert für billing.street
       --billing-ust-idnr Text         Wert für billing.ust_idnr
       --billing-zip Text              Wert für billing.zip
-      --contact-person ID             ID für customer.contact_person
+      --contact-person ID             ID oder Name für customer.contact_person
       --custom-template ID            ID für custom_template
-      --customer ID                   ID für customer
-      --customer-project ID           ID für customer.project
+      --customer ID                   ID oder Name für customer
+      --customer-project ID           ID oder Name für customer.project
       --description Text              Wert für description
       --document-date Datum           Wert für document_date (YYYY-MM-DD, heute, gestern)
       --flagged                       Wert für flagged (true/false)
@@ -40,7 +40,7 @@ Optionen:
       --item Texte                    Position als key=wert,key=wert (wiederholbar)
       --items Text                    Positionen als JSON-Array aus Datei oder - für die Standardeingabe
       --name Text                     Wert für name
-      --payment-term ID               ID für payment_term; spart das Lesen der Rechnung (1 Credit), außer mit --customer ohne --contact-person/--customer-project
+      --payment-term ID               ID oder Name für payment_term; spart das Lesen der Rechnung (1 Credit), außer mit --customer ohne --contact-person/--customer-project
       --replace-items                 alle Positionen ersetzen (nötig für --item/--items; ohne Positionen werden alle gelöscht)
       --supply-date Text              Wert für supply_date
 

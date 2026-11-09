@@ -76,13 +76,15 @@ func TestVoucherListFilters(t *testing.T) {
 		t.Errorf("query = %v", q)
 	}
 
-	// an invalid date is a validation error, a non-numeric ID a flag error
+	// an invalid date is a validation error, a negative or empty ID a flag
+	// error (text is a name, spec v0.2 §4)
 	for _, tc := range []struct {
 		args []string
 		exit int
 	}{
 		{[]string{"voucher", "list", "--to", "31.03.2026"}, 5},
-		{[]string{"voucher", "list", "--creditor", "abc"}, 2},
+		{[]string{"voucher", "list", "--creditor", "-1"}, 2},
+		{[]string{"voucher", "list", "--creditor", ""}, 2},
 	} {
 		app, srv := apiApp(t)
 		wantExit(t, app, Run(app, tc.args), tc.exit)

@@ -248,6 +248,44 @@ func TestInvoiceUpdateSameCustomerKeepsRefs(t *testing.T) {
 	}
 }
 
+// open point 29 with name resolution (task 3): --customer by name is
+// resolved before the read, which compares the resolved ID with the
+// customer of the invoice.
+func TestInvoiceUpdateCustomerNameKeepsRefs(t *testing.T) {
+	app, srv := apiApp(t)
+	srv.OnFunc("GET", "/contact/companies", pagedList(t, 1, []map[string]any{company(3214, "Mustermann GmbH"), company(99, "ACME")}))
+	invoiceWithRefs(srv, bothRefs)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "Mustermann", "-o", "json"}), 4)
+	wantRequests(t, srv, 1) // a part of the name is no name
+
+	app, srv = apiApp(t)
+	srv.OnFunc("GET", "/contact/companies", pagedList(t, 1, []map[string]any{company(3214, "Mustermann GmbH"), company(99, "ACME")}))
+	invoiceWithRefs(srv, bothRefs)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "Mustermann GmbH", "-o", "json"}), 0)
+	reqs := wantRequests(t, srv, 3)
+	for i, want := range []string{"GET /contact/companies", "GET /income/invoices/459", "PUT /income/invoices/459"} {
+		if got := reqs[i].Method + " " + reqs[i].Path; got != want {
+			t.Errorf("Request %d: %s, erwartet %s", i+1, got, want)
+		}
+	}
+	want := `{"customer":{"id":3214,"contact_person":{"id":55},"project":{"id":66}},"payment_term":{"id":31}}`
+	if got := canonJSON(t, reqs[2].Body); got != canonJSON(t, []byte(want)) {
+		t.Errorf("body = %s, want %s", got, want)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: Kontaktperson 55 und Projekt 66 der Rechnung mitgesendet (gleicher Kunde; ohne sie leert die API beide)\n") {
+		t.Errorf("stderr = %q", errs)
+	}
+
+	// another customer by name drops them
+	app, srv = apiApp(t)
+	srv.OnFunc("GET", "/contact/companies", pagedList(t, 1, []map[string]any{company(3214, "Mustermann GmbH"), company(99, "ACME")}))
+	invoiceWithRefs(srv, bothRefs)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "acme", "--payment-term", "7", "-o", "json"}), 0)
+	if reqs := wantRequests(t, srv, 3); canonJSON(t, reqs[2].Body) != canonJSON(t, []byte(`{"customer":{"id":99},"payment_term":{"id":7}}`)) {
+		t.Errorf("body = %s", reqs[2].Body)
+	}
+}
+
 func TestInvoiceUpdateOtherCustomerDropsRefs(t *testing.T) {
 	app, srv := apiApp(t)
 	invoiceWithRefs(srv, bothRefs)

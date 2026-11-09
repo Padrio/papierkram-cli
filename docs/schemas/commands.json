@@ -202,6 +202,11 @@
                 "maximum": {
                   "description": "Größter erlaubter Wert, einschließlich; fehlt ohne Obergrenze (--limit: 100). Herkunft wie minimum.",
                   "type": "number"
+                },
+                "resolves": {
+                  "description": "Flag nimmt statt der ID auch einen Namen dieser Ressource; die Auflösung kostet 1 Credit je geladener Seite (höchstens 5), aus dem Zwischenspeicher 0",
+                  "type": "string",
+                  "minLength": 1
                 }
               }
             }
@@ -316,6 +321,11 @@
           "maximum": {
             "description": "Größter erlaubter Wert, einschließlich; fehlt ohne Obergrenze (--limit: 100). Herkunft wie minimum.",
             "type": "number"
+          },
+          "resolves": {
+            "description": "Flag nimmt statt der ID auch einen Namen dieser Ressource; die Auflösung kostet 1 Credit je geladener Seite (höchstens 5), aus dem Zwischenspeicher 0",
+            "type": "string",
+            "minLength": 1
           }
         }
       }

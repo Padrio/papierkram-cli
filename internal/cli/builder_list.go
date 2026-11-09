@@ -97,7 +97,7 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 			help += "; ohne Angabe " + presetNote(e.Preset)
 		}
 		if flt.Kind == "id" {
-			f.Int64(flt.Flag, 0, help)
+			f.Var(&rawValue{typ: "id"}, flt.Flag, help)
 		} else {
 			f.String(flt.Flag, "", help)
 		}
@@ -112,6 +112,9 @@ func addListFlags(cmd *cobra.Command, e registry.Entry) {
 		if flt.Flag == e.Preset {
 			// presetQuery runs before the configuration is resolved
 			markPreset(f, flt.Flag, e.Preset, false)
+		}
+		if flt.Kind == "id" {
+			markResolves(f, flt.Flag)
 		}
 	}
 }
@@ -270,7 +273,11 @@ const datetimeHint = "erlaubt: YYYY-MM-DD, today/heute, yesterday/gestern oder R
 // of the list entry property, both with suggestions.
 func (a *App) filterValue(c *cobra.Command, e registry.Entry, flt registry.Filter) (string, error) {
 	if flt.Kind == "id" {
-		v, _ := c.Flags().GetInt64(flt.Flag)
+		// a name is 0 here; patchListQuery sets its ID after resolveNames
+		v, err := flagID(c, flt.Flag)
+		if err != nil {
+			return "", err
+		}
 		if v < 0 {
 			return "", listUsage(c, fmt.Sprintf("ungültiger Wert %d für --%s: ID muss ≥ 0 sein", v, flt.Flag))
 		}
@@ -341,6 +348,9 @@ func (a *App) datetimeValue(cc spec.CoerceContext, field spec.Field, end bool, r
 // runList lists one page, or with --all every page merged into one
 // envelope (spec 10.3).
 func (a *App) runList(c *cobra.Command, e registry.Entry) error {
+	if err := checkNameFlags(c); err != nil {
+		return err
+	}
 	lr, err := a.parseListFlags(c, e)
 	if err != nil {
 		return err
@@ -353,9 +363,20 @@ func (a *App) runList(c *cobra.Command, e registry.Entry) error {
 		return err
 	}
 	a.flushPresetHints()
-	client, _, err := a.Client(c)
+	client, r, err := a.Client(c)
 	if err != nil {
 		return err
+	}
+	// names after the configuration, before the request (spec v0.2 §4);
+	// the filter values were checked with the flags, a name was 0
+	res, err := a.resolveNames(c, client, r)
+	if err != nil {
+		return err
+	}
+	if len(res) > 0 {
+		if err := a.patchListQuery(c, e, params, lr); err != nil {
+			return err
+		}
 	}
 	if lr.hasLocal {
 		return a.runLocalFilter(c, e, client, params, lr)
@@ -375,6 +396,25 @@ func (a *App) runList(c *cobra.Command, e registry.Entry) error {
 		return err
 	}
 	return afterRequest(output.RenderValue(a.outputOptions(c.Context(), a.outputFormat(a.resolved)), env, e.Columns))
+}
+
+// patchListQuery sets the path values and the ID filters given anew after
+// resolveNames: a name was 0 in pathValues and filterValue.
+func (a *App) patchListQuery(c *cobra.Command, e registry.Entry, params []int64, lr *listRequest) error {
+	if err := patchPathParams(c, e, params); err != nil {
+		return err
+	}
+	for _, flt := range e.Filters {
+		if flt.Kind != "id" || !c.Flags().Changed(flt.Flag) {
+			continue
+		}
+		v, err := a.filterValue(c, e, flt)
+		if err != nil {
+			return err
+		}
+		lr.query.Set(flt.Param, v)
+	}
+	return nil
 }
 
 // listPage is the part of a list envelope --all needs. Entries stay raw

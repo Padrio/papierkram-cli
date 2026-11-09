@@ -17,8 +17,8 @@ Beispiele:
   papierkram person describe 1063 --company 2862 -o yaml
 
 Optionen:
-      --company Zahl   ID des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)
-  -h, --help           Hilfe zu describe
+      --company ID   ID oder Name des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)
+  -h, --help         Hilfe zu describe
 
 Globale Optionen:
       --context Text    Kontext statt des aktiven verwenden

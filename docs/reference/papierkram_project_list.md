@@ -17,7 +17,7 @@ Beispiele:
 
 Optionen:
       --all              alle Seiten laden und zusammenführen (1 Anfrage je Seite)
-      --company Zahl     Nur Projekte dieses Kunden (Firmen-ID)
+      --company ID       Nur Projekte dieses Kunden (Firmen-ID oder Name)
       --desc             absteigend sortieren (nur mit --sort)
   -h, --help             Hilfe zu list
       --limit Zahl       Einträge pro Seite, 1–100 (--all ohne --limit: 100) (Standard: 25)

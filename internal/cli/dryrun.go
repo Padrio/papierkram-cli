@@ -41,13 +41,16 @@ func (u *UploadInfo) step() bool { return u != nil && u.URL != "" }
 
 // dryRunJSON is the -o json contract of --dry-run (spec 8.4).
 type dryRunJSON struct {
-	DryRun  bool        `json:"dry_run"`
-	Method  string      `json:"method"`
-	URL     string      `json:"url"`
-	Body    any         `json:"body"`
-	Upload  *UploadInfo `json:"upload,omitempty"`
-	Read    *ReadInfo   `json:"read,omitempty"`
-	Credits int         `json:"credits"`
+	DryRun bool        `json:"dry_run"`
+	Method string      `json:"method"`
+	URL    string      `json:"url"`
+	Body   any         `json:"body"`
+	Upload *UploadInfo `json:"upload,omitempty"`
+	Read   *ReadInfo   `json:"read,omitempty"`
+	// Resolved are the names resolved for the flags (spec v0.2 §4); their
+	// list requests are spent and counted in Credits
+	Resolved []Resolution `json:"resolved,omitempty"`
+	Credits  int          `json:"credits"`
 }
 
 // dryRun prints the request a mutation would send, without sending it
@@ -59,24 +62,37 @@ type dryRunJSON struct {
 // error stays exit 2).
 func (a *App) dryRun(ctx context.Context, e registry.Entry, method, url string, body any, x sendExtras) error {
 	upload := x.upload
-	v := dryRunJSON{DryRun: true, Method: method, URL: url, Body: body, Upload: upload, Read: x.read, Credits: e.Credits}
+	credits := e.Credits + resolvedCredits(x.resolved)
+	v := dryRunJSON{DryRun: true, Method: method, URL: url, Body: body, Upload: upload, Read: x.read, Resolved: x.resolved, Credits: credits}
 	o := a.outputOptions(ctx, a.outputFormat(a.resolved))
 	if !ownText(o) {
 		return output.RenderValue(o, v, output.Columns{})
 	}
 	var b strings.Builder
 	// a read builds the body of a create (--from-estimate) or completes
-	// that of an update (invoice update keeps its payment term)
+	// that of an update (invoice update keeps its payment term); a
+	// resolution may precede any mutation
 	done, again := "angelegt", "erneutes Lesen und Anlegen"
-	if e.Action == "update" {
+	if e.Action != "create" {
 		done, again = "geändert", "erneutes Lesen und Ändern"
 	}
-	if x.read != nil {
+	switch {
+	case x.read != nil:
 		fmt.Fprintf(&b, "Probelauf – nichts %s\nGelesen: %s %s (%s, bereits verbraucht)\n", done, x.read.Method, x.read.URL, creditsText(x.read.Credits))
-	} else {
+	case len(x.resolved) > 0:
+		// the list requests of the resolution were sent
+		fmt.Fprintf(&b, "Probelauf – nichts %s\n", done)
+	default:
 		b.WriteString("Probelauf – nichts gesendet\n")
 	}
-	fmt.Fprintf(&b, "Methode: %s\nURL:     %s\nCredits: %d", method, url, e.Credits)
+	for _, r := range x.resolved {
+		cost := creditsText(r.Credits) + ", bereits verbraucht"
+		if r.Cached {
+			cost = "aus dem Zwischenspeicher, 0 Credits"
+		}
+		fmt.Fprintf(&b, "Aufgelöst: --%s „%s“ → %d (%s)\n", r.Flag, r.Name, r.ID, cost)
+	}
+	fmt.Fprintf(&b, "Methode: %s\nURL:     %s\nCredits: %d", method, url, credits)
 	switch {
 	case upload.step():
 		b.WriteString(" (beide Anfragen)")

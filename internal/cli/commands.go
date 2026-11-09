@@ -62,6 +62,7 @@ const (
 	flagCredits     = "pk:credits"      // credits of the further request the flag sends (--file: the upload)
 	flagMinimum     = "pk:minimum"      // smallest value the check accepts (inclusive)
 	flagMaximum     = "pk:maximum"      // largest value the check accepts (inclusive)
+	flagResolves    = "pk:resolves"     // resource whose name the ID flag takes instead of the ID (markResolves)
 )
 
 // annotate sets a flag annotation; a flag that does not exist is a
@@ -175,7 +176,7 @@ type commandInfo struct {
 
 // flagInfo is one flag; Shorthand is omitted when the flag has none,
 // Default when the help shows none (defaultIsZero), Minimum and Maximum
-// without a bound annotation.
+// without a bound annotation, Resolves without name resolution.
 type flagInfo struct {
 	Name         string   `json:"name"`
 	Shorthand    string   `json:"shorthand,omitempty"`
@@ -192,6 +193,7 @@ type flagInfo struct {
 	Default      string   `json:"default,omitempty"`
 	Minimum      *float64 `json:"minimum,omitempty"`
 	Maximum      *float64 `json:"maximum,omitempty"`
+	Resolves     string   `json:"resolves,omitempty"`
 }
 
 // commandMeta is what a command sends: its registry entry (op false
@@ -415,6 +417,7 @@ func flagInfos(fs *pflag.FlagSet) ([]flagInfo, error) {
 			Default:      flagDefault(f),
 			Minimum:      flagBound(f, flagMinimum),
 			Maximum:      flagBound(f, flagMaximum),
+			Resolves:     strings.Join(f.Annotations[flagResolves], ""),
 		})
 	})
 	return out, err
@@ -465,7 +468,7 @@ var commandsColumns = output.Columns{Table: []output.Column{
 
 const commandsLong = `Listet alle Befehle mit Klasse (Spec 8.1), Credits je Aufruf (bei deliver mit Nachlesen, bei invoice update mit dem Lesen der Rechnung; Flags wie --file und --from-estimate sowie --all kosten zusätzlich) und Kurzhilfe.
 
-Mit --json (oder -o json|yaml, --jq) kommt die maschinenlesbare Liste für Agents: je Befehl Verwendungszeile mit Positionsargumenten, Aliase, Kurzhilfe, Klasse, Credits, Operation (operation_id, method, path), Flags mit Kurzform, Typ, Pflicht (mit gleichwertigen Flags unter alternatives), Wiederholbarkeit, erlaubten Werten, Standardwert wie „Standard:“ in der Hilfe (Feld default), geprüften Grenzen (Felder minimum, maximum) und Hilfetext, dazu Beispiele; die globalen Flags stehen einmal unter global_flags. Vertrag: docs/schemas/commands.json (Version 1).
+Mit --json (oder -o json|yaml, --jq) kommt die maschinenlesbare Liste für Agents: je Befehl Verwendungszeile mit Positionsargumenten, Aliase, Kurzhilfe, Klasse, Credits, Operation (operation_id, method, path), Flags mit Kurzform, Typ, Pflicht (mit gleichwertigen Flags unter alternatives), Wiederholbarkeit, erlaubten Werten, Standardwert wie „Standard:“ in der Hilfe (Feld default), geprüften Grenzen (Felder minimum, maximum), Namensauflösung (Feld resolves: das ID-Flag nimmt auch einen Namen dieser Ressource) und Hilfetext, dazu Beispiele; die globalen Flags stehen einmal unter global_flags. Vertrag: docs/schemas/commands.json (Version 1).
 
 Klassen außer denen der Spec: local wirkt nur lokal (Konfiguration, Schlüsselbund, Projektdatei, Timer) und kostet nichts, außer der Befehl nennt eine Operation (auth login prüft das Token per GET /info); per_request entscheidet sich je Anfrage (papierkram api), credits ist dann null. blocked_by_read_only sagt, ob der Befehl unter PAPIERKRAM_READ_ONLY mit Exit 9 abbricht.
 

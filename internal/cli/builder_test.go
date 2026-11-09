@@ -719,7 +719,7 @@ func TestEntryHelpGerman(t *testing.T) {
 	wantExit(t, app, Run(app, []string{"transaction", "list", "--help"}), 0)
 	out := mustOut(app)
 	for _, want := range []string{"Bankumsätze auflisten", "papierkram transaction list --bank-connection 237",
-		"--bank-connection Zahl", "--limit Zahl", "(Standard: 25)", "--max-pages", "--sort Text", "--desc", "Credit"} {
+		"--bank-connection ID", "--limit Zahl", "(Standard: 25)", "--max-pages", "--sort Text", "--desc", "Credit"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("Hilfe enthält %q nicht:\n%s", want, out)
 		}

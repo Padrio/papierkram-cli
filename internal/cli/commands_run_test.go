@@ -248,6 +248,10 @@ func TestCommandsJSONFlagTypesMatchCLI(t *testing.T) {
 				continue
 			}
 			s := typeSamples[f.Type]
+			if f.Resolves != "" {
+				// text is a name (spec v0.2 §4); a negative ID is no ID
+				s.bad = "-1"
+			}
 			code, errs := runLine(t, nil, append(append([]string{}, base...), flag+"="+s.bad))
 			if !valueRejected(code, errs, flag) {
 				t.Errorf("%s %s=%s (%s): exit %d, stderr %q – nicht abgelehnt", c.Command, flag, s.bad, f.Type, code, errs)

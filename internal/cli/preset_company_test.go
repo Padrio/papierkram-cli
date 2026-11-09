@@ -284,15 +284,15 @@ func TestPersonDeletePresetHintBeforeConfirmation(t *testing.T) {
 }
 
 // commands --json names where --company of the person commands comes
-// from; it stays required (like time log --task).
+// from; it stays required (like time log --task) and takes a name too.
 func TestCommandsJSONPersonCompanyPreset(t *testing.T) {
 	d := decodeCommands(t, runCommandsJSON(t, "--json"))
 	for _, name := range []string{"person list", "person create", "person describe", "person update", "person delete"} {
 		f := d.find(t, name).flag(t, "company")
-		if !f.Required || f.Type != "id" || !slices.Equal(f.DefaultFrom, []string{"flag", "env", "projectfile"}) || f.Env != "PAPIERKRAM_COMPANY" {
+		if !f.Required || f.Type != "id" || !slices.Equal(f.DefaultFrom, []string{"flag", "env", "projectfile"}) || f.Env != "PAPIERKRAM_COMPANY" || f.Resolves != "company" {
 			t.Errorf("%s --company = %+v", name, f)
 		}
-		if f.Description != "ID des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)" {
+		if f.Description != "ID oder Name des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)" {
 			t.Errorf("%s --company: Beschreibung %q", name, f.Description)
 		}
 	}

@@ -279,6 +279,15 @@ var dryRunRuns = []contractRun{
 		return []string{"--file", writeFile(t, "beleg.pdf", pdfContent)}
 	}, args: append(slices.Clone(voucherCreateArgs), "--dry-run", "-o", "json")},
 	{name: "from-estimate", args: fromEstimateCmd("--dry-run", "-o", "json")},
+	{name: "Namensauflösung", setup: func(t *testing.T, srv *mockapi.Server) []string {
+		srv.OnFunc("GET", "/contact/companies", pagedList(t, 1, []map[string]any{company(2, "Mustermann GmbH")}))
+		return nil
+	}, args: []string{"person", "delete", "1059", "--company", "Mustermann GmbH", "--dry-run", "-o", "json"}},
+	{name: "Namensauflösung Felder", setup: func(t *testing.T, srv *mockapi.Server) []string {
+		srv.OnFunc("GET", "/contact/companies", pagedList(t, 1, []map[string]any{company(2, "Mustermann GmbH")}))
+		srv.OnFunc("GET", "/users", pagedList(t, 1, []map[string]any{person(1, "Max", "Mustermann")}))
+		return nil
+	}, args: []string{"project", "create", "--name", "P", "--customer", "mustermann gmbh", "--team-member", "Max Mustermann", "--dry-run", "-o", "json"}},
 	{name: "api", args: []string{"api", "POST", "/contact/companies", "-f", "name=Muster GmbH", "-f", "contact_type=customer", "--dry-run", "-o", "json"}},
 }
 
@@ -305,6 +314,10 @@ func TestDryRunContract(t *testing.T) {
 			case "from-estimate":
 				if doc["read"] == nil {
 					t.Errorf("read fehlt: %s", out)
+				}
+			case "Namensauflösung Felder":
+				if r, _ := doc["resolved"].([]any); len(r) != 2 || doc["credits"] != 12.0 {
+					t.Errorf("resolved/credits: %s", out)
 				}
 			}
 		})
@@ -645,6 +658,16 @@ func TestContractSchemasStrict(t *testing.T) {
 				"read mit POST": {func(d map[string]any) {
 					d["read"] = map[string]any{"method": "POST", "url": "https://x/api/v1/a", "credits": 1.0}
 				}, "value is not one of the allowed values"},
+				"resolved":                  {withResolved(nil), ""},
+				"resolved aus Cache":        {withResolved(func(r map[string]any) { r["credits"], r["cached"] = 0.0, true }), ""},
+				"resolved leer":             {func(d map[string]any) { d["resolved"] = []any{} }, "minimum number of items is 1"},
+				"resolved unbekanntes Feld": {withResolved(func(r map[string]any) { r["url"] = "https://x/api/v1/a" }), `property "url" is unsupported`},
+				"resolved credits negativ":  {withResolved(func(r map[string]any) { r["credits"] = -1.0 }), "number must be at least 0"},
+				"resolved id fehlt":         {withResolved(func(r map[string]any) { delete(r, "id") }), `property "id" is missing`},
+				"resolved cached fehlt":     {withResolved(func(r map[string]any) { delete(r, "cached") }), `property "cached" is missing`},
+				"resolved Flag mit --":      {withResolved(func(r map[string]any) { r["flag"] = "--customer" }), "regular expression"},
+				"resolved Name leer":        {withResolved(func(r map[string]any) { r["name"] = "" }), "minimum string length is 1"},
+				"resolved kein Array":       {func(d map[string]any) { d["resolved"] = map[string]any{} }, "value must be an array"},
 			}},
 		{"delete", `{"id":12,"deleted":true}`,
 			map[string]contractMutation{
@@ -758,6 +781,18 @@ func TestContractSchemasStrict(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// withResolved adds a resolution to a decoded dry-run document, changed
+// by fn when not nil.
+func withResolved(fn func(r map[string]any)) func(d map[string]any) {
+	return func(d map[string]any) {
+		r := map[string]any{"flag": "customer", "name": "Mustermann GmbH", "resource": "company", "id": 2.0, "credits": 1.0, "cached": false}
+		if fn != nil {
+			fn(r)
+		}
+		d["resolved"] = []any{r}
 	}
 }
 

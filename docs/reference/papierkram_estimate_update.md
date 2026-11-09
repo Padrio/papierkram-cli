@@ -25,10 +25,10 @@ Optionen:
       --billing-street Text           Wert für billing.street
       --billing-ust-idnr Text         Wert für billing.ust_idnr
       --billing-zip Text              Wert für billing.zip
-      --contact-person ID             ID für customer.contact_person
+      --contact-person ID             ID oder Name für customer.contact_person
       --custom-template ID            ID für custom_template
-      --customer ID                   ID für customer
-      --customer-project ID           ID für customer.project
+      --customer ID                   ID oder Name für customer
+      --customer-project ID           ID oder Name für customer.project
       --description Text              Wert für description
       --document-date Datum           Wert für document_date (YYYY-MM-DD, heute, gestern)
       --flagged                       Wert für flagged (true/false)

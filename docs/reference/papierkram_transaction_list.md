@@ -15,14 +15,14 @@ Beispiele:
   papierkram transaction list --all -o json
 
 Optionen:
-      --all                    alle Seiten laden und zusammenführen (1 Anfrage je Seite)
-      --bank-connection Zahl   Nur Umsätze dieser Bankverbindung (ID)
-      --desc                   absteigend sortieren (nur mit --sort)
-  -h, --help                   Hilfe zu list
-      --limit Zahl             Einträge pro Seite, 1–100 (--all ohne --limit: 100) (Standard: 25)
-      --max-pages Zahl         mit --all höchstens so viele Seiten laden
-      --page Zahl              nur diese Seite laden (ab 1)
-      --sort Text              nach diesem Feld sortieren (setzt order_by und order_direction)
+      --all                  alle Seiten laden und zusammenführen (1 Anfrage je Seite)
+      --bank-connection ID   Nur Umsätze dieser Bankverbindung (ID)
+      --desc                 absteigend sortieren (nur mit --sort)
+  -h, --help                 Hilfe zu list
+      --limit Zahl           Einträge pro Seite, 1–100 (--all ohne --limit: 100) (Standard: 25)
+      --max-pages Zahl       mit --all höchstens so viele Seiten laden
+      --page Zahl            nur diese Seite laden (ab 1)
+      --sort Text            nach diesem Feld sortieren (setzt order_by und order_direction)
 
 Globale Optionen:
       --context Text    Kontext statt des aktiven verwenden

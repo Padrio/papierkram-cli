@@ -17,8 +17,8 @@ Beispiele:
   papierkram person delete 1063 --company 2862 --yes
 
 Optionen:
-      --company Zahl   ID des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)
-  -h, --help           Hilfe zu delete
+      --company ID   ID oder Name des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)
+  -h, --help         Hilfe zu delete
 
 Globale Optionen:
       --context Text    Kontext statt des aktiven verwenden

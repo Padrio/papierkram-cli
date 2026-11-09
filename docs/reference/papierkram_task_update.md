@@ -22,10 +22,10 @@ Optionen:
   -h, --help                  Hilfe zu update
       --input Text            Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder
       --name Text             Wert für name
-      --project ID            ID für project
-      --proposition ID        ID für proposition
+      --project ID            ID oder Name für project
+      --proposition ID        ID oder Name für proposition
       --relative-costs Text   Wert für relative_costs
-      --user ID               ID für user
+      --user ID               ID oder Name für user
 
 Globale Optionen:
       --context Text    Kontext statt des aktiven verwenden

@@ -16,7 +16,7 @@ stdout '^Rechnung anlegen\.$'
 stdout '^Kosten: 50 Credits je Anfrage\.$'
 stdout '^Beispiele:$'
 stdout '^Globale Optionen:$'
-stdout '--payment-term ID +ID für payment_term \(Pflicht\)'
+stdout '--payment-term ID +ID oder Name für payment_term \(Pflicht\)'
 ! stdout 'Usage:|Examples:|Global Flags:|\(required\)'
 ! stderr .
 

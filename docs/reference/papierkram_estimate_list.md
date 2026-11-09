@@ -17,14 +17,14 @@ Beispiele:
 
 Optionen:
       --all              alle Seiten laden und zusammenführen (1 Anfrage je Seite)
-      --company Zahl     Nur Angebote dieser Firma (ID)
+      --company ID       Nur Angebote dieser Firma (ID oder Name)
       --desc             absteigend sortieren (nur mit --sort)
       --from Text        Nur Angebote mit Belegdatum ab diesem Tag (YYYY-MM-DD, heute, gestern)
   -h, --help             Hilfe zu list
       --limit Zahl       Einträge pro Seite, 1–100 (--all ohne --limit: 100) (Standard: 25)
       --max-pages Zahl   mit --all höchstens so viele Seiten laden
       --page Zahl        nur diese Seite laden (ab 1)
-      --project Zahl     Nur Angebote dieses Projekts (ID)
+      --project ID       Nur Angebote dieses Projekts (ID oder Name)
       --sort Text        nach diesem Feld sortieren (setzt order_by und order_direction)
       --to Text          Nur Angebote mit Belegdatum bis zu diesem Tag (YYYY-MM-DD, heute, gestern)
 

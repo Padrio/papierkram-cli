@@ -7,7 +7,7 @@ description: Bedient die Buchhaltung Papierkram über das CLI `papierkram`. Verw
 
 Das CLI beschreibt sich selbst, prüft jeden Body vor dem Senden und hat feste Exit-Codes. Dieser Skill fasst die Regeln für Agents zusammen und zeigt vier Abläufe. Verbindlich ist [AGENTS.md](https://github.com/Padrio/papierkram-cli/blob/main/AGENTS.md) (JSON-Vertrag, Fehler, Exit 11 und 12 im Detail); bei Widersprüchen gilt AGENTS.md.
 
-Befehle immer als `papierkram` aufrufen (die Kurzform `pk` gibt es nicht bei jeder Installation). Alle IDs unten sind Beispiele. IDs immer per `list` ermitteln, nie raten; Flags nehmen IDs, keine Namen.
+Befehle immer als `papierkram` aufrufen (die Kurzform `pk` gibt es nicht bei jeder Installation). Alle IDs unten sind Beispiele. IDs immer per `list` ermitteln, nie raten. Flags mit `resolves` in `commands --json` nehmen auch einen Namen (`--customer "Mustermann GmbH"`); das kostet 1 Credit je geladener Listenseite und gilt nur bei genau einem Treffer (sonst Exit 4 bzw. 2), Ziffern sind immer eine ID. Details: [AGENTS.md, Weitere Hinweise](https://github.com/Padrio/papierkram-cli/blob/main/AGENTS.md#weitere-hinweise).
 
 ## Sicherheitsregeln
 

@@ -150,6 +150,9 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 		} else if fl := fs.VarPF(&rawValue{typ: flagType(f)}, f.Flag, "", usage); f.IsBool() {
 			fl.NoOptDefVal = "true"
 		}
+		if flagType(f) == "id" {
+			markResolves(fs, f.Flag)
+		}
 		if f.Required {
 			// --input (merged before Validate) and, for the line items,
 			// --items give the value as well
@@ -175,10 +178,11 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 }
 
 // runWrite sends create or update (spec 6, 6.3a). Order (plan): arguments,
-// flag combinations and a preset path flag (exit 2), configuration and
-// read-only gate (mutationClient, exit 9, before anything is read), body
-// (buildBodyFrom:
-// exit 2/5), --dry-run and confirmation (beforeMutation), then the request. Output is the API object; an empty
+// flag combinations, name flags and a preset path flag (exit 2),
+// configuration and read-only gate (mutationClient, exit 9, before
+// anything is read), names (resolveNames, spec v0.2 §4), body
+// (buildBodyFrom: exit 2/5), --dry-run and confirmation (beforeSend),
+// then the request. Output is the API object; an empty
 // response prints {"id":N,"ok":true} on update and {"ok":true} with a
 // warning on create.
 func (a *App) runWrite(c *cobra.Command, e registry.Entry, args []string) error {
@@ -228,6 +232,9 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 			return err
 		}
 	}
+	if err := checkNameFlags(c); err != nil {
+		return err
+	}
 	// after the flag checks, before the read-only gate (exit 2 first): a
 	// preset path flag (person create --company) reads environment,
 	// project file and configuration, whose errors must not hide a flag
@@ -251,6 +258,11 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 	// e is that of the whole run
 	client, r, err := a.mutationClient(e)
 	if err != nil {
+		return err
+	}
+	// names after the gate and before the body (spec v0.2 §4): the body,
+	// the reads of --from-estimate and of invoice update see IDs only
+	if extras.resolved, err = a.resolvePathNames(c, e, client, r, params); err != nil {
 		return err
 	}
 	if up != nil {

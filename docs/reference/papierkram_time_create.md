@@ -23,9 +23,9 @@ Optionen:
   -h, --help                     Hilfe zu create
       --input Text               Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder
       --started-at-time Text     Wert für started_at_time (HH:MM) (Pflicht)
-      --task ID                  ID für task (Pflicht)
+      --task ID                  ID oder Name für task (Pflicht)
       --unbillable               Wert für unbillable (true/false)
-      --user ID                  ID für user (Pflicht)
+      --user ID                  ID oder Name für user (Pflicht)
 
 Globale Optionen:
       --context Text    Kontext statt des aktiven verwenden

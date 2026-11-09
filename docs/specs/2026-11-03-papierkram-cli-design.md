@@ -31,8 +31,8 @@ Zwei Zielgruppen, gleich wichtig:
 
 **Nicht-Ziele (v1)**
 - MCP-Server-Modus (`papierkram mcp serve`) **[Pascal]** – kommt in v1.x. Die Command-Registry (Abschnitt 5.3) wird so gebaut, dass MCP-Tools daraus generiert werden können.
-- Namensauflösung in Flags (`--customer "Mustermann GmbH"`) **[Call]**: kostet Credits, ist mehrdeutig. Flags nehmen IDs; Namen erscheinen nur in Bestätigungszusammenfassungen.
 - `$EDITOR`-basiertes Bearbeiten, Offline-Cache, automatische Wiederholung von Mutationen **[Call]**.
+- (Gestrichen: Namensauflösung in Flags war hier Nicht-Ziel; Pascal hat sie am 2026-11-09 beauftragt, Regeln in [v0.2-Spec §4](2026-11-09-papierkram-cli-v0.2-design.md#4-namensauflösung-in-flags), Umsetzung in v0.1.1.)
 - Buchhaltungslogik, die Papierkram selbst nicht anbietet (z. B. Mahnwesen, Auswertungen über die API hinaus). Ausnahme: dünne Komfort-Commands, die nur vorhandene Endpunkte verketten (`invoice create --from-estimate`, `voucher create --file`, `time log`).
 
 **Anti-Ziele** (wäre ein Fehlschlag, selbst wenn alles „funktioniert“)
@@ -190,6 +190,7 @@ Eine Go-Tabelle beschreibt jedes API-Command: Ressource, Aktion, Method, Pfad-Te
 ### 6.1 Flags
 - Skalar-Felder des Request-Schemas → Flags in kebab-case (`--document-date`, `--budget-money`). Enums werden in Hilfe und Completion angeboten.
 - Referenzen als ID-Flags: `--customer 12` → `customer:{id:12}`, `--contact-person 7` → `customer.contact_person:{id:7}`, `--customer-project 3` → `customer.project:{id:3}` (Rechnung/Angebot), `--payment-term 4`, `--creditor 9`, `--project 5`, `--task 8`, `--user 1`, `--proposition 2`, `--custom-template 249`, `--default-proposition 2`, `--team-member 1` (wiederholbar). **[Builder]** genaue Benennung je Ressource, Regel: Flagname = Feldname in kebab-case.
+- Namen statt IDs (v0.1.1, [v0.2-Spec §4](2026-11-09-papierkram-cli-v0.2-design.md#4-namensauflösung-in-flags)): ID-Flags benannter Ressourcen (`registry.NameRefs`: `--customer`, `--creditor`, `--company`, `--project`, `--customer-project`, `--contact-person`, `--task`, `--proposition`, `--default-proposition`, `--payment-term`, `--user`, `--team-member`) nehmen in Feld-, Filter- und Pfad-Flags der generischen Befehle auch einen Namen. Ein Wert aus Ziffern (mit Vorzeichen, Leerraum getrimmt) bleibt immer eine ID; ein Name wird nach dem Schreibschutz und vor dem Body über die Liste der Ressource aufgelöst (100 je Seite, höchstens 5 Seiten, 1 Credit je Seite, Zwischenspeicher der Vervollständigung 60 s), nur ein eindeutiger aktiver Treffer gilt (kein Treffer Exit 4, mehrdeutig oder über 500 Einträge Exit 2). `--contact-person` per Name braucht `--customer`. Nicht für `time log`/`time start`, `local init`, `context create`, `--from-estimate`, `--custom-template`, Positionsargumente und `papierkram api`.
 - Billing-Block (Rechnung/Angebot): `--billing-company`, `--billing-street`, … (ein Flag pro Feld von `billing`).
 - Custom Attributes: `--attr <id>=<wert>` (wiederholbar); Wert wird gemäß `data_type` der Attributdefinition umgewandelt, wenn bekannt, sonst als String gesendet. **[Call]**
 - Datums-Flags akzeptieren `YYYY-MM-DD`, zusätzlich `today`/`heute`, `yesterday`/`gestern`. **[Call]**
@@ -252,7 +253,7 @@ Gemeinsame Flags für `list`: `--page`, `--limit` (= `page_size`, 1–100, Stand
 | `context create\|use\|list\|active\|delete\|rename` | wie `hcloud context` |
 | `local init\|show` | Projektdatei anlegen (interaktiv nur mit TTY) bzw. wirksame Werte mit Herkunft anzeigen |
 | `api <METHOD> <path> [-f key=value] [-F key=@file] [--input file.json] [--paginate]` | Escape-Hatch wie `gh api`; Body wird **nicht** bereinigt, nur bei `--validate` geprüft. Schutzregeln gelten trotzdem **[Call]**: Method + Pfad werden in der Registry nachgeschlagen; deren Klasse bestimmt Bestätigung/`--yes`, `read_only`-Sperre und `--dry-run`. Für `…/deliver` gilt die `email`-Pflicht aus 9.1 (Body mit `send_via:"email"` ohne vollständiges `email`-Objekt → Exit 5). Unbekannte Pfade gelten bei GET als `read_only`, sonst als `destructive`. |
-| `commands --json` | alle Commands mit Flags, Typen, Pflicht, Enums, Klasse, Credits, Beispielen; je Flag optional `default` (pflag-Standardwert wie „(Standard: …)“ in der Hilfe, ausgelassen beim Nullwert des Typs), `minimum`/`maximum` (eingeschlossene Grenzen aus denselben Konstanten wie die Prüfung: `--limit` 1–100, `--page` 1, `--max-pages` 1 bei `list` und `api`; zusätzlich `minimum`/`maximum` des Spec-Schemas eines Feld- oder Filter-Flags, die eingebettete Spec nennt heute keine). `--timeout` (positive Dauer, untere Grenze ausgeschlossen) und ID-Flags (Typ `id`, ≥ 0) tragen keine Grenzen. Additiv, `version` bleibt 1 |
+| `commands --json` | alle Commands mit Flags, Typen, Pflicht, Enums, Klasse, Credits, Beispielen; je Flag optional `default` (pflag-Standardwert wie „(Standard: …)“ in der Hilfe, ausgelassen beim Nullwert des Typs), `minimum`/`maximum` (eingeschlossene Grenzen aus denselben Konstanten wie die Prüfung: `--limit` 1–100, `--page` 1, `--max-pages` 1 bei `list` und `api`; zusätzlich `minimum`/`maximum` des Spec-Schemas eines Feld- oder Filter-Flags, die eingebettete Spec nennt heute keine). `--timeout` (positive Dauer, untere Grenze ausgeschlossen) und ID-Flags (Typ `id`, ≥ 0) tragen keine Grenzen; je ID-Flag mit Namensauflösung `resolves` (Ressource, deren Namen das Flag nimmt, v0.1.1). Additiv, `version` bleibt 1 |
 | `schema <resource> [action]` | Request-/Response-Schema als JSON |
 | `completion bash\|zsh\|fish\|powershell` | Shell-Completion inkl. dynamischer IDs |
 | `version` | Version, Commit, Build-Datum, Go-Version; `-o json` |
@@ -287,7 +288,7 @@ Zwei Stufen **[Pascal]**:
 - `auth status` und `--debug` zeigen, welche Stufe aktiv ist. AGENTS.md empfiehlt für Analyse-Agents die Env-Variable.
 
 ### 8.4 `--dry-run`
-Bei jeder Mutation (inkl. `api` mit Nicht-GET): validiert lokal, zeigt Method, URL, Body (bei Upload: Dateiname, Größe, MIME-Typ) und Credit-Kosten; sendet nichts; Exit 0. Mit `-o json`: `{"dry_run":true,"method":…,"url":…,"body":…,"credits":…}`. Keine Bestätigung nötig.
+Bei jeder Mutation (inkl. `api` mit Nicht-GET): validiert lokal, zeigt Method, URL, Body (bei Upload: Dateiname, Größe, MIME-Typ) und Credit-Kosten; sendet nichts; Exit 0. Mit `-o json`: `{"dry_run":true,"method":…,"url":…,"body":…,"credits":…}`. Keine Bestätigung nötig. Namen in Flags werden auch bei `--dry-run` aufgelöst (Listenanfragen, Credits verbraucht); sie stehen unter `resolved` (`flag`, `name`, `resource`, `id`, `credits`, `cached`), `credits` enthält sie (v0.1.1; abweichend von v0.2-Spec §4 nicht unter `read`, das ein Einzelobjekt bleibt).
 
 ### 8.5 Credits
 - Kosten pro Command stehen in der Registry und in `commands --json`.
@@ -490,7 +491,7 @@ Coverage-Ziel ≥ 80 % ohne `internal/api/gen`.
 `spf13/cobra`, `pelletier/go-toml/v2`, `zalando/go-keyring`, `oapi-codegen/oapi-codegen/v2` (Tool) + `oapi-codegen/runtime`, `getkin/kin-openapi`, `itchyny/gojq`, `mattn/go-isatty` bzw. `golang.org/x/term`, `goccy/go-yaml`, `rogpeppe/go-internal` (testscript). Tabellen mit `text/tabwriter` oder einer kleinen eigenen Funktion, keine schwere Tabellenbibliothek.
 
 ## 14. Später (v1.x)
-`papierkram mcp serve` aus der Registry; Namensauflösung in Flags; `$EDITOR`-Bearbeitung; `invoice paid-status`-Report über offene Posten, falls die API Zahlungsdaten liefert; `winget`-Manifest.
+`papierkram mcp serve` aus der Registry; `$EDITOR`-Bearbeitung; `invoice paid-status`-Report über offene Posten, falls die API Zahlungsdaten liefert; `winget`-Manifest.
 
 ## 15. Abdeckungsmatrix (alle 89 Operationen)
 

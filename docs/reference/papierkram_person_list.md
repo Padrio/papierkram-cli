@@ -18,7 +18,7 @@ Beispiele:
 
 Optionen:
       --all              alle Seiten laden und zusammenführen (1 Anfrage je Seite)
-      --company Zahl     ID des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)
+      --company ID       ID oder Name des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)
       --desc             absteigend sortieren (nur mit --sort)
   -h, --help             Hilfe zu list
       --limit Zahl       Einträge pro Seite, 1–100 (--all ohne --limit: 100) (Standard: 25)

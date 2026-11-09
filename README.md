@@ -114,6 +114,25 @@ Jede Ressource ist ein Befehl mit Unterbefehlen (`list`, `describe`, `create`, `
 
 Dazu kommen `context`, `local`, `commands`, `schema`, `completion` und `version` (lokal, ohne Credits) sowie `auth` (`login` und `status` prüfen per `GET /info`, je 1 Credit; `logout` ist lokal).
 
+### Namen statt IDs
+
+ID-Flags benannter Ressourcen nehmen statt der ID auch den Namen: `--customer`, `--creditor`, `--company`, `--project`, `--customer-project`, `--contact-person`, `--task`, `--proposition`, `--default-proposition`, `--payment-term`, `--user` und `--team-member`, als Feld (`create`, `update`), Filter (`list`) und übergeordnetes Objekt (`person … --company`). `papierkram commands --json` nennt sie mit `resolves`.
+
+```sh
+papierkram invoice create --name "Beratung Oktober" --customer "Mustermann GmbH" --payment-term 1130 --document-date heute --item "name=Beratung,qty=2,unit=Stunde,price=100,vat=19" --dry-run  # Platzhalter
+papierkram invoice list --company "Mustermann GmbH"  # Platzhalter
+papierkram person list --company "Mustermann GmbH"  # Platzhalter
+papierkram project create --name "Relaunch" --customer 3214 --team-member "Max Mustermann" --team-member 7  # Platzhalter
+```
+
+- Ein Wert aus Ziffern (auch mit Vorzeichen oder Leerraum) ist immer eine ID und kostet nichts. Eine Firma, die „1234“ heißt, geht deshalb nur über ihre ID.
+- Einen Namen sucht das CLI in der Liste der Ressource: 1 Credit je geladener Seite (100 Einträge), höchstens 5 Seiten. Verglichen wird der ganze Name ohne Groß- und Kleinschreibung und mit zusammengefasstem Leerraum, bei Personen und Benutzern „Vorname Nachname“. Archivierte Einträge zählen nicht.
+- Nur genau ein Treffer gilt; das CLI meldet ihn auf stderr (`Hinweis: Kunde „Mustermann GmbH“ → 3214 (1 Credit)`). Kein Treffer ist Exit 4 mit bis zu drei ähnlichen Namen, mehrere Treffer oder eine Liste über 500 Einträge Exit 2 mit den Kandidaten; gesendet wird dann nichts außer den Listenanfragen.
+- Die Liste bleibt wie bei der Vervollständigung 60 Sekunden im Cache; ein Treffer daraus kostet nichts (`aus dem Zwischenspeicher, 0 Credits`). Kontaktpersonen werden nicht zwischengespeichert.
+- `--contact-person` per Name braucht `--customer` (ID oder Name): Die Personen hängen an der Firma.
+- Aufgelöst wird nach dem Schreibschutz (Exit 9 sendet nichts) und vor der Prüfung des Bodys; ein ungültiger Body kostet dann die Credits der Auflösung. `--dry-run` löst ebenfalls auf und zeigt das Ergebnis (`resolved`).
+- Keine Namen nehmen Positionsargumente (`invoice describe <id>`), `papierkram api`, `--from-estimate`, `--custom-template`, `time list --invoice`, `transaction list --bank-connection`, `voucher pay --transaction` sowie `time log`/`time start` (dort gelten die Aliase der Projektdatei), `local init` und `context create`.
+
 ## Kontexte
 
 Ein Kontext ist ein Account-Setup: Subdomain, Optionen und ein Token im Schlüsselbund. Kontexte funktionieren wie bei `hcloud context`:
@@ -261,7 +280,7 @@ papierkram auth login --context firma-gmbh --subdomain firma-gmbh --insecure-sto
 - Folgenreiche Aktionen fragen im Terminal nach: `delete`, `cancel`, `reverse`, `pay`, `document delete` und `deliver` (mit Zusammenfassung: Beleg, Name, Betrag, bei `deliver` Versandart, Empfänger und Betreff). Bei `delete` wird die ID eingetippt, sonst `ja`. `time discard` fragt ebenfalls (Enter = nein), weil die erfasste Zeit verloren geht.
 - Ohne Terminal oder mit `--no-input` bricht so eine Aktion ohne `--yes` ab (Exit 8). `--yes` bestätigt vorab.
 - `archive` und `unarchive` sind umkehrbar und fragen nie nach.
-- `--dry-run` gilt für jede Änderung: Das CLI prüft den Body lokal gegen das Schema, zeigt Methode, URL, Body (bei Uploads Dateiname, Größe und MIME-Typ) und die Credits und sendet nichts (Exit 0). Unter Schreibschutz gilt auch für `--dry-run` Exit 9.
+- `--dry-run` gilt für jede Änderung: Das CLI prüft den Body lokal gegen das Schema, zeigt Methode, URL, Body (bei Uploads Dateiname, Größe und MIME-Typ) und die Credits und sendet nichts (Exit 0). Unter Schreibschutz gilt auch für `--dry-run` Exit 9. Namen in Flags werden auch bei `--dry-run` aufgelöst (Zeile `Aufgelöst: …`, Credits verbraucht und in den Credits enthalten), siehe [Namen statt IDs](#namen-statt-ids).
 
 ```sh
 papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --document-date heute --item "name=Beratung,qty=2,unit=Stunde,price=100,vat=19" --dry-run
@@ -308,7 +327,7 @@ Papierkram rechnet in Monats-Credits (Paket M 10 000, L 20 000); danach antworte
 | 1 | alles andere: Liste je Seite, Abruf, Änderung, Archivieren, Löschen, Aktion, PDF, `GET /info` |
 | 0 | lokale Befehle (`context`, `local`, `commands`, `schema`, `completion`, `version`, `auth logout`, `time start|status|discard`) |
 
-Zusammengesetzte Befehle kosten die Summe: `deliver` 2 (Versand und Nachlesen), `voucher create --file` 60, `invoice create --from-estimate` 51, `invoice update` 2 (liest die Rechnung, um ihre Zahlungsbedingung und bei `--customer` Kontaktperson und Projekt mitzusenden; 1 mit `--payment-term`, außer mit `--customer` ohne `--contact-person`/`--customer-project`), `auth login` und `auth status` je 1. `--all` kostet 1 Credit je geladener Seite; ab 10 Seiten warnt das CLI und fragt im Terminal nach, `--max-pages` begrenzt. `company list --type` lädt immer alle Seiten (die API filtert nicht). Die Vervollständigung von IDs kostet je Abfrage 1 Credit. Fällt das Restkontingent unter 100, warnt das CLI auf stderr.
+Zusammengesetzte Befehle kosten die Summe: `deliver` 2 (Versand und Nachlesen), `voucher create --file` 60, `invoice create --from-estimate` 51, `invoice update` 2 (liest die Rechnung, um ihre Zahlungsbedingung und bei `--customer` Kontaktperson und Projekt mitzusenden; 1 mit `--payment-term`, außer mit `--customer` ohne `--contact-person`/`--customer-project`), `auth login` und `auth status` je 1. Ein Name statt einer ID kostet 1 Credit je geladener Seite der Liste (höchstens 5), aus dem Cache nichts ([Namen statt IDs](#namen-statt-ids)). `--all` kostet 1 Credit je geladener Seite; ab 10 Seiten warnt das CLI und fragt im Terminal nach, `--max-pages` begrenzt. `company list --type` lädt immer alle Seiten (die API filtert nicht). Die Vervollständigung von IDs kostet je Abfrage 1 Credit. Fällt das Restkontingent unter 100, warnt das CLI auf stderr.
 
 ## Umgebungsvariablen
 

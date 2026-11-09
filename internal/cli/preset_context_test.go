@@ -169,7 +169,7 @@ func TestPresetResolvedAfterFlagChecks(t *testing.T) {
 	} {
 		for _, flags := range [][]string{
 			{"--proposition", "-1"},
-			{"--proposition", "abc"},
+			{"--proposition", " "}, // text is a name (spec v0.2 §4), empty is a flag error
 			{"--limit", "0"},
 		} {
 			app, srv := mockApp(t, nil)

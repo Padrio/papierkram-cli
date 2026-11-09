@@ -18,7 +18,7 @@ Beispiele:
 
 Optionen:
       --comment Text      Wert für comment
-      --company Zahl      ID des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)
+      --company ID        ID oder Name des übergeordneten Objekts (company_id); ohne Angabe PAPIERKRAM_COMPANY oder company aus der Projektdatei .papierkram.toml (Pflicht)
       --default           Wert für default (true/false)
       --department Text   Wert für department
       --email Text        Wert für email

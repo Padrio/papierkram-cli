@@ -81,6 +81,7 @@ type flgInfo struct {
 	Default      *string  `json:"default"`
 	Minimum      *float64 `json:"minimum"`
 	Maximum      *float64 `json:"maximum"`
+	Resolves     string   `json:"resolves"`
 }
 
 func decodeCommands(t *testing.T, raw []byte) cmdDoc {
@@ -194,6 +195,9 @@ func TestCommandsJSONMatchesContract(t *testing.T) {
 		"env fehlt zu default_from": {func(d map[string]any) { delete(flagOf(d, "task list", "project"), "env") }, `any schema from "anyOf"`,
 			flagItem.AllOf[1].Value, func(d map[string]any) any { return flagOf(d, "task list", "project") }},
 		"globales Flag-Feld":       {func(d map[string]any) { globalFlag(d, "output")["x"] = true }, `property "x" is unsupported`, nil, nil},
+		"resolves leer":            {func(d map[string]any) { flagOf(d, "invoice create", "customer")["resolves"] = "" }, "minimum string length is 1", nil, nil},
+		"resolves als Zahl":        {func(d map[string]any) { flagOf(d, "invoice create", "customer")["resolves"] = 1.0 }, "value must be a string", nil, nil},
+		"resolves null":            {func(d map[string]any) { globalFlag(d, "output")["resolves"] = nil }, "Value is not nullable", nil, nil},
 		"falsche Vertragsversion":  {func(d map[string]any) { d["version"] = 2.0 }, "value is not one of the allowed values", nil, nil},
 		"Beispiel ohne papierkram": {func(d map[string]any) { cmdOf(d, "invoice create")["examples"] = []any{"invoice create"} }, "regular expression", nil, nil},
 	}
@@ -986,7 +990,8 @@ func TestFilterBounds(t *testing.T) {
 // without a double "und" (task 17, T16-M4).
 func TestCommandsLongWording(t *testing.T) {
 	want := "Flags mit Kurzform, Typ, Pflicht (mit gleichwertigen Flags unter alternatives), Wiederholbarkeit, erlaubten Werten, " +
-		"Standardwert wie „Standard:“ in der Hilfe (Feld default), geprüften Grenzen (Felder minimum, maximum) und Hilfetext, dazu Beispiele;"
+		"Standardwert wie „Standard:“ in der Hilfe (Feld default), geprüften Grenzen (Felder minimum, maximum), " +
+		"Namensauflösung (Feld resolves: das ID-Flag nimmt auch einen Namen dieser Ressource) und Hilfetext, dazu Beispiele;"
 	if !strings.Contains(commandsLong, want) {
 		t.Errorf("commandsLong ohne %q:\n%s", want, commandsLong)
 	}

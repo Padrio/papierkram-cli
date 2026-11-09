@@ -16,7 +16,7 @@ Beispiele:
   papierkram voucher update 295 --input beleg.json
 
 Optionen:
-      --creditor ID                  ID für creditor
+      --creditor ID                  ID oder Name für creditor
       --description Text             Wert für description
       --document-date Datum          Wert für document_date (YYYY-MM-DD, heute, gestern)
       --due-date Datum               Wert für due_date (YYYY-MM-DD, heute, gestern)

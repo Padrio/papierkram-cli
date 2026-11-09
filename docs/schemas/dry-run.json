@@ -1,6 +1,6 @@
 {
   "title": "papierkram --dry-run (-o json)",
-  "description": "Ausgabe einer Änderung mit --dry-run und -o json auf stdout (Vertrag für Agents, Spezifikation 8.4): die Anfrage, die gesendet würde. Es wurde nichts geändert und nichts gesendet außer einer Leseanfrage, die read nennt; Exit 0. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "description": "Ausgabe einer Änderung mit --dry-run und -o json auf stdout (Vertrag für Agents, Spezifikation 8.4): die Anfrage, die gesendet würde. Es wurde nichts geändert und nichts gesendet außer einer Leseanfrage, die read nennt, und den Listenanfragen der Namensauflösung, die resolved nennt; Exit 0. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
   "type": "object",
   "additionalProperties": false,
   "required": ["dry_run", "method", "url", "body", "credits"],
@@ -96,8 +96,49 @@
         }
       }
     },
+    "resolved": {
+      "description": "Namen, die für Flags aufgelöst wurden (Namensauflösung, Flags mit resolves in commands --json), in der Reihenfolge der Auflösung; fehlt ohne Namen. Die Listenanfragen sind gesendet und ihre Credits verbraucht; sie sind in credits oben enthalten (Obergrenze: der echte Aufruf trifft binnen 60 s den Zwischenspeicher).",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["flag", "name", "resource", "id", "credits", "cached"],
+        "properties": {
+          "flag": {
+            "description": "Name des Flags ohne --, z. B. customer.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "name": {
+            "description": "Name des gefundenen Objekts (Leerraum zusammengefasst, Steuerzeichen entfernt), nicht die Eingabe.",
+            "type": "string",
+            "minLength": 1
+          },
+          "resource": {
+            "description": "Ressource, in deren Liste der Name gesucht wurde (wie resolves in commands --json).",
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "description": "ID des gefundenen Objekts; sie steht im Body, in der URL bzw. im Filter.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "credits": {
+            "description": "Credits der Listenanfragen dieser Auflösung (1 je geladener Seite); 0 aus dem Zwischenspeicher.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "cached": {
+            "description": "true, wenn der Treffer aus dem Zwischenspeicher kam (keine Anfrage).",
+            "type": "boolean"
+          }
+        }
+      }
+    },
     "credits": {
-      "description": "Credits, die der Befehl ohne --dry-run kosten würde (alle Anfragen, z. B. Anlegen und Hochladen, Versand und Nachlesen oder Lesen des Angebots und Anlegen).",
+      "description": "Credits, die der Befehl ohne --dry-run kosten würde (alle Anfragen, z. B. Anlegen und Hochladen, Versand und Nachlesen oder Lesen des Angebots und Anlegen), zuzüglich der Credits der Namensauflösung (resolved).",
       "type": "integer",
       "minimum": 1
     }

@@ -9,6 +9,11 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 ### Hinzugefügt
 
 - `--subdomain` von `context create` und `auth login` nimmt auch den Host oder die URL des Accounts: `pkrason.papierkram.de`, `https://pkrason.papierkram.de/` und `pkrason` ergeben denselben Kontext, mit Hinweis `Subdomain „pkrason“ aus „…“` auf stderr. Ports und andere Domains bleiben Exit 2; der Konfigurationswert und `PAPIERKRAM_SUBDOMAIN` bleiben strikt.
+- Namen statt IDs: `--customer`, `--creditor`, `--company`, `--project`, `--customer-project`, `--contact-person`, `--task`, `--proposition`, `--default-proposition`, `--payment-term`, `--user` und `--team-member` nehmen in `create`, `update`, `list` und als übergeordnetes Objekt (`person … --company`) auch einen Namen, z. B. `--customer "Mustermann GmbH"`. Das CLI sucht ihn in der Liste der Ressource (1 Credit je Seite, höchstens 5 Seiten, 60 s Cache wie die Vervollständigung), nimmt nur genau einen aktiven Treffer (sonst Exit 4 mit ähnlichen Namen bzw. Exit 2 mit den Kandidaten) und bestätigt ihn auf stderr. Ziffern bleiben immer eine ID. `--dry-run` zeigt die Auflösung unter `resolved` und zählt ihre Credits mit; `commands --json` nennt die Flags mit `resolves`.
+
+### Geändert
+
+- Die ID-Flags von Filtern (`invoice list --company`) und übergeordneten Objekten (`person … --company`) zeigen in der Hilfe den Platzhalter `ID` statt `Zahl`; Text in einem dieser Flags ist ein Name, sofern das Flag Namen nimmt (vorher Exit 2 „ganze Zahl erwartet“, jetzt Namensauflösung), in Feld-Flags wie `--customer` ebenso (vorher Exit 5).
 
 ## [0.1.0] - 2026-11-09
 

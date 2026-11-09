@@ -167,12 +167,14 @@ func (a *App) newEntryCmd(e registry.Entry) *cobra.Command {
 			// open point 27: required, but PAPIERKRAM_<KEY> or the project
 			// file may give it (pathValues, before the configuration is
 			// resolved: no context default)
-			cmd.Flags().Int64(p.flag, 0, fmt.Sprintf("ID des übergeordneten Objekts (%s); ohne Angabe %s (Pflicht)", p.name, presetNote(e.Preset)))
+			cmd.Flags().Var(&rawValue{typ: "id"}, p.flag, fmt.Sprintf("ID des übergeordneten Objekts (%s); ohne Angabe %s (Pflicht)", p.name, presetNote(e.Preset)))
 			markRequired(cmd.Flags(), p.flag)
 			markPreset(cmd.Flags(), p.flag, e.Preset, false)
+			markResolves(cmd.Flags(), p.flag)
 		case p.flag != "":
-			cmd.Flags().Int64(p.flag, 0, fmt.Sprintf("ID des übergeordneten Objekts (%s, Pflicht)", p.name))
+			cmd.Flags().Var(&rawValue{typ: "id"}, p.flag, fmt.Sprintf("ID des übergeordneten Objekts (%s, Pflicht)", p.name))
 			markRequired(cmd.Flags(), p.flag)
+			markResolves(cmd.Flags(), p.flag)
 		}
 	}
 	switch kind {
@@ -358,7 +360,11 @@ func (a *App) pathValues(c *cobra.Command, e registry.Entry, args []string) ([]i
 		if !c.Flags().Changed(p.flag) {
 			return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("Pflichtangabe --%s fehlt", p.flag), "Verwendung: "+useLine(c)+" --"+p.flag+" <id>")
 		}
-		v, _ := c.Flags().GetInt64(p.flag)
+		// a name is 0 here; patchPathParams sets its ID after resolveNames
+		v, err := flagID(c, p.flag)
+		if err != nil {
+			return nil, err
+		}
 		if v < 0 {
 			return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("ungültiger Wert %d für --%s: ID muss ≥ 0 sein", v, p.flag), "")
 		}
@@ -423,6 +429,9 @@ type sendExtras struct {
 	summary *Summary
 	details []Detail
 	raw     *rawRequest
+	// resolved are the names resolved for the flags (resolveNames): --dry-run
+	// shows them and counts their credits
+	resolved []Resolution
 }
 
 // rawRequest is a request sent with api.Client.CallRaw.

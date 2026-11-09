@@ -21,17 +21,17 @@ Optionen:
       --all              alle Seiten laden und zusammenführen (1 Anfrage je Seite)
       --desc             absteigend sortieren (nur mit --sort)
   -h, --help             Hilfe zu list
-      --invoice Zahl     Nur Zeiteinträge dieser Rechnung (ID)
+      --invoice ID       Nur Zeiteinträge dieser Rechnung (ID)
       --limit Zahl       Einträge pro Seite, 1–100 (--all ohne --limit: 100) (Standard: 25)
       --max-pages Zahl   mit --all höchstens so viele Seiten laden
       --page Zahl        nur diese Seite laden (ab 1)
-      --project Zahl     Nur Zeiteinträge dieses Projekts (ID); ohne Angabe PAPIERKRAM_PROJECT oder project aus der Projektdatei .papierkram.toml
+      --project ID       Nur Zeiteinträge dieses Projekts (ID oder Name); ohne Angabe PAPIERKRAM_PROJECT oder project aus der Projektdatei .papierkram.toml
       --since Text       Nur Zeiteinträge mit Beginn ab diesem Zeitpunkt (RFC 3339; YYYY-MM-DD, heute, gestern: ab 00:00:00 Uhr lokaler Zeit)
       --sort Text        nach diesem Feld sortieren (setzt order_by und order_direction)
       --state Text       Nur Zeiteinträge mit diesem Abrechnungsstatus (erlaubt: billed, unbilled, billable, unbillable, archived)
-      --task Zahl        Nur Zeiteinträge dieser Aufgabe (ID)
+      --task ID          Nur Zeiteinträge dieser Aufgabe (ID oder Name)
       --until Text       Nur Zeiteinträge mit Beginn bis zu diesem Zeitpunkt (RFC 3339; YYYY-MM-DD, heute, gestern: bis 23:59:59 Uhr lokaler Zeit)
-      --user Zahl        Nur Zeiteinträge dieses Benutzers (ID)
+      --user ID          Nur Zeiteinträge dieses Benutzers (ID oder Name)
 
 Globale Optionen:
       --context Text    Kontext statt des aktiven verwenden

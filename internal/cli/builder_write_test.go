@@ -237,7 +237,7 @@ func TestWriteInvalidFlagValuesAreValidationErrors(t *testing.T) {
 		flag string
 	}{
 		{[]string{"project", "update", "5", "--start-date", "morgen"}, "--start-date"},
-		{[]string{"project", "update", "5", "--customer", "abc"}, "--customer"},
+		{[]string{"project", "update", "5", "--customer", "-1"}, "--customer"}, // text is a name (spec v0.2 §4)
 		{[]string{"project", "update", "5", "--team-member", "-1"}, "--team-member"},
 		{[]string{"project", "update", "5", "--flagged=vielleicht"}, "--flagged"},
 		{[]string{"voucher", "create", "--name", "V", "--provenance", "non_eu", "--item", "name=A,amount=1,vat=19,category=Bewirtungskosten"}, "foreign"},
@@ -667,7 +667,7 @@ func TestWriteHelpGerman(t *testing.T) {
 	out, _ := bufs(app)
 	for _, want := range []string{
 		"--flagged Wert für flagged (true/false)",
-		"--customer ID ID für customer",
+		"--customer ID ID oder Name für customer",
 		"--document-date Datum Wert für document_date (YYYY-MM-DD, heute, gestern)",
 		"--item Texte Position als key=wert,key=wert (wiederholbar)",
 		"--items Text Positionen als JSON-Array aus Datei oder - für die Standardeingabe",
