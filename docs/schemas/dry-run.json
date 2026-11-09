@@ -97,7 +97,7 @@
       }
     },
     "resolved": {
-      "description": "Namen, die für Flags aufgelöst wurden (Namensauflösung, Flags mit resolves in commands --json), in der Reihenfolge der Auflösung; fehlt ohne Namen. Die Listenanfragen sind gesendet und ihre Credits verbraucht; sie sind in credits oben enthalten (Obergrenze: der echte Aufruf trifft binnen 60 s den Zwischenspeicher).",
+      "description": "Namen, die für Flags aufgelöst wurden (Namensauflösung, Flags mit resolves in commands --json), in der Reihenfolge der Auflösung; fehlt ohne Namen. Die Listenanfragen sind gesendet und ihre Credits verbraucht; credits oben enthält die in diesem Lauf verbrauchten Credits der Auflösung. Der echte Aufruf kostet sie erneut, außer er trifft den Zwischenspeicher (binnen 60 s, nicht bei Kontaktpersonen und Projekten eines Kunden).",
       "type": "array",
       "minItems": 1,
       "items": {
@@ -138,7 +138,7 @@
       }
     },
     "credits": {
-      "description": "Credits, die der Befehl ohne --dry-run kosten würde (alle Anfragen, z. B. Anlegen und Hochladen, Versand und Nachlesen oder Lesen des Angebots und Anlegen), zuzüglich der Credits der Namensauflösung (resolved).",
+      "description": "Credits, die der Befehl ohne --dry-run kosten würde (alle Anfragen, z. B. Anlegen und Hochladen, Versand und Nachlesen oder Lesen des Angebots und Anlegen), zuzüglich der in diesem Lauf verbrauchten Credits der Namensauflösung (resolved; der echte Aufruf kostet sie erneut, außer er trifft den Zwischenspeicher).",
       "type": "integer",
       "minimum": 1
     }
