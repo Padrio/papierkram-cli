@@ -506,3 +506,30 @@ func TestMissingFileBeforeResolution(t *testing.T) {
 		"--item", "name=A,qty=1,unit=Stunde,price=5,vat=19", "--dry-run", "-o", "json"}), 0)
 	wantPaths(t, srv, "GET /contact/companies")
 }
+
+// The path flag of create and update and a preset filter take names
+// (review T3-M4).
+func TestPersonWriteAndPresetFilterByName(t *testing.T) {
+	app, srv := apiApp(t)
+	mustermann(t, srv)
+	wantExit(t, app, Run(app, []string{"person", "create", "--company", "Mustermann GmbH", "--first-name", "Anna", "--last-name", "Groß", "-o", "json"}), 0)
+	wantPaths(t, srv, "GET /contact/companies", "POST /contact/companies/2/persons")
+
+	app, srv = apiApp(t)
+	mustermann(t, srv)
+	wantExit(t, app, Run(app, []string{"person", "update", "55", "--company", "mustermann gmbh", "--email", "anna@example.org", "-o", "json"}), 0)
+	wantPaths(t, srv, "GET /contact/companies", "PUT /contact/companies/2/persons/55")
+
+	// task list --project is the filter of the project preset; a name
+	// replaces the preset like an ID
+	app, srv = mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-p", "PAPIERKRAM_PROJECT": "34"})
+	srv.OnFunc("GET", "/projects", pagedList(t, 1, []map[string]any{{"id": 4710, "name": "Relaunch"}}))
+	wantExit(t, app, Run(app, []string{"task", "list", "--project", "Relaunch", "-o", "json"}), 0)
+	reqs := wantPaths(t, srv, "GET /projects", "GET /tracker/tasks")
+	if q := reqs[1].Query.Get("project_id"); q != "4710" {
+		t.Errorf("project_id %q", q)
+	}
+	if _, errs := bufs(app); strings.Contains(errs, "PAPIERKRAM_PROJECT") {
+		t.Errorf("stderr %q", errs)
+	}
+}
