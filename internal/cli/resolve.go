@@ -46,11 +46,12 @@ type Resolution struct {
 	Cached   bool   `json:"cached"`
 }
 
-var idValueRe = regexp.MustCompile(`^-?[0-9]+$`)
+var idValueRe = regexp.MustCompile(`^[+-]?[0-9]+$`)
 
-// isIDValue reports whether a flag value is an ID (an integer, surrounding
-// whitespace ignored) rather than a name. Negative values stay IDs and
-// fail like before (exit 2).
+// isIDValue reports whether a flag value is an ID (an integer with an
+// optional sign, surrounding whitespace ignored) rather than a name: "+12"
+// stays an ID as before (spec.CoerceFlag), negative values stay IDs and
+// fail like before (exit 2). The caller trims before parsing.
 func isIDValue(raw string) bool { return idValueRe.MatchString(strings.TrimSpace(raw)) }
 
 // nameKey is the form names are compared in: cacheName in lower case.
@@ -109,13 +110,19 @@ func (n *nameResolver) resolve(ref registry.NameRef, name string, parent int64) 
 
 	ids, credits, total, err := n.load(e, params)
 	if err != nil {
-		return Resolution{}, err
+		if credits == 0 {
+			return Resolution{}, err
+		}
+		// pages loaded before the failure were paid for
+		ce := *clierr.From(err)
+		ce.Hint = withCredits(ce.Hint, credits)
+		return Resolution{}, &ce
 	}
 	if total > resolveMaxPages {
 		return Resolution{}, clierr.New(clierr.CodeUsage,
 			fmt.Sprintf("%s „%s“ nicht aufgelöst: die Liste hat mehr als %d Einträge (%d Seiten), die Namensauflösung lädt höchstens %d Seiten",
 				ref.Label, shown, resolveMaxPages*resolvePageSize, total, resolveMaxPages),
-			"ID statt Name angeben ("+listCmd+")")
+			withCredits("ID statt Name angeben ("+listCmd+")", credits))
 	}
 	if cache {
 		writeCompletionCache(path, completionCache{Scope: scope, Resource: ref.Resource, Stored: n.a.Now(), Complete: true, Entries: ids})
@@ -126,16 +133,26 @@ func (n *nameResolver) resolve(ref registry.NameRef, name string, parent int64) 
 		return n.found(ref, active[0], credits, false), nil
 	case len(active) > 1:
 		return Resolution{}, clierr.New(clierr.CodeUsage,
-			fmt.Sprintf("%s „%s“ ist mehrdeutig: %s", ref.Label, shown, idList(active)), "ID statt Name angeben")
+			fmt.Sprintf("%s „%s“ ist mehrdeutig: %s", ref.Label, shown, idList(active)), withCredits("ID statt Name angeben", credits))
 	case len(archived) > 0:
 		return Resolution{}, clierr.New(clierr.CodeNotFound,
-			fmt.Sprintf("%s „%s“ nicht gefunden", ref.Label, shown), archivedHint(ref.Resource, archived))
+			fmt.Sprintf("%s „%s“ nicht gefunden", ref.Label, shown), withCredits(archivedHint(ref.Resource, archived), credits))
 	}
 	hint := "ID angeben (" + listCmd + ")"
 	if similar := similarNames(ids, shown, key); len(similar) > 0 {
 		hint = "Ähnlich: " + idListNameFirst(similar) + "; sonst " + hint
 	}
-	return Resolution{}, clierr.New(clierr.CodeNotFound, fmt.Sprintf("%s „%s“ nicht gefunden", ref.Label, shown), hint)
+	return Resolution{}, clierr.New(clierr.CodeNotFound, fmt.Sprintf("%s „%s“ nicht gefunden", ref.Label, shown), withCredits(hint, credits))
+}
+
+// withCredits appends the credits the list requests used to the hint of
+// a failed resolution: "… (2 Credits verbraucht)".
+func withCredits(hint string, credits int) string {
+	note := "(" + creditsText(credits) + " verbraucht)"
+	if hint == "" {
+		return note
+	}
+	return hint + " " + note
 }
 
 // found is the resolution of the match m and its hint on stderr.
@@ -150,8 +167,9 @@ func (n *nameResolver) found(ref registry.NameRef, m completionID, credits int, 
 
 // load reads the list of e (params: the parent ID) from page 1 up to
 // total_pages, at most resolveMaxPages pages, through fetchPage. It
-// returns the entries, the credits of the requests sent and the largest
-// total_pages seen; an empty page ends the list early. Not fetchPages:
+// returns the entries, the credits of the pages loaded (also with an
+// error) and the largest total_pages seen; it stops as soon as that
+// exceeds resolveMaxPages, an empty page ends the list early. Not fetchPages:
 // its --max-pages warning names a flag the user did not give.
 func (n *nameResolver) load(e registry.Entry, params []int64) ([]completionID, int, int64, error) {
 	ctx := n.c.Context()
@@ -175,6 +193,10 @@ func (n *nameResolver) load(e registry.Entry, params []int64) ([]completionID, i
 			return nil, credits, 0, unexpectedList(fmt.Errorf("total_pages ist %s", orMissing(page.TotalPages)))
 		}
 		total = max(total, t)
+		if total > resolveMaxPages {
+			// the resolution fails anyway: no further page (credits)
+			return ids, credits, total, nil
+		}
 		if len(page.Entries) == 0 {
 			break
 		}

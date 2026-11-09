@@ -98,12 +98,14 @@ func wantResolveErr(t *testing.T, err error, exit int) *clierr.Error {
 }
 
 func TestIsIDValue(t *testing.T) {
-	for _, s := range []string{"3214", " 12 ", "0", "-1"} {
+	// "+12" stays an ID like before (spec.CoerceFlag); the caller trims
+	// " 12 " before parsing
+	for _, s := range []string{"3214", " 12 ", "0", "-1", "+1"} {
 		if !isIDValue(s) {
 			t.Errorf("isIDValue(%q) = false", s)
 		}
 	}
-	for _, s := range []string{"1und1", "Mustermann", "", "12a", "1 2", " ", "+1", "١٢"} {
+	for _, s := range []string{"1und1", "Mustermann", "", "12a", "1 2", " ", "+-1", "1+", "١٢"} {
 		if isIDValue(s) {
 			t.Errorf("isIDValue(%q) = true", s)
 		}
@@ -180,6 +182,9 @@ func TestResolveArchivedIgnored(t *testing.T) {
 	if ce.Code != clierr.CodeNotFound || ce.Message != "Kunde „mustermann gmbh“ nicht gefunden" {
 		t.Errorf("Meldung %q (%s)", ce.Message, ce.Code)
 	}
+	if ce.Hint != "nur archiviert: 7 „Mustermann GmbH“; reaktivieren (papierkram company unarchive 7) oder ID angeben (1 Credit verbraucht)" {
+		t.Errorf("Hinweis %q", ce.Hint)
+	}
 	for _, want := range []string{"archiviert", "7", "papierkram company unarchive 7"} {
 		if !strings.Contains(ce.Hint, want) {
 			t.Errorf("Hinweis %q ohne %q", ce.Hint, want)
@@ -198,7 +203,7 @@ func TestResolveAmbiguous(t *testing.T) {
 	if ce.Code != clierr.CodeUsage || ce.Message != "Kunde „Mustermann GmbH“ ist mehrdeutig: 2 „Mustermann GmbH“, 3 „mustermann gmbh“" {
 		t.Errorf("Meldung %q", ce.Message)
 	}
-	if ce.Hint != "ID statt Name angeben" {
+	if ce.Hint != "ID statt Name angeben (1 Credit verbraucht)" {
 		t.Errorf("Hinweis %q", ce.Hint)
 	}
 	if ce.HTTPStatus != 0 {
@@ -216,7 +221,7 @@ func TestResolveNotFoundSuggests(t *testing.T) {
 	if ce.Message != "Kunde „Mustermann“ nicht gefunden" {
 		t.Errorf("Meldung %q", ce.Message)
 	}
-	if !strings.HasPrefix(ce.Hint, "Ähnlich: „Mustermann Automobile GmbH“ (1)") || !strings.HasSuffix(ce.Hint, "sonst ID angeben (papierkram company list)") {
+	if !strings.HasPrefix(ce.Hint, "Ähnlich: „Mustermann Automobile GmbH“ (1)") || !strings.HasSuffix(ce.Hint, "sonst ID angeben (papierkram company list) (1 Credit verbraucht)") {
 		t.Errorf("Hinweis %q", ce.Hint)
 	}
 	if strings.Contains(ce.Hint, "ACME") {
@@ -230,7 +235,7 @@ func TestResolveNotFoundSuggests(t *testing.T) {
 	}))
 	_, err = newResolver(t, app2).resolve(nameRef(t, "customer"), "Muste", 0)
 	ce = wantResolveErr(t, err, 4)
-	if ce.Hint != "Ähnlich: „Muster“ (1), „Beta Muster“ (2), „Gamma Muster“ (3); sonst ID angeben (papierkram company list)" {
+	if ce.Hint != "Ähnlich: „Muster“ (1), „Beta Muster“ (2), „Gamma Muster“ (3); sonst ID angeben (papierkram company list) (1 Credit verbraucht)" {
 		t.Errorf("Hinweis %q", ce.Hint)
 	}
 
@@ -239,7 +244,7 @@ func TestResolveNotFoundSuggests(t *testing.T) {
 	srv3.OnFunc("GET", "/contact/companies", pagedList(t, 1, []map[string]any{company(3, "ACME")}))
 	_, err = newResolver(t, app3).resolve(nameRef(t, "creditor"), "Xylophon", 0)
 	ce = wantResolveErr(t, err, 4)
-	if ce.Message != "Lieferant „Xylophon“ nicht gefunden" || ce.Hint != "ID angeben (papierkram company list)" {
+	if ce.Message != "Lieferant „Xylophon“ nicht gefunden" || ce.Hint != "ID angeben (papierkram company list) (1 Credit verbraucht)" {
 		t.Errorf("Meldung %q, Hinweis %q", ce.Message, ce.Hint)
 	}
 }
@@ -279,12 +284,34 @@ func TestResolveIncompleteList(t *testing.T) {
 	if !strings.Contains(ce.Message, "mehr als 500 Einträge") {
 		t.Errorf("Meldung %q", ce.Message)
 	}
-	if ce.Hint != "ID statt Name angeben (papierkram company list)" {
+	// page 1 shows total_pages 6: no further page (ruling T2-A)
+	if ce.Hint != "ID statt Name angeben (papierkram company list) (1 Credit verbraucht)" {
 		t.Errorf("Hinweis %q", ce.Hint)
 	}
-	wantRequests(t, srv, 5)
+	wantRequests(t, srv, 1)
 	// no cache of an incomplete list
 	if _, err := os.Stat(completionCachePath(app.CacheDir, "", "company")); !os.IsNotExist(err) {
+		t.Errorf("Cache-Datei geschrieben: %v", err)
+	}
+
+	// the list grows while loading: page 2 shows total_pages 6
+	app2, srv2 := apiApp(t)
+	srv2.OnFunc("GET", "/contact/companies", func(w http.ResponseWriter, r *http.Request) {
+		total := 2
+		if r.URL.Query().Get("page") == "2" {
+			total = 6
+		}
+		b, _ := json.Marshal(map[string]any{"type": "list", "page": 1, "page_size": 100, "total_pages": total,
+			"total_entries": total * 100, "has_more": true, "entries": []map[string]any{company(2, "Mustermann GmbH")}})
+		_, _ = w.Write(b)
+	})
+	_, err = newResolver(t, app2).resolve(nameRef(t, "customer"), "Mustermann GmbH", 0)
+	ce = wantResolveErr(t, err, 2)
+	if !strings.Contains(ce.Message, "mehr als 500 Einträge (6 Seiten)") || !strings.HasSuffix(ce.Hint, "(2 Credits verbraucht)") {
+		t.Errorf("Meldung %q, Hinweis %q", ce.Message, ce.Hint)
+	}
+	wantRequests(t, srv2, 2)
+	if _, err := os.Stat(completionCachePath(app2.CacheDir, "", "company")); !os.IsNotExist(err) {
 		t.Errorf("Cache-Datei geschrieben: %v", err)
 	}
 }
@@ -434,7 +461,7 @@ func TestResolvePersonByParent(t *testing.T) {
 	wantRequests(t, srv, 2)
 	// not found names the list of the company
 	_, err = n.resolve(nameRef(t, "contact-person"), "Carla", 2843)
-	if ce := wantResolveErr(t, err, 4); !strings.HasSuffix(ce.Hint, "ID angeben (papierkram person list --company 2843)") {
+	if ce := wantResolveErr(t, err, 4); !strings.HasSuffix(ce.Hint, "ID angeben (papierkram person list --company 2843) (1 Credit verbraucht)") {
 		t.Errorf("Hinweis %q", ce.Hint)
 	}
 	// without parent: a programming error, no request
@@ -516,4 +543,43 @@ func TestResolveCacheScope(t *testing.T) {
 	if data, err := os.ReadFile(path); err != nil || !strings.Contains(string(data), srv.URL()) {
 		t.Errorf("Cache %s, %v", data, err)
 	}
+}
+
+// A list answer without a valid total_pages is unexpected (exit 1, like
+// list --all); the credit of the page is named, no cache is written.
+func TestResolveInvalidTotalPages(t *testing.T) {
+	for _, total := range []string{``, `,"total_pages":null`, `,"total_pages":"x"`, `,"total_pages":-1`} {
+		app, srv := apiApp(t)
+		srv.On("GET", "/contact/companies", http.StatusOK,
+			[]byte(`{"type":"list","page":1,"page_size":100`+total+`,"entries":[{"id":2,"name":"Mustermann GmbH"}]}`))
+		_, err := newResolver(t, app).resolve(nameRef(t, "customer"), "Mustermann GmbH", 0)
+		ce := wantResolveErr(t, err, 1)
+		if ce.Code != clierr.CodeError || !strings.Contains(ce.Message, "total_pages") || ce.Hint != "(1 Credit verbraucht)" {
+			t.Errorf("%q: %s %q, Hinweis %q", total, ce.Code, ce.Message, ce.Hint)
+		}
+		wantRequests(t, srv, 1)
+		if _, err := os.Stat(completionCachePath(app.CacheDir, "", "company")); !os.IsNotExist(err) {
+			t.Errorf("%q: Cache geschrieben", total)
+		}
+	}
+}
+
+// A read error after loaded pages names their credits; its code stays.
+func TestResolveReadErrorNamesCredits(t *testing.T) {
+	app, srv := apiApp(t)
+	srv.OnFunc("GET", "/contact/companies", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "3" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"quota"}`))
+			return
+		}
+		pagedList(t, 3, []map[string]any{company(1, "A")}, []map[string]any{company(2, "B")})(w, r)
+	})
+	_, err := newResolver(t, app).resolve(nameRef(t, "customer"), "C", 0)
+	ce := wantResolveErr(t, err, 6)
+	if !strings.HasSuffix(ce.Hint, "(2 Credits verbraucht)") || ce.HTTPStatus != http.StatusTooManyRequests {
+		t.Errorf("Hinweis %q, http_status %d", ce.Hint, ce.HTTPStatus)
+	}
+	wantRequests(t, srv, 3)
 }
