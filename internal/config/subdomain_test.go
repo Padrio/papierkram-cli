@@ -63,3 +63,46 @@ func TestResolveValidatesSubdomain(t *testing.T) {
 		t.Fatalf("source not named: %v", err)
 	}
 }
+
+func TestParseSubdomain(t *testing.T) {
+	for _, tt := range []struct {
+		in, want   string
+		normalized bool
+	}{
+		{"pkrason", "pkrason", false}, {" PKRASON ", "pkrason", false},
+		{"pkrason.papierkram.de", "pkrason", true}, {"PKRASON.Papierkram.DE", "pkrason", true},
+		{"https://pkrason.papierkram.de", "pkrason", true}, {"https://pkrason.papierkram.de/", "pkrason", true},
+		{"HTTP://pkrason.papierkram.de/login?x=1#a", "pkrason", true}, {"pkrason.papierkram.de.", "pkrason", true},
+	} {
+		got, normalized, err := ParseSubdomain(tt.in, "--subdomain")
+		if err != nil || got != tt.want || normalized != tt.normalized {
+			t.Errorf("%q: got %q, %t, %v; want %q, %t", tt.in, got, normalized, err, tt.want, tt.normalized)
+		}
+	}
+}
+
+func TestParseSubdomainRejects(t *testing.T) {
+	const portHint = "Ohne Port angeben, z. B. firma (für https://firma.papierkram.de)"
+	const domainHint = "Nur die Subdomain angeben, z. B. firma (für https://firma.papierkram.de)"
+	for in, hint := range map[string]string{
+		"pkrason.papierkram.de:443":           portHint,
+		"https://pkrason.papierkram.de:8443/": portHint,
+		"firma.example.com":                   domainHint,
+		"https://":                            "",
+		".papierkram.de":                      "",
+		"a.b.papierkram.de":                   "",
+		"https://user@pkrason.papierkram.de":  "",
+		"ftp://pkrason.papierkram.de":         "",
+		"":                                    "",
+	} {
+		_, _, err := ParseSubdomain(in, "--subdomain")
+		wantCode(t, err, clierr.CodeUsage)
+		ce := clierr.From(err)
+		if want := `ungültige Subdomain "` + in + `" (--subdomain)`; ce.Message != want {
+			t.Errorf("%q: message %q, want %q", in, ce.Message, want)
+		}
+		if !strings.Contains(strings.ToLower(ce.Hint), strings.ToLower(hint)) {
+			t.Errorf("%q: hint %q lacks %q", in, ce.Hint, hint)
+		}
+	}
+}

@@ -22,7 +22,7 @@ Beispiele:
 Optionen:
   -h, --help               Hilfe zu login
       --insecure-storage   ohne Schlüsselbund das Token im Klartext in config.toml speichern
-      --subdomain Text     Subdomain, wenn der Kontext neu angelegt wird
+      --subdomain Text     Subdomain, wenn der Kontext neu angelegt wird (auch firma.papierkram.de oder die URL)
       --token-stdin        Token von der Standardeingabe lesen (Leerzeichen und Zeilenende werden entfernt)
 
 Globale Optionen:

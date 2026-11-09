@@ -79,7 +79,7 @@ func newAuthLoginCmd(app *App) *cobra.Command {
 				return err
 			}
 			if c.Flags().Changed("subdomain") {
-				s, err := config.NormalizeSubdomain(subdomain, "--subdomain")
+				s, err := app.subdomainFlag(subdomain)
 				if err != nil {
 					return err
 				}
@@ -97,7 +97,7 @@ func newAuthLoginCmd(app *App) *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&subdomain, "subdomain", "", "Subdomain, wenn der Kontext neu angelegt wird")
+	f.StringVar(&subdomain, "subdomain", "", "Subdomain, wenn der Kontext neu angelegt wird (auch firma.papierkram.de oder die URL)")
 	f.BoolVar(&tokenStdin, "token-stdin", false, "Token von der Standardeingabe lesen (Leerzeichen und Zeilenende werden entfernt)")
 	f.BoolVar(&insecure, "insecure-storage", false, "ohne Schlüsselbund das Token im Klartext in config.toml speichern")
 	return cmd

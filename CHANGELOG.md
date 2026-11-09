@@ -6,6 +6,10 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 
 ## [Unreleased]
 
+### Hinzugefügt
+
+- `--subdomain` von `context create` und `auth login` nimmt auch den Host oder die URL des Accounts: `pkrason.papierkram.de`, `https://pkrason.papierkram.de/` und `pkrason` ergeben denselben Kontext, mit Hinweis `Subdomain „pkrason“ aus „…“` auf stderr. Ports und andere Domains bleiben Exit 2; der Konfigurationswert und `PAPIERKRAM_SUBDOMAIN` bleiben strikt.
+
 ## [0.1.0] - 2026-11-09
 
 ### Hinzugefügt

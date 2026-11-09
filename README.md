@@ -129,6 +129,8 @@ papierkram context delete analyse
 papierkram invoice list --context analyse
 ```
 
+`--subdomain` (bei `context create` und `auth login`) nimmt auch den Host oder die URL des Accounts: `papierkram context create firma --subdomain https://firma.papierkram.de` legt den Kontext mit der Subdomain `firma` an und nennt sie auf stderr (`Hinweis: Subdomain „firma“ aus „https://firma.papierkram.de“`). Ports und andere Domains lehnt das CLI ab (Exit 2). Die Subdomain in `config.toml` und `PAPIERKRAM_SUBDOMAIN` bleiben strikt: dort nur die Subdomain selbst.
+
 `context delete` löscht auch das Token des Kontexts im Schlüsselbund; `auth logout` entfernt nur das Token, der Kontext bleibt. Läuft für einen Kontext ein Timer, verweigern `context rename` und `context delete` mit Exit 7, bis er mit `time stop` gebucht oder mit `time discard` verworfen ist.
 
 Welcher Kontext gilt, entscheidet diese Reihenfolge: `--context` > `PAPIERKRAM_CONTEXT` > `context` aus der [Projektdatei](#projektdatei) > `active_context` der Konfiguration. `papierkram auth status` zeigt den wirksamen Kontext mit Herkunft, die Token-Quelle (nie das Token selbst), die Schreibschutzstufe und das Restkontingent.

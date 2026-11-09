@@ -269,6 +269,27 @@ func TestAuthLoginCreatesContext(t *testing.T) {
 	assertNoToken(t, app)
 }
 
+// Spec v0.2 §1: auth login --subdomain takes the host, with the same hint
+// as context create.
+func TestAuthLoginSubdomainURL(t *testing.T) {
+	app, srv := mockApp(t, nil)
+	app.In = strings.NewReader("test-token-u\n")
+	if code := run(t, app, "auth", "login", "--context", "neu", "--subdomain", "pkrason.papierkram.de", "--token-stdin"); code != 0 {
+		_, errs := bufs(app)
+		t.Fatalf("exit = %d, stderr = %s", code, errs)
+	}
+	if got := loadCfg(t, app).Contexts["neu"]; got == nil || got.Subdomain != "pkrason" {
+		t.Errorf("Kontext = %+v", got)
+	}
+	if reqs := srv.Requests(); len(reqs) != 1 || reqs[0].Path != "/info" {
+		t.Errorf("requests = %+v", reqs)
+	}
+	if _, errs := bufs(app); !strings.HasPrefix(errs, "Hinweis: Subdomain „pkrason“ aus „pkrason.papierkram.de“\n") {
+		t.Errorf("stderr = %q", errs)
+	}
+	assertNoToken(t, app)
+}
+
 func TestAuthLoginContextErrors(t *testing.T) {
 	tests := []struct {
 		name string

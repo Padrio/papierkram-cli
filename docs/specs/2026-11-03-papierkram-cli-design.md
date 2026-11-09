@@ -374,6 +374,7 @@ user = 1          # Standard-User für Zeiteinträge
 subdomain = "firma-gmbh"
 read_only = true
 ```
+- `--subdomain` (`context create`, `auth login`) nimmt auch `firma.papierkram.de` oder die URL (`https://firma.papierkram.de/…`); Schema, Pfad, Abfrage, Fragment, ein Punkt am Ende und das Suffix `.papierkram.de` werden entfernt, Ports, Benutzerangaben, andere Schemata und andere Domains abgelehnt (Exit 2), mit Hinweis `Subdomain „firma“ aus „…“` auf stderr, wenn mehr als Trimmen und Kleinschreiben nötig war. Konfigurationswert und `PAPIERKRAM_SUBDOMAIN` bleiben strikt (nur die Subdomain selbst), da sie bei jedem Aufruf gelesen werden.
 - Kontextauswahl: `--context` > `PAPIERKRAM_CONTEXT` > `context` aus Projektdatei > `active_context`. Unabhängig davon gilt `PAPIERKRAM_READ_ONLY=1` immer (8.3).
 - Direktbetrieb ohne Config: `PAPIERKRAM_TOKEN` + `PAPIERKRAM_SUBDOMAIN` (haben Vorrang vor dem Kontext-Token, `auth status` zeigt die Quelle). `PAPIERKRAM_BASE_URL` überschreibt die komplette Basis-URL (Tests, Mock-Server). `PAPIERKRAM_READ_ONLY=1` erzwingt den Schutzmodus.
 - `context delete` löscht auch den Keychain-Eintrag.

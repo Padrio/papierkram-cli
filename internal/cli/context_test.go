@@ -351,9 +351,9 @@ func TestContextHelpMentionsLostComments(t *testing.T) {
 
 func TestContextCreateValidatesSubdomain(t *testing.T) {
 	for in, hint := range map[string]string{
-		"firma.papierkram.de": "Nur die Subdomain angeben, z. B. firma",
-		"evil.example#":       "Nur die Subdomain angeben, z. B. firma",
-		"-firma":              "Bindestriche",
+		"firma.example.com": "Nur die Subdomain angeben, z. B. firma",
+		"evil.example#":     "Nur die Subdomain angeben, z. B. firma",
+		"-firma":            "Bindestriche",
 	} {
 		app, _, errb := newTestApp(t)
 		if code := Run(app, []string{"context", "create", "x", "--subdomain", in}); code != 2 {
@@ -373,6 +373,56 @@ func TestContextCreateValidatesSubdomain(t *testing.T) {
 	data, _ := os.ReadFile(cfgFile(t, app))
 	if !strings.Contains(string(data), "firma-gmbh") {
 		t.Errorf("Subdomain nicht normalisiert:\n%s", data)
+	}
+}
+
+// Spec v0.2 §1: --subdomain also takes the host or the URL of the account,
+// with a hint on stderr.
+func TestContextCreateSubdomainURL(t *testing.T) {
+	app, _, errb := newTestApp(t)
+	if code := Run(app, []string{"context", "create", "firma", "--subdomain", "https://pkrason.papierkram.de"}); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if got := loadCfg(t, app).Contexts["firma"]; got == nil || got.Subdomain != "pkrason" {
+		t.Errorf("Kontext = %+v", got)
+	}
+	if want := "Hinweis: Subdomain „pkrason“ aus „https://pkrason.papierkram.de“\n"; errb.String() != want {
+		t.Errorf("stderr = %q, want %q", errb.String(), want)
+	}
+}
+
+func TestContextCreateSubdomainPlainNoHint(t *testing.T) {
+	app, _, errb := newTestApp(t)
+	if code := Run(app, []string{"context", "create", "firma", "--subdomain", "Pkrason"}); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if got := loadCfg(t, app).Contexts["firma"]; got == nil || got.Subdomain != "pkrason" {
+		t.Errorf("Kontext = %+v", got)
+	}
+	if errb.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", errb.String())
+	}
+}
+
+// The configuration value and PAPIERKRAM_SUBDOMAIN stay strict (ruling of
+// task 1): no request, exit 2.
+func TestResolveSubdomainStaysStrict(t *testing.T) {
+	app, srv := mockApp(t, nil)
+	writeCfg(t, app, "active_context = \"a\"\n\n[contexts.a]\nsubdomain = \"pkrason.papierkram.de\"\n")
+	if err := app.Keyring.Set("a", "test-token-s"); err != nil {
+		t.Fatal(err)
+	}
+	if code := run(t, app, "invoice", "list", "-o", "json", "--no-input"); code != 2 {
+		_, errs := bufs(app)
+		t.Errorf("config: exit = %d, want 2; stderr = %s", code, errs)
+	}
+	app2, srv2 := mockApp(t, map[string]string{"PAPIERKRAM_SUBDOMAIN": "https://pkrason.papierkram.de", "PAPIERKRAM_TOKEN": "test-token-s"})
+	if code := run(t, app2, "invoice", "list", "-o", "json", "--no-input"); code != 2 {
+		_, errs := bufs(app2)
+		t.Errorf("env: exit = %d, want 2; stderr = %s", code, errs)
+	}
+	if n := len(srv.Requests()) + len(srv2.Requests()); n != 0 {
+		t.Errorf("%d Requests gesendet", n)
 	}
 }
 

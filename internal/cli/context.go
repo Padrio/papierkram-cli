@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -53,6 +54,22 @@ func newContextCmd(app *App) *cobra.Command {
 	return cmd
 }
 
+// subdomainFlag reads the value of --subdomain leniently
+// (config.ParseSubdomain: also the host or the URL of the account) and
+// names the subdomain on stderr when more than trimming and lowercasing was
+// needed. Only flags are lenient; the configuration and
+// PAPIERKRAM_SUBDOMAIN stay strict (config.Resolve).
+func (a *App) subdomainFlag(raw string) (string, error) {
+	sub, normalized, err := config.ParseSubdomain(raw, "--subdomain")
+	if err != nil {
+		return "", err
+	}
+	if normalized {
+		_, _ = fmt.Fprintf(a.Err, "Hinweis: Subdomain „%s“ aus „%s“\n", sub, printable(strings.TrimSpace(raw)))
+	}
+	return sub, nil
+}
+
 func newContextCreateCmd(app *App) *cobra.Command {
 	var subdomain, user string
 	var readOnly bool
@@ -77,7 +94,7 @@ func newContextCreateCmd(app *App) *cobra.Command {
 			if subdomain == "" {
 				return clierr.New(clierr.CodeUsage, "Pflicht-Flag --subdomain fehlt", "Verwendung: "+useLine(c))
 			}
-			s, err := config.NormalizeSubdomain(subdomain, "--subdomain")
+			s, err := app.subdomainFlag(subdomain)
 			if err != nil {
 				return err
 			}
@@ -126,7 +143,7 @@ func newContextCreateCmd(app *App) *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&subdomain, "subdomain", "", "Papierkram-Subdomain (Pflicht)")
+	f.StringVar(&subdomain, "subdomain", "", "Papierkram-Subdomain (Pflicht; auch firma.papierkram.de oder die URL)")
 	markRequired(f, "subdomain")
 	f.BoolVar(&readOnly, "read-only", false, "Kontext gegen Schreibzugriffe sperren")
 	f.StringVar(&user, "user", "", "Standard-User-ID für Zeiteinträge")

@@ -16,7 +16,7 @@ Beispiele:
 Optionen:
   -h, --help             Hilfe zu create
       --read-only        Kontext gegen Schreibzugriffe sperren
-      --subdomain Text   Papierkram-Subdomain (Pflicht)
+      --subdomain Text   Papierkram-Subdomain (Pflicht; auch firma.papierkram.de oder die URL)
       --user Text        Standard-User-ID für Zeiteinträge
 
 Globale Optionen:
