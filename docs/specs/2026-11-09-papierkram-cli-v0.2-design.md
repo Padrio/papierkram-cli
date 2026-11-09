@@ -1,6 +1,6 @@
-# papierkram-cli v0.2.0 – Design
+# papierkram-cli v0.1.1 – Design
 
-Stand 2026-11-09. Ergänzt die Haupt-Spec [`2026-11-03-papierkram-cli-design.md`](2026-11-03-papierkram-cli-design.md); wo dieses Dokument abweicht, gilt es und die Haupt-Spec wird im selben Zug angepasst. Auftrag Pascal (2026-11-09): alles in einem Zug umsetzen, ohne Rückfragen (Entscheidungen nach Empfehlung, hier mit **[Call]** markiert), subagent-getrieben, am Ende Release **v0.2.0** (nur Minor-Bump).
+Stand 2026-11-09. Ergänzt die Haupt-Spec [`2026-11-03-papierkram-cli-design.md`](2026-11-03-papierkram-cli-design.md); wo dieses Dokument abweicht, gilt es und die Haupt-Spec wird im selben Zug angepasst. Auftrag Pascal (2026-11-09): alles in einem Zug umsetzen, ohne Rückfragen (Entscheidungen nach Empfehlung, hier mit **[Call]** markiert), subagent-getrieben, am Ende Release **v0.1.1** (Patch-Bump; Pascal hat am 2026-11-09 von Minor auf Patch korrigiert).
 
 ## Ziele
 
@@ -10,7 +10,7 @@ Stand 2026-11-09. Ergänzt die Haupt-Spec [`2026-11-03-papierkram-cli-design.md`
 4. **Namensauflösung in Flags** – `--customer "Mustermann GmbH"` statt ID.
 5. **`invoice paid-status`** – Bericht über offene Posten.
 6. **winget-Manifest** und **SBOM** im Release.
-7. Release v0.2.0 nach grüner CI und Live-Lauf gegen die Sandbox.
+7. Release v0.1.1 nach grüner CI und Live-Lauf gegen die Sandbox.
 
 ## Nicht-Ziele
 
@@ -83,7 +83,7 @@ Die Haupt-Spec (Abschnitt Nicht-Ziele) hatte Namensauflösung abgelehnt (**[Call
 ## 7. Querschnitt
 
 - Spec-Abgleich: Haupt-Spec Abschnitte Nicht-Ziele (Namensauflösung, MCP „v1.x“), 5.3 (Registry → MCP), Release (SBOM, winget), Ausblick anpassen.
-- Doku: README, AGENTS.md (MCP-Regeln, Namensauflösung kostet Credits, paid-status), `skills/papierkram/SKILL.md`, `docs/reference/` (`make docs`), CHANGELOG `[Unreleased]` → `[0.2.0]`.
+- Doku: README, AGENTS.md (MCP-Regeln, Namensauflösung kostet Credits, paid-status), `skills/papierkram/SKILL.md`, `docs/reference/` (`make docs`), CHANGELOG `[Unreleased]` → `[0.1.1]`.
 - Gates wie bisher (Plan-Verifikation): `go test -race`, golangci-lint mit/ohne e2e, vet, gofmt, Coverage ≥ 80 (Ist 94,5 – nicht senken), `go generate`/`make docs` ohne Diff, E2E offline, Action-Pins, Go-Version, goreleaser check + snapshot.
 - E2E live: paid-status, Namensauflösung (ein Flag), MCP-Lesetool gegen Sandbox (in-process), Aufräumen; ABDECKUNG bleibt 88/89.
 

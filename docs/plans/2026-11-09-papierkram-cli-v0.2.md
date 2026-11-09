@@ -1,8 +1,8 @@
-# papierkram-cli v0.2.0 – Implementierungsplan
+# papierkram-cli v0.1.1 – Implementierungsplan
 
 > **Für agentische Ausführung:** PFLICHT-SUB-SKILL: `superpowers:subagent-driven-development` (empfohlen) oder `superpowers:executing-plans`. Je Task: Brief → Implementer (model opus, TDD) → Reviewer (model opus) → Fix-Runde → Ledger. Sequenziell: Tasks 2–7 teilen `internal/cli`, Task 7 setzt 1–6 voraus. Schritte mit Checkbox-Syntax (`- [ ]`).
 
-**Ziel:** v0.2.0 mit großzügiger Subdomain-Eingabe, Namensauflösung in ID-Flags, `invoice paid-status`, `papierkram mcp serve` (Tools aus der Registry, ein Ausführungspfad), sparsamerem E2E-Aufräumen, SBOM und winget-Manifest – ohne dass ein Agent über MCP mehr kann als über das CLI.
+**Ziel:** v0.1.1 mit großzügiger Subdomain-Eingabe, Namensauflösung in ID-Flags, `invoice paid-status`, `papierkram mcp serve` (Tools aus der Registry, ein Ausführungspfad), sparsamerem E2E-Aufräumen, SBOM und winget-Manifest – ohne dass ein Agent über MCP mehr kann als über das CLI.
 
 **Architektur:** Alles neue Verhalten hängt an bestehenden Pfaden. Die Namensauflösung ist ein Schritt zwischen Schreibschutz-Gate und Body (`resolveNames`), der Flag-Werte in IDs umschreibt; danach läuft der unveränderte Builder. `paid-status` lädt Seiten über `fetchPage` und die Filter der Registry wie `invoice list --all`. MCP besteht aus einem SDK-nahen Paket `internal/mcpserver` (Tool-Schema, Argument-Übersetzung, Ergebnis), das das CLI nicht importiert, und `internal/cli/mcp*.go`, das die Tool-Beschreibungen aus `commands --json` (`buildCommandsDoc`) erzeugt und jeden Aufruf in-process über `RunContext` mit eigener `App` ausführt.
 
@@ -32,7 +32,7 @@ Gilt für jede Task zusätzlich zu den Abschnitten „Global Constraints“, „
 - E2E-Suite: nie `pay` mit echter Transaktion, nie `deliver --via email`, kein Literal `"email"` in `e2e/`; Ausgabe nur über `e2e/log_test.go`; jede neue Live-Anfrage im Kosten-Header von `e2e/e2e_test.go` mit `s.need(t, n)` davor; Objekte heißen `pk-e2e-<runid>-…` (Ausnahme Task 7: `pk-e2e-dauerkunde`) und werden über `s.create`/`s.track` registriert.
 
 **Neu in v0.2:**
-- Version: nur Minor-Bump auf **v0.2.0**; kein Tag, kein Release in einer Task (Controller, siehe Abschluss).
+- Version: nur Patch-Bump auf **v0.1.1** (Pascal, 2026-11-09); kein Tag, kein Release in einer Task (Controller, siehe Abschluss).
 - MCP-SDK: **offizielles `github.com/modelcontextprotocol/go-sdk`**, neueste stabile Version zum Zeitpunkt der Task (mindestens v1.7.0), stdio; Lizenz aus dem Modulcache lesen und in `tools/gennotices/main.go` (`licenses`) eintragen, `THIRD_PARTY_NOTICES.md` neu erzeugen. Keine weitere neue direkte Abhängigkeit.
 - MCP darf nie mehr als das CLI: jeder Tool-Aufruf läuft durch `RunContext` mit `-o json --no-input`; kein zweiter Prüf- oder Sendepfad.
 - `commands --json` bleibt `version` 1; neue Felder nur additiv und optional; jedes neue JSON hat ein striktes Schema in `docs/schemas/` mit Vertragstest.
@@ -759,7 +759,7 @@ README: Inhaltsverzeichnis, „Namen statt IDs“, „Offene Posten“, „MCP-S
 
 - [ ] **Step 3: CHANGELOG und offene Punkte**
 
-`## [Unreleased]`: Einträge aller Tasks konsolidiert unter „Hinzugefügt“/„Geändert“, keine Doppelungen; Umbenennen in `[0.2.0]` macht der Controller beim Release. `docs/offene-punkte.md`: Übersicht und Einzelpunkte 30/31 konsistent.
+`## [Unreleased]`: Einträge aller Tasks konsolidiert unter „Hinzugefügt“/„Geändert“, keine Doppelungen; Umbenennen in `[0.1.1]` macht der Controller beim Release. `docs/offene-punkte.md`: Übersicht und Einzelpunkte 30/31 konsistent.
 
 - [ ] **Step 4: Prüfen**
 
@@ -769,7 +769,7 @@ Run: `make docs`; G1, G5; `go test ./internal/cli/ -run 'DocCommands|Reference|A
 
 ```bash
 git add docs/specs/2026-11-03-papierkram-cli-design.md README.md AGENTS.md skills/papierkram/SKILL.md docs/offene-punkte.md CHANGELOG.md docs/reference e2e/README.md
-git commit -m "docs: sync docs for v0.2.0"
+git commit -m "docs: sync docs for v0.1.1"
 ```
 
 **Akzeptanz:** Gates G1–G5; Report listet je Datei die geänderten Abschnitte; AGENTS-Regeln 1–8 unverletzt (MCP und Namensauflösung ergänzen sie, ersetzen keine).
@@ -781,4 +781,4 @@ git commit -m "docs: sync docs for v0.2.0"
 1. Gesamt-Review über alle Commits dieser Runde (opus, `superpowers:requesting-code-review`), Fix-Welle per Fix-Agent, danach Gates G1–G10.
 2. Live-Lauf gegen die Sandbox (Frist ca. 2026-11-19) mit Token-Check und Abdeckungszeile (88/89): Ergebnisse der Messungen in `docs/offene-punkte.md` 30/31 eintragen, `paidStatusSkipStates` und die Storno-Erkennung bei Bedarf per Fix-Agent anpassen.
 3. Schritte für Pascal: `gh repo fork microsoft/winget-pkgs --clone=false --default-branch-only`; PAT `PACKAGES_GITHUB_TOKEN` um den Fork erweitern.
-4. Release **v0.2.0** nach `docs/release.md` (CHANGELOG `[Unreleased]` → `[0.2.0] - <Datum>`, Commit `docs: release v0.2.0`, Tag `v0.2.0`), erst nach grüner CI und Live-Lauf. Danach `HANDOFF.md` und Memory aktualisieren.
+4. Release **v0.1.1** nach `docs/release.md` (CHANGELOG `[Unreleased]` → `[0.1.1] - <Datum>`, Commit `docs: release v0.1.1`, Tag `v0.1.1`), erst nach grüner CI und Live-Lauf. Danach `HANDOFF.md` und Memory aktualisieren.
