@@ -28,7 +28,8 @@ import (
 // request (page 1, page_size 100) and are shown as "id<TAB>name". The
 // result is cached per context and resource for namecache.TTL (60 s) in
 // <cacheDir>/papierkram/completion-<ctx>-<resource>.json; the context
-// option completion_lookup = false switches requests and cache off.
+// option completion_lookup = false switches requests and cache off. The
+// name resolution (resolve.go) reads and writes the same file.
 
 // completionPageSize is the page size of the lookup: the API maximum, as
 // many IDs as one request (one credit) can bring.
@@ -38,27 +39,33 @@ const completionPageSize = allPageSize
 // and the context timeout: the shell waits for it. A variable for tests.
 var completionTimeout = 3 * time.Second
 
-// completionCacheMax is the largest cache file that is read; 100 entries
-// with names of at most 60 runes need far less.
-const completionCacheMax = 256 << 10
+// completionCacheMax is the largest cache file that is read: the name
+// resolution stores up to resolveMaxPages * resolvePageSize (500) entries
+// with untruncated names.
+const completionCacheMax = 1 << 20
 
 // completionNameRunes is the longest name shown beside an ID.
 const completionNameRunes = 60
 
 // completionCache is the cache file of one context and resource. Scope is
 // the account (cacheScope: context and base URL without userinfo); a file
-// of another account, resource or age is a miss.
+// of another account, resource or age is a miss. Complete is set when
+// Entries hold the whole list (one page of the completion, all pages of
+// the name resolution); a file without it (v0.1) is incomplete.
 type completionCache struct {
 	Scope    string         `json:"scope"`
 	Resource string         `json:"resource"`
 	Stored   time.Time      `json:"stored"`
+	Complete bool           `json:"complete,omitempty"`
 	Entries  []completionID `json:"entries"`
 }
 
-// completionID is one object of the lookup.
+// completionID is one object of the lookup: its ID, its name (cacheName,
+// untruncated) and whether it is archived.
 type completionID struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name,omitempty"`
+	ID       int64  `json:"id"`
+	Name     string `json:"name,omitempty"`
+	Archived bool   `json:"archived,omitempty"`
 }
 
 // completionCachePath is the cache file of the context ctx (config.FileName,
@@ -94,10 +101,12 @@ func (a *App) completeIDs(c *cobra.Command, resource, toComplete string) []strin
 	// to the working directory)
 	dir, scope := a.cacheDir(), cacheScope(r)
 	path := completionCachePath(dir, r.Context, resource)
-	ids, ok := []completionID(nil), false
+	var cached completionCache
+	ok = false
 	if dir != "" {
-		ids, ok = readCompletionCache(path, scope, resource, a.Now())
+		cached, ok = readCompletionCache(path, scope, resource, a.Now())
 	}
+	ids := cached.Entries
 	if !ok {
 		parent := c.Context()
 		if parent == nil {
@@ -112,11 +121,12 @@ func (a *App) completeIDs(c *cobra.Command, resource, toComplete string) []strin
 		if r, err = a.resolveWith(flagContext, store); err != nil || requireCredentials(r) != nil {
 			return nil
 		}
-		if ids, ok = a.lookupIDs(ctx, r, e); !ok {
+		var complete bool
+		if ids, complete, ok = a.lookupIDs(ctx, r, e); !ok {
 			return nil
 		}
 		if dir != "" {
-			writeCompletionCache(path, completionCache{Scope: scope, Resource: resource, Stored: a.Now(), Entries: ids})
+			writeCompletionCache(path, completionCache{Scope: scope, Resource: resource, Stored: a.Now(), Complete: complete, Entries: ids})
 		}
 	}
 	var out []string
@@ -163,65 +173,95 @@ func (s deadlineStore) Get(name string) (string, error) {
 // commands (clientOptions) with the completion's own timeout and without
 // --debug output. Unlike clientFor it prints no warning about a base URL
 // without https (warnInsecure): stderr of a completion would garble the
-// shell prompt. Objects without a positive ID are left out.
-func (a *App) lookupIDs(ctx context.Context, r *config.Resolved, e registry.Entry) ([]completionID, bool) {
+// shell prompt. complete is set when page 1 is the whole list
+// (total_pages at most 1; missing or invalid: not complete).
+func (a *App) lookupIDs(ctx context.Context, r *config.Resolved, e registry.Entry) (ids []completionID, complete, ok bool) {
 	o := a.clientOptions(r)
 	o.Timeout, o.Debug, o.DebugInfo = completionTimeout, nil, ""
 	query := url.Values{"page_size": {strconv.Itoa(completionPageSize)}}
 	resp, err := api.New(o).Call(ctx, e.OperationID, nil, query, nil)
 	if err != nil {
-		return nil, false
+		return nil, false, false
 	}
 	var page struct {
-		Entries []map[string]any `json:"entries"`
+		TotalPages json.RawMessage  `json:"total_pages"`
+		Entries    []map[string]any `json:"entries"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(resp.Body))
 	dec.UseNumber()
 	if dec.Decode(&page) != nil {
-		return nil, false
+		return nil, false, false
 	}
+	total, valid := totalPages(page.TotalPages)
+	return idEntries(page.Entries), valid && total <= 1, true
+}
+
+// totalPages is the total_pages of a list answer; valid is false when it
+// is missing, null, no integer or negative.
+func totalPages(raw json.RawMessage) (total int64, valid bool) {
+	if len(raw) == 0 || string(raw) == "null" || json.Unmarshal(raw, &total) != nil || total < 0 {
+		return 0, false
+	}
+	return total, true
+}
+
+// idEntries are the cache entries of list entries decoded with UseNumber:
+// objects without a positive ID are left out, the name is cacheName of
+// objectName (untruncated), record_state "archived" marks archived ones.
+// Never nil (a cache file with entries null is a miss).
+func idEntries(entries []map[string]any) []completionID {
 	ids := []completionID{}
-	for _, obj := range page.Entries {
+	for _, obj := range entries {
 		if id := jsonInt(obj["id"]); id > 0 {
-			ids = append(ids, completionID{ID: id, Name: completionName(objectName(obj))})
+			state, _ := obj["record_state"].(string)
+			ids = append(ids, completionID{ID: id, Name: cacheName(objectName(obj)), Archived: state == "archived"})
 		}
 	}
-	return ids, true
+	return ids
 }
 
-// completionName is a name as one line of printable text (output.Printable,
-// whitespace collapsed) of at most completionNameRunes runes: it comes
+// cacheName is a name as one line of printable text (output.Printable,
+// whitespace collapsed), untruncated: the form stored in the cache and
+// compared by the name resolution.
+func cacheName(s string) string {
+	return strings.Join(strings.Fields(output.Printable(s)), " ")
+}
+
+// completionName is cacheName cut to completionNameRunes runes: it comes
 // from the API or a cache file and ends up in the shell.
 func completionName(s string) string {
-	return output.Truncate(strings.Join(strings.Fields(output.Printable(s)), " "), completionNameRunes)
+	return output.Truncate(cacheName(s), completionNameRunes)
 }
 
-// readCompletionCache returns the IDs of the cache file at path when it
-// is a regular file (no symbolic link) of scope and resource stored less
-// than namecache.TTL ago. Anything else is a miss.
-func readCompletionCache(path, scope, resource string, now time.Time) ([]completionID, bool) {
+// readCompletionCache returns the cache file at path when it is a regular
+// file (no symbolic link) of scope and resource stored less than
+// namecache.TTL ago, with the entries of a positive ID and their names as
+// cacheName (a file edited by hand). Anything else is a miss.
+func readCompletionCache(path, scope, resource string, now time.Time) (completionCache, bool) {
 	data, err := safefile.ReadRegular(path, false, completionCacheMax)
 	if err != nil {
-		return nil, false
+		return completionCache{}, false
 	}
 	var f completionCache
 	dec := json.NewDecoder(bytes.NewReader(data))
 	if dec.Decode(&f) != nil || f.Scope != scope || f.Resource != resource || f.Entries == nil {
-		return nil, false
+		return completionCache{}, false
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, false
+		return completionCache{}, false
 	}
 	if age := now.Sub(f.Stored); age < 0 || age >= namecache.TTL {
-		return nil, false
+		return completionCache{}, false
 	}
 	ids := f.Entries[:0]
 	for _, id := range f.Entries {
 		if id.ID > 0 {
+			id.Name = cacheName(id.Name)
 			ids = append(ids, id)
 		}
 	}
-	return ids, true
+	f.Entries = ids
+	return f, true
 }
 
 // writeCompletionCache stores f at path, best effort: atomically, private

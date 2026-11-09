@@ -865,3 +865,41 @@ func TestCompletionShortFormNeedsCobraLines(t *testing.T) {
 		}
 	}
 }
+
+// A cache file of v0.1 (no complete, no archived) still completes; the
+// resolver loads the list.
+func TestCompletionCacheOldFormat(t *testing.T) {
+	app, srv := apiApp(t)
+	srv.OnFunc("GET", "/contact/companies", pagedList(t, 1, []map[string]any{company(2, "Mustermann GmbH")}))
+	writeCacheFile(t, app, srv, "company", `[{"id":2,"name":"Mustermann GmbH"}]`, "")
+	c := &cobra.Command{Use: "test"}
+	if got := app.completeIDs(c, "company", ""); len(got) != 1 || got[0] != "2\tMustermann GmbH" {
+		t.Errorf("Vervollständigung %q", got)
+	}
+	wantRequests(t, srv, 0)
+	if got, err := newResolver(t, app).resolve(nameRef(t, "customer"), "Mustermann GmbH", 0); err != nil || got.Cached || got.ID != 2 {
+		t.Errorf("Resolution %+v, %v", got, err)
+	}
+	wantRequests(t, srv, 1)
+}
+
+func TestCompletionNamesTruncatedAtDisplay(t *testing.T) {
+	app, srv := apiApp(t)
+	long := strings.Repeat("ä", 80)
+	srv.On("GET", "/income/invoices", http.StatusOK, listBody(t, map[string]any{"id": 1, "name": long + "\t"}))
+	complete(t, app, "invoice", "describe", "").want(t, []string{"1\t" + strings.Repeat("ä", 59) + "…"}, noFile)
+	data, err := os.ReadFile(completionCachePath(app.CacheDir, "", "invoice"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f completionCache
+	if err := json.Unmarshal(data, &f); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Entries) != 1 || f.Entries[0].Name != long || !f.Complete {
+		t.Errorf("Cache %s", data)
+	}
+	// from the cache: truncated again
+	complete(t, app, "invoice", "describe", "").want(t, []string{"1\t" + strings.Repeat("ä", 59) + "…"}, noFile)
+	wantRequests(t, srv, 1)
+}
