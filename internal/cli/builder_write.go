@@ -346,13 +346,23 @@ func flagBool(c *cobra.Command, name string) bool {
 
 // checkWriteFlags runs every usage check of create/update that needs only
 // the flags, before the configuration is resolved and before anything is
-// read or sent (exit 2): flag combinations, an empty --input/--items path,
-// and the --item values (syntax, keys, object fields; see parseItems).
+// read or sent (exit 2): flag combinations, an empty, missing or
+// directory --input/--items path, and the --item values (syntax, keys,
+// object fields; see parseItems).
 func checkWriteFlags(c *cobra.Command, ws writeSpec, isUpdate bool) error {
 	item, items := c.Flags().Changed("item"), c.Flags().Changed("items")
 	for _, flag := range []string{"input", "items"} {
-		if c.Flags().Changed(flag) && flagString(c, flag) == "" {
+		if !c.Flags().Changed(flag) {
+			continue
+		}
+		path := flagString(c, flag)
+		if path == "" {
 			return errMissingPath("--" + flag)
+		}
+		// a missing file is a flag error before the gate and the name
+		// resolution (its list requests cost credits); read later
+		if err := checkJSONPath("--"+flag, path); err != nil {
+			return err
 		}
 	}
 	switch {

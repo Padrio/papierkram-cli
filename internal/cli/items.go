@@ -277,21 +277,44 @@ func prefixErr(prefix string, err error) error {
 // openJSONFile opens the JSON file of flag (--input, --items) with German
 // errors; all are usage errors (exit 2).
 func openJSONFile(flag, path string) (*os.File, error) {
-	hint := "Pfad prüfen oder - für die Standardeingabe angeben"
 	f, err := os.Open(path)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: Datei %q nicht gefunden", flag, path), hint)
-	case errors.Is(err, fs.ErrPermission):
-		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: keine Leseberechtigung für %q", flag, path), hint)
-	case err != nil:
-		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: Datei %q nicht lesbar", flag, path), hint)
+	if err != nil {
+		return nil, jsonPathError(flag, path, err, false)
 	}
 	if st, err := f.Stat(); err == nil && st.IsDir() {
 		_ = f.Close()
-		return nil, clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: %q ist ein Verzeichnis", flag, path), hint)
+		return nil, jsonPathError(flag, path, nil, true)
 	}
 	return f, nil
+}
+
+// jsonPathError is the usage error of the file of flag: err of open or
+// stat, or dir for a directory.
+func jsonPathError(flag, path string, err error, dir bool) error {
+	hint := "Pfad prüfen oder - für die Standardeingabe angeben"
+	switch {
+	case dir:
+		return clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: %q ist ein Verzeichnis", flag, path), hint)
+	case errors.Is(err, fs.ErrNotExist):
+		return clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: Datei %q nicht gefunden", flag, path), hint)
+	case errors.Is(err, fs.ErrPermission):
+		return clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: keine Leseberechtigung für %q", flag, path), hint)
+	}
+	return clierr.New(clierr.CodeUsage, fmt.Sprintf("%s: Datei %q nicht lesbar", flag, path), hint)
+}
+
+// checkJSONPath checks the file of flag (--input, --items) before it is
+// read, with the errors of openJSONFile: it exists and is no directory
+// ("-" is stdin). Stat, not open: a named pipe would block.
+func checkJSONPath(flag, path string) error {
+	if path == "-" {
+		return nil
+	}
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() {
+		return jsonPathError(flag, path, err, err == nil)
+	}
+	return nil
 }
 
 // lineItems returns the positions of --items (pruned like --input) or

@@ -478,3 +478,31 @@ func TestNameResolutionErrors(t *testing.T) {
 	wantExit(t, app, Run(app, invoiceByName("Mustermann GmbH")), 6)
 	wantPaths(t, srv, "GET /contact/companies")
 }
+
+// A missing --input or --items file is exit 2 with the flags, before the
+// gate and the resolution (review T3-M2).
+func TestMissingFileBeforeResolution(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		args []string
+		msg  string
+	}{
+		{[]string{"--input", dir + "/fehlt.json"}, `--input: Datei "` + dir + `/fehlt.json" nicht gefunden`},
+		{[]string{"--items", dir + "/fehlt.json"}, `--items: Datei "` + dir + `/fehlt.json" nicht gefunden`},
+		{[]string{"--input", dir}, `--input: "` + dir + `" ist ein Verzeichnis`},
+	} {
+		app, srv := apiApp(t)
+		mustermann(t, srv)
+		args := append([]string{"invoice", "create", "--name", "X", "--customer", "Mustermann GmbH", "-o", "json"}, tc.args...)
+		wantExit(t, app, Run(app, args), 2)
+		wantRequests(t, srv, 0)
+		wantErrText(t, app, tc.msg, "Pfad prüfen oder - für die Standardeingabe angeben")
+	}
+	// "-" is stdin: no check of a file
+	app, srv := apiApp(t)
+	mustermann(t, srv)
+	app.In = strings.NewReader(`{"payment_term":{"id":1130},"document_date":"2026-11-04"}`)
+	wantExit(t, app, Run(app, []string{"invoice", "create", "--name", "X", "--customer", "Mustermann GmbH", "--input", "-",
+		"--item", "name=A,qty=1,unit=Stunde,price=5,vat=19", "--dry-run", "-o", "json"}), 0)
+	wantPaths(t, srv, "GET /contact/companies")
+}
