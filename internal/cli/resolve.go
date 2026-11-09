@@ -72,12 +72,15 @@ func (a *App) newNameResolver(c *cobra.Command, client *api.Client, r *config.Re
 
 // resolve returns the ID of the active object of ref.Resource named name
 // and writes the hint on stderr. parent is the ID of ref.Parent (the
-// company of a contact person), 0 without parent. Errors of the list
-// requests keep their code.
+// company of a contact person, the customer of a project), 0 without
+// parent; a parent of a filter (ref.ParentFilter) is optional. Errors of
+// the list requests keep their code.
 func (n *nameResolver) resolve(ref registry.NameRef, name string, parent int64) (Resolution, error) {
 	e, ok := registry.Lookup(ref.Resource, "list")
 	hasParent := strings.Contains(e.Path, "{")
-	if !ok || hasParent != (ref.Parent != "") || hasParent && parent <= 0 {
+	filter, hasFilter := parentFilter(e, ref)
+	if !ok || hasParent != (ref.Parent != "" && ref.ParentFilter == "") || hasParent && parent <= 0 ||
+		ref.ParentFilter != "" && (!hasFilter || parent < 0) {
 		return Resolution{}, clierr.New(clierr.CodeError,
 			fmt.Sprintf("interner Fehler: Namensauflösung für --%s ohne Liste oder übergeordnete ID", ref.Flag), "")
 	}
@@ -87,17 +90,25 @@ func (n *nameResolver) resolve(ref registry.NameRef, name string, parent int64) 
 	}
 	listCmd := "papierkram " + ref.Resource + " list"
 	var params []int64
-	if hasParent {
-		// the only list with a parent: the persons of a company
+	query := url.Values{}
+	narrowed := hasParent || ref.ParentFilter != "" && parent > 0
+	switch {
+	case hasParent:
+		// the only list with a parent path: the persons of a company
 		params = []int64{parent}
 		listCmd += " --company " + strconv.FormatInt(parent, 10)
+	case narrowed:
+		// the projects of a customer (ruling T3-E)
+		query.Set(filter.Param, strconv.FormatInt(parent, 10))
+		listCmd += " --" + filter.Flag + " " + strconv.FormatInt(parent, 10)
 	}
 
-	// the cache: lists without parent only, never a path relative to the
-	// working directory; only a unique match is taken from it, a miss
-	// loads (an object created a moment ago, an error on fresh data)
+	// the cache: whole lists only (not those of a parent), never a path
+	// relative to the working directory; only a unique match is taken
+	// from it, a miss loads (an object created a moment ago, an error on
+	// fresh data)
 	dir := n.a.cacheDir()
-	cache := !hasParent && dir != ""
+	cache := !narrowed && dir != ""
 	path, scope := "", cacheScope(n.r)
 	if cache {
 		path = completionCachePath(dir, n.r.Context, ref.Resource)
@@ -108,7 +119,7 @@ func (n *nameResolver) resolve(ref registry.NameRef, name string, parent int64) 
 		}
 	}
 
-	ids, credits, total, err := n.load(e, params)
+	ids, credits, total, err := n.load(e, params, query)
 	if err != nil {
 		if credits == 0 {
 			return Resolution{}, err
@@ -165,13 +176,24 @@ func (n *nameResolver) found(ref registry.NameRef, m completionID, credits int, 
 	return Resolution{Flag: ref.Flag, Name: m.Name, Resource: ref.Resource, ID: m.ID, Credits: credits, Cached: cached}
 }
 
-// load reads the list of e (params: the parent ID) from page 1 up to
+// parentFilter is the ID filter of the list e named by ref.ParentFilter.
+func parentFilter(e registry.Entry, ref registry.NameRef) (registry.Filter, bool) {
+	for _, f := range e.Filters {
+		if ref.ParentFilter != "" && f.Flag == ref.ParentFilter && f.Kind == "id" {
+			return f, true
+		}
+	}
+	return registry.Filter{}, false
+}
+
+// load reads the list of e (params: the parent ID of the path, query: a
+// parent filter) from page 1 up to
 // total_pages, at most resolveMaxPages pages, through fetchPage. It
 // returns the entries, the credits of the pages loaded (also with an
 // error) and the largest total_pages seen; it stops as soon as that
 // exceeds resolveMaxPages, an empty page ends the list early. Not fetchPages:
 // its --max-pages warning names a flag the user did not give.
-func (n *nameResolver) load(e registry.Entry, params []int64) ([]completionID, int, int64, error) {
+func (n *nameResolver) load(e registry.Entry, params []int64, query url.Values) ([]completionID, int, int64, error) {
 	ctx := n.c.Context()
 	if ctx == nil {
 		ctx = context.Background()
@@ -179,7 +201,7 @@ func (n *nameResolver) load(e registry.Entry, params []int64) ([]completionID, i
 	fetch := func(q url.Values) (*api.Response, error) {
 		return n.client.Call(ctx, e.OperationID, params, q, nil)
 	}
-	query := url.Values{"page_size": {strconv.Itoa(resolvePageSize)}}
+	query.Set("page_size", strconv.Itoa(resolvePageSize))
 	ids := []completionID{}
 	credits, total := 0, int64(1)
 	for p := int64(1); p <= min(total, resolveMaxPages); p++ {

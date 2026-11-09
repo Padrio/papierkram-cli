@@ -109,12 +109,25 @@ func checkNameFlags(c *cobra.Command) error {
 	return err
 }
 
-// checkParent checks the parent flag of a name of the flag name (ref):
-// given, and a name or an ID ≥ 1 (the list of the parent object).
+// genitives are the labels of the flags with a parent in the hint
+// "sonst die ID der Kontaktperson angeben".
+var genitives = map[string]string{"Kontaktperson": "der Kontaktperson", "Projekt": "des Projekts"}
+
+// checkParent checks the parent flag of a name of the flag name (ref): a
+// name or an ID ≥ 1 (the list of the parent object), and given when the
+// list needs it (a path parameter; a parent filter is optional, ruling
+// T3-E).
 func checkParent(c *cobra.Command, name string, ref registry.NameRef) error {
-	hint := "sonst die ID der " + ref.Label + " angeben"
+	of, ok := genitives[ref.Label]
+	if !ok {
+		of = "für --" + name
+	}
+	hint := "sonst die ID " + of + " angeben"
 	p := c.Flags().Lookup(ref.Parent)
 	if p == nil || !p.Changed {
+		if ref.ParentFilter != "" {
+			return nil
+		}
 		return clierr.New(clierr.CodeUsage, fmt.Sprintf("Name für --%s braucht --%s (ID oder Name)", name, ref.Parent), hint)
 	}
 	raw := p.Value.String()
@@ -159,8 +172,8 @@ func (a *App) resolveNames(c *cobra.Command, client *api.Client, r *config.Resol
 					}
 					continue
 				}
-				var parent int64
-				if ref.Parent != "" {
+				var parent int64 // 0: an optional parent not given
+				if ref.Parent != "" && c.Flags().Changed(ref.Parent) {
 					var err error
 					if parent, err = flagID(c, ref.Parent); err != nil {
 						return out, err

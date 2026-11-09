@@ -533,3 +533,34 @@ func TestPersonWriteAndPresetFilterByName(t *testing.T) {
 		t.Errorf("stderr %q", errs)
 	}
 }
+
+// Ruling T3-E: with --customer, --customer-project by name is one of the
+// customer's projects; a namesake of another customer is not chosen.
+func TestCustomerProjectByName(t *testing.T) {
+	app, srv := apiApp(t)
+	mustermann(t, srv)
+	srv.OnFunc("GET", "/projects", customerProjects(t))
+	wantExit(t, app, Run(app, append(invoiceByName("Mustermann GmbH"), "--customer-project", "Relaunch")), 0)
+	reqs := wantPaths(t, srv, "GET /contact/companies", "GET /projects", "POST /income/invoices")
+	if q := reqs[1].Query.Get("company_id"); q != "2" {
+		t.Errorf("company_id %q", q)
+	}
+	if !strings.Contains(string(reqs[2].Body), `"project":{"id":10}`) {
+		t.Errorf("body %s", reqs[2].Body)
+	}
+
+	// without --customer all projects, as before: here ambiguous
+	app, srv = apiApp(t)
+	srv.OnFunc("GET", "/projects", customerProjects(t))
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer-project", "Relaunch", "--payment-term", "1", "-o", "json"}), 2)
+	reqs = wantPaths(t, srv, "GET /projects")
+	if reqs[0].Query.Has("company_id") {
+		t.Errorf("Query %s", reqs[0].Query.Encode())
+	}
+
+	// a customer ID < 1 has no projects
+	app, srv = apiApp(t)
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "0", "--customer-project", "Relaunch", "--payment-term", "1", "-o", "json"}), 2)
+	wantRequests(t, srv, 0)
+	wantErrText(t, app, `ungültiger Wert "0" für --customer: Name für --customer-project braucht eine ID ≥ 1 oder einen Namen`, "sonst die ID des Projekts angeben")
+}

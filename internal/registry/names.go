@@ -3,10 +3,14 @@ package registry
 // NameRef is a flag that takes the ID of a resource with names: instead
 // of the ID it takes a name, resolved through the list request of
 // Resource (spec v0.2 §4). Label is the German noun of the flag in hints
-// ("Kunde"); Parent is the flag whose ID the list needs (the contact
-// person lists of a company), empty for lists without parent.
+// ("Kunde"); Parent is the flag whose ID narrows the list, empty for
+// lists without parent. Without ParentFilter the parent is a path
+// parameter of the list (the contact persons of a company) and required;
+// with it, ParentFilter is the ID filter of the list that takes the
+// parent (project list --company) and the parent is optional: without it
+// the whole list is searched.
 type NameRef struct {
-	Flag, Resource, Label, Parent string
+	Flag, Resource, Label, Parent, ParentFilter string
 }
 
 // nameRefs are the flags with name resolution, by flag name; a flag of
@@ -16,7 +20,7 @@ var nameRefs = []NameRef{
 	{Flag: "creditor", Resource: "company", Label: "Lieferant"},
 	{Flag: "company", Resource: "company", Label: "Firma"},
 	{Flag: "project", Resource: "project", Label: "Projekt"},
-	{Flag: "customer-project", Resource: "project", Label: "Projekt"},
+	{Flag: "customer-project", Resource: "project", Label: "Projekt", Parent: "customer", ParentFilter: "company"},
 	{Flag: "contact-person", Resource: "person", Label: "Kontaktperson", Parent: "customer"},
 	{Flag: "task", Resource: "task", Label: "Aufgabe"},
 	{Flag: "proposition", Resource: "proposition", Label: "Artikel"},

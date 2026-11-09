@@ -472,6 +472,56 @@ func TestResolvePersonByParent(t *testing.T) {
 	wantRequests(t, srv, 3)
 }
 
+// customerProjects answers the project list: with company_id 2 only the
+// project of that customer, without filter also the namesake of another
+// customer.
+func customerProjects(t *testing.T) http.HandlerFunc {
+	t.Helper()
+	all := pagedList(t, 1, []map[string]any{{"id": 10, "name": "Relaunch"}, {"id": 11, "name": "Relaunch"}})
+	own := pagedList(t, 1, []map[string]any{{"id": 10, "name": "Relaunch"}})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("company_id") == "2" {
+			own(w, r)
+			return
+		}
+		all(w, r)
+	}
+}
+
+// Ruling T3-E: --customer-project by name looks among the projects of the
+// customer (filter company_id of project list), without the customer in
+// all projects; the filtered list is not cached.
+func TestResolveProjectOfCustomer(t *testing.T) {
+	app, srv := apiApp(t)
+	srv.OnFunc("GET", "/projects", customerProjects(t))
+	n := newResolver(t, app)
+	got, err := n.resolve(nameRef(t, "customer-project"), "relaunch", 2)
+	if err != nil || got.ID != 10 || got.Cached {
+		t.Fatalf("Resolution %+v, %v", got, err)
+	}
+	reqs := wantRequests(t, srv, 1)
+	if reqs[0].Query.Encode() != "company_id=2&page=1&page_size=100" {
+		t.Errorf("Query %s", reqs[0].Query.Encode())
+	}
+	if entries, _ := os.ReadDir(filepath.Join(app.CacheDir, "papierkram")); len(entries) != 0 {
+		t.Errorf("Cache-Dateien: %v", entries)
+	}
+	_, err = n.resolve(nameRef(t, "customer-project"), "Website", 2)
+	if ce := wantResolveErr(t, err, 4); !strings.HasSuffix(ce.Hint, "ID angeben (papierkram project list --company 2) (1 Credit verbraucht)") {
+		t.Errorf("Hinweis %q", ce.Hint)
+	}
+	// without customer: all projects, as before (here ambiguous)
+	_, err = n.resolve(nameRef(t, "customer-project"), "Relaunch", 0)
+	_ = wantResolveErr(t, err, 2)
+	if reqs := wantRequests(t, srv, 3); reqs[2].Query.Has("company_id") {
+		t.Errorf("Query %s", reqs[2].Query.Encode())
+	}
+	// a negative parent is a programming error, no request
+	_, err = n.resolve(nameRef(t, "customer-project"), "Relaunch", -1)
+	_ = wantResolveErr(t, err, 1)
+	wantRequests(t, srv, 3)
+}
+
 func TestResolveUserName(t *testing.T) {
 	app, srv := apiApp(t)
 	srv.OnFunc("GET", "/users", pagedList(t, 1, []map[string]any{
