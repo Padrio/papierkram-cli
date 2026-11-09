@@ -6,6 +6,8 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-09
+
 ### Hinzugefügt
 
 - Befehle für alle 89 Operationen der Papierkram-API: `company`, `person`, `invoice`, `estimate`, `voucher`, `proposition`, `payment-term`, `project`, `task`, `time`, `custom-attribute`, `bank-connection`, `transaction`, `user` und `info`, mit deutschen Aliasen (`firma`, `rechnung`, `beleg`, `zeit`, …; `info` hat keinen).
@@ -73,4 +75,5 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 - Fehlervertrag: Der Fehler einer 2xx-Antwort über 64 MiB (Exit 1, auch Exit 11 von `voucher create --file`) hat kein `http_status` mehr; bisher stand dort der 2xx-Status, den `docs/schemas/error.json` nicht zulässt. Die Meldung sagt weiter, ob die Änderung ausgeführt wurde.
 - Fehlerformat: Scheitert das Parsen eines Flags vor `-o json`, `-o yaml` oder `--jq` (z. B. `--bogus -o json`, `--limit abc -o json`), endet stderr trotzdem mit dem strukturierten Fehler; bisher fehlte er, weil die späteren Flags nicht mehr gelesen wurden. Der Wert eines Flags (`--name -ojson`, auch in einem Bündel wie `-yO -ojson`) gilt dabei wie beim vollständigen Parsen nicht als Format; `-o` in einem Bündel (`-yojson`) zählt.
 
-[Unreleased]: https://github.com/Padrio/papierkram-cli/commits/main
+[Unreleased]: https://github.com/Padrio/papierkram-cli/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Padrio/papierkram-cli/releases/tag/v0.1.0
