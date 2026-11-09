@@ -275,8 +275,9 @@ func TestCommandsContractFlagSchemasEqual(t *testing.T) {
 }
 
 // Every spec operation is the operation of exactly one registry command;
-// only CreateTimeEntry (time log, time stop) and GetInfo (auth login,
-// auth status) are also sent by commands without an entry of their own.
+// only CreateTimeEntry (time log, time stop), GetInfo (auth login,
+// auth status) and ListInvoices (invoice paid-status) are also sent by
+// commands without an entry of their own.
 func TestCommandsJSONCoversAllOperations(t *testing.T) {
 	d := decodeCommands(t, runCommandsJSON(t, "--json"))
 	byOp := map[string][]string{}
@@ -292,6 +293,7 @@ func TestCommandsJSONCoversAllOperations(t *testing.T) {
 	shared := map[string][]string{
 		"CreateTimeEntry": {"time create", "time log", "time stop"},
 		"GetInfo":         {"auth login", "auth status", "info"},
+		"ListInvoices":    {"invoice list", "invoice paid-status"},
 	}
 	for _, op := range ops {
 		got := byOp[op.Op.OperationID]
@@ -399,27 +401,28 @@ func TestCommandsJSONMetaClasses(t *testing.T) {
 		op      string
 	}
 	for name, w := range map[string]want{
-		"api":             {"per_request", -1, ""},
-		"time log":        {"create", 10, "CreateTimeEntry"},
-		"time stop":       {"create", 10, "CreateTimeEntry"},
-		"time start":      {"local", 0, ""},
-		"time status":     {"local", 0, ""},
-		"time discard":    {"local", 0, ""},
-		"local init":      {"local", 0, ""},
-		"local show":      {"local", 0, ""},
-		"context create":  {"local", 0, ""},
-		"context list":    {"local", 0, ""},
-		"version":         {"local", 0, ""},
-		"commands":        {"local", 0, ""},
-		"schema":          {"local", 0, ""},
-		"completion":      {"local", 0, ""},
-		"help":            {"local", 0, ""},
-		"auth login":      {"local", 1, "GetInfo"},
-		"auth logout":     {"local", 0, ""},
-		"auth status":     {"read_only", 1, "GetInfo"},
-		"invoice pdf":     {"read_only", 1, "GetInvoicePdf"},
-		"invoice deliver": {"send", 2, "DeliverInvoice"}, // with the readback
-		"voucher pay":     {"destructive", 1, "PayVoucher"},
+		"api":                 {"per_request", -1, ""},
+		"time log":            {"create", 10, "CreateTimeEntry"},
+		"time stop":           {"create", 10, "CreateTimeEntry"},
+		"time start":          {"local", 0, ""},
+		"time status":         {"local", 0, ""},
+		"time discard":        {"local", 0, ""},
+		"local init":          {"local", 0, ""},
+		"local show":          {"local", 0, ""},
+		"context create":      {"local", 0, ""},
+		"context list":        {"local", 0, ""},
+		"version":             {"local", 0, ""},
+		"commands":            {"local", 0, ""},
+		"schema":              {"local", 0, ""},
+		"completion":          {"local", 0, ""},
+		"help":                {"local", 0, ""},
+		"auth login":          {"local", 1, "GetInfo"},
+		"auth logout":         {"local", 0, ""},
+		"auth status":         {"read_only", 1, "GetInfo"},
+		"invoice pdf":         {"read_only", 1, "GetInvoicePdf"},
+		"invoice paid-status": {"read_only", 1, "ListInvoices"}, // 1 per page
+		"invoice deliver":     {"send", 2, "DeliverInvoice"},    // with the readback
+		"voucher pay":         {"destructive", 1, "PayVoucher"},
 	} {
 		c := d.find(t, name)
 		credits := -1
@@ -832,8 +835,12 @@ func TestCommandsJSONExtraCredits(t *testing.T) {
 			}
 		}
 	}
-	if n != 2 {
-		t.Errorf("%d Flags mit credits, erwartet 2", n)
+	// invoice paid-status --details: 1 per invoice read (task 4)
+	if f := d.find(t, "invoice paid-status").flag(t, "details"); f.Credits == nil || *f.Credits != 1 {
+		t.Errorf("invoice paid-status --details = %+v", f)
+	}
+	if n != 3 {
+		t.Errorf("%d Flags mit credits, erwartet 3", n)
 	}
 }
 
@@ -1001,7 +1008,8 @@ func TestCommandsLongWording(t *testing.T) {
 // checks. For each flag with minimum or maximum, min-1 and max+1 are exit
 // 2 naming the flag before any request; min and max are accepted (exit
 // 0 against the mock). Required id flags get 1; --max-pages needs --all
-// (papierkram api: --paginate and a list path).
+// (papierkram api: --paginate and a list path; invoice paid-status
+// nothing).
 func TestFlagBoundsEnforced(t *testing.T) {
 	d := decodeCommands(t, runCommandsJSON(t, "--json"))
 	checked := 0
@@ -1023,6 +1031,7 @@ func TestFlagBoundsEnforced(t *testing.T) {
 			switch {
 			case c.Command == "api":
 				base = append(base, "GET", "/income/invoices", "--paginate")
+			case c.Command == "invoice paid-status": // --max-pages without --all
 			case f.Name == "max-pages":
 				base = append(base, "--all")
 			}

@@ -1,0 +1,4 @@
+NR.      KUNDE            DATUM       FÄLLIG      ÜBERFÄLLIG  BRUTTO    OFFEN
+RE-0003  Mustermann GmbH  2026-05-01  2026-06-01  9           119,00 €  119,00 €
+RE-0005  Mustermann GmbH  2026-05-01  2026-06-20              119,00 €  50,50 €
+Summe offen: 169,50 € (2 Rechnungen, davon 1 überfällig; Stand 2026-06-10)

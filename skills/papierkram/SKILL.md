@@ -115,16 +115,16 @@ papierkram invoice update 459 --customer 3214 --description "Leistungszeitraum O
 
 ## Ablauf 3: offene Posten prüfen
 
-Alles lesend. Die Statuswerte (`state`) dokumentiert die API nicht vollständig ([offene Punkte](https://github.com/Padrio/papierkram-cli/blob/main/docs/offene-punkte.md)); maßgeblich ist `outstanding_amount`, das die API als Zeichenkette liefert (`"119.0"`): in `--jq` vor jedem Vergleich mit `tonumber` umwandeln, sonst gilt auch `"0.0" > 0`. Entwürfe (`draft`), stornierte (`canceled`) und gelöschte (`deleted`) Rechnungen sind keine offenen Posten, auch wenn `outstanding_amount` stehen bleibt (eine stornierte Rechnung behält ihren Betrag). Nach dem Status filtert die API nicht, nur per `--jq`. Filter der API: `--company`, `--project`, `--from` und `--to` (Belegdatum); alles Weitere per `--jq`:
+Alles lesend, auch unter Schreibschutz. `invoice paid-status` rechnet die offenen Posten selbst aus: Rechnungen mit `outstanding_amount` über 0, deren Status nicht `draft` oder `canceled` ist (archivierte zählen mit), sortiert nach Fälligkeit, mit `days_overdue` (Tage seit der Fälligkeit, Berliner Tag) und der exakten Summe `total_outstanding`. `--overdue` zeigt nur überfällige (Fälligkeit vor heute); `--customer` (ID oder Name), `--from` und `--to` (Rechnungsdatum) filtern wie bei `invoice list`:
 
 ```sh
-PAPIERKRAM_READ_ONLY=1 papierkram invoice list --from 2026-01-01 --to 2026-10-31 --all --max-pages 5 -o json --no-input --jq '.entries[] | select((.outstanding_amount // "0" | tonumber) > 0 and (.state | IN("draft", "canceled", "deleted") | not)) | {id, invoice_no, kunde: .billing.company, due_date, outstanding_amount}'
-PAPIERKRAM_READ_ONLY=1 papierkram invoice list --all --max-pages 5 -o json --no-input --jq '(now | strftime("%Y-%m-%d")) as $heute | [.entries[] | select((.outstanding_amount // "0" | tonumber) > 0 and (.state | IN("draft", "canceled", "deleted") | not) and .due_date != null and .due_date < $heute)] | sort_by(.due_date) | .[] | {invoice_no, due_date, outstanding_amount}'
-PAPIERKRAM_READ_ONLY=1 papierkram invoice list --company 3214 --all --max-pages 5 -o json --no-input --jq '[.entries[] | select((.state | IN("draft", "canceled", "deleted") | not)) | .outstanding_amount // "0" | tonumber] | add // 0'
+PAPIERKRAM_READ_ONLY=1 papierkram invoice paid-status --overdue -o json --no-input
+PAPIERKRAM_READ_ONLY=1 papierkram invoice paid-status --customer 3214 -o json --no-input
+PAPIERKRAM_READ_ONLY=1 papierkram invoice paid-status --from 2026-01-01 --to 2026-10-31 -o json --no-input --jq '.entries[] | {invoice_no, customer, due_date, days_overdue, outstanding_amount}'
 PAPIERKRAM_READ_ONLY=1 papierkram invoice describe 459 -o json --no-input
 ```
 
-Die zweite Zeile listet überfällige Rechnungen (Fälligkeit vor heute, UTC), die dritte summiert die offenen Beträge eines Kunden. `--all` kostet 1 Credit je Seite; bei `has_more: true` im Ergebnis ohne `--all` gibt es weitere Seiten. Meldet stderr, dass `--max-pages` erreicht ist („5 von N Seiten geladen“), sind Liste und Summe unvollständig: das dem Menschen sagen und nicht als Gesamtbetrag ausgeben.
+Der Bericht lädt höchstens `--max-pages` Seiten à 100 Rechnungen (Standard 5, 1 Credit je Seite). Ist `complete` `false` (stderr: „5 von N Seiten geladen“), sind Liste und Summe unvollständig: das dem Menschen sagen und `total_outstanding` nicht als Gesamtbetrag ausgeben; mit Filtern eingrenzen oder `--max-pages` nach Rücksprache erhöhen. Exit 1 „Rechnungsliste ohne outstanding_amount …“ heißt: Die Liste liefert den offenen Betrag nicht; `--details` liest die betroffenen Rechnungen einzeln (1 Credit je Rechnung, die Zahl steht in der Meldung). Die Statuswerte dokumentiert die API nicht vollständig ([offene Punkte](https://github.com/Padrio/papierkram-cli/blob/main/docs/offene-punkte.md)); zeigt der Bericht einen unerwarteten `state` (etwa `deleted`), die Rechnung per `invoice describe` prüfen.
 
 ## Ablauf 4: Zeiten erfassen und abrechnen
 

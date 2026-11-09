@@ -1,0 +1,33 @@
+{
+  "entries": [
+    {
+      "id": 3,
+      "invoice_no": "RE-0003",
+      "name": "Beratung",
+      "customer": "Mustermann GmbH",
+      "state": "unpaid",
+      "document_date": "2026-05-01",
+      "due_date": "2026-06-01",
+      "days_overdue": 9,
+      "total_gross": 119.0,
+      "outstanding_amount": 119.0
+    },
+    {
+      "id": 5,
+      "invoice_no": "RE-0005",
+      "name": "Beratung",
+      "customer": "Mustermann GmbH",
+      "state": "partially_paid",
+      "document_date": "2026-05-01",
+      "due_date": "2026-06-20",
+      "days_overdue": 0,
+      "total_gross": 119.0,
+      "outstanding_amount": 50.5
+    }
+  ],
+  "total_outstanding": 169.50,
+  "count": 2,
+  "overdue_count": 1,
+  "as_of": "2026-06-10",
+  "complete": true
+}

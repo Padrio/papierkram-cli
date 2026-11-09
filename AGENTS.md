@@ -50,6 +50,7 @@ Alle Formen sind als strikte JSON-Schemas in [docs/schemas/](docs/schemas/) eing
 | `invoice|estimate deliver` | `id`, `invoice_no` bzw. `estimate_no`, `state`, `sent_on`, `sent_via`, `sent_to`; scheitert nur das Nachlesen: `{"id":…,"delivered":true,"warnings":[…]}` | [deliver.json](docs/schemas/deliver.json) |
 | `voucher create --file`, Upload gescheitert (Exit 11) | `{"id":…,"completed":["create"],"failed":["upload"],"retry_command":…,"warnings":[…]}` | [partial.json](docs/schemas/partial.json) |
 | `auth status` | `context`, `context_source`, `subdomain`, `base_url`, `token_source`, `read_only`, `read_only_source`, `quota` (`remaining`, `request_cost`, `known`); unbekannte Angaben leer, `request_cost` ggf. `null`; ohne gültiges Token dieselbe Form mit Exit 3 | [auth-status.json](docs/schemas/auth-status.json) |
+| `invoice paid-status` | `entries[]` (`id`, `invoice_no`, `name`, `customer`, `state`, `document_date`, `due_date`, `days_overdue`, `total_gross`, `outstanding_amount`), `total_outstanding` (exakte Summe, 2 Nachkommastellen), `count`, `overdue_count`, `as_of` (`YYYY-MM-DD`, Berliner Tag), `complete` (false: `--max-pages` hat Seiten ausgelassen, Summe unvollständig) | [paid-status.json](docs/schemas/paid-status.json) |
 | `version` | `version`, `commit`, `date`, `go_version` | [version.json](docs/schemas/version.json) |
 | `commands --json` | `version` (1), `commands[]`, `global_flags[]`, Felder siehe [Selbstbeschreibung](#selbstbeschreibung) | [commands.json](docs/schemas/commands.json) |
 | Fehler | auf **stderr**: bei `-o json` und `--jq` als letzte Zeile eine kompakte JSON-Zeile, bei `-o yaml` als YAML-Block am Ende (siehe [Fehler](#fehler)) | [error.json](docs/schemas/error.json) |
@@ -162,7 +163,7 @@ Immer zuerst `error.hint` (bzw. `Hinweis:`) und `error.message` lesen; die Texte
 
 | Aktion | Wiederholung | Vor einer Wiederholung prüfen |
 |---|---|---|
-| `list`, `describe`, `pdf`, `info` | unbedenklich, kostet aber Credits | – |
+| `list`, `describe`, `pdf`, `info`, `invoice paid-status` | unbedenklich, kostet aber Credits | – |
 | `update` | gleicher Body ergibt den gleichen Zustand (Teil-Update: nur die gesendeten Felder) | nach Exit 12 `describe` |
 | `archive`, `unarchive` | Zielzustand; eine Wiederholung ändert nichts mehr oder wird abgelehnt | `describe` |
 | `delete` | nach Erfolg liefert die Wiederholung Exit 4 | nach Exit 12: `describe` mit Exit 4 heißt gelöscht |
@@ -181,6 +182,7 @@ Lesen (unter Schreibschutz):
 ```sh
 PAPIERKRAM_READ_ONLY=1 papierkram invoice list --from 2026-10-01 --to 2026-10-31 --all --max-pages 5 -o json --no-input
 PAPIERKRAM_READ_ONLY=1 papierkram invoice describe 459 -o json --no-input
+PAPIERKRAM_READ_ONLY=1 papierkram invoice paid-status --overdue -o json --no-input
 PAPIERKRAM_READ_ONLY=1 papierkram time list --since 2026-10-01 --until 2026-10-31 --fields id,started_at,duration,comments -o json --no-input
 ```
 
@@ -198,7 +200,7 @@ Fehler auswerten: Exit-Code lesen; mit `-o json` (wie in allen Beispielen hier) 
 
 ## Credits
 
-Papierkram berechnet Monats-Credits; danach 429 (Exit 6). `credits` in `commands --json` und in der `--dry-run`-Ausgabe nennt die Kosten. Faustregeln: Rechnung, Angebot, Beleg anlegen 50; anderes Anlegen und Beleg-Upload 10; alles andere 1 je Anfrage (Listen je Seite). `deliver` kostet 2 (Versand und Nachlesen), `voucher create --file` 60, `invoice create --from-estimate` 51, `invoice update` 2 (liest die Rechnung, um ihre Zahlungsbedingung und bei `--customer` Kontaktperson und Projekt mitzusenden; 1 mit `--payment-term` oder `payment_term` in `--input`, außer mit `--customer` ohne die Referenz-Flags `--contact-person`/`--customer-project`, wenn die Referenzen weder in `--input` stehen noch `--customer` den Kunden aus `--input` wechselt), `auth status` 1, ein Name statt einer ID 1 je geladener Seite der Liste (höchstens 5, aus dem Zwischenspeicher 0; auch bei `--dry-run`). `--all` kostet 1 je Seite; immer mit `--max-pages` begrenzen. Lokale Befehle kosten nichts: `commands`, `schema`, `context`, `local`, `version`, `completion` (das Skript; IDs beim Vervollständigen kosten 1 Credit je Abfrage), `auth logout`, `time start`, `time status` und `time discard`; `time stop` kostet 10 (Anlegen des Eintrags). Fällt das Restkontingent unter 100, steht eine Warnung auf stderr. `papierkram auth status -o json` zeigt das Restkontingent unter `quota.remaining` (1 Credit); `quota.request_cost` sind die Kosten genau dieser Statusabfrage (Header `X-Consumed-Quota`), kein Monatsverbrauch, und `null`, wenn die API den Header nicht sendet.
+Papierkram berechnet Monats-Credits; danach 429 (Exit 6). `credits` in `commands --json` und in der `--dry-run`-Ausgabe nennt die Kosten. Faustregeln: Rechnung, Angebot, Beleg anlegen 50; anderes Anlegen und Beleg-Upload 10; alles andere 1 je Anfrage (Listen je Seite). `deliver` kostet 2 (Versand und Nachlesen), `voucher create --file` 60, `invoice create --from-estimate` 51, `invoice update` 2 (liest die Rechnung, um ihre Zahlungsbedingung und bei `--customer` Kontaktperson und Projekt mitzusenden; 1 mit `--payment-term` oder `payment_term` in `--input`, außer mit `--customer` ohne die Referenz-Flags `--contact-person`/`--customer-project`, wenn die Referenzen weder in `--input` stehen noch `--customer` den Kunden aus `--input` wechselt), `auth status` 1, `invoice paid-status` 1 je Seite (Standard höchstens 5 Seiten, mit `--details` zusätzlich 1 je nachgelesener Rechnung), ein Name statt einer ID 1 je geladener Seite der Liste (höchstens 5, aus dem Zwischenspeicher 0; auch bei `--dry-run`). `--all` kostet 1 je Seite; immer mit `--max-pages` begrenzen. Lokale Befehle kosten nichts: `commands`, `schema`, `context`, `local`, `version`, `completion` (das Skript; IDs beim Vervollständigen kosten 1 Credit je Abfrage), `auth logout`, `time start`, `time status` und `time discard`; `time stop` kostet 10 (Anlegen des Eintrags). Fällt das Restkontingent unter 100, steht eine Warnung auf stderr. `papierkram auth status -o json` zeigt das Restkontingent unter `quota.remaining` (1 Credit); `quota.request_cost` sind die Kosten genau dieser Statusabfrage (Header `X-Consumed-Quota`), kein Monatsverbrauch, und `null`, wenn die API den Header nicht sendet.
 
 ## Weitere Hinweise
 

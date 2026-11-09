@@ -1,0 +1,90 @@
+{
+  "title": "papierkram invoice paid-status (-o json)",
+  "description": "Ausgabe von invoice paid-status mit -o json auf stdout (Vertrag für Agents, Spezifikation v0.2 Abschnitt 5): die offenen Posten der Rechnungsliste (outstanding_amount > 0, Status nicht draft oder canceled), sortiert nach Fälligkeit (ohne Fälligkeit zuletzt), dann ID, mit Summe und Anzahl. Beträge sind JSON-Zahlen im Text der API (226.0 bleibt 226.0); die Summe ist exakt gerechnet und hat zwei Nachkommastellen. complete ist false, wenn --max-pages Seiten ausgelassen hat: Dann gelten Summe und Anzahl nur für die geladenen Seiten. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entries", "total_outstanding", "count", "overdue_count", "as_of", "complete"],
+  "properties": {
+    "entries": {
+      "description": "Die offenen Posten; mit --overdue nur die überfälligen. Leer, wenn keine Rechnung offen ist.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "invoice_no", "name", "customer", "state", "document_date", "due_date", "days_overdue", "total_gross", "outstanding_amount"],
+        "properties": {
+          "id": {
+            "description": "ID der Rechnung.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "invoice_no": {
+            "description": "Rechnungsnummer; null ohne Nummer.",
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "description": "Name der Rechnung; leer ohne Namen.",
+            "type": "string"
+          },
+          "customer": {
+            "description": "Kunde (billing.company der Rechnung); leer ohne Angabe.",
+            "type": "string"
+          },
+          "state": {
+            "description": "Status der Rechnung laut API (z. B. unpaid, partially_paid); leer ohne Angabe.",
+            "type": "string"
+          },
+          "document_date": {
+            "description": "Rechnungsdatum wie von der API gesendet; null ohne Datum.",
+            "type": "string",
+            "nullable": true
+          },
+          "due_date": {
+            "description": "Fälligkeit wie von der API gesendet (YYYY-MM-DD, ggf. mit Uhrzeit); null ohne Fälligkeit (dann nie überfällig).",
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}",
+            "nullable": true
+          },
+          "days_overdue": {
+            "description": "Tage seit der Fälligkeit (Berliner Tag); 0, wenn die Rechnung nicht überfällig ist (fällig heute, später oder ohne Fälligkeit).",
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_gross": {
+            "description": "Bruttobetrag der Rechnung.",
+            "type": "number"
+          },
+          "outstanding_amount": {
+            "description": "Offener Betrag (größer 0).",
+            "type": "number"
+          }
+        }
+      }
+    },
+    "total_outstanding": {
+      "description": "Summe von outstanding_amount aller Einträge, exakt gerechnet, zwei Nachkommastellen.",
+      "type": "number"
+    },
+    "count": {
+      "description": "Anzahl der Einträge.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "overdue_count": {
+      "description": "Anzahl der überfälligen Einträge (days_overdue > 0).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "as_of": {
+      "description": "Stichtag (heute, Berliner Tag), YYYY-MM-DD.",
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "complete": {
+      "description": "true, wenn alle Seiten der Rechnungsliste geladen wurden; false, wenn --max-pages Seiten ausgelassen hat (Warnung auf stderr).",
+      "type": "boolean"
+    }
+  }
+}

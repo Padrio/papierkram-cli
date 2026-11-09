@@ -97,7 +97,7 @@ Jede Ressource ist ein Befehl mit Unterbefehlen (`list`, `describe`, `create`, `
 |---|---|---|
 | `company` | `firma`, `kontakt` | Firmen (Kunden und Lieferanten): anlegen, ändern, archivieren, löschen; `list --type customer\|supplier` |
 | `person` | `kontaktperson` | Kontaktpersonen einer Firma (`--company`, auch aus `PAPIERKRAM_COMPANY` oder der Projektdatei) |
-| `invoice` | `rechnung` | Rechnungen: anlegen (auch `--from-estimate`), ändern, `deliver`, `pdf`, `cancel`, archivieren, löschen |
+| `invoice` | `rechnung` | Rechnungen: anlegen (auch `--from-estimate`), ändern, `deliver`, `pdf`, `cancel`, archivieren, löschen; `paid-status` ([offene Posten](#offene-posten)) |
 | `estimate` | `angebot` | Angebote: anlegen, ändern, `deliver`, `pdf`, `cancel`, archivieren, löschen |
 | `voucher` | `beleg`, `expense` | Belege (Ausgaben): anlegen (auch `--file`), ändern, `upload`, `document delete`, `pay`, `reverse`, `cancel`, `pdf`, archivieren, löschen |
 | `proposition` | `artikel`, `leistung` | Artikel und Leistungen für Positionen |
@@ -132,6 +132,28 @@ papierkram project create --name "Relaunch" --customer 3214 --team-member "Max M
 - `--contact-person` per Name braucht `--customer` (ID oder Name): Die Personen hängen an der Firma. `--customer-project` per Name sucht mit `--customer` nur unter den Projekten dieses Kunden, ohne `--customer` unter allen Projekten.
 - Aufgelöst wird nach dem Schreibschutz (Exit 9 sendet nichts) und vor der Prüfung des Bodys; ein ungültiger Body kostet dann die Credits der Auflösung. `--dry-run` löst ebenfalls auf und zeigt das Ergebnis (`resolved`).
 - Keine Namen nehmen Positionsargumente (`invoice describe <id>`), `papierkram api`, `--from-estimate`, `--custom-template`, `time list --invoice`, `transaction list --bank-connection`, `voucher pay --transaction` sowie `time log`/`time start` (dort gelten die Aliase der Projektdatei), `local init` und `context create`.
+
+### Offene Posten
+
+`papierkram invoice paid-status` zeigt die unbezahlten Rechnungen mit Summe: Rechnungen mit `outstanding_amount` über 0, deren Status nicht `draft` oder `canceled` ist (archivierte zählen mit), sortiert nach Fälligkeit, mit den Tagen seit der Fälligkeit und der exakt gerechneten Summe. Der Befehl liest nur und läuft auch unter Schreibschutz.
+
+```sh
+papierkram invoice paid-status
+papierkram invoice paid-status --overdue
+papierkram invoice paid-status --customer 3214 --from 2026-01-01 --to 2026-12-31 -o json
+```
+
+```text
+NR.      KUNDE            DATUM       FÄLLIG      ÜBERFÄLLIG  BRUTTO    OFFEN
+RE-0003  Mustermann GmbH  2026-05-01  2026-06-01  9           119,00 €  119,00 €
+RE-0005  Mustermann GmbH  2026-05-01  2026-06-20              119,00 €  50,50 €
+Summe offen: 169,50 € (2 Rechnungen, davon 1 überfällig; Stand 2026-06-10)
+```
+
+- `--customer` (ID oder Name), `--from` und `--to` (Rechnungsdatum) filtern wie bei `invoice list`; `--overdue` zeigt nur Rechnungen mit Fälligkeit vor heute (Berliner Tag). Rechnungen ohne Fälligkeit sind nie überfällig.
+- Geladen werden höchstens `--max-pages` Seiten à 100 Rechnungen (Standard 5, 1 Credit je Seite). Gibt es mehr, warnt das CLI auf stderr, und JSON hat `complete` `false`: Summe und Anzahl gelten dann nur für die geladenen Seiten.
+- Fehlt `outstanding_amount` in der Liste, bricht der Befehl ab (Exit 1), statt eine falsche Summe zu zeigen; `--details` liest diese Rechnungen dann einzeln nach (1 Credit je Rechnung).
+- `-o json` liefert `entries`, `total_outstanding`, `count`, `overdue_count`, `as_of` und `complete` (Vertrag: [docs/schemas/paid-status.json](docs/schemas/paid-status.json)).
 
 ## Kontexte
 
@@ -327,7 +349,7 @@ Papierkram rechnet in Monats-Credits (Paket M 10 000, L 20 000); danach antworte
 | 1 | alles andere: Liste je Seite, Abruf, Änderung, Archivieren, Löschen, Aktion, PDF, `GET /info` |
 | 0 | lokale Befehle (`context`, `local`, `commands`, `schema`, `completion`, `version`, `auth logout`, `time start|status|discard`) |
 
-Zusammengesetzte Befehle kosten die Summe: `deliver` 2 (Versand und Nachlesen), `voucher create --file` 60, `invoice create --from-estimate` 51, `invoice update` 2 (liest die Rechnung, um ihre Zahlungsbedingung und bei `--customer` Kontaktperson und Projekt mitzusenden; 1 mit `--payment-term`, außer mit `--customer` ohne `--contact-person`/`--customer-project`), `auth login` und `auth status` je 1. Ein Name statt einer ID kostet 1 Credit je geladener Seite der Liste (höchstens 5), aus dem Cache nichts ([Namen statt IDs](#namen-statt-ids)). `--all` kostet 1 Credit je geladener Seite; ab 10 Seiten warnt das CLI und fragt im Terminal nach, `--max-pages` begrenzt. `company list --type` lädt immer alle Seiten (die API filtert nicht). Die Vervollständigung von IDs kostet je Abfrage 1 Credit. Fällt das Restkontingent unter 100, warnt das CLI auf stderr.
+Zusammengesetzte Befehle kosten die Summe: `deliver` 2 (Versand und Nachlesen), `voucher create --file` 60, `invoice create --from-estimate` 51, `invoice update` 2 (liest die Rechnung, um ihre Zahlungsbedingung und bei `--customer` Kontaktperson und Projekt mitzusenden; 1 mit `--payment-term`, außer mit `--customer` ohne `--contact-person`/`--customer-project`), `auth login` und `auth status` je 1, `invoice paid-status` 1 je Seite (höchstens `--max-pages`, Standard 5) und mit `--details` 1 je nachgelesener Rechnung. Ein Name statt einer ID kostet 1 Credit je geladener Seite der Liste (höchstens 5), aus dem Cache nichts ([Namen statt IDs](#namen-statt-ids)). `--all` kostet 1 Credit je geladener Seite; ab 10 Seiten warnt das CLI und fragt im Terminal nach, `--max-pages` begrenzt. `company list --type` lädt immer alle Seiten (die API filtert nicht). Die Vervollständigung von IDs kostet je Abfrage 1 Credit. Fällt das Restkontingent unter 100, warnt das CLI auf stderr.
 
 ## Umgebungsvariablen
 

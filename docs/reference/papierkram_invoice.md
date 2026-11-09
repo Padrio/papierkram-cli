@@ -20,6 +20,7 @@ Verfügbare Befehle:
   deliver     Rechnung versenden (per E-Mail oder als PDF finalisieren)
   describe    Rechnung anzeigen
   list        Rechnungen auflisten
+  paid-status Offene Posten: unbezahlte Rechnungen mit Summe
   pdf         Rechnung als PDF herunterladen
   unarchive   Rechnung aus dem Archiv holen
   update      Rechnung ändern
@@ -52,6 +53,7 @@ Mit "papierkram invoice [Befehl] --help" gibt es weitere Informationen zu einem 
 - [papierkram invoice deliver](papierkram_invoice_deliver.md) – Rechnung versenden (per E-Mail oder als PDF finalisieren)
 - [papierkram invoice describe](papierkram_invoice_describe.md) – Rechnung anzeigen
 - [papierkram invoice list](papierkram_invoice_list.md) – Rechnungen auflisten
+- [papierkram invoice paid-status](papierkram_invoice_paid-status.md) – Offene Posten: unbezahlte Rechnungen mit Summe
 - [papierkram invoice pdf](papierkram_invoice_pdf.md) – Rechnung als PDF herunterladen
 - [papierkram invoice unarchive](papierkram_invoice_unarchive.md) – Rechnung aus dem Archiv holen
 - [papierkram invoice update](papierkram_invoice_update.md) – Rechnung ändern

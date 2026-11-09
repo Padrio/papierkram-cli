@@ -229,7 +229,7 @@ Englische Nomen wie in der API, deutsche Aliase **[Call]**. Vollständige Endpun
 |---|---|
 | `company` (`firma`, `kontakt`) | `list` (`--type customer\|supplier` clientseitig, Abschnitt 9.7), `describe`, `create`, `update`, `delete`, `archive`, `unarchive` |
 | `person` (`kontaktperson`) | `list`, `describe`, `create`, `update`, `delete`; jeweils `--company <id>` Pflicht |
-| `invoice` (`rechnung`) | `list` (`--company --project --from --to`), `describe`, `create` (+ `--from-estimate`), `update`, `delete`, `archive`, `unarchive`, `cancel`, `deliver` (Alias `send`), `pdf` |
+| `invoice` (`rechnung`) | `list` (`--company --project --from --to`), `describe`, `create` (+ `--from-estimate`), `update`, `delete`, `archive`, `unarchive`, `cancel`, `deliver` (Alias `send`), `pdf`, `paid-status` (offene Posten, Abschnitt 9.9) |
 | `estimate` (`angebot`) | wie `invoice`, ohne `--from-estimate` |
 | `voucher` (`beleg`, `expense`) | `list` (`--creditor --project --from --to`), `describe`, `create` (+ `--file`), `update`, `delete`, `archive`, `unarchive`, `cancel`, `reverse`, `pay`, `pdf`, `upload`, `document delete` |
 | `proposition` (`artikel`, `leistung`) | `list`, `describe`, `create`, `update`, `delete`, `archive`, `unarchive` |
@@ -356,6 +356,17 @@ maintenance = 58
 - Aliase in `[tasks]`: nicht leer, keine Zahl (würde als Aufgaben-ID gelesen), ohne Steuer- oder unsichtbare Zeichen, Wert eine positive ganze Zahl; sonst Exit 2 beim Laden (leerer Alias: Ruling T19-B).
 - Ist die gefundene Datei nicht lesbar (Rechte, E/A-Fehler), Exit 1 (`error`) mit dem Hinweis „Projektdatei <pfad> prüfen oder entfernen“ (Pfad ohne Steuerzeichen).
 - `papierkram local show` zeigt die wirksamen Werte mit Herkunft.
+
+### 9.9 `invoice paid-status` (offene Posten, v0.1.1)
+Lesender Bericht (Klasse `read_only`, Operation `ListInvoices`, erlaubt unter Schreibschutz, `--dry-run` Exit 2).
+- **Laden:** wie `invoice list --all` (100 je Seite, Warnung und Rückfrage ab 10 Seiten), aber höchstens `--max-pages` Seiten (Standard 5, mindestens 1). Lässt `--max-pages` Seiten aus, warnt der Befehl wie `list --all` (`--max-pages N: N von M Seiten geladen; weitere Einträge vorhanden`), und JSON hat `complete` false: Summe und Anzahl gelten dann nur für die geladenen Seiten.
+- **Filter:** die Filter von `invoice list`: `--customer` (ID oder Name, Namensauflösung über die Firmenliste wie `--company`) → `company_id`, `--from`/`--to` → `document_date_range_*` (Berliner Tag).
+- **Auswahl:** Einträge mit `outstanding_amount` > 0, deren `state` nicht `draft` oder `canceled` ist; archivierte zählen mit (eine offene Forderung bleibt offen). `--overdue`: nur überfällige (`due_date` vor heute, Berliner Tag); ohne `due_date` nie überfällig. Sortierung nach `due_date` aufsteigend (ohne Fälligkeit zuletzt), dann `id`.
+- **Beträge:** wie die API sie sendet (Zahl oder Dezimaltext, z. B. `"226.0"`), in JSON als Zahl mit dem Text der API; die Summe `total_outstanding` exakt (`math/big`), zwei Nachkommastellen. Ein ungültiger Betrag ist Exit 1 mit der Rechnungs-ID.
+- **Fehlt `outstanding_amount`** in der Liste (bei einer Rechnung, die nach Status offen sein kann), bricht der Befehl mit Exit 1 ab (`Rechnungsliste ohne outstanding_amount bei N Rechnung(en): offene Posten nicht bestimmbar`), statt eine falsche Summe zu zeigen. `--details` liest genau diese Rechnungen einzeln (`GET /income/invoices/{id}`, 1 Credit je Rechnung, Hinweis auf stderr) und nimmt den Betrag aus der Antwort.
+- **Ausgabe:** JSON `{"entries":[…],"total_outstanding":…,"count":…,"overdue_count":…,"as_of":"YYYY-MM-DD","complete":…}` (Vertrag `docs/schemas/paid-status.json`); Tabelle `NR.`, `KUNDE`, `DATUM`, `FÄLLIG`, `ÜBERFÄLLIG` (Tage, leer bei 0), `BRUTTO`, `OFFEN` (Beträge deutsch), `-o wide` zusätzlich `ID`, `NAME`, `STATUS`; danach die Zeile `Summe offen: 169,50 € (2 Rechnungen, davon 1 überfällig; Stand 2026-06-10)`.
+- **Credits:** 1 je Seite, mit `--details` 1 je nachgelesener Rechnung, ein Name bei `--customer` 1 je Seite der Firmenliste.
+- Die Liste der ausgeschlossenen Status prüft der Live-Lauf (Storno-Folgeobjekte, `outstanding_amount` einer bezahlten Rechnung); Ergebnis in `docs/offene-punkte.md`.
 
 ## 10. Konfiguration, Auth, Ausgabe
 
@@ -491,7 +502,7 @@ Coverage-Ziel ≥ 80 % ohne `internal/api/gen`.
 `spf13/cobra`, `pelletier/go-toml/v2`, `zalando/go-keyring`, `oapi-codegen/oapi-codegen/v2` (Tool) + `oapi-codegen/runtime`, `getkin/kin-openapi`, `itchyny/gojq`, `mattn/go-isatty` bzw. `golang.org/x/term`, `goccy/go-yaml`, `rogpeppe/go-internal` (testscript). Tabellen mit `text/tabwriter` oder einer kleinen eigenen Funktion, keine schwere Tabellenbibliothek.
 
 ## 14. Später (v1.x)
-`papierkram mcp serve` aus der Registry; `$EDITOR`-Bearbeitung; `invoice paid-status`-Report über offene Posten, falls die API Zahlungsdaten liefert; `winget`-Manifest.
+`papierkram mcp serve` aus der Registry; `$EDITOR`-Bearbeitung; `winget`-Manifest.
 
 ## 15. Abdeckungsmatrix (alle 89 Operationen)
 

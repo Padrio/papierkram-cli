@@ -515,6 +515,18 @@ var outputRuns = []struct {
 			}
 		}},
 	{"version", contractRun{name: "version", args: []string{"version", "-o", "json"}}, nil},
+	// invoice paid-status (spec v0.2 §5): an open item with due date and
+	// one without, number and text amounts, a cut list (complete false)
+	{"paid-status", contractRun{name: "invoice paid-status", setup: func(t *testing.T, srv *mockapi.Server) []string {
+		srv.OnFunc("GET", "/income/invoices", pagedList(t, 7, []map[string]any{
+			paidEntry(3, "unpaid", "119.0", "2026-06-01"), paidEntry(5, "partially_paid", 50.5, nil),
+		}, []map[string]any{paidEntry(6, "unpaid", "1.0", "2026-12-01")}))
+		return nil
+	}, args: []string{"invoice", "paid-status", "-o", "json"}}, func(t *testing.T, doc map[string]any, out string) {
+		if doc["complete"] != false || doc["count"] != 3.0 || doc["total_outstanding"] != 170.5 {
+			t.Errorf("Bericht: %s", out)
+		}
+	}},
 }
 
 // authContexts writes the contexts a and b (token in the keychain) and c
@@ -750,6 +762,28 @@ func TestContractSchemasStrict(t *testing.T) {
 				}, ""},
 				"Schreibschutz aus env": {func(d map[string]any) { d["read_only"], d["read_only_source"] = true, "env" }, ""},
 			}},
+		{"paid-status", `{"entries":[{"id":3,"invoice_no":"RE-0003","name":"Beratung","customer":"Mustermann GmbH","state":"unpaid",` +
+			`"document_date":"2026-05-01","due_date":"2026-06-01","days_overdue":9,"total_gross":119.0,"outstanding_amount":119.0}],` +
+			`"total_outstanding":119.00,"count":1,"overdue_count":1,"as_of":"2026-06-10","complete":true}`,
+			map[string]contractMutation{
+				"unbekanntes Feld":                 {func(d map[string]any) { d["currency"] = "EUR" }, `property "currency" is unsupported`},
+				"unbekanntes Eintragsfeld":         {withPaidEntry(func(e map[string]any) { e["billing"] = map[string]any{} }), `property "billing" is unsupported`},
+				"as_of fehlt":                      {func(d map[string]any) { delete(d, "as_of") }, `property "as_of" is missing`},
+				"as_of kein Datum":                 {func(d map[string]any) { d["as_of"] = "10.06.2026" }, "regular expression"},
+				"complete fehlt":                   {func(d map[string]any) { delete(d, "complete") }, `property "complete" is missing`},
+				"total_outstanding als String":     {func(d map[string]any) { d["total_outstanding"] = "119.00" }, "value must be a number"},
+				"count negativ":                    {func(d map[string]any) { d["count"] = -1.0 }, "number must be at least 0"},
+				"overdue_count als Zahl mit Komma": {func(d map[string]any) { d["overdue_count"] = 1.5 }, "value must be an integer"},
+				"outstanding_amount als String":    {withPaidEntry(func(e map[string]any) { e["outstanding_amount"] = "119.0" }), "value must be a number"},
+				"outstanding_amount fehlt":         {withPaidEntry(func(e map[string]any) { delete(e, "outstanding_amount") }), `property "outstanding_amount" is missing`},
+				"days_overdue negativ":             {withPaidEntry(func(e map[string]any) { e["days_overdue"] = -1.0 }), "number must be at least 0"},
+				"customer null":                    {withPaidEntry(func(e map[string]any) { e["customer"] = nil }), "Value is not nullable"},
+				"Nummer und Daten null": {withPaidEntry(func(e map[string]any) {
+					e["invoice_no"], e["document_date"], e["due_date"] = nil, nil, nil
+				}), ""},
+				"due_date kein Datum": {withPaidEntry(func(e map[string]any) { e["due_date"] = "morgen" }), "regular expression"},
+				"entries leer":        {func(d map[string]any) { d["entries"] = []any{} }, ""},
+			}},
 		{"version", `{"version":"dev","commit":"none","date":"unknown","go_version":"go1.27.1"}`,
 			map[string]contractMutation{
 				"unbekanntes Feld": {func(d map[string]any) { d["os"] = "darwin" }, `property "os" is unsupported`},
@@ -794,6 +828,11 @@ func withResolved(fn func(r map[string]any)) func(d map[string]any) {
 		}
 		d["resolved"] = []any{r}
 	}
+}
+
+// withPaidEntry changes the first entry of a decoded paid-status report.
+func withPaidEntry(fn func(e map[string]any)) func(d map[string]any) {
+	return func(d map[string]any) { fn(d["entries"].([]any)[0].(map[string]any)) }
 }
 
 // withMIME sets the MIME type of the upload of a decoded dry-run document.

@@ -718,10 +718,10 @@ func TestSkillFrontmatter(t *testing.T) {
 	}
 }
 
-// skillInvoiceJQ returns the --jq programs of the skill's invoice list
-// lines (workflow "offene Posten"), in document order, as the lines
-// themselves (environment and words).
-func skillInvoiceJQ(t *testing.T) []docCmd {
+// skillPaidStatus returns the invoice paid-status lines of the skill
+// (workflow "offene Posten"), in document order, as the lines themselves
+// (environment and words).
+func skillPaidStatus(t *testing.T) []docCmd {
 	t.Helper()
 	var out []docCmd
 	for _, l := range docCommandLines(t, filepath.Join(modroot.Find(t), "skills", "papierkram", "SKILL.md")) {
@@ -730,7 +730,7 @@ func skillInvoiceJQ(t *testing.T) []docCmd {
 			t.Fatal(err)
 		}
 		for _, c := range cmds {
-			if len(c.words) > 2 && c.words[1] == "invoice" && c.words[2] == "list" && slices.Contains(c.words, "--jq") {
+			if len(c.words) > 2 && c.words[1] == "invoice" && c.words[2] == "paid-status" {
 				out = append(out, c)
 			}
 		}
@@ -738,41 +738,63 @@ func skillInvoiceJQ(t *testing.T) []docCmd {
 	return out
 }
 
-// The jq programs of "offene Posten prüfen" run on a list the way the API
-// answers (outstanding_amount as a string): drafts, canceled and deleted
+// The paid-status lines of "offene Posten prüfen" run on a list the way
+// the API answers (outstanding_amount as a string): drafts and canceled
 // invoices are no open items even with an amount left (the spec example
 // of a canceled invoice keeps "119.0"), paid ones ("0.0") neither, and
-// only due dates before today count as overdue (review I1).
-func TestSkillOpenItemsJQ(t *testing.T) {
-	list := `{"type":"list","page":1,"page_size":100,"total_pages":1,"total_entries":7,"has_more":false,"entries":[
-	{"id":1,"invoice_no":"RE-1","state":"unpaid","due_date":"2000-01-31","outstanding_amount":"19.0","billing":{"company":"Muster GmbH"}},
-	{"id":2,"invoice_no":"RE-2","state":"partially_paid","due_date":"2999-12-31","outstanding_amount":"100.0","billing":{"company":"Muster GmbH"}},
-	{"id":3,"invoice_no":"RE-3","state":"paid","due_date":"2000-01-31","outstanding_amount":"0.0","billing":{"company":"Muster GmbH"}},
-	{"id":4,"invoice_no":"RE-4","state":"canceled","due_date":"2000-01-31","outstanding_amount":"119.0","billing":{"company":"Muster GmbH"}},
-	{"id":5,"invoice_no":null,"state":"draft","due_date":null,"outstanding_amount":"10.0","billing":{"company":"Muster GmbH"}},
-	{"id":6,"invoice_no":"RE-6","state":"deleted","due_date":"2000-01-31","outstanding_amount":"50.0","billing":{"company":"Muster GmbH"}},
-	{"id":7,"invoice_no":"RE-7","state":"unpaid","due_date":"2000-01-31","outstanding_amount":null,"billing":{"company":"Muster GmbH"}}]}`
-	want := []string{
-		`{"due_date":"2000-01-31","id":1,"invoice_no":"RE-1","kunde":"Muster GmbH","outstanding_amount":"19.0"}` + "\n" +
-			`{"due_date":"2999-12-31","id":2,"invoice_no":"RE-2","kunde":"Muster GmbH","outstanding_amount":"100.0"}` + "\n",
-		`{"due_date":"2000-01-31","invoice_no":"RE-1","outstanding_amount":"19.0"}` + "\n",
-		"119\n",
-	}
-	lines := skillInvoiceJQ(t)
+// only due dates before today count as overdue (review I1, task 4: the
+// report replaces the jq programs). Each line runs read-only and prints
+// the invoice numbers of want, in order.
+func TestSkillOpenItems(t *testing.T) {
+	list := `{"type":"list","page":1,"page_size":100,"total_pages":1,"total_entries":5,"has_more":false,"entries":[
+	{"id":1,"invoice_no":"RE-1","state":"unpaid","due_date":"2000-01-31","total_gross":19.0,"outstanding_amount":"19.0","billing":{"company":"Muster GmbH"}},
+	{"id":2,"invoice_no":"RE-2","state":"partially_paid","due_date":"2999-12-31","total_gross":200.0,"outstanding_amount":"100.0","billing":{"company":"Muster GmbH"}},
+	{"id":3,"invoice_no":"RE-3","state":"paid","due_date":"2000-01-31","total_gross":10.0,"outstanding_amount":"0.0","billing":{"company":"Muster GmbH"}},
+	{"id":4,"invoice_no":"RE-4","state":"canceled","due_date":"2000-01-31","total_gross":119.0,"outstanding_amount":"119.0","billing":{"company":"Muster GmbH"}},
+	{"id":5,"invoice_no":null,"state":"draft","due_date":null,"total_gross":10.0,"outstanding_amount":"10.0","billing":{"company":"Muster GmbH"}}]}`
+	want := [][]string{{"RE-1"}, {"RE-1", "RE-2"}, {"RE-1", "RE-2"}}
+	lines := skillPaidStatus(t)
 	if len(lines) != len(want) {
-		t.Fatalf("SKILL.md: %d Zeilen invoice list --jq, want %d (offene, überfällige, Summe)", len(lines), len(want))
+		t.Fatalf("SKILL.md: %d Zeilen invoice paid-status, want %d (überfällige, Kunde, Zeitraum mit --jq)", len(lines), len(want))
 	}
 	for i, c := range lines {
 		env := map[string]string{"PAPIERKRAM_TOKEN": "test-token-skill"}
 		for k, v := range c.env {
 			env[k] = v
 		}
+		if env["PAPIERKRAM_READ_ONLY"] != "1" {
+			t.Errorf("%s: ohne PAPIERKRAM_READ_ONLY=1", strings.Join(c.words, " "))
+		}
 		app, srv := mockApp(t, env)
 		srv.On("GET", "/income/invoices", 200, []byte(list))
 		code := Run(app, c.words[1:])
 		out, errs := bufs(app)
-		if code != 0 || out != want[i] {
-			t.Errorf("%s\nexit %d, stdout:\n%s\nwant:\n%s\nstderr %q", strings.Join(c.words, " "), code, out, want[i], errs)
+		if code != 0 {
+			t.Fatalf("%s\nexit %d, stderr %q", strings.Join(c.words, " "), code, errs)
+		}
+		var docs []map[string]any
+		if slices.Contains(c.words, "--jq") {
+			for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
+				var d map[string]any
+				if err := json.Unmarshal([]byte(line), &d); err != nil {
+					t.Fatalf("%s: %v\n%s", strings.Join(c.words, " "), err, out)
+				}
+				docs = append(docs, d)
+			}
+		} else {
+			wantContract(t, "paid-status", []byte(out))
+			var report struct{ Entries []map[string]any }
+			if err := json.Unmarshal([]byte(out), &report); err != nil {
+				t.Fatal(err)
+			}
+			docs = report.Entries
+		}
+		var got []string
+		for _, d := range docs {
+			got = append(got, fmt.Sprint(d["invoice_no"]))
+		}
+		if !slices.Equal(got, want[i]) {
+			t.Errorf("%s\nRechnungen %v, want %v\n%s", strings.Join(c.words, " "), got, want[i], out)
 		}
 		assertNoToken(t, app)
 	}

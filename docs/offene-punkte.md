@@ -42,6 +42,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 27 | `PAPIERKRAM_COMPANY`/`company` aus der Projektdatei als Default für `person … --company` | Voreinstellung wie die übrigen: Flag > `PAPIERKRAM_COMPANY` > Projektdatei; ohne Wert Exit 2 | – | entschieden und umgesetzt (Task 9); keine API-Frage, nicht gemessen |
 | 28 | `document_date` Pflicht beim Anlegen | Angebot und Rechnung: Pflicht (gemessen), Exit 5 ohne Anfrage | `TestE2E_OpenMeasurements/28_InvoiceWithoutDocumentDate` (lokale Ablehnung der Rechnung); Angebot indirekt in `TestE2E_DeliverPdfEmptyBody` | entschieden und umgesetzt (Rechnung gemessen Live-Lauf 5, 2026-11-08); hart (0 Credits) |
 | 29 | `invoice update --customer X` ohne Kontaktperson/Projekt | gleicher Kunde: Kontaktperson und Projekt aus der gelesenen Rechnung mitgesendet; anderer Kunde: entfallen (Hinweis) | `TestE2E_Carries/14_InvoiceUpdateSameCustomer` | entschieden und umgesetzt (Task 8); hart (bestätigt Live-Lauf 5, 2026-11-08) |
+| 30 | `outstanding_amount` in der Rechnungsliste und Status offener Posten (`invoice paid-status`) | die Liste liefert `outstanding_amount` (Spec-Beispiel: Text `"226.0"`); offen ist ein Eintrag mit Betrag > 0 und `state` nicht `draft`/`canceled`; fehlt der Betrag, Exit 1 bzw. `--details` | – (Messung mit Task 7 geplant) | offen |
 
 ## Punkte im Einzelnen
 
@@ -257,6 +258,12 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Entschieden und umgesetzt (Task 8):** `invoice update --customer X` ohne `--contact-person`/`--customer-project` nutzt das Lesen der Zahlungsbedingung (Spec 9.4a), einmal für beide Zwecke. Ist X der Kunde der Rechnung, sendet es deren Kontaktperson und Projekt als `{id}` unter `customer` mit (Hinweis „Kontaktperson <id> und Projekt <id> der Rechnung mitgesendet (gleicher Kunde; ohne sie leert die API beide)“); bei einem anderen Kunden entfallen sie wie beim Rundlauf (Hinweis „Kunde X statt Y aus der Rechnung: … nicht übernommen“). Ein gesetztes Flag gewinnt. Das Lesen kostet 1 Credit, auch mit `--payment-term`.
 - **E2E:** `TestE2E_Carries/14_InvoiceUpdateSameCustomer` (hart, 4 Credits): `invoice describe`, `invoice update <id> --customer <eigener Kunde>`, `invoice describe`; Kontaktperson und Projekt müssen unverändert sein.
 - **Gemessen Live-Lauf 5, 2026-11-08:** bestätigt: gesendet wurden `customer{contact_person{id},id,project{id}}` und `payment_term{id}`; Kontaktperson 13 und Projekt 28 blieben.
+
+### 30. `outstanding_amount` in der Rechnungsliste und offene Posten
+
+- **Offen:** Ob die Rechnungsliste (`ListInvoices`) `outstanding_amount` für jede Rechnung liefert, in welcher Form (das Spec-Beispiel zeigt Text `"226.0"`, `total_gross` als Zahl) und welchen Betrag stornierte, bezahlte und gelöschte Rechnungen dort haben (Live-Lauf 5: eine stornierte Rechnung behält ihren Betrag).
+- **Annahme:** `invoice paid-status` (Spec 9.9) zählt Einträge mit `outstanding_amount` > 0, deren `state` nicht `draft` oder `canceled` ist; archivierte zählen mit. Beträge als Zahl oder Dezimaltext, Summe exakt. Fehlt `outstanding_amount` bei einer Rechnung, die nach Status offen sein kann, endet der Befehl mit Exit 1; `--details` liest diese Rechnungen einzeln (1 Credit je Rechnung).
+- **E2E:** Messung mit Task 7 (v0.1.1) geplant; danach wird die Liste der ausgeschlossenen Status (`paidStatusSkipStates`) angepasst, z. B. um `deleted`.
 
 ## Weitere Ergebnisse von Live-Lauf 5
 
