@@ -307,12 +307,22 @@ func TestPersonCompanyByName(t *testing.T) {
 		t.Errorf("stdout %s", out)
 	}
 
-	// the confirmation comes after the resolution: exit 8 after the list,
-	// nothing deleted
+	// ruling T3-D: without a possible prompt (--no-input, no terminal)
+	// the missing confirmation is exit 8 before the resolution
+	for _, extra := range [][]string{{"--no-input"}, nil} {
+		app, srv = apiApp(t)
+		mustermann(t, srv)
+		wantExit(t, app, Run(app, append([]string{"person", "delete", "1059", "--company", "Mustermann GmbH", "-o", "json"}, extra...)), 8)
+		wantRequests(t, srv, 0)
+	}
+	// in a terminal the prompt needs the resolved ID: list, summary,
+	// declined, nothing deleted
 	app, srv = apiApp(t)
 	mustermann(t, srv)
-	wantExit(t, app, Run(app, []string{"person", "delete", "1059", "--company", "Mustermann GmbH", "--no-input", "-o", "json"}), 8)
-	wantPaths(t, srv, "GET /contact/companies")
+	app.StdinTTY = true
+	app.In = strings.NewReader("nein\n")
+	wantExit(t, app, Run(app, []string{"person", "delete", "1059", "--company", "Mustermann GmbH", "-o", "json"}), 8)
+	wantPaths(t, srv, "GET /contact/companies", "GET /contact/companies/2/persons/1059")
 
 	// without the flag the preset still applies, without resolution
 	app, srv = mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-p", "PAPIERKRAM_COMPANY": "2843"})

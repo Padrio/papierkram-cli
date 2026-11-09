@@ -82,7 +82,7 @@ error:
   exit_code: 4
 ```
 
-`code` und `exit_code` gehören fest zusammen. `hint`, `http_status` und `correlation_id` fehlen, wenn sie nicht bekannt sind (nie leer oder `null`). Bei Exit 2, 8, 9 und 10 gibt es nie ein `http_status`: Dann wurde nichts gesendet bzw. keine Antwort empfangen. Beginnt `message` mit „Befehl ausgeführt, Ausgabe fehlgeschlagen“ (Exit 1), war die Anfrage erfolgreich und nur die Ausgabe scheiterte (z. B. ein `--jq`-Ausdruck, eine 2xx-Antwort, die kein JSON ist, oder ein Schreibfehler auf stdout): dann **nicht** wiederholen.
+`code` und `exit_code` gehören fest zusammen. `hint`, `http_status` und `correlation_id` fehlen, wenn sie nicht bekannt sind (nie leer oder `null`). Bei Exit 2, 8, 9 und 10 gibt es nie ein `http_status`: Dann wurde nichts gesendet bzw. keine Antwort empfangen (Ausnahme Namensauflösung: Exit 2 nach mehrdeutigem Namen und Exit 8 nach einer abgelehnten Rückfrage im Terminal kommen nach den Listenanfragen; geändert wurde nichts). Beginnt `message` mit „Befehl ausgeführt, Ausgabe fehlgeschlagen“ (Exit 1), war die Anfrage erfolgreich und nur die Ausgabe scheiterte (z. B. ein `--jq`-Ausdruck, eine 2xx-Antwort, die kein JSON ist, oder ein Schreibfehler auf stdout): dann **nicht** wiederholen.
 
 ### `--dry-run`
 
@@ -101,7 +101,7 @@ papierkram voucher create --name "Büromaterial" --provenance domestic --credito
 
 ### Bestätigungen: `--yes` und `--no-input`
 
-- `destructive` und `send` brauchen eine Bestätigung. Ohne Terminal oder mit `--no-input` bricht der Befehl ohne `--yes` mit Exit 8 ab, bevor etwas gesendet wird.
+- `destructive` und `send` brauchen eine Bestätigung. Ohne Terminal oder mit `--no-input` bricht der Befehl ohne `--yes` mit Exit 8 ab, bevor etwas gesendet wird, auch vor der Namensauflösung. Im Terminal kommt die Rückfrage nach der Auflösung (sie zeigt die gefundene ID); lehnt der Mensch ab, sind nur die Listenanfragen gesendet.
 - `--yes` nur verwenden, wenn der Mensch genau diese Aktion freigegeben hat. Exit 8 heißt: nichts passiert, nachfragen.
 - `create`, `update` und `archive` laufen ohne Rückfrage. `time log` und `time stop` fragen nur im Terminal (Enter = ja).
 - Bricht ein Mensch eine Rückfrage mit Strg+C ab, endet der Befehl mit Exit 8 (Meldung „Abgebrochen: Eingabe durch Unterbrechung beendet“, Hinweis „Nichts gesendet“, bei nur lokal wirkenden Rückfragen „Nichts gesendet oder geändert“), nicht mit Exit 10: Alle Rückfragen liegen vor jeder Änderung. Nachfragen, nicht wiederholen. Strg+C während einer Anfrage bleibt Exit 10 bzw. 12.
@@ -120,7 +120,7 @@ papierkram voucher create --name "Büromaterial" --provenance domestic --credito
 | 5 | `validation` | lokale Prüfung, 400, 422; nicht angewendet | Body nach `message` korrigieren (`schema <ressource> <aktion>`), Datum `YYYY-MM-DD`, Steuersatz `0.19` |
 | 6 | `quota` | 429, Monatskontingent erschöpft | **nicht wiederholen**, abbrechen und melden |
 | 7 | `conflict` | 409 (nicht angewendet), Timer läuft schon oder wird gerade gestoppt (nichts gesendet) | Zustand lesen (`describe`, `time status`); `time stop` nicht wiederholen (siehe [`time stop`, Exit 7](#exit-11-und-12-schritt-für-schritt)) |
-| 8 | `confirmation_required` | Bestätigung fehlt oder abgelehnt, oder ein Mensch hat eine Rückfrage mit Strg+C abgebrochen; nichts gesendet | Menschen fragen; `--yes` nur mit Freigabe |
+| 8 | `confirmation_required` | Bestätigung fehlt oder abgelehnt, oder ein Mensch hat eine Rückfrage mit Strg+C abgebrochen; nichts gesendet (Ausnahme: abgelehnte Rückfrage im Terminal nach einer Namensauflösung, dann nur Leseanfragen) | Menschen fragen; `--yes` nur mit Freigabe |
 | 9 | `read_only` | Schreibschutz; nichts gesendet | abbrechen und melden; den Schutz nie umgehen (kein anderer Kontext, keine Variable ändern) |
 | 10 | `network` | Netzwerkfehler beim Lesen oder **bevor** eine Änderung gesendet wurde; auch Strg+C während einer Leseanfrage | später erneut versuchen; die Änderung ist nicht angekommen |
 | 11 | `partial` | mehrstufiger Befehl teilweise ausgeführt | `hint` lesen, prüfen, dann höchstens den genannten Nachholschritt; nie den ganzen Befehl (siehe unten) |
