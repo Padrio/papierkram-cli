@@ -545,6 +545,19 @@ func TestResolveCacheScope(t *testing.T) {
 	}
 }
 
+// A name that is empty after trimming is a usage error without a request.
+func TestResolveEmptyName(t *testing.T) {
+	app, srv := apiApp(t)
+	for _, name := range []string{"", "   ", "\t\n", "\u202e"} {
+		_, err := newResolver(t, app).resolve(nameRef(t, "customer"), name, 0)
+		ce := wantResolveErr(t, err, 2)
+		if ce.Message != "ungültiger Wert für --customer: leer" || ce.Hint != "ID oder Name angeben" {
+			t.Errorf("%q: Meldung %q, Hinweis %q", name, ce.Message, ce.Hint)
+		}
+	}
+	wantRequests(t, srv, 0)
+}
+
 // A list answer without a valid total_pages is unexpected (exit 1, like
 // list --all); the credit of the page is named, no cache is written.
 func TestResolveInvalidTotalPages(t *testing.T) {
@@ -582,4 +595,57 @@ func TestResolveReadErrorNamesCredits(t *testing.T) {
 		t.Errorf("Hinweis %q, http_status %d", ce.Hint, ce.HTTPStatus)
 	}
 	wantRequests(t, srv, 3)
+}
+
+// A NameRef whose parent does not fit the list path is a programming
+// error: CodeError, no request.
+func TestResolveParentMismatch(t *testing.T) {
+	app, srv := apiApp(t)
+	n := newResolver(t, app)
+	for _, tc := range []struct {
+		ref    registry.NameRef
+		parent int64
+	}{
+		{registry.NameRef{Flag: "customer", Resource: "company", Label: "Kunde", Parent: "x"}, 5},
+		{registry.NameRef{Flag: "contact-person", Resource: "person", Label: "Kontaktperson"}, 5},
+		{registry.NameRef{Flag: "contact-person", Resource: "person", Label: "Kontaktperson", Parent: "customer"}, -1},
+		{registry.NameRef{Flag: "x", Resource: "gibtsnicht", Label: "X"}, 0},
+	} {
+		_, err := n.resolve(tc.ref, "Anna", tc.parent)
+		if ce := wantResolveErr(t, err, 1); ce.Code != clierr.CodeError || !strings.Contains(ce.Message, "--"+tc.ref.Flag) {
+			t.Errorf("%+v: %s %q", tc.ref, ce.Code, ce.Message)
+		}
+	}
+	wantRequests(t, srv, 0)
+}
+
+// From the cache an archived entry of the same name does not count: the
+// active one is the unique match, without a request.
+func TestResolveCacheHitIgnoresArchived(t *testing.T) {
+	app, srv := apiApp(t)
+	writeCacheFile(t, app, srv, "company",
+		`[{"id":7,"name":"Mustermann GmbH","archived":true},{"id":8,"name":"Mustermann GmbH"}]`, `,"complete":true`)
+	got, err := newResolver(t, app).resolve(nameRef(t, "customer"), "mustermann gmbh", 0)
+	if want := (Resolution{Flag: "customer", Name: "Mustermann GmbH", Resource: "company", ID: 8, Cached: true}); err != nil || got != want {
+		t.Errorf("Resolution %+v, %v", got, err)
+	}
+	wantRequests(t, srv, 0)
+}
+
+// Every flag with name resolution and without parent completes the IDs
+// of the same resource it resolves names of (refResources, otherwise the
+// flag name): completion and resolution share one cache file.
+func TestNameRefsMatchCompletion(t *testing.T) {
+	for _, ref := range registry.NameRefs() {
+		if ref.Parent != "" {
+			continue
+		}
+		res, ok := refResources[ref.Flag]
+		if !ok {
+			res = ref.Flag
+		}
+		if res != ref.Resource {
+			t.Errorf("--%s: Vervollständigung %q, Namensauflösung %q", ref.Flag, res, ref.Resource)
+		}
+	}
 }
