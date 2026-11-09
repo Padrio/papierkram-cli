@@ -27,7 +27,7 @@ Zwei Zielgruppen, gleich wichtig:
 - Jeder der 89 Endpunkte der offiziellen Spec ist über ein eigenes Command nutzbar (Abschnitt 15, per Test erzwungen).
 - Bekannte API-Fallen sind strukturell gelöst, nicht nur dokumentiert (Abschnitt 16, jede als Regressionstest).
 - Mehrere Papierkram-Accounts parallel über Kontexte, Token im OS-Schlüsselbund.
-- Ein statisches Binary pro Plattform, verteilt über Homebrew, Scoop, deb/rpm und GitHub-Releases.
+- Ein statisches Binary pro Plattform, verteilt über Homebrew, deb/rpm und GitHub-Releases (Scoop ausgesetzt, Pascal 2026-11-09).
 
 **Nicht-Ziele (v1)**
 - MCP-Server-Modus (`papierkram mcp serve`) **[Pascal]** – kommt in v1.x. Die Command-Registry (Abschnitt 5.3) wird so gebaut, dass MCP-Tools daraus generiert werden können.
@@ -48,10 +48,10 @@ Zwei Zielgruppen, gleich wichtig:
 | Thema | Entscheidung |
 |---|---|
 | Sprache | Go **[Pascal, Handoff]** – gleiche Muster wie hcloud/gh/jira-cli (cobra), triviales Cross-Compiling, GoReleaser, reifes OpenAPI-Codegen. Kein Performance-Engpass, Rust brächte nichts. |
-| Binary | `papierkram` **[Pascal]**. Homebrew, Scoop, deb und rpm installieren zusätzlich `pk`. Der Alias von `mickeyl/pkram` heißt ebenfalls `pk`; README weist darauf hin. |
+| Binary | `papierkram` **[Pascal]**. Homebrew, deb und rpm installieren zusätzlich `pk`. Der Alias von `mickeyl/pkram` heißt ebenfalls `pk`; README weist darauf hin. |
 | Go-Modul | `github.com/Padrio/papierkram-cli` **[Call]** |
 | Repo | `Padrio/papierkram-cli`, **öffentlich**, **MIT** **[Pascal]** |
-| Paketquellen | eigene Repos `Padrio/homebrew-tap` und `Padrio/scoop-bucket` **[Pascal]** |
+| Paketquellen | eigenes Repo `Padrio/homebrew-tap` **[Pascal]**; `Padrio/scoop-bucket` ausgesetzt (Pascal, 2026-11-09) |
 | Projektdatei | `.papierkram.toml` in v1 **[Pascal]** |
 | E2E | Testaccount legt Pascal an; Suite wird gebaut und läuft, sobald Env-Vars gesetzt sind **[Pascal]** |
 | Commits | Conventional Commits, klein, **keine** `Co-Authored-By: Claude`-Zeilen |
@@ -474,7 +474,7 @@ Coverage-Ziel ≥ 80 % ohne `internal/api/gen`.
 
 ### 12.2 Release (GoReleaser v2)
 - Ziele: darwin/linux/windows × amd64/arm64, `CGO_ENABLED=0`, Checksums, SBOM optional.
-- Homebrew → `Padrio/homebrew-tap` mit `pk`-Symlink; Scoop → `Padrio/scoop-bucket` mit `pk`-Shim; nfpm deb/rpm mit `/usr/bin/pk`-Symlink; Archive enthalten Completions und Man-Pages.
+- Homebrew → `Padrio/homebrew-tap` mit `pk`-Symlink; Scoop ausgesetzt (Pascal, 2026-11-09); nfpm deb/rpm mit `/usr/bin/pk`-Symlink; Archive enthalten Completions und Man-Pages.
 - Tag-getrieben (`v*`), SemVer, `CHANGELOG.md` nach Keep a Changelog.
 - **Grenze des Plans** **[Call]**: Der Implementierungsplan endet bei grüner CI und erfolgreichem `goreleaser release --snapshot`. Anlegen von `Padrio/homebrew-tap` und `Padrio/scoop-bucket`, Tags und echte Releases geschehen nur auf ausdrücklichen Auftrag Pascals in der jeweiligen Session (nach außen wirksam, wie Deployments). Die GoReleaser-Konfiguration für Tap/Bucket wird vorbereitet. Ein Fine-grained-PAT mit Schreibrecht auf beide Repos als Secret `PACKAGES_GITHUB_TOKEN`, angelegt von Pascal. **[Builder]** Ob GoReleaser-Version den `pk`-Alias für Scoop direkt unterstützt, sonst Manifest-Nachbearbeitung.
 

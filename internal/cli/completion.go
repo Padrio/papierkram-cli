@@ -43,7 +43,7 @@ IDs (z. B. papierkram invoice describe <Tab>, --company <Tab>) lädt die Vervoll
 
 Dann sendet die Vervollständigung keine Anfrage und liest keinen Cache.
 
-Jedes Skript vervollständigt auch die Kurzform pk, die Homebrew, Scoop, deb und rpm installieren; deren Pakete richten die Vervollständigung selbst ein (Scoop ausgenommen).
+Jedes Skript vervollständigt auch die Kurzform pk, die Homebrew, deb und rpm installieren; deren Pakete richten die Vervollständigung selbst ein.
 
 Einrichten (danach eine neue Shell starten):
 
@@ -452,8 +452,7 @@ func apiArgCompletion(_ *cobra.Command, args []string, toComplete string) ([]str
 }
 
 // shortForm is the short command name the packages install next to
-// papierkram (deb/rpm link, Homebrew binary target, Scoop shim; README
-// "Kurzform pk").
+// papierkram (deb/rpm link, Homebrew binary target; README "Kurzform pk").
 const shortForm = "pk"
 
 // withShortForm adds the short form pk to cobra's script for shell: the

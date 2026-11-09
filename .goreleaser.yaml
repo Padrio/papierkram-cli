@@ -193,23 +193,9 @@ homebrew_casks:
             run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/papierkram"]
           end
 
-# Scoop: Padrio/scoop-bucket (scoop install papierkram). GoReleaser writes
-# "bin": "papierkram.exe" and has no alias field; the pk shim is a manual
-# step after the release, see docs/release.md.
-scoops:
-  - name: papierkram
-    ids: [papierkram]
-    repository:
-      owner: Padrio
-      name: scoop-bucket
-      token: "{{ .Env.PACKAGES_GITHUB_TOKEN }}"
-    commit_author:
-      name: Pascal Krason
-      email: p.krason@icloud.com
-    homepage: https://github.com/Padrio/papierkram-cli
-    description: Kommandozeile für die Papierkram-API
-    license: MIT
-    skip_upload: auto
+# Scoop is suspended (Pascal, 2026-11-09): no Padrio/scoop-bucket. The
+# Windows archives stay on the release page; docs/release.md says how to
+# bring the scoops section back.
 
 release:
   github:

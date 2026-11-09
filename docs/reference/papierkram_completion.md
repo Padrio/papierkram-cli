@@ -14,7 +14,7 @@ IDs (z. B. papierkram invoice describe <Tab>, --company <Tab>) lädt die Vervoll
 
 Dann sendet die Vervollständigung keine Anfrage und liest keinen Cache.
 
-Jedes Skript vervollständigt auch die Kurzform pk, die Homebrew, Scoop, deb und rpm installieren; deren Pakete richten die Vervollständigung selbst ein (Scoop ausgenommen).
+Jedes Skript vervollständigt auch die Kurzform pk, die Homebrew, deb und rpm installieren; deren Pakete richten die Vervollständigung selbst ein.
 
 Einrichten (danach eine neue Shell starten):
 

@@ -757,7 +757,7 @@ func TestCompletionWithoutCacheDir(t *testing.T) {
 }
 
 // The script of every shell also completes the short form pk (deb/rpm
-// link, Homebrew target, Scoop shim): the same registration as papierkram,
+// link, Homebrew target): the same registration as papierkram,
 // with zsh's #compdef header naming both. The lines are pinned to the
 // function names cobra generates and to the line that runs the program
 // named on the command line (bash, zsh and PowerShell run "pk __complete";

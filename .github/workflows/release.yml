@@ -1,9 +1,8 @@
 name: Release
 
 # Runs only when Pascal pushes a version tag (docs/release.md); never on
-# branches, pull requests or forks. Publishes the GitHub release, the
-# Homebrew cask (Padrio/homebrew-tap) and the Scoop manifest
-# (Padrio/scoop-bucket) with GoReleaser (.goreleaser.yaml).
+# branches, pull requests or forks. Publishes the GitHub release and the
+# Homebrew cask (Padrio/homebrew-tap) with GoReleaser (.goreleaser.yaml).
 on:
   push:
     tags: ['v*']

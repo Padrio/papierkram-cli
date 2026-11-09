@@ -29,22 +29,17 @@ Das Binary heißt `papierkram`. Alle Texte (Hilfe, Fehler, Hinweise) sind deutsc
 
 ## Installation
 
-> Die Paketquellen (Homebrew, Scoop, deb/rpm) stehen **ab dem ersten Release** bereit. Bis dahin geht nur die Installation aus dem Quellcode.
+> Pakete gibt es für Homebrew (macOS, Linux) und deb/rpm (Linux). Unter Windows das Archiv von der [Release-Seite](https://github.com/Padrio/papierkram-cli/releases) oder `go install` verwenden; ein Scoop-Paket ist vorerst ausgesetzt.
 
-**Homebrew** (macOS, Linux), ab erstem Release:
+**Homebrew** (macOS, Linux):
 
 ```sh
 brew install Padrio/tap/papierkram
 ```
 
-**Scoop** (Windows), ab erstem Release:
+**Windows:** das `.zip` für die eigene Architektur von der [Release-Seite](https://github.com/Padrio/papierkram-cli/releases) laden, entpacken und `papierkram.exe` in ein Verzeichnis im `PATH` legen.
 
-```powershell
-scoop bucket add padrio https://github.com/Padrio/scoop-bucket
-scoop install papierkram
-```
-
-**deb/rpm** (Linux), ab erstem Release: das `.deb`- bzw. `.rpm`-Paket für die eigene Architektur von der [Release-Seite](https://github.com/Padrio/papierkram-cli/releases) laden und mit dem Paketmanager installieren (z. B. `sudo apt install ./<paket>.deb` oder `sudo dnf install ./<paket>.rpm`).
+**deb/rpm** (Linux): das `.deb`- bzw. `.rpm`-Paket für die eigene Architektur von der [Release-Seite](https://github.com/Padrio/papierkram-cli/releases) laden und mit dem Paketmanager installieren (z. B. `sudo apt install ./<paket>.deb` oder `sudo dnf install ./<paket>.rpm`).
 
 **Aus dem Quellcode** (Go 1.26 oder neuer):
 
@@ -56,7 +51,7 @@ So gebaut meldet `papierkram version` die Version `dev`, und es gibt keinen Alia
 
 ### Kurzform `pk`
 
-Homebrew, Scoop, deb und rpm installieren zusätzlich die Kurzform `pk` (ab erstem Release). `pk invoice list` ist dasselbe wie `papierkram invoice list`. Hinweis: [pkram](https://github.com/mickeyl/pkram) legt ebenfalls einen Befehl `pk` an. Wer beides installiert, bekommt das Programm, das zuerst im `PATH` steht; `papierkram` ist immer eindeutig.
+Homebrew, deb und rpm installieren zusätzlich die Kurzform `pk`. `pk invoice list` ist dasselbe wie `papierkram invoice list`. Hinweis: [pkram](https://github.com/mickeyl/pkram) legt ebenfalls einen Befehl `pk` an. Wer beides installiert, bekommt das Programm, das zuerst im `PATH` steht; `papierkram` ist immer eindeutig.
 
 Die Shell-Vervollständigung gilt auch für `pk`: Homebrew, deb und rpm richten sie für beide Namen ein, und das Skript von `papierkram completion <shell>` registriert `pk` mit (Details in [docs/release.md](docs/release.md#kurzform-pk)).
 
