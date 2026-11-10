@@ -9,7 +9,7 @@ Wie ein Release von papierkram-cli entsteht. Die Konfiguration steht in [`.gorel
 - Je Archiv eine SBOM `<archiv>.sbom.json` (SPDX JSON, von syft aus dem Archiv erzeugt; enthält die Go-Module des Programms).
 - `checksums.txt` (SHA-256 aller Archive, Pakete und SBOMs, 16 Zeilen).
 - Homebrew-Cask `papierkram` in `Padrio/homebrew-tap` (`brew install Padrio/tap/papierkram`).
-- winget-Manifest `Padrio.Papierkram` (drei Dateien: `Padrio.Papierkram.yaml`, `….installer.yaml`, `….locale.en-US.yaml`; Sprache `en-US`, Kurzbeschreibung „Command line for the Papierkram API“; Typ `zip` mit `portable` darin, je ein Eintrag für x64 und arm64, Befehl `papierkram`) auf dem Branch `papierkram-<version>` im Fork `Padrio/winget-pkgs`, unter `manifests/p/Padrio/Papierkram/<version>/`. GoReleaser legt den Branch vom Standard-Branch des Forks an. Den Pull Request gegen `microsoft/winget-pkgs` stellt nicht GoReleaser (ein fine-grained Token kann dort keinen öffnen), sondern ein Mensch nach dem Release (siehe [Release-Schritte](#release-schritte), Schritt 6). `winget install Padrio.Papierkram` funktioniert erst, wenn Microsoft ihn angenommen hat.
+- winget-Manifest `Padrio.Papierkram` (drei Dateien: `Padrio.Papierkram.yaml`, `….installer.yaml`, `….locale.en-US.yaml`; Sprache `en-US`, Kurzbeschreibung „Command line for the Papierkram API“; Typ `zip` mit `portable` darin, je ein Eintrag für x64 und arm64, Befehl `papierkram`) auf dem Branch `papierkram-<version>` im Fork `Padrio/winget-pkgs`, unter `manifests/p/Padrio/Papierkram/<version>/`. GoReleaser legt den Branch vom Standard-Branch des Forks an. Den Pull Request gegen `microsoft/winget-pkgs` stellt nicht GoReleaser (ein fine-grained Token kann dort keinen öffnen), sondern ein Mensch nach dem Release (siehe [Release-Schritte](#release-schritte), Schritt 7). `winget install Padrio.Papierkram` funktioniert erst, wenn Microsoft ihn angenommen hat.
 - Kein Scoop-Manifest: Scoop ist ausgesetzt (siehe [Scoop (ausgesetzt)](#scoop-ausgesetzt)); unter Windows gilt bis zur Aufnahme in winget das `zip`-Archiv.
 
 Vervollständigung und Man-Pages entstehen erst beim Release: die Hooks `scripts/completions.sh` und `scripts/manpages.sh` bauen das Programm einmal in ein temporäres Verzeichnis und schreiben nach `completions/`, `man/` und `man-gz/` (die Man-Pages mit `gzip -9 -n` komprimiert, für die Pakete) im Repository. Diese Verzeichnisse und `dist/` stehen in `.gitignore`. Beide Befehle (`completion`, `gen-docs --man`) senden keine Anfrage.
@@ -25,10 +25,11 @@ Die Builds sind reproduzierbar: `-trimpath`, `CGO_ENABLED=0`, Dateizeiten und `b
    gh repo fork microsoft/winget-pkgs --clone=false --default-branch-only
    ```
 
-3. Fine-grained Personal Access Token mit Zugriff nur auf `Padrio/homebrew-tap` und `Padrio/winget-pkgs` und der Berechtigung „Contents: Read and write“ (gesetzt am 2026-11-09 für den Tap; für den Fork den vorhandenen Token bearbeiten: unter „Repository access“ `Padrio/winget-pkgs` hinzufügen, kein neuer Token). Als Actions-Secret `PACKAGES_GITHUB_TOKEN` im Repository `Padrio/papierkram-cli` hinterlegen. Fehlt es, bricht der Workflow vor GoReleaser ab. Kann es eines der beiden Repositories nicht beschreiben, ebenso: Der Workflow legt vorab in beiden mit `scripts/check-fork-push.sh` einen Branch `pk-write-check-<Lauf>-<Versuch>` an und löscht ihn wieder; scheitert das Anlegen, endet er mit „PACKAGES_GITHUB_TOKEN kann <owner/repo> nicht beschreiben (docs/release.md, Voraussetzungen)“, bevor etwas veröffentlicht ist. Scheitert nur das Löschen, warnt er und läuft weiter; der Branch ist harmlos und lässt sich mit dem genannten `gh api -X DELETE …` entfernen. Von Hand prüfen (das Token aus der Shell, nicht aus einer Datei):
+3. Fine-grained Personal Access Token mit Zugriff nur auf `Padrio/homebrew-tap` und `Padrio/winget-pkgs` und der Berechtigung „Contents: Read and write“ (gesetzt am 2026-11-09 für den Tap; für den Fork den vorhandenen Token bearbeiten: unter „Repository access“ `Padrio/winget-pkgs` hinzufügen, kein neuer Token). Als Actions-Secret `PACKAGES_GITHUB_TOKEN` im Repository `Padrio/papierkram-cli` hinterlegen. Fehlt es, bricht der Workflow vor GoReleaser ab. Kann es eines der beiden Repositories nicht beschreiben, ebenso: Der Workflow legt vorab in beiden mit `scripts/check-fork-push.sh` einen Branch `pk-write-check-<Lauf>-<Versuch>` an und löscht ihn wieder; scheitert das Anlegen, endet er mit „PACKAGES_GITHUB_TOKEN kann <owner/repo> nicht beschreiben (docs/release.md, Voraussetzungen)“, bevor etwas veröffentlicht ist. Als angelegt gilt der Branch nur, wenn die API mit genau seinem Ref antwortet; sonst versucht das Skript ihn trotzdem zu löschen (Fehler dabei zählen nicht) und nennt Branch und Löschbefehl für einen Rest. Scheitert nur das Löschen nach erfolgreichem Anlegen, warnt er und läuft weiter; der Branch ist harmlos und lässt sich mit dem genannten `gh api -X DELETE …` entfernen. Bricht der Job zwischen Anlegen und Löschen ab, bleibt ein Branch `pk-write-check-…` stehen (bewusst ohne `trap`, siehe Kopf des Skripts). Von Hand prüfen; das Token verdeckt eingeben, nie in die Befehlszeile schreiben:
 
    ```sh
-   PACKAGES_GITHUB_TOKEN=… sh scripts/check-fork-push.sh Padrio/winget-pkgs
+   read -rs PACKAGES_GITHUB_TOKEN && export PACKAGES_GITHUB_TOKEN
+   sh scripts/check-fork-push.sh Padrio/winget-pkgs
    ```
 
 4. Das GitHub-Release selbst schreibt der Workflow mit dem automatischen `GITHUB_TOKEN` (`permissions: contents: write` nur im Release-Job); dafür ist nichts anzulegen.
@@ -42,28 +43,34 @@ Die Builds sind reproduzierbar: `-trimpath`, `CGO_ENABLED=0`, Dateizeiten und `b
    sh scripts/release-notes.sh vX.Y.Z
    ```
 
-3. Tag setzen und pushen (SemVer, mit `v`):
+3. Den winget-Fork auf den Stand von `microsoft/winget-pkgs` bringen. GoReleaser synchronisiert den Fork nur bei aktivem Pull Request (`pull_request.enabled`), hier also nie; ohne Sync entsteht der Branch `papierkram-X.Y.Z` von einem veralteten Standard-Branch, und Microsofts Prüfungen laufen gegen einen alten Stand:
+
+   ```sh
+   gh repo sync Padrio/winget-pkgs
+   ```
+
+4. Tag setzen und pushen (SemVer, mit `v`):
 
    ```sh
    git tag -a vX.Y.Z -m "vX.Y.Z"
    git push origin vX.Y.Z
    ```
 
-4. Der Push des Tags startet `.github/workflows/release.yml`. Der Workflow läuft nur bei Tags `v*` im Repository `Padrio/papierkram-cli`, nie bei Branches, Pull Requests oder in Forks. Er zieht mit `scripts/release-notes.sh` den Abschnitt des Tags aus `CHANGELOG.md` (nur SemVer-Tags wie `v1.2.3` oder `v1.2.3-rc.1`; fehlt der Abschnitt oder ist er leer, bricht er ab; `## [` und Link-Definitionen in Code-Blöcken gehören zu den Notizen; ein nicht geschlossener Code-Block bricht mit Exit 4 ab), prüft, dass `PACKAGES_GITHUB_TOKEN` gesetzt ist und `Padrio/homebrew-tap` und `Padrio/winget-pkgs` beschreiben kann (siehe [Voraussetzungen](#voraussetzungen-einmalig-pascal)), lädt syft (`anchore/sbom-action/download-syft`) und führt GoReleaser v2.19.0 aus: `release --clean --release-notes <Datei>`. Der Job bricht nach 30 Minuten ab; der Checkout legt kein Token in `.git/config` ab (`persist-credentials: false`), GoReleaser veröffentlicht über die API.
-5. Prüfen: Release-Seite mit 6 Archiven, 6 SBOMs (`*.sbom.json`), 4 Paketen und `checksums.txt` (16 Zeilen); `brew install Padrio/tap/papierkram` und `pk version`; die drei winget-Manifeste auf dem Branch im Fork:
+5. Der Push des Tags startet `.github/workflows/release.yml`. Der Workflow läuft nur bei Tags `v*` im Repository `Padrio/papierkram-cli`, nie bei Branches, Pull Requests oder in Forks. Er zieht mit `scripts/release-notes.sh` den Abschnitt des Tags aus `CHANGELOG.md` (nur SemVer-Tags wie `v1.2.3` oder `v1.2.3-rc.1`; fehlt der Abschnitt oder ist er leer, bricht er ab; `## [` und Link-Definitionen in Code-Blöcken gehören zu den Notizen; ein nicht geschlossener Code-Block bricht mit Exit 4 ab), prüft, dass `PACKAGES_GITHUB_TOKEN` gesetzt ist und `Padrio/homebrew-tap` und `Padrio/winget-pkgs` beschreiben kann (siehe [Voraussetzungen](#voraussetzungen-einmalig-pascal)), lädt syft (`anchore/sbom-action/download-syft`) und führt GoReleaser v2.19.0 aus: `release --clean --release-notes <Datei>`. Der Job bricht nach 30 Minuten ab; der Checkout legt kein Token in `.git/config` ab (`persist-credentials: false`), GoReleaser veröffentlicht über die API.
+6. Prüfen: Release-Seite mit 6 Archiven, 6 SBOMs (`*.sbom.json`), 4 Paketen und `checksums.txt` (16 Zeilen); `brew install Padrio/tap/papierkram` und `pk version`; die drei winget-Manifeste auf dem Branch im Fork:
 
    ```sh
    gh api "repos/Padrio/winget-pkgs/contents/manifests/p/Padrio/Papierkram/X.Y.Z?ref=papierkram-X.Y.Z" --jq '.[].name'
    ```
 
-6. Pull Request gegen `microsoft/winget-pkgs` stellen (nicht bei Vorabversionen; mit dem eigenen `gh`-Login, nicht mit dem PAT). Titel nach der Vorlage des Repositorys: beim ersten Release `New package: Padrio.Papierkram version X.Y.Z`, danach `Update: Padrio.Papierkram to X.Y.Z`. Den Text aus der Vorlage [`.github/PULL_REQUEST_TEMPLATE.md`](https://github.com/microsoft/winget-pkgs/blob/master/.github/PULL_REQUEST_TEMPLATE.md) übernehmen und nur abhaken, was wirklich geprüft ist (`winget validate` und `winget install --manifest` gehen nur unter Windows):
+7. Pull Request gegen `microsoft/winget-pkgs` stellen (nicht bei Vorabversionen; mit dem eigenen `gh`-Login, nicht mit dem PAT). Titel nach der Vorlage des Repositorys: beim ersten Release `New package: Padrio.Papierkram version X.Y.Z`, danach `Update: Padrio.Papierkram to X.Y.Z`. Den Text aus der Vorlage [`.github/PULL_REQUEST_TEMPLATE.md`](https://github.com/microsoft/winget-pkgs/blob/master/.github/PULL_REQUEST_TEMPLATE.md) übernehmen und nur abhaken, was wirklich geprüft ist (`winget validate` und `winget install --manifest` gehen nur unter Windows):
 
    ```sh
    gh pr create --repo microsoft/winget-pkgs --base master --head Padrio:papierkram-X.Y.Z \
      --title "New package: Padrio.Papierkram version X.Y.Z" --body-file <datei>
    ```
 
-   Die Prüfungen von Microsoft laufen im Pull Request (Validierung, Testinstallation, beim ersten Beitrag die CLA); Rückfragen dort beantworten. Nach der Annahme gilt `winget install Padrio.Papierkram`. Der Branch `papierkram-X.Y.Z` im Fork kann danach weg.
+   Die Prüfungen von Microsoft laufen im Pull Request (Validierung, Testinstallation, beim ersten Beitrag die CLA); Rückfragen dort beantworten. GoReleaser v2.19 schreibt fest `ManifestVersion: 1.12.0` (die Vorlage nennt ein neueres Schema); das ist nicht einstellbar, eine Rückfrage der Validierung dazu ist möglich. Nach der Annahme gilt `winget install Padrio.Papierkram`. Der Branch `papierkram-X.Y.Z` im Fork kann danach weg.
 
 Die Release-Notizen kommen aus `CHANGELOG.md` (Keep a Changelog). Der Abschnitt `changelog` in `.goreleaser.yaml` (Git-Log ohne `docs`, `test`, `ci`, `chore`) ist nur der Rückfall für einen Lauf ohne `--release-notes`. Er bleibt eingeschaltet, weil GoReleaser `--release-notes` bei abgeschaltetem Changelog ignoriert.
 
@@ -71,17 +78,55 @@ Tags mit Vorabversion (z. B. `v1.0.0-rc.1`) erzeugen ein GitHub-Release, das als
 
 ### Rückfall: lokaler Release
 
-Nur wenn der Workflow nicht laufen kann (z. B. GitHub Actions gestört) und der Tag schon gepusht ist. Beide Tokens kommen aus der Shell, nicht aus Dateien: `GITHUB_TOKEN` mit Schreibrecht auf `Padrio/papierkram-cli` (z. B. `"$(gh auth token)"`) und derselbe PAT wie im Secret `PACKAGES_GITHUB_TOKEN`. `syft` muss im `PATH` liegen (z. B. `brew install syft`).
+Nur wenn der Workflow nicht laufen kann (z. B. GitHub Actions gestört) und der Tag schon gepusht ist. Beide Tokens kommen aus der Shell, nicht aus Dateien und nie als Text in der Befehlszeile: `GITHUB_TOKEN` mit Schreibrecht auf `Padrio/papierkram-cli` (`"$(gh auth token)"`) und derselbe PAT wie im Secret `PACKAGES_GITHUB_TOKEN` (verdeckt per `read -rs`). `syft` muss im `PATH` liegen (z. B. `brew install syft`).
 
 ```sh
 git checkout vX.Y.Z
 sh scripts/release-notes.sh vX.Y.Z > /tmp/papierkram-notes.md
-export PACKAGES_GITHUB_TOKEN=…
+read -rs PACKAGES_GITHUB_TOKEN && export PACKAGES_GITHUB_TOKEN
 sh scripts/check-fork-push.sh Padrio/homebrew-tap
 sh scripts/check-fork-push.sh Padrio/winget-pkgs
-GITHUB_TOKEN=… \
+GITHUB_TOKEN="$(gh auth token)" \
   go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --clean --release-notes /tmp/papierkram-notes.md
 ```
+
+### winget-Schritt gescheitert
+
+Der winget-Schritt läuft in GoReleaser nach dem GitHub-Release und bricht den Lauf nicht sofort ab: Scheitert er (z. B. Rate-Limit, Netz), stehen Release und Cask schon, im Fork fehlt der Branch `papierkram-X.Y.Z` oder ein Teil der drei Dateien. Dann:
+
+1. Den Tag **nicht** neu setzen und den Workflow **nicht** neu starten: Release und Cask existieren schon; ein zweiter Lauf würde beide erneut anfassen, statt nur die fehlenden Manifeste nachzuholen.
+2. Die Manifeste lokal auf dem Tag erzeugen, ohne etwas zu veröffentlichen (braucht kein Token, aber `syft` im `PATH`):
+
+   ```sh
+   git checkout vX.Y.Z
+   go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --clean --skip=publish
+   ```
+
+3. Die Hashes der Manifeste gegen `checksums.txt` des Releases prüfen. Maßgeblich sind die Archive der Release-Seite; weicht ein lokaler Hash ab (andere Go-Version, andere Maschine), im Manifest den Wert aus `checksums.txt` eintragen:
+
+   ```sh
+   m=dist/winget/manifests/p/Padrio/Papierkram/X.Y.Z
+   gh release download vX.Y.Z --repo Padrio/papierkram-cli --pattern checksums.txt --dir /tmp/pk-release
+   for h in $(sed -n 's/^ *InstallerSha256: //p' "$m/Padrio.Papierkram.installer.yaml"); do
+     grep -Eq "^$h  papierkram_X\.Y\.Z_windows_(amd64|arm64)\.zip\$" /tmp/pk-release/checksums.txt && echo "gleich: $h" || echo "abweichend: $h"
+   done
+   ```
+
+4. Den Branch im Fork von Hand vervollständigen (mit dem eigenen `gh`-Login): fehlt der Branch, ihn vom Standard-Branch anlegen; dann jede fehlende Datei hochladen. Eine schon vorhandene Datei bleibt (GoReleaser schreibt jede Datei vollständig oder gar nicht); ist sie falsch, beim `PUT` zusätzlich `-f sha=<Blob-SHA der Datei>` mitgeben.
+
+   ```sh
+   b=papierkram-X.Y.Z
+   gh api "repos/Padrio/winget-pkgs/git/ref/heads/$b" --silent || gh api -X POST repos/Padrio/winget-pkgs/git/refs \
+     -f ref="refs/heads/$b" -f sha="$(gh api repos/Padrio/winget-pkgs/git/ref/heads/master --jq .object.sha)"
+   for f in "$m"/*.yaml; do
+     p="manifests/p/Padrio/Papierkram/X.Y.Z/${f##*/}"
+     gh api "repos/Padrio/winget-pkgs/contents/$p?ref=$b" --silent 2>/dev/null && continue
+     gh api -X PUT "repos/Padrio/winget-pkgs/contents/$p" -f branch="$b" \
+       -f message="New version: Padrio.Papierkram X.Y.Z" -f content="$(base64 < "$f" | tr -d '\n')"
+   done
+   ```
+
+5. Weiter mit [Release-Schritte](#release-schritte), Schritt 6 (Prüfen) und 7 (Pull Request).
 
 ## Snapshot (ohne Veröffentlichung)
 
@@ -93,7 +138,7 @@ go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean
 
 Der Snapshot baut alles nach `dist/`, veröffentlicht nichts und braucht kein Token; der Cask liegt nur unter `dist/homebrew/`, die winget-Manifeste unter `dist/winget/manifests/p/Padrio/Papierkram/<version>/` (mit der Snapshot-Version in den URLs, die es nicht gibt). Für die SBOMs muss `syft` im `PATH` liegen (z. B. `brew install syft`); fehlt es, bricht der Snapshot ab. Die Version lautet `<nächster Patch>-snapshot+<Commit>`, z. B. `0.0.1-snapshot+351a12c`. Die Konfiguration allein prüft `go run github.com/goreleaser/goreleaser/v2@v2.19.0 check`.
 
-Die CI führt denselben Snapshot im Job `snapshot` aus (`.github/workflows/ci.yml`, ohne Token) (syft aus `anchore/sbom-action/download-syft`) und prüft danach: 6 Archive, `deb` und `rpm` für amd64 und arm64, `checksums.txt` mit 16 Zeilen, je Archiv eine SBOM mit `spdxVersion` (auch in `checksums.txt`), die drei winget-Manifeste (`zip` mit `portable` für beide Architekturen), den Link `/usr/bin/pk` im `deb`, Man-Pages (`.1.gz`) und Vervollständigung in Paket und Archiv (zsh im `deb` unter `vendor-completions`), die Vervollständigung von `papierkram` und `pk` in bash, zsh, fish und PowerShell (`scripts/check-completions.sh`), `scripts/release-notes.sh`, `scripts/check-fork-push.sh` gegen ein vorgetäuschtes `gh` ohne Netz (`CHECK_FORK_PUSH_GH`; Erfolg, Anlegen scheitert, Löschen scheitert, Token fehlt, Repository nicht lesbar; das Token darf nur in `GH_TOKEN` stehen, nie in den Argumenten oder der Ausgabe) sowie einen sauberen Arbeitsbaum. Lokal prüft `sh scripts/check-completions.sh` die installierten Shells und überspringt die übrigen. Alle Actions der Workflows sind per Commit-SHA gepinnt, der Release-Tag steht als Kommentar dahinter; `scripts/check-action-pins.sh` (Job `checks`) lehnt jede andere Form ab, Dependabot aktualisiert die Pins wöchentlich.
+Die CI führt denselben Snapshot im Job `snapshot` aus (`.github/workflows/ci.yml`, ohne Token, syft aus `anchore/sbom-action/download-syft`) und prüft danach: 6 Archive, `deb` und `rpm` für amd64 und arm64, `checksums.txt` mit 16 Zeilen, je Archiv eine SBOM mit `spdxVersion` (auch in `checksums.txt`), die drei winget-Manifeste (`zip` mit `portable` für beide Architekturen), den Link `/usr/bin/pk` im `deb`, Man-Pages (`.1.gz`) und Vervollständigung in Paket und Archiv (zsh im `deb` unter `vendor-completions`), die Vervollständigung von `papierkram` und `pk` in bash, zsh, fish und PowerShell (`scripts/check-completions.sh`), `scripts/release-notes.sh`, `scripts/check-fork-push.sh` gegen ein vorgetäuschtes `gh` ohne Netz (`CHECK_FORK_PUSH_GH`; Erfolg, Repository oder Ref des Standard-Branches nicht lesbar, leerer Standard-Branch, ungültige oder leere SHA, Anlegen scheitert oder liefert einen anderen Ref (Löschversuch trotzdem), Löschen scheitert (Warnung, in Actions `::warning::`), Token fehlt, Verwendung; das Token darf nur in `GH_TOKEN` stehen, nie in den Argumenten oder der Ausgabe) sowie einen sauberen Arbeitsbaum. Lokal prüft `sh scripts/check-completions.sh` die installierten Shells und überspringt die übrigen. Alle Actions der Workflows sind per Commit-SHA gepinnt, der Release-Tag steht als Kommentar dahinter; `scripts/check-action-pins.sh` (Job `checks`) lehnt jede andere Form ab, Dependabot aktualisiert die Pins wöchentlich.
 
 ## Kurzform `pk`
 
