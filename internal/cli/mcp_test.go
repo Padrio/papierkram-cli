@@ -901,3 +901,40 @@ func jsonEqual(a, b []byte) bool {
 	}
 	return reflect.DeepEqual(va, vb)
 }
+
+// final review A-I1: exit 11 over MCP (voucher created, upload failed):
+// a tool error whose stdout content carries retry_command with the
+// context of the server, so a shell run reaches the same account.
+func TestMCPVoucherCreateUploadPartial(t *testing.T) {
+	app, srv, _ := mcpApp(t)
+	writeCfg(t, app, twoCtx)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "beleg.pdf"), []byte(binaryPDF), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv.On("POST", "/expense/vouchers/290/documents", http.StatusInternalServerError, []byte(`{"type":"error","message":"kaputt"}`))
+	cs := mcpSession(t, app, MCPOptions{Context: "a", AllowWrites: true, FilesDir: dir})
+	res := callTool(t, cs, "voucher_create", map[string]any{
+		"name": "X", "provenance": "domestic", "item": []string{"name=A,amount=1,vat=19"}, "file": "beleg.pdf",
+	})
+	if e := errorOf(t, res); e["code"] != "partial" || e["exit_code"] != float64(11) {
+		t.Fatalf("Fehler %v", e)
+	}
+	wantRequests(t, srv, 2)
+	last := contentText(t, res, len(res.Content)-1)
+	body, ok := strings.CutPrefix(last, "Ausgabe (stdout):\n")
+	if !ok {
+		t.Fatalf("kein stdout-Inhalt: %q", last)
+	}
+	var partial struct {
+		ID           int64  `json:"id"`
+		RetryCommand string `json:"retry_command"`
+	}
+	if err := json.Unmarshal([]byte(body), &partial); err != nil {
+		t.Fatalf("stdout %q: %v", body, err)
+	}
+	want := "papierkram voucher upload 290 " + shellQuote(filepath.Join(dir, "beleg.pdf")) + " --context a"
+	if partial.ID != 290 || partial.RetryCommand != want {
+		t.Errorf("Ergebnis %+v, erwartet retry_command %q", partial, want)
+	}
+}

@@ -746,3 +746,53 @@ func TestUploadClientCopyKeepsDebugAndQuota(t *testing.T) {
 		})
 	}
 }
+
+// final review A-I1: retry_command and the describe of the hint name the
+// context when it was chosen by --context or PAPIERKRAM_CONTEXT (the MCP
+// server always passes --context): run in a shell with another active
+// context, the upload would otherwise go to another account. A context
+// from the configuration is the active one anyway and is not named.
+func TestVoucherCreateFileRetryNamesContext(t *testing.T) {
+	path := writeFile(t, "beleg.pdf", pdfContent)
+	const cfg = `active_context = "a"
+
+[contexts.a]
+subdomain = "firma-a"
+
+[contexts."firma b"]
+subdomain = "firma-b"
+`
+	for _, tc := range []struct {
+		name string
+		args []string
+		env  map[string]string
+		want string
+	}{
+		{"Flag", []string{"--context", "firma b"}, nil, " --context 'firma b'"},
+		{"Umgebung", nil, map[string]string{"PAPIERKRAM_CONTEXT": "firma b"}, " --context 'firma b'"},
+		{"Konfiguration", nil, nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := map[string]string{"PAPIERKRAM_TOKEN": "test-token-ctx"}
+			for k, v := range tc.env {
+				env[k] = v
+			}
+			app, srv := mockApp(t, env)
+			writeCfg(t, app, cfg)
+			srv.On("POST", "/expense/vouchers/290/documents", http.StatusInternalServerError, []byte(`{"type":"error","message":"kaputt"}`))
+			args := append(append(append([]string{}, voucherCreateArgs...), "--file", path, "-o", "json"), tc.args...)
+			wantExit(t, app, Run(app, args), 11)
+			out, errs := bufs(app)
+			var res struct {
+				RetryCommand string `json:"retry_command"`
+			}
+			want := "papierkram voucher upload 290 " + shellQuote(path) + tc.want
+			if err := json.Unmarshal([]byte(out), &res); err != nil || res.RetryCommand != want {
+				t.Errorf("retry_command %q, erwartet %q (%v)", res.RetryCommand, want, err)
+			}
+			if !strings.Contains(errs, "papierkram voucher describe 290"+tc.want+" prüfen") {
+				t.Errorf("stderr ohne describe mit Kontext: %s", errs)
+			}
+		})
+	}
+}

@@ -419,10 +419,10 @@ func (a *App) uploadCreated(c *cobra.Command, e registry.Entry, client *api.Clie
 	o := a.outputOptions(c.Context(), a.outputFormat(r))
 	id, ok := createdID(resp.Body)
 	if !ok {
-		return a.uploadPartial(o, e, up, nil, clierr.New(clierr.CodeError, "API lieferte keine ID des angelegten Objekts", ""))
+		return a.uploadPartial(o, r, e, up, nil, clierr.New(clierr.CodeError, "API lieferte keine ID des angelegten Objekts", ""))
 	}
 	if _, err := a.sendUpload(c, client, r, up.file, []int64{id}); err != nil {
-		return a.uploadPartial(o, e, up, &id, err)
+		return a.uploadPartial(o, r, e, up, &id, err)
 	}
 	return a.render(c, resp.Body, e.Columns)
 }
@@ -443,25 +443,28 @@ func createdID(body []byte) (int64, bool) {
 // the warning on stderr, and exit 11 with the command that uploads the file
 // alone (absolute path, shell-quoted). When the upload may have arrived (no
 // answer, network error, 5xx), the warning says to check the object with
-// describe first. Without an ID there is no command at all.
-func (a *App) uploadPartial(o output.Options, e registry.Entry, up *createUpload, id *int64, err error) error {
+// describe first. Without an ID there is no command at all. The commands
+// name the context when it was chosen by --context or PAPIERKRAM_CONTEXT
+// (contextArg): run elsewhere, they must reach the same account.
+func (a *App) uploadPartial(o output.Options, r *config.Resolved, e registry.Entry, up *createUpload, id *int64, err error) error {
 	ce := clierr.From(err)
 	noun := resourceNoun(e.Resource)
+	ctxArg := contextArg(r)
 	again := fmt.Sprintf("NICHT den ganzen Befehl wiederholen (sonst ein zweiter %s)", noun)
 	out := &clierr.Error{Code: clierr.CodePartial, HTTPStatus: ce.HTTPStatus, CorrelationID: ce.CorrelationID, Cause: err}
 	var warning, text string
 	var retry *string
 	if id == nil {
-		warning = fmt.Sprintf("%s angelegt, %s-ID unbekannt (%s): Datei nicht hochgeladen – %s per papierkram %s list suchen und die Datei mit %s %s an ihn hochladen; %s",
-			noun, noun, ce.Message, noun, e.Resource, up.entry.Resource, up.entry.Action, again)
+		warning = fmt.Sprintf("%s angelegt, %s-ID unbekannt (%s): Datei nicht hochgeladen – %s per papierkram %s list%s suchen und die Datei mit %s %s an ihn hochladen; %s",
+			noun, noun, ce.Message, noun, e.Resource, ctxArg, up.entry.Resource, up.entry.Action, again)
 		out.Message = fmt.Sprintf("%s angelegt, %s-ID unbekannt: %s; Datei nicht hochgeladen", noun, noun, ce.Message)
-		out.Hint = fmt.Sprintf("%s per papierkram %s list suchen und die Datei mit %s %s an ihn hochladen – %s", noun, e.Resource, up.entry.Resource, up.entry.Action, again)
-		text = fmt.Sprintf("%s angelegt, Datei nicht hochgeladen (erledigt: create; fehlgeschlagen: upload).\n%s-ID unbekannt: per papierkram %s list suchen.\n",
-			e.Resource, noun, e.Resource)
+		out.Hint = fmt.Sprintf("%s per papierkram %s list%s suchen und die Datei mit %s %s an ihn hochladen – %s", noun, e.Resource, ctxArg, up.entry.Resource, up.entry.Action, again)
+		text = fmt.Sprintf("%s angelegt, Datei nicht hochgeladen (erledigt: create; fehlgeschlagen: upload).\n%s-ID unbekannt: per papierkram %s list%s suchen.\n",
+			e.Resource, noun, e.Resource, ctxArg)
 	} else {
-		cmd := fmt.Sprintf("papierkram %s %s %d %s", up.entry.Resource, up.entry.Action, *id, shellQuote(up.file.abs))
+		cmd := fmt.Sprintf("papierkram %s %s %d %s%s", up.entry.Resource, up.entry.Action, *id, shellQuote(up.file.abs), ctxArg)
 		retry = &cmd
-		describe := fmt.Sprintf("papierkram %s describe %d", e.Resource, *id)
+		describe := fmt.Sprintf("papierkram %s describe %d%s", e.Resource, *id, ctxArg)
 		if uploadUncertain(ce) {
 			warning = fmt.Sprintf("%s %d angelegt; Ergebnis des Hochladens unbekannt: %s – die Datei ist möglicherweise schon angehängt; vor dem Nachholen per %s prüfen, dann nur das Hochladen nachholen: %s; %s",
 				noun, *id, ce.Message, describe, cmd, again)
@@ -495,6 +498,17 @@ func (a *App) uploadPartial(o output.Options, e registry.Entry, up *createUpload
 		out.Message += "; Ausgabe fehlgeschlagen: " + clierr.From(werr).Message
 	}
 	return out
+}
+
+// contextArg is " --context <name>" (shellWord) when r's context was
+// chosen by --context or PAPIERKRAM_CONTEXT, else "": a command in a
+// hint that changes or reads data then names the same account in a
+// shell whose active context differs (the MCP server passes --context).
+func contextArg(r *config.Resolved) string {
+	if r == nil || r.Context == "" || r.ContextSource != config.SourceFlag && r.ContextSource != config.SourceEnv {
+		return ""
+	}
+	return " --context " + shellWord(r.Context)
 }
 
 // uploadUncertain reports an upload failure that does not prove the file

@@ -305,7 +305,7 @@ func (a *App) runWriteThen(c *cobra.Command, e registry.Entry, args []string, s 
 		if up != nil && errors.Is(err, api.ErrResponseTooLarge) {
 			// created, but the ID is in the unread answer: the upload
 			// cannot follow (exit 11 without ID)
-			return a.uploadPartial(a.outputOptions(c.Context(), a.outputFormat(r)), e, up, nil, err)
+			return a.uploadPartial(a.outputOptions(c.Context(), a.outputFormat(r)), r, e, up, nil, err)
 		}
 		return err
 	}
