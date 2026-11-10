@@ -177,7 +177,7 @@ func (p Param) values(v json.RawMessage, tmpDir string, o Options) ([]string, er
 		if !ok {
 			return nil, p.typeErr("Dateipfad als Text")
 		}
-		full, err := localPath(p.Name, o.FilesDir, s)
+		full, err := localPath(p.Name, o, s)
 		if err != nil {
 			return nil, err
 		}

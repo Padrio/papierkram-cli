@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/Padrio/papierkram-cli/internal/clierr"
 )
 
 // Rulings T5-A/B: a pdf tool writes only a new file inside --files-dir.
@@ -98,19 +101,60 @@ func TestMCPFilesDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	for in, want := range map[string]string{"": "", "ablage": filepath.Join(wd, "ablage"), filepath.Join(wd, "ablage") + "/": filepath.Join(wd, "ablage")} {
-		got, err := app.mcpFilesDir(in)
+		got, _, err := app.mcpFilesDir(in)
 		if err != nil || got != want {
 			t.Errorf("%q: %q, %v; erwartet %q", in, got, err, want)
 		}
 	}
 	app.Getwd = func() (string, error) { return "", os.ErrPermission }
-	if _, err := app.mcpFilesDir("ablage"); err == nil {
+	if _, _, err := app.mcpFilesDir("ablage"); err == nil {
 		t.Error("ohne Arbeitsverzeichnis kein Fehler")
 	}
-	if _, err := app.mcpFilesDir(wd); err != nil {
+	if _, _, err := app.mcpFilesDir(wd); err != nil {
 		t.Errorf("absoluter Ordner braucht kein Arbeitsverzeichnis: %v", err)
 	}
 }
+
+// final review A-M4/A-M5: the root of --files-dir is resolved at the start
+// and fixed; a directory that is itself irregular (a Windows junction,
+// which EvalSymlinks does not follow) or whose target cannot be resolved
+// is exit 2.
+func TestMCPFilesDirRootAndJunction(t *testing.T) {
+	app, _, _ := mcpApp(t)
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "ordner")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("keine symbolischen Verweise: %v", err)
+	}
+	want, _ := filepath.EvalSymlinks(real)
+	if dir, root, err := app.mcpFilesDir(link); err != nil || dir != link || root != want {
+		t.Errorf("%q, %q, %v; erwartet %q, %q", dir, root, err, link, want)
+	}
+	prevLstat, prevEval := filesDirLstat, filesDirEval
+	t.Cleanup(func() { filesDirLstat, filesDirEval = prevLstat, prevEval })
+	filesDirLstat = func(p string) (os.FileInfo, error) {
+		fi, err := os.Lstat(p)
+		if err == nil && p == link {
+			return irregularDir{fi}, nil
+		}
+		return fi, err
+	}
+	_, _, err := app.mcpFilesDir(link)
+	if ce := clierr.From(err); err == nil || ce.Exit() != 2 || !strings.Contains(ce.Message, "Verbindungspunkt") {
+		t.Errorf("Junction: %v", err)
+	}
+	filesDirLstat = prevLstat
+	filesDirEval = func(string) (string, error) { return "", os.ErrPermission }
+	_, _, err = app.mcpFilesDir(link)
+	if ce := clierr.From(err); err == nil || ce.Exit() != 2 || !strings.Contains(ce.Message, "nicht prüfbar") {
+		t.Errorf("Ziel nicht prüfbar: %v", err)
+	}
+}
+
+// irregularDir is a FileInfo with ModeIrregular (a Windows junction).
+type irregularDir struct{ os.FileInfo }
+
+func (i irregularDir) Mode() fs.FileMode { return i.FileInfo.Mode()&^fs.ModeType | fs.ModeIrregular }
 
 // Ruling T5-E: no implicit files directory. Without --files-dir the tools
 // with files are missing (hint on stderr); the root of a file system and

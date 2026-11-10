@@ -45,6 +45,7 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 | 30 | `outstanding_amount` in der Rechnungsliste und Status offener Posten (`invoice paid-status`) | die Liste liefert `outstanding_amount` als Dezimal-String (gemessen: `"119.0"`), `--details` ist dafür nicht nötig; offen ist ein Eintrag mit Betrag > 0 und `state` nicht `draft`/`canceled`/`deleted`; fehlt der Betrag, Exit 1 bzw. `--details` | `TestE2E_InvoiceFlow` (nach dem Versand), `TestE2E_PaidStatus` | Messung (Betrag in der Liste gemessen Live-Lauf 6, 2026-11-10; Status stornierter, bezahlter und gelöschter Rechnungen offen); `paid-status` selbst hart (Exit 0, Vertrag) |
 | 31 | Storno-Rechnung nach `invoice cancel` | eigenes Objekt in der Rechnungsliste (gemessen: `invoice_no` `<Nr>-S`, `state` `paid`, `type` `invoice`, Name der Originalrechnung), erkennbar an höherer ID; die Suite archiviert es | `TestE2E_InvoiceFlow` (Storno-Suche) | Messung (gemessen Live-Lauf 6, 2026-11-10) |
 | 32 | Filter `company_id` der Projektliste (`--customer-project` per Name mit `--customer`) | `GET /projects` wertet `company_id` aus; die Namensauflösung sucht nur unter den Projekten des Kunden (Ruling T3-E) | – (Handmessung im Live-Lauf) | Messung von Hand (gemessen Live-Lauf 6, 2026-11-10) |
+| 33 | `mcp serve --files-dir` in einem OneDrive-Ordner (Windows, „Dateien bei Bedarf“) | Reparse-Points, die Go als unbekannte Dateiart (`ModeIrregular`) meldet, lehnt der Server ab: als `--files-dir` selbst Exit 2, als Pfadteil eines Tool-Pfads Exit 2 ohne Anfrage | – | **nicht gemessen** (kein Live-Punkt der API, braucht einen Windows-Rechner mit OneDrive) |
 
 ## Punkte im Einzelnen
 
@@ -282,6 +283,12 @@ Testnamen sind die Namen für `go test -run`, Subtests mit `/` (z. B. `go test -
 - **Annahme:** Der Filter wird ausgewertet; die Namensauflösung lädt die Projektliste mit `company_id` des Kunden (`project list --company <id>`).
 - **E2E:** kein Test der Suite (Ruling T7-B); Handmessung im Live-Lauf mit `project list --company <id>`.
 - **Gemessen Live-Lauf 6, 2026-11-10 (von Hand):** `GET /projects` wertet `company_id` aus: ungefiltert 6 Projekte, mit Firma 1 keines, mit Firma 7 eines (mit `company_id` 7). `--customer-project` per Name innerhalb des Kunden funktioniert.
+
+### 33. `mcp serve --files-dir` in einem OneDrive-Ordner
+
+- **Offen:** Dateien und Ordner unter OneDrive mit „Dateien bei Bedarf“ sind unter Windows Reparse-Points (`IO_REPARSE_TAG_CLOUD_*`). Ob Go sie einem normalen Prozess als `ModeIrregular` meldet oder Windows die Platzhalter verbirgt, ist nicht gemessen. „Dokumente\Belege“ liegt bei vielen Windows-Nutzern in OneDrive.
+- **Annahme:** fail closed. Ist `--files-dir` selbst ein Verbindungspunkt (Junction) oder eine unbekannte Dateiart, endet der Start mit Exit 2 (Gesamt-Review A-M5); ebenso, wenn sich seine Verweise nicht auflösen lassen. Ein solcher Pfadteil eines Tool-Pfads ist Exit 2 ohne Anfrage. Meldet Windows OneDrive-Ordner so, lassen sie sich als Dateiordner nicht nutzen; dann einen Ordner außerhalb von OneDrive nehmen.
+- **E2E:** keiner (kein Punkt der API). Einmal von Hand auf Windows messen: `papierkram mcp serve --files-dir "%USERPROFILE%\OneDrive\Belege"` und ein `voucher_upload` daraus; je nach Ergebnis `IO_REPARSE_TAG_CLOUD*` zulassen oder in README und Hilfe nennen.
 
 ## Weitere Ergebnisse von Live-Lauf 6
 

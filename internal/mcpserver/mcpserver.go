@@ -97,16 +97,20 @@ type Runner func(ctx context.Context, args []string) Result
 // (--context, empty: the CLI chooses), the --timeout of every call (empty:
 // none), --debug for every call, the version the server reports and the
 // absolute directory every file path of a call must lie in (localPath;
-// empty: no tool with a file path), and the log of the server process
-// (its stderr; nil: none), which gets the stack of a call that panicked.
+// empty: no tool with a file path) with FilesRoot, that directory with its
+// links resolved at the start (final review A-M4: every call requires
+// FilesDir to resolve to it; empty: resolved per call), and the log of the
+// server process (its stderr; nil: none), which gets the stack of a call
+// that panicked.
 type Options struct {
-	Mode     Mode
-	Context  string
-	Timeout  string
-	Debug    bool
-	Version  string
-	FilesDir string
-	Log      io.Writer
+	Mode      Mode
+	Context   string
+	Timeout   string
+	Debug     bool
+	Version   string
+	FilesDir  string
+	FilesRoot string
+	Log       io.Writer
 }
 
 // DryRun is the parameter every tool of a class but read_only gets: the

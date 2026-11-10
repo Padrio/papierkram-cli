@@ -367,13 +367,55 @@ func TestMCPArgsPathPolicy(t *testing.T) {
 		t.Errorf("ohne Dateiordner: %v", err)
 	}
 	// localPath itself never resolves without a directory
-	if _, err := localPath("file", "", "x.pdf"); err == nil || errors.As(err, &ae) {
+	if _, err := localPath("file", Options{}, "x.pdf"); err == nil || errors.As(err, &ae) {
 		t.Errorf("localPath ohne Dateiordner: %v", err)
 	}
 	// a files directory that vanished: error, no ArgError
 	_, err = Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x.pdf"}`), Options{FilesDir: filepath.Join(dir, "weg")}, t.TempDir())
 	if err == nil || errors.As(err, &ae) {
 		t.Errorf("Dateiordner fehlt: %v", err)
+	}
+}
+
+// final review A-M4: the root of the files directory is fixed at the
+// start (Options.FilesRoot); a directory that later resolves elsewhere
+// (the link bent to / or to another folder) refuses every path.
+func TestMCPArgsFilesRootFixed(t *testing.T) {
+	base := t.TempDir()
+	a, b := filepath.Join(base, "a"), filepath.Join(base, "b")
+	for _, d := range []string{a, b} {
+		if err := os.Mkdir(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "x.pdf"), []byte("%PDF"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(base, "ordner")
+	if err := os.Symlink(a, link); err != nil {
+		t.Skipf("keine symbolischen Verweise: %v", err)
+	}
+	root, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := Options{FilesDir: link, FilesRoot: root}
+	raw := json.RawMessage(`{"voucher_id":1,"file":"x.pdf"}`)
+	if _, err := Args(upload, raw, o, t.TempDir()); err != nil {
+		t.Fatalf("vor dem Umbiegen: %v", err)
+	}
+	for _, target := range []string{b, string(filepath.Separator)} {
+		if err := os.Remove(link); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Args(upload, raw, o, t.TempDir())
+		var ae *ArgError
+		if !errors.As(err, &ae) || !strings.Contains(ae.Msg, "seit dem Start") {
+			t.Errorf("Ordner auf %s umgebogen: %v", target, err)
+		}
 	}
 }
 

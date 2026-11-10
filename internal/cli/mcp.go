@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -91,7 +92,7 @@ Jedes schreibende Tool hat den Parameter dry_run (--dry-run): Es prüft und zeig
 
 Ein Tool-Aufruf führt genau den Befehl aus, den er beschreibt, mit -o json und --no-input: dieselben Prüfungen, derselbe Schreibschutz, dieselben Credits und Exit-Codes wie auf der Kommandozeile. Das Ergebnis ist die JSON-Ausgabe des Befehls; Hinweise und Warnungen von stderr folgen als zweiter Inhalt. Bei einem Fehler ist das Ergebnis ein Tool-Fehler mit der JSON-Fehlerzeile (code, message, hint, exit_code). Aufrufe laufen nacheinander.
 
-Dateipfade gibt es nur mit --files-dir: ein vorhandener Ordner, nicht die Wurzel des Dateisystems und nicht das Home-Verzeichnis selbst (sonst Exit 2), am besten ein eigener Unterordner. Ohne --files-dir fehlen die Tools, die eine Datei brauchen (pdf, voucher upload), und voucher_create hat keinen Parameter file, mit einem Hinweis auf stderr; ein Arbeitsverzeichnis gilt nie als Dateiordner (Claude Desktop startet Server z. B. in /). Dateipfade der Tools sind relativ zu diesem Ordner: kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis ins Leere oder aus dem Ordner hinaus, kein fehlendes Verzeichnis (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei. Ein Upload liest nur Dateien aus diesem Ordner.
+Dateipfade gibt es nur mit --files-dir: ein vorhandener Ordner, nicht die Wurzel des Dateisystems, nicht das Home-Verzeichnis selbst, kein Verbindungspunkt (Junction) und keiner, dessen Verweise sich nicht auflösen lassen (sonst Exit 2), am besten ein eigener Unterordner. Der Server löst ihn beim Start auf und hält das Ziel fest; zeigt er später woanders hin, ist jeder Dateipfad Exit 2. Ohne --files-dir fehlen die Tools, die eine Datei brauchen (pdf, voucher upload), und voucher_create hat keinen Parameter file, mit einem Hinweis auf stderr; ein Arbeitsverzeichnis gilt nie als Dateiordner (Claude Desktop startet Server z. B. in /). Dateipfade der Tools sind relativ zu diesem Ordner: kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis ins Leere oder aus dem Ordner hinaus, kein fehlendes Verzeichnis (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei. Ein Upload liest nur Dateien aus diesem Ordner.
 
 In der Konfiguration eines Clients (JSON, z. B. {"command":"papierkram","args":["mcp","serve","--files-dir","/Users/name/Belege"]}) wird ~ nicht erweitert: den Ordner absolut angeben.
 
@@ -162,7 +163,7 @@ func NewMCPServer(ctx context.Context, app *App, o MCPOptions) (*mcp.Server, err
 		return nil, err
 	}
 	mode := app.mcpMode(o, r)
-	dir, err := app.mcpFilesDir(o.FilesDir)
+	dir, root, err := app.mcpFilesDir(o.FilesDir)
 	if err != nil {
 		return nil, err
 	}
@@ -173,34 +174,47 @@ func NewMCPServer(ctx context.Context, app *App, o MCPOptions) (*mcp.Server, err
 		return nil, err
 	}
 	return mcpserver.New(ctx, specs, app.mcpRunner(), mcpserver.Options{
-		Mode:     mode,
-		Context:  r.Context,
-		Timeout:  o.Timeout,
-		Debug:    app.Flags.Debug,
-		Version:  buildinfo.Version,
-		FilesDir: dir,
-		Log:      app.Err,
+		Mode:      mode,
+		Context:   r.Context,
+		Timeout:   o.Timeout,
+		Debug:     app.Flags.Debug,
+		Version:   buildinfo.Version,
+		FilesDir:  dir,
+		FilesRoot: root,
+		Log:       app.Err,
 	}), nil
 }
+
+// filesDirLstat and filesDirEval are os.Lstat and filepath.EvalSymlinks
+// for the files directory; tests replace them (a Windows junction cannot
+// be made elsewhere).
+var (
+	filesDirLstat = os.Lstat
+	filesDirEval  = filepath.EvalSymlinks
+)
 
 // mcpFilesDir is the files directory of the server: dir made absolute
 // (relative to the working directory), an existing directory, neither the
 // root of a file system nor the home directory (rulings T5-A, T5-E); ""
-// without dir: no tool with files.
-func (a *App) mcpFilesDir(dir string) (string, error) {
+// without dir: no tool with files. root is the directory with its links
+// resolved, fixed for every call (final review A-M4). A directory that is
+// itself irregular (a Windows junction: EvalSymlinks does not follow it,
+// the checks of root and home would see the junction, not its target) or
+// whose links cannot be resolved is exit 2 (final review A-M5).
+func (a *App) mcpFilesDir(dir string) (string, string, error) {
 	if dir == "" {
-		return "", nil
+		return "", "", nil
 	}
 	if !filepath.IsAbs(dir) {
 		if filepath.VolumeName(dir) != "" {
 			// C:Belege (Windows): relative to the working directory of
 			// drive C, which this process does not know
-			return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s nennt ein Laufwerk ohne absoluten Pfad", dir),
+			return "", "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s nennt ein Laufwerk ohne absoluten Pfad", dir),
 				"--files-dir mit absolutem Pfad angeben, z. B. "+filepath.VolumeName(dir)+`\Belege`)
 		}
 		wd, err := a.Getwd()
 		if err != nil {
-			return "", clierr.New(clierr.CodeError, "Arbeitsverzeichnis nicht lesbar: "+err.Error(), "--files-dir mit absolutem Pfad angeben")
+			return "", "", clierr.New(clierr.CodeError, "Arbeitsverzeichnis nicht lesbar: "+err.Error(), "--files-dir mit absolutem Pfad angeben")
 		}
 		if os.IsPathSeparator(dir[0]) {
 			// \Belege (Windows): rooted on the drive of the working
@@ -213,22 +227,31 @@ func (a *App) mcpFilesDir(dir string) (string, error) {
 	dir = filepath.Clean(dir)
 	fi, err := os.Stat(dir)
 	if err != nil || !fi.IsDir() {
-		return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist kein vorhandenes Verzeichnis", dir),
+		return "", "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist kein vorhandenes Verzeichnis", dir),
 			"Verzeichnis anlegen oder ein anderes angeben")
 	}
-	real, err := filepath.EvalSymlinks(dir)
+	lfi, err := filesDirLstat(dir)
+	if err == nil && lfi.Mode()&fs.ModeIrregular != 0 {
+		return "", "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist ein Verbindungspunkt (Junction) oder eine unbekannte Dateiart", dir),
+			"den Zielordner selbst angeben")
+	}
+	real := ""
+	if err == nil {
+		real, err = filesDirEval(dir)
+	}
 	if err != nil {
-		real = dir
+		return "", "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist nicht prüfbar (Verweis ins Leere, Schleife oder keine Rechte)", dir),
+			"einen Ordner ohne kaputte Verweise angeben")
 	}
 	switch home := a.homeDir(); {
 	case isRoot(dir) || isRoot(real):
-		return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist die Wurzel des Dateisystems", dir),
+		return "", "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist die Wurzel des Dateisystems", dir),
 			"Tools dürften dann jede Datei des Rechners lesen und anlegen; einen eigenen Unterordner angeben, z. B. "+filepath.Join(dir, "Belege"))
 	case home != "" && samePath(dir, home):
-		return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist das Home-Verzeichnis", dir),
+		return "", "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist das Home-Verzeichnis", dir),
 			"Tools dürften dann jede Datei des Nutzers lesen und anlegen; einen eigenen Unterordner angeben, z. B. "+filepath.Join(dir, "Belege"))
 	}
-	return dir, nil
+	return dir, real, nil
 }
 
 // isRoot reports whether the clean absolute path d is the root of a file

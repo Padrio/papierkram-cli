@@ -20,8 +20,12 @@ import (
 // reads (voucher upload, voucher create --file: task 6).
 
 // localPath is the absolute path of the tool path value v of param name
-// below dir, or the ArgError why it is not allowed.
-func localPath(name, dir, v string) (string, error) {
+// below o.FilesDir, or the ArgError why it is not allowed. The directory
+// must still resolve to o.FilesRoot, the root fixed at the start (final
+// review A-M4): a files directory bent elsewhere since (a link replaced,
+// pointing to /) refuses every path.
+func localPath(name string, o Options, v string) (string, error) {
+	dir := o.FilesDir
 	switch {
 	case v == "-":
 		return "", &ArgError{
@@ -40,6 +44,12 @@ func localPath(name, dir, v string) (string, error) {
 	root, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return "", fmt.Errorf("mcp: Dateiordner %s: %w", dir, err)
+	}
+	if o.FilesRoot != "" && root != o.FilesRoot {
+		return "", &ArgError{
+			Msg:  fmt.Sprintf("Parameter %s: der Dateiordner %s zeigt seit dem Start woanders hin (%s statt %s)", quoted(name), quoted(dir), quoted(root), quoted(o.FilesRoot)),
+			Hint: "Dateiordner prüfen und den Server neu starten (mcp serve --files-dir)",
+		}
 	}
 	if why := unsafePath(root, dir, v); why != "" {
 		return "", &ArgError{
