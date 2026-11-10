@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
+	"mime"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,6 +118,39 @@ var crossCases = []crossCase{
 		args: map[string]any{"input": jsonObject(voucherInput)},
 	},
 	{
+		name: "invoice create mit Kundenname", exit: 0, reqs: 2,
+		cli: func(string) []string {
+			return []string{"invoice", "create", "--name", "X", "--customer", "Mustermann GmbH", "--payment-term", "1130", "--document-date", "heute",
+				"--item", "name=A,qty=1,price=100,vat=19"}
+		},
+		tool:  "invoice_create",
+		args:  map[string]any{"name": "X", "customer": "Mustermann GmbH", "payment_term": 1130, "document_date": "heute", "item": []string{"name=A,qty=1,price=100,vat=19"}},
+		setup: mustermann,
+	},
+	{
+		name: "voucher pay mit --input", exit: 0, reqs: 1,
+		cli: func(dir string) []string {
+			return []string{"voucher", "pay", "295", "--input", filepath.Join(dir, "zahlung.json"), "--yes"}
+		},
+		tool: "voucher_pay",
+		args: map[string]any{"id": 295, "input": jsonObject(payInput)},
+	},
+	{
+		name: "voucher create mit --file (zweistufig)", exit: 0, reqs: 2,
+		cli: func(dir string) []string {
+			return []string{"voucher", "create", "--name", "X", "--provenance", "domestic", "--item", "name=A,amount=1,vat=19",
+				"--file", filepath.Join(dir, "beleg.pdf")}
+		},
+		tool: "voucher_create",
+		args: map[string]any{"name": "X", "provenance": "domestic", "item": []string{"name=A,amount=1,vat=19"}, "file": "beleg.pdf"},
+	},
+	{
+		name: "estimate deliver als PDF", exit: 0, reqs: 2,
+		cli:  func(string) []string { return []string{"estimate", "deliver", "349", "--via", "pdf", "--yes"} },
+		tool: "estimate_deliver",
+		args: map[string]any{"id": 349},
+	},
+	{
 		name: "Fehler: Rechnung fehlt", exit: 4, reqs: 1,
 		cli:  func(string) []string { return []string{"invoice", "delete", "999", "--yes"} },
 		tool: "invoice_delete",
@@ -125,6 +160,9 @@ var crossCases = []crossCase{
 		},
 	},
 }
+
+// payInput is the body of the voucher pay case.
+const payInput = `{"value":150,"payment_date":"2026-06-10","difference_reason":"skonto"}`
 
 // jsonObject decodes a JSON object of a test case.
 func jsonObject(s string) map[string]any {
@@ -139,8 +177,10 @@ func TestMCPCrossPath(t *testing.T) {
 	for _, tc := range crossCases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "beleg.json"), []byte(voucherInput), 0o600); err != nil {
-				t.Fatal(err)
+			for name, content := range map[string]string{"beleg.json": voucherInput, "zahlung.json": payInput, "beleg.pdf": binaryPDF} {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			cli, cliSrv := mockApp(t, map[string]string{"PAPIERKRAM_TOKEN": "test-token-mcp"})
@@ -167,8 +207,7 @@ func TestMCPCrossPath(t *testing.T) {
 			}
 			for i := range want {
 				w, g := want[i], got[i]
-				sameBody := len(w.Body) == 0 && len(g.Body) == 0 || jsonEqual(w.Body, g.Body)
-				if w.Method != g.Method || w.Path != g.Path || w.Query.Encode() != g.Query.Encode() || !sameBody {
+				if w.Method != g.Method || w.Path != g.Path || w.Query.Encode() != g.Query.Encode() || !sameBody(w, g) {
 					t.Errorf("Anfrage %d\nCLI %s %s?%s %s\nMCP %s %s?%s %s", i,
 						w.Method, w.Path, w.Query.Encode(), w.Body, g.Method, g.Path, g.Query.Encode(), g.Body)
 				}
@@ -194,4 +233,30 @@ func TestMCPCrossPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+// sameBody reports whether two recorded requests carry the same body:
+// both empty, the same JSON value, or the same multipart form once its
+// random boundary is made the same (an upload).
+func sameBody(a, b mockapi.Recorded) bool {
+	switch {
+	case len(a.Body) == 0 && len(b.Body) == 0:
+		return true
+	case jsonEqual(a.Body, b.Body):
+		return true
+	}
+	ba, bb := boundary(a), boundary(b)
+	if ba == "" || bb == "" {
+		return false
+	}
+	return bytes.Equal(bytes.ReplaceAll(a.Body, []byte(ba), []byte("GRENZE")), bytes.ReplaceAll(b.Body, []byte(bb), []byte("GRENZE")))
+}
+
+// boundary is the multipart boundary of r ("" for another body).
+func boundary(r mockapi.Recorded) string {
+	mt, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || !strings.HasPrefix(mt, "multipart/") {
+		return ""
+	}
+	return params["boundary"]
 }
