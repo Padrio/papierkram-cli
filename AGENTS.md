@@ -7,7 +7,7 @@ Diese Datei richtet sich an KI-Agents (Claude Code, Codex und andere), die das C
 1. **Schreibschutz als Standard.** Wer einen Agent nur lesen lässt, startet ihn mit `PAPIERKRAM_READ_ONLY=1`. Dann bricht jede Änderung mit Exit 9 ab, und nichts kann das aufheben.
 2. **Immer JSON.** `-o json` (oder `--jq`) an jeden Befehl. stdout enthält nur Nutzdaten, stderr nur Hinweise, Warnungen und Fehler.
 3. **Nie hängen bleiben.** `--no-input` an jeden Befehl: Dann fragt das CLI nie nach, auch nicht in einem Terminal.
-4. **Erst `--dry-run`, dann ausführen.** Vor jeder Änderung den Befehl mit `--dry-run` prüfen, danach unverändert ohne `--dry-run` (und bei Bedarf mit `--yes`) ausführen.
+4. **Erst `--dry-run`, dann ausführen.** Vor jeder Änderung den Befehl mit `--dry-run` prüfen, danach unverändert ohne `--dry-run` (und bei Bedarf mit `--yes`) ausführen. Einzige Ausnahme: Einen Namen in einem ID-Flag darf (und sollte) der echte Aufruf durch die `id` aus `resolved` der `--dry-run`-Ausgabe ersetzen (Regel 10).
 5. **`deliver` nie wiederholen.** Ein zweiter Aufruf kann eine zweite E-Mail an den Kunden schicken.
 6. **Exit 11 und 12 nie blind wiederholen.** Erst `hint` lesen und mit `describe` oder `list` nachsehen, was passiert ist; dann höchstens den einen Schritt nachholen, den der Hinweis nennt (siehe [Exit 11 und 12](#exit-11-und-12-schritt-für-schritt)).
 7. **429 (Exit 6) nie automatisch wiederholen.** Das Monatskontingent ist erschöpft; ein Mensch muss entscheiden.

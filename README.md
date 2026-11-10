@@ -29,6 +29,7 @@ Das Binary heißt `papierkram`. Alle Texte (Hilfe, Fehler, Hinweise) sind deutsc
 - [Eigenheiten der API](#eigenheiten-der-api)
 - [Weitere Dokumentation](#weitere-dokumentation)
 - [Dank](#dank)
+- [Lizenz](#lizenz)
 
 ## Installation
 
@@ -459,7 +460,7 @@ claude mcp add papierkram -- papierkram mcp serve --context firma --files-dir /U
 | 1 | `error`, `server_error` | unerwarteter Fehler oder Serverfehler (5xx) |
 | 2 | `usage` | falsche Flags oder Argumente, fehlende Pflichtangabe; nichts gesendet (Ausnahme [Namen statt IDs](#namen-statt-ids): ein mehrdeutiger Name oder eine Liste über 500 Einträge endet nach den Listenanfragen, geändert ist nichts) |
 | 3 | `auth` | kein Token, 401 oder 403 |
-| 4 | `not_found` | 404: ID prüfen, gehört sie zu diesem Kontext? |
+| 4 | `not_found` | 404: ID prüfen, gehört sie zu diesem Kontext? Oder ein Name ohne aktiven Treffer (bis zu drei ähnliche Namen im Hinweis, siehe [Namen statt IDs](#namen-statt-ids)) |
 | 5 | `validation` | lokale Prüfung, 400 oder 422 |
 | 6 | `quota` | 429: Monatskontingent erschöpft |
 | 7 | `conflict` | 409, Timer läuft schon oder wird gerade gestoppt |

@@ -1,6 +1,6 @@
 {
   "title": "papierkram invoice paid-status (-o json)",
-  "description": "Ausgabe von invoice paid-status mit -o json auf stdout (Vertrag für Agents, Spezifikation v0.2 Abschnitt 5): die offenen Posten der Rechnungsliste (outstanding_amount > 0, Status nicht draft, canceled oder deleted), sortiert nach Fälligkeit (ohne Fälligkeit zuletzt), dann ID, mit Summe und Anzahl. Beträge sind JSON-Zahlen im Text der API (226.0 bleibt 226.0); die Summe ist exakt gerechnet und hat zwei Nachkommastellen. complete ist false, wenn --max-pages Seiten ausgelassen hat: Dann gelten Summe und Anzahl nur für die geladenen Seiten. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
+  "description": "Ausgabe von invoice paid-status mit -o json auf stdout (Vertrag für Agents, Haupt-Spezifikation docs/specs/2026-11-03-papierkram-cli-design.md Abschnitt 9.9): die offenen Posten der Rechnungsliste (outstanding_amount > 0, Status nicht draft, canceled oder deleted), sortiert nach Fälligkeit (ohne Fälligkeit zuletzt), dann ID, mit Summe und Anzahl. Beträge sind JSON-Zahlen im Text der API (226.0 bleibt 226.0); die Summe ist exakt gerechnet und hat zwei Nachkommastellen. complete ist false, wenn --max-pages Seiten ausgelassen hat: Dann gelten Summe und Anzahl nur für die geladenen Seiten. OpenAPI-3-Schema-Objekt; jede Abweichung der Ausgabe von diesem Schema ist ein Vertragsbruch.",
   "type": "object",
   "additionalProperties": false,
   "required": ["entries", "total_outstanding", "count", "overdue_count", "as_of", "complete"],
