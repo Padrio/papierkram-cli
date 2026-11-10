@@ -371,3 +371,38 @@ func TestMCPToolSpecsDuplicateName(t *testing.T) {
 		t.Error("unbekanntes Token ohne Fehler")
 	}
 }
+
+// M3 (fail closed): every send command becomes the PDF-only tool; a send
+// command that cannot be sent as PDF (no --via with pdf) stops
+// mcpToolSpecsOf instead of becoming a tool with its mail flags, and a
+// deliver command of another class is no PDF tool.
+func TestMCPSendOnlyAsPDF(t *testing.T) {
+	two := 2
+	send := func(cmd string, flags ...flagInfo) commandInfo {
+		return commandInfo{Command: cmd, Usage: "papierkram " + cmd + " <id> [Optionen]", Short: "Versenden", Class: "send", Credits: &two, Flags: flags}
+	}
+	via := flagInfo{Name: "via", Type: "string", Enum: []string{"email", "pdf"}}
+	to := flagInfo{Name: "to", Type: "string"}
+	specs, err := mcpToolSpecsOf([]commandInfo{send("letter send", via, to)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := specs[0]; !slices.Equal(s.Fixed, []string{"--via=pdf"}) || len(s.Params) != 1 || s.Params[0].Name != "id" {
+		t.Errorf("Spec %+v", s)
+	}
+	for _, c := range []commandInfo{
+		send("letter send", to),
+		send("letter send", flagInfo{Name: "via", Type: "string", Enum: []string{"email"}}),
+	} {
+		if _, err := mcpToolSpecsOf([]commandInfo{c}); err == nil || !strings.Contains(err.Error(), "PDF") {
+			t.Errorf("%+v: Fehler %v", c.Flags, err)
+		}
+	}
+	// "deliver" in the name alone makes no PDF tool
+	c := send("invoice deliver", via, to)
+	c.Class = "update"
+	specs, err = mcpToolSpecsOf([]commandInfo{c})
+	if err != nil || len(specs[0].Fixed) != 0 {
+		t.Errorf("Spec %+v, %v", specs, err)
+	}
+}

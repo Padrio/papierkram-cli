@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Padrio/papierkram-cli/internal/mcpserver"
+	"github.com/Padrio/papierkram-cli/internal/registry"
 )
 
 // The tools of mcp serve (spec v0.2 §3) are built from commands --json,
@@ -41,18 +42,23 @@ var mcpPositionals = map[string]mcpPositional{
 	"<datei>":    {"file", "Pfad der Datei, relativ zum Dateiordner des Servers (mcp serve --files-dir)", mcpserver.KindPath},
 }
 
-// mcpDeliverFixed are the arguments of every deliver tool instead of its
+// mcpDeliverFixed are the arguments of every send tool instead of its
 // flags: deliver over MCP sends only as PDF, never an email (spec v0.2
 // §3, AGENTS.md: recipient, subject and text come from the human). The
 // tool has no flag parameter at all, so neither --via nor --input (which
 // could carry send_via) nor a mail flag can reach the CLI.
 var mcpDeliverFixed = []string{"--via=" + viaPDF}
 
-// mcpDeliver reports whether c is a deliver command (invoice deliver,
-// estimate deliver).
-func mcpDeliver(c commandInfo) bool {
-	f := strings.Fields(c.Command)
-	return f[len(f)-1] == "deliver"
+// mcpSendAsPDF checks that the send command c can be sent as PDF: it has
+// --via with the value pdf. A send command without (fail closed) gets no
+// tool, it stops mcpToolSpecsOf.
+func mcpSendAsPDF(c commandInfo) error {
+	for _, f := range c.Flags {
+		if f.Name == "via" && slices.Contains(f.Enum, viaPDF) {
+			return nil
+		}
+	}
+	return fmt.Errorf("mcp: %s: Klasse send ohne --via %s, als Tool nur PDF-Versand erlaubt", c.Command, viaPDF)
 }
 
 // mcpPathFlags take a file path; "-" (stdin/stdout, the transport of the
@@ -117,7 +123,10 @@ func mcpToolSpec(c commandInfo) (mcpserver.ToolSpec, error) {
 		return s, err
 	}
 	s.Params = pos
-	if mcpDeliver(c) {
+	if c.Class == string(registry.ClassSend) {
+		if err := mcpSendAsPDF(c); err != nil {
+			return s, err
+		}
 		s.Fixed = slices.Clone(mcpDeliverFixed)
 		s.Description = fmt.Sprintf("%s, nur als PDF (--via pdf, keine E-Mail). Klasse %s, %s je Aufruf",
 			strings.TrimSuffix(c.Short, "."), c.Class, creditsText(mcpCredits(c)))
