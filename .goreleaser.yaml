@@ -221,9 +221,10 @@ winget:
     homepage: https://github.com/Padrio/papierkram-cli
     license: MIT
     license_url: https://github.com/Padrio/papierkram-cli/blob/main/LICENSE
-    # the descriptions are German, so is the default locale
-    default_locale: de-DE
-    short_description: Kommandozeile für die Papierkram-API
+    # winget-pkgs expects an en-US default locale; the description is
+    # English to match it
+    default_locale: en-US
+    short_description: Command line for the Papierkram API
     ids: [papierkram]
     commit_author:
       name: Pascal Krason

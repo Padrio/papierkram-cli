@@ -215,7 +215,7 @@ jobs:
           test "$#" -eq 1 && test -d "$1"
           test "$(find "$1" -type f | wc -l)" -eq 3
           test -f "$1/Padrio.Papierkram.yaml"
-          test -f "$1/Padrio.Papierkram.locale.de-DE.yaml"
+          test -f "$1/Padrio.Papierkram.locale.en-US.yaml"
           grep -Fx 'InstallerType: zip' "$1/Padrio.Papierkram.installer.yaml"
           test "$(grep -c 'NestedInstallerType: portable' "$1/Padrio.Papierkram.installer.yaml")" -eq 2
       # papierkram and pk complete in every shell (pwsh ships with the runner)
