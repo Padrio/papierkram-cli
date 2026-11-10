@@ -143,12 +143,15 @@ func docLineCommands(text string) ([]docCmd, error) {
 			return nil, fmt.Errorf("kein Befehl nach den Zuweisungen %v", env)
 		case words[0] == "papierkram" || words[0] == "pk":
 			out = append(out, docCmd{env, append([]string{"papierkram"}, words[1:]...)})
-		case words[0] == "claude":
+		case len(words) >= 3 && words[0] == "claude" && words[1] == "mcp" && words[2] == "add":
 			// claude mcp add <name> -- papierkram mcp serve …: the server
-			// command line is checked like any other
-			if i := slices.Index(words, "--"); i >= 0 && i+1 < len(words) && words[i+1] == "papierkram" {
-				out = append(out, docCmd{env, words[i+1:]})
+			// command line is checked like any other; a server that is not
+			// the CLI is an error
+			i := slices.Index(words, "--")
+			if i < 0 || i+1 >= len(words) || words[i+1] != "papierkram" && words[i+1] != "pk" {
+				return nil, fmt.Errorf("claude mcp add ohne papierkram oder pk nach --")
 			}
+			out = append(out, docCmd{env, append([]string{"papierkram"}, words[i+2:]...)})
 		case !slices.Contains(docShellCommands, words[0]):
 			return nil, fmt.Errorf("unbekannter Befehl %q (Tippfehler? sonst in docShellCommands aufnehmen)", words[0])
 		}
@@ -242,6 +245,10 @@ func TestDocLineCommandsUnwrapAndReject(t *testing.T) {
 		`papierkram invoice list --jq '.entries[] | "$(x)"'`:                "papierkram invoice list --jq .entries[] | \"$(x)\"",
 		"claude mcp add papierkram -- papierkram mcp serve --allow-writes":  "papierkram mcp serve --allow-writes",
 		"claude mcp list": "",
+		"claude mcp add pk -- pk mcp serve --files-dir /x": "papierkram mcp serve --files-dir /x",
+		"claude mcp add x -- npx other-server":             "-",
+		"claude mcp add x":                                 "-",
+		"claude mcp add x --":                              "-",
 	} {
 		cmds, err := docLineCommands(line)
 		var got []string
