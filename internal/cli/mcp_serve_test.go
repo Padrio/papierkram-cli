@@ -143,6 +143,19 @@ func TestMCPFilesDirRootAndJunction(t *testing.T) {
 	if ce := clierr.From(err); err == nil || ce.Exit() != 2 || !strings.Contains(ce.Message, "Verbindungspunkt") {
 		t.Errorf("Junction: %v", err)
 	}
+	// re-review N1: a link to a junction (the resolved target is
+	// irregular) is exit 2 as well
+	filesDirLstat = func(p string) (os.FileInfo, error) {
+		fi, err := os.Lstat(p)
+		if err == nil && p == want {
+			return irregularDir{fi}, nil
+		}
+		return fi, err
+	}
+	_, _, err = app.mcpFilesDir(link)
+	if ce := clierr.From(err); err == nil || ce.Exit() != 2 || !strings.Contains(ce.Message, "Verbindungspunkt") {
+		t.Errorf("Verweis auf Junction: %v", err)
+	}
 	filesDirLstat = prevLstat
 	filesDirEval = func(string) (string, error) { return "", os.ErrPermission }
 	_, _, err = app.mcpFilesDir(link)

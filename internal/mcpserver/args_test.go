@@ -419,6 +419,37 @@ func TestMCPArgsFilesRootFixed(t *testing.T) {
 	}
 }
 
+// re-review N1: a files directory replaced by a Windows junction after
+// the start (EvalSymlinks does not follow junctions since Go 1.23, the
+// root would look unchanged) refuses every path: each call reads the
+// directory with Lstat (simulated, a junction cannot be made elsewhere).
+func TestMCPArgsFilesDirJunctionPerCall(t *testing.T) {
+	dir := fd(t)
+	root, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := Options{FilesDir: dir, FilesRoot: root}
+	raw := json.RawMessage(`{"voucher_id":1,"file":"x.pdf"}`)
+	if _, err := Args(upload, raw, o, t.TempDir()); err != nil {
+		t.Fatalf("ohne Junction: %v", err)
+	}
+	prev := lstat
+	t.Cleanup(func() { lstat = prev })
+	lstat = func(p string) (os.FileInfo, error) {
+		fi, err := os.Lstat(p)
+		if err == nil && p == dir {
+			return irregular{fi}, nil
+		}
+		return fi, err
+	}
+	_, err = Args(upload, raw, o, t.TempDir())
+	var ae *ArgError
+	if !errors.As(err, &ae) || !strings.Contains(ae.Msg, "Junction") {
+		t.Errorf("Dateiordner als Junction: %v", err)
+	}
+}
+
 // final review A-M6: a path with an extension (the PDF a pdf tool
 // writes) must end in it, ignoring case, and no part of it may begin with
 // a dot (.papierkram.toml, .envrc, a hidden directory).

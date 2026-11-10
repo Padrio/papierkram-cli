@@ -92,7 +92,7 @@ Jedes schreibende Tool hat den Parameter dry_run (--dry-run): Es prüft und zeig
 
 Ein Tool-Aufruf führt genau den Befehl aus, den er beschreibt, mit -o json und --no-input: dieselben Prüfungen, derselbe Schreibschutz, dieselben Credits und Exit-Codes wie auf der Kommandozeile. Das Ergebnis ist die JSON-Ausgabe des Befehls; Hinweise und Warnungen von stderr folgen als zweiter Inhalt. Bei einem Fehler ist das Ergebnis ein Tool-Fehler mit der JSON-Fehlerzeile (code, message, hint, exit_code). Aufrufe laufen nacheinander.
 
-Dateipfade gibt es nur mit --files-dir: ein vorhandener Ordner, nicht die Wurzel des Dateisystems, nicht das Home-Verzeichnis selbst, kein Verbindungspunkt (Junction) und keiner, dessen Verweise sich nicht auflösen lassen (sonst Exit 2), am besten ein eigener Unterordner. Der Server löst ihn beim Start auf und hält das Ziel fest; zeigt er später woanders hin, ist jeder Dateipfad Exit 2. Ohne --files-dir fehlen die Tools, die eine Datei brauchen (pdf, voucher upload), und voucher_create hat keinen Parameter file, mit einem Hinweis auf stderr; ein Arbeitsverzeichnis gilt nie als Dateiordner (Claude Desktop startet Server z. B. in /). Dateipfade der Tools sind relativ zu diesem Ordner: kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis ins Leere oder aus dem Ordner hinaus, kein fehlendes Verzeichnis (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei; ihr output_file muss auf .pdf enden (Groß- und Kleinschreibung egal), und kein Teil des Pfads darf mit einem Punkt beginnen (sonst Exit 2). Ein Upload liest nur Dateien aus diesem Ordner.
+Dateipfade gibt es nur mit --files-dir: ein vorhandener Ordner, nicht die Wurzel des Dateisystems, nicht das Home-Verzeichnis selbst, kein Verbindungspunkt (Junction) und keiner, dessen Verweise sich nicht auflösen lassen (sonst Exit 2), am besten ein eigener Unterordner. Der Server löst ihn beim Start auf und hält das Ziel fest (auch ein Verweis auf eine Junction ist Exit 2); zeigt er später woanders hin oder ist er dann eine Junction, ist jeder Dateipfad Exit 2. Ohne --files-dir fehlen die Tools, die eine Datei brauchen (pdf, voucher upload), und voucher_create hat keinen Parameter file, mit einem Hinweis auf stderr; ein Arbeitsverzeichnis gilt nie als Dateiordner (Claude Desktop startet Server z. B. in /). Dateipfade der Tools sind relativ zu diesem Ordner: kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis ins Leere oder aus dem Ordner hinaus, kein fehlendes Verzeichnis (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei; ihr output_file muss auf .pdf enden (Groß- und Kleinschreibung egal), und kein Teil des Pfads darf mit einem Punkt beginnen (sonst Exit 2). Ein Upload liest nur Dateien aus diesem Ordner.
 
 In der Konfiguration eines Clients (JSON, z. B. {"command":"papierkram","args":["mcp","serve","--files-dir","/Users/name/Belege"]}) wird ~ nicht erweitert: den Ordner absolut angeben.
 
@@ -238,6 +238,14 @@ func (a *App) mcpFilesDir(dir string) (string, string, error) {
 	real := ""
 	if err == nil {
 		real, err = filesDirEval(dir)
+	}
+	if err == nil {
+		// a link to a junction: the resolved target must be no junction
+		// either (re-review N1)
+		if lfi, err = filesDirLstat(real); err == nil && lfi.Mode()&fs.ModeIrregular != 0 {
+			return "", "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s führt auf einen Verbindungspunkt (Junction) oder eine unbekannte Dateiart (%s)", dir, real),
+				"den Zielordner selbst angeben")
+		}
 	}
 	if err != nil {
 		return "", "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist nicht prüfbar (Verweis ins Leere, Schleife oder keine Rechte)", dir),

@@ -41,6 +41,19 @@ func localPath(name string, o Options, v string) (string, error) {
 		return "", errors.New("mcp: kein Dateiordner gesetzt")
 	}
 	full := filepath.Join(dir, v)
+	// a junction put in place of the directory since the start: EvalSymlinks
+	// does not follow it (Go ≥ 1.23), the root below would look unchanged
+	// (re-review N1)
+	fi, err := lstat(dir)
+	if err != nil {
+		return "", fmt.Errorf("mcp: Dateiordner %s: %w", dir, err)
+	}
+	if fi.Mode()&fs.ModeIrregular != 0 {
+		return "", &ArgError{
+			Msg:  fmt.Sprintf("Parameter %s: der Dateiordner %s ist seit dem Start ein Verbindungspunkt (Junction) oder eine unbekannte Dateiart", quoted(name), quoted(dir)),
+			Hint: "Dateiordner prüfen und den Server neu starten (mcp serve --files-dir)",
+		}
+	}
 	root, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return "", fmt.Errorf("mcp: Dateiordner %s: %w", dir, err)
