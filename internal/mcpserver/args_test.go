@@ -419,6 +419,40 @@ func TestMCPArgsFilesRootFixed(t *testing.T) {
 	}
 }
 
+// final review A-M6: a path with an extension (the PDF a pdf tool
+// writes) must end in it, ignoring case, and no part of it may begin with
+// a dot (.papierkram.toml, .envrc, a hidden directory).
+func TestMCPArgsPathExtension(t *testing.T) {
+	pdf := ToolSpec{Name: "invoice_pdf", Class: "read_only", Command: []string{"invoice", "pdf"}, Params: []Param{
+		{Name: "id", Pos: 0, Kind: KindInteger, Required: true},
+		{Name: "output_file", Flag: "output-file", Pos: -1, Kind: KindPath, Ext: ".pdf", Required: true},
+	}}
+	dir := fd(t)
+	if err := os.Mkdir(filepath.Join(dir, "ablage"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []string{".papierkram.toml", ".envrc", "x.txt", "x", "x.pdf.txt", ".x.pdf", "ablage/.x.pdf", ".ablage/x.pdf", "x.pdf/"} {
+		raw, _ := json.Marshal(map[string]any{"id": 1, "output_file": v})
+		_, err := Args(pdf, raw, Options{FilesDir: dir}, t.TempDir())
+		var ae *ArgError
+		if !errors.As(err, &ae) || !strings.Contains(ae.Msg, "„output_file“") || !strings.Contains(ae.Msg, ".pdf") {
+			t.Errorf("%q: %v", v, err)
+		}
+	}
+	for _, v := range []string{"x.pdf", "X.PDF", "ablage/re-1.Pdf", "./x.pdf"} {
+		raw, _ := json.Marshal(map[string]any{"id": 1, "output_file": v})
+		if _, err := Args(pdf, raw, Options{FilesDir: dir}, t.TempDir()); err != nil {
+			t.Errorf("%q: %v", v, err)
+		}
+	}
+	// a path without Ext keeps every name (voucher upload of a dot file
+	// in the files directory is the human's choice, ruling T5-D)
+	raw, _ := json.Marshal(map[string]any{"voucher_id": 1, "file": ".beleg"})
+	if _, err := Args(upload, raw, Options{FilesDir: dir}, t.TempDir()); err != nil {
+		t.Errorf("Upload ohne Endung: %v", err)
+	}
+}
+
 // irregular is a FileInfo with ModeIrregular (a Windows junction).
 type irregular struct{ os.FileInfo }
 

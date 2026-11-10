@@ -60,7 +60,10 @@ const (
 // Param is one parameter of a tool: a flag (Pos -1, Flag its name) or the
 // positional argument with index Pos. Enum, Default, Minimum and Maximum
 // describe the value in the input schema; the CLI checks them. JSONType is
-// the JSON type of a KindJSONFile value, "object" or "array".
+// the JSON type of a KindJSONFile value, "object" or "array". Ext is the
+// extension a KindPath value must end in (".pdf", ignoring case), with no
+// part of the path beginning with a dot (final review A-M6); empty: any
+// name.
 type Param struct {
 	Name, Flag       string
 	Pos              int
@@ -71,6 +74,7 @@ type Param struct {
 	Minimum, Maximum *float64
 	Required         bool
 	JSONType         string
+	Ext              string
 }
 
 // ToolSpec is one tool: the command words of the CLI, its parameters and

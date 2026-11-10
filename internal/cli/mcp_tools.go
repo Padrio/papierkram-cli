@@ -208,8 +208,9 @@ func mcpPositionalParams(c commandInfo) ([]mcpserver.Param, error) {
 // mcpFlagParam is the parameter of flag f: kind from its type, enum,
 // typed default and bounds as in commands --json. A flag is required only
 // when commands --json calls it required without alternatives and
-// without a preset (the CLI checks the rest); --output-file is required
-// because without it the PDF would go to stdout, which is no JSON.
+// without a preset (the CLI checks the rest); the PDF file of a pdf tool
+// (fileFlagPDF, --output-file) is required because without it the PDF
+// would go to stdout, which is no JSON.
 func mcpFlagParam(f flagInfo) (mcpserver.Param, error) {
 	p := mcpserver.Param{
 		Name:        mcpName(f.Name),
@@ -233,12 +234,15 @@ func mcpFlagParam(f flagInfo) (mcpserver.Param, error) {
 	case f.File == fileFlagArray:
 		p.Kind, p.JSONType = mcpserver.KindJSONFile, "array"
 		p.Description = fmt.Sprintf("Positionen als JSON-Array (das CLI erhält es als Datei für --%s)", f.Name)
-	case f.File == fileFlagPath:
+	case f.File == fileFlagPath || f.File == fileFlagPDF:
 		p.Kind = mcpserver.KindPath
 		p.Description = strings.NewReplacer(" oder - für stdout", "", " oder - für die Standardeingabe", "").Replace(p.Description) +
 			"; relativer Pfad im Dateiordner des Servers (mcp serve --files-dir), ohne „..“"
-		if f.Name == "output-file" {
-			p.Description += "; eine vorhandene Datei wird nicht ersetzt"
+		if f.File == fileFlagPDF {
+			// the PDF a pdf tool writes: a new .pdf file, never a dot file
+			// (final review A-M6); without it the PDF would go to stdout
+			p.Ext = ".pdf"
+			p.Description += "; Name endet auf .pdf, kein Teil beginnt mit einem Punkt; eine vorhandene Datei wird nicht ersetzt"
 			p.Required = true
 		}
 	case f.File != "" || looksLikeFile(f):

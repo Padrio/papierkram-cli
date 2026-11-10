@@ -63,20 +63,23 @@ const (
 	flagMinimum     = "pk:minimum"      // smallest value the check accepts (inclusive)
 	flagMaximum     = "pk:maximum"      // largest value the check accepts (inclusive)
 	flagResolves    = "pk:resolves"     // resource whose name the ID flag takes instead of the ID (markResolves)
-	flagFile        = "pk:file"         // the flag names a file: fileFlagPath, fileFlagObject or fileFlagArray (markFile)
+	flagFile        = "pk:file"         // the flag names a file: fileFlagPath, fileFlagPDF, fileFlagObject or fileFlagArray (markFile)
 )
 
 // The values of flagFile: a file path read or written (the MCP server
-// keeps it in its files directory), or a JSON object or array read from a
-// file or stdin (the MCP server takes the JSON value itself).
+// keeps it in its files directory), a PDF file written (the same, and the
+// name must end in .pdf without a dot file, final review A-M6), or a JSON
+// object or array read from a file or stdin (the MCP server takes the
+// JSON value itself).
 const (
 	fileFlagPath   = "path"
+	fileFlagPDF    = "pdf"
 	fileFlagObject = "object"
 	fileFlagArray  = "array"
 )
 
 // markFile marks the flag name as one that names a file (flagFile, kind
-// one of fileFlagPath, fileFlagObject, fileFlagArray); the MCP tools know
+// one of fileFlagPath, fileFlagPDF, fileFlagObject, fileFlagArray); the MCP tools know
 // file flags by it (final review A-M1), never by their name.
 func markFile(fs *pflag.FlagSet, name, kind string) { annotate(fs, name, flagFile, kind) }
 

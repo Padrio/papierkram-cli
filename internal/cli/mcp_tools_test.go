@@ -257,7 +257,7 @@ func TestMCPToolSchemasFromCommands(t *testing.T) {
 		{flagInfo{Name: "a", Type: "string", Required: true, Alternatives: []string{"--input"}}, false},
 		{flagInfo{Name: "a", Type: "id", Required: true, DefaultFrom: []string{"flag", "env"}}, false},
 		{flagInfo{Name: "a", Type: "string"}, false},
-		{flagInfo{Name: "output-file", Type: "string", File: fileFlagPath}, true},
+		{flagInfo{Name: "output-file", Type: "string", File: fileFlagPDF}, true},
 	} {
 		p, err := mcpFlagParam(tc.f)
 		if err != nil || p.Required != tc.want {
@@ -466,6 +466,10 @@ func TestMCPFileFlagsAnnotated(t *testing.T) {
 			want := map[string]mcpserver.Kind{"output-file": mcpserver.KindPath, "file": mcpserver.KindPath, "input": mcpserver.KindJSONFile, "items": mcpserver.KindJSONFile}[f.Name]
 			if (want != "") != (p.Kind == mcpserver.KindPath || p.Kind == mcpserver.KindJSONFile) || want != "" && p.Kind != want {
 				t.Errorf("%s %s: Art %s", s.Name, p.Name, p.Kind)
+			}
+			// the PDF a pdf tool writes ends in .pdf (final review A-M6)
+			if wantExt := map[string]string{"output-file": ".pdf"}[f.Name]; p.Ext != wantExt {
+				t.Errorf("%s %s: Endung %q, erwartet %q", s.Name, p.Name, p.Ext, wantExt)
 			}
 		}
 	}

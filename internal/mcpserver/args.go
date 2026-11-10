@@ -177,6 +177,9 @@ func (p Param) values(v json.RawMessage, tmpDir string, o Options) ([]string, er
 		if !ok {
 			return nil, p.typeErr("Dateipfad als Text")
 		}
+		if err := p.checkExt(s); err != nil {
+			return nil, err
+		}
 		full, err := localPath(p.Name, o, s)
 		if err != nil {
 			return nil, err
@@ -224,6 +227,27 @@ func (p Param) values(v json.RawMessage, tmpDir string, o Options) ([]string, er
 		return p.jsonFile(val, v, tmpDir)
 	}
 	return nil, fmt.Errorf("parameter %s: unknown kind %q", p.Name, p.Kind)
+}
+
+// checkExt checks the path v against p.Ext: it ends in the extension
+// (ignoring case) and no part of it begins with a dot, so a pdf tool
+// cannot write a project file (.papierkram.toml) or another dot file of
+// the files directory (final review A-M6).
+func (p Param) checkExt(v string) error {
+	if p.Ext == "" {
+		return nil
+	}
+	ok := strings.EqualFold(filepath.Ext(v), p.Ext)
+	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(v)), "/") {
+		ok = ok && !strings.HasPrefix(part, ".")
+	}
+	if !ok {
+		return &ArgError{
+			Msg:  fmt.Sprintf("Parameter %s: Dateiname %s muss auf %s enden, und kein Teil des Pfads darf mit einem Punkt beginnen", quoted(p.Name), quoted(v), p.Ext),
+			Hint: "z. B. rechnung-123" + p.Ext,
+		}
+	}
+	return nil
 }
 
 // integer is n as a decimal integer; a fraction or exponent is no integer.
