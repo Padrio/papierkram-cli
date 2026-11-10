@@ -63,13 +63,23 @@ die Storno-Rechnung, aber um keine Firma mehr.
 
 **Storno-Rechnung.** `invoice cancel` legt (vermutlich) eine Storno-Rechnung
 an. `TestE2E_InvoiceFlow` sucht sie danach in der Rechnungsliste des
-Dauerkunden von heute (`invoice list --company <id> --from today --to today
---sort id --desc --limit 100`): Kandidaten sind Rechnungen mit höherer ID als
-die stornierte, die dieser Lauf nicht selbst registriert hat. Je Kandidat
-stehen Name, Status, Nummer und Schlüsselform als `MESSUNG` im Log. Genau ein
-Kandidat wird als Folgeobjekt der stornierten Rechnung registriert und am
-Ende archiviert; mehrere (etwa durch einen parallelen Lauf) sind eine
-`ABWEICHUNG`, und keiner wird angefasst.
+Dauerkunden von heute, Berliner Tag (`invoice list --company <id> --from
+<heute> --to <heute> --sort id --desc --limit 100`; lehnt die API die
+Sortierung ab, noch einmal ohne, 1 Credit mehr): Kandidaten sind Rechnungen
+mit höherer ID als die stornierte, die dieser Lauf nicht selbst registriert
+hat. Je Kandidat stehen Name, Status, Nummer, `type` und Schlüsselform als
+`MESSUNG` im Log. Genau ein Kandidat mit `type` `invoice` wird als
+Folgeobjekt der stornierten Rechnung registriert und am Ende archiviert;
+mehrere (etwa durch einen parallelen Lauf) sind eine `ABWEICHUNG`, und
+keiner wird angefasst. Die Annahmen dieser Suche (eigenes Objekt, gleiche
+Firma, Belegdatum heute, steigende IDs, keine fremde Rechnung, Sortierung
+nach `id`, archivierbar, Name ohne `pk-e2e-`) misst der Live-Lauf, siehe
+[offener Punkt 31](../docs/offene-punkte.md#31-storno-rechnung-nach-invoice-cancel).
+
+Endet `archive` bei einem dieser nur zu archivierenden Objekte mit einem
+Exit-Code ungleich 0, liest das Aufräumen es einmal (`describe`, 1 Credit);
+ist es danach archiviert (`record_state` `archived`), gilt es als
+aufgeräumt.
 
 ## Ausführen
 
@@ -353,8 +363,10 @@ ohnehin lädt, gegen den Vertrag
 Verletzung steht als `ABWEICHUNG` mit JSON-Pfad und Regel im Log, nie mit
 Werten der Einträge.
 
-`TestE2E_InvoiceFlow` ruft nach dem Versand `invoice paid-status --customer
-<Dauerkunde>` auf (hart: Exit 0 und Vertrag
+`TestE2E_InvoiceFlow` ruft nach einem erfolgreichen Versand (Exit 0)
+`invoice paid-status --customer <Dauerkunde> --from <heute>` auf (Berliner
+Tag: eine Seite, egal wie viele Läufe auf den Dauerkunden gebucht haben;
+hart: Exit 0 und Vertrag
 [docs/schemas/paid-status.json](../docs/schemas/paid-status.json)) und misst
 offenen Punkt 30: ob die versendete Rechnung ein offener Posten ist (Status,
 `outstanding_amount`) und wie viele Einträge der Rechnungsliste
@@ -363,7 +375,7 @@ das als `ABWEICHUNG` im Log. Nach dem Storno sucht er die Storno-Rechnung
 (offener Punkt 31, siehe [Was die Suite anlegt](#was-die-suite-anlegt)).
 
 `TestE2E_PaidStatus` prüft die Namensauflösung an einem Flag (3 Credits):
-`invoice paid-status --customer pk-e2e-dauerkunde` muss mit Exit 0 enden,
+`invoice paid-status --customer pk-e2e-dauerkunde --from <heute>` muss mit Exit 0 enden,
 den Vertrag erfüllen, auf stderr die ID nennen (`→ <id> (`) und die
 Firmenliste sowie die Rechnungsliste mit `company_id=<id>` laden; derselbe
 Aufruf mit `--overdue` im selben Verzeichnis muss den Namen aus dem
