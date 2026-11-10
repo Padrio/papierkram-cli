@@ -198,8 +198,10 @@ func (s *liveSuite) measureInvoiceList(t *testing.T, topic string, r result, inv
 //	(f) the list can be sorted by id (otherwise: unsorted, the list is
 //	    limited to one day and one customer anyway, 1 credit more);
 //	(g) it can be archived;
-//	(h) its name is not pk-e2e-… (the API names it): it is touched only
-//	    as a follow-up of the own invoice.
+//	(h) refuted in live run 6: it carries the name of the original
+//	    invoice (with the pk-e2e- prefix); the search does not depend on
+//	    the name, and the leftover search of a later run archives it as
+//	    a numbered leftover.
 func (s *liveSuite) findCancellation(t *testing.T, customer, invoice int64) {
 	t.Helper()
 	day := s.todayBerlin()
