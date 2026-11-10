@@ -360,7 +360,7 @@ func TestE2E_CleanupLeftovers(t *testing.T) {
 			}
 			o := object{resource: k.resource, id: idOf(e), name: name, archiveOnly: numbered(k.resource, e)}
 			if o.archiveOnly {
-				s.need(t, 1)
+				s.need(t, 2) // archive, describe after a refused archive
 			} else {
 				s.need(t, 4)
 			}
@@ -383,12 +383,12 @@ func TestE2E_CleanupLeftovers(t *testing.T) {
 }
 
 // numbered reports whether e, an entry of the invoice or estimate list,
-// has a number (invoice_no or estimate_no not null): the API cannot
-// delete it any more, so it is only archived.
+// has a number (invoice_no or estimate_no neither null nor ""): the API
+// cannot delete it any more, so it is only archived.
 func numbered(resource string, e map[string]any) bool {
 	switch resource {
 	case "invoice", "estimate":
-		return e[resource+"_no"] != nil
+		return str(e[resource+"_no"]) != ""
 	}
 	return false
 }

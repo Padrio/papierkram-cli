@@ -228,6 +228,11 @@ func (s *liveSuite) mcpSession(t *testing.T, dir string) *mcp.ClientSession {
 	t.Cleanup(func() {
 		_ = cs.Close()
 		_ = ss.Wait()
+		// the server is done: what it wrote to stderr since the start
+		// (hints, --debug) must not contain the token either
+		if s.red.Contains(out.String()) || s.red.Contains(errb.String()) {
+			s.errorf(t, "Ausgabe des MCP-Servers enthält das Token")
+		}
 	})
 	return cs
 }
@@ -585,14 +590,14 @@ var cleanupDocs = map[string]bool{"invoice": true, "estimate": true, "voucher": 
 // noArchive are the resources without archive.
 var noArchive = map[string]bool{"person": true}
 
-// archivedForGood is what remove returns for an archiveOnly object it
-// archived.
+// archivedForGood ends what remove returns for an archiveOnly object that
+// is archived now.
 const archivedForGood = "archiviert (dauerhaft)"
 
 // archivedResult reports whether what (of remove) ends with archiving: the
 // object is not gone but archived.
 func archivedResult(what string) bool {
-	return what == archivedForGood || strings.HasSuffix(what, ", archiviert")
+	return strings.HasSuffix(what, archivedForGood) || strings.HasSuffix(what, ", archiviert")
 }
 
 // remove deletes o; where that is not possible it cancels (documents) and
@@ -603,8 +608,9 @@ func archivedResult(what string) bool {
 // cancel or reverse of an object of this run, or it is the only new
 // invoice of the permanent customer after the cancel of an invoice of
 // this run (findCancellation; the target checked by ownTarget), its type is
-// that of the resource (followUpType, checked here again besides the only
-// place that registers a follow-up), and only that id is touched. A
+// that of the resource (followUpType, checked here again besides the two
+// places that register a follow-up, followUp and findCancellation), and
+// only that id is touched. A
 // follow-up is never cancelled (it is a cancellation or reverse entry
 // itself; its cancel could create yet another object), only deleted or
 // archived. After a hit of the quota (HTTP 429) it sends nothing more. It
@@ -622,11 +628,7 @@ func (s *liveSuite) remove(dir string, o object) (string, bool) {
 	}
 	id := ids(o.id)
 	if o.archiveOnly {
-		a := s.exec(dir, "", o.resource, "archive", id, "-o", "json")
-		if a.code == 0 {
-			return archivedForGood, true
-		}
-		return fmt.Sprintf("archive Exit %d", a.code) + ": " + strings.TrimSpace(a.stderr), false
+		return s.archiveForGood(dir, o)
 	}
 	extra := []string{"--yes", "-o", "json"}
 	if o.resource == "person" {
@@ -667,6 +669,29 @@ func (s *liveSuite) remove(dir string, o object) (string, bool) {
 		return strings.Join(append(steps, "archiviert"), ", "), true
 	}
 	return strings.Join(append(steps, fmt.Sprintf("archive Exit %d", a.code)), ", ") + ": " + strings.TrimSpace(a.stderr), false
+}
+
+// archiveForGood archives the archiveOnly object o (1 credit). When
+// archive ends with an exit other than 0 (e.g. the object is archived
+// already, or exit 12), one describe (1 credit more, within the 2 the
+// reserve counts per such object) decides: record_state "archived" is a
+// success. After a hit of the quota nothing more is sent.
+func (s *liveSuite) archiveForGood(dir string, o object) (string, bool) {
+	id := ids(o.id)
+	a := s.exec(dir, "", o.resource, "archive", id, "-o", "json")
+	if a.code == 0 {
+		return archivedForGood, true
+	}
+	step := fmt.Sprintf("archive Exit %d", a.code)
+	if s.quotaNow() {
+		return step + ": Kontingent erschöpft (HTTP 429), abgebrochen", false
+	}
+	d := s.exec(dir, "", o.resource, "describe", id, "-o", "json")
+	if d.code == 0 && str(tryDecode(d.stdout)["record_state"]) == "archived" {
+		return step + ", laut describe " + archivedForGood, true
+	}
+	return fmt.Sprintf("%s, describe Exit %d, record_state %q: %s", step, d.code,
+		str(tryDecode(d.stdout)["record_state"]), strings.TrimSpace(a.stderr)), false
 }
 
 // ownTarget reports whether the target of follow-up o (followUpOf) is an

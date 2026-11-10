@@ -5,6 +5,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -14,8 +15,10 @@ import (
 // in-process over the in-memory transport of the SDK (mcpSession). Hard:
 // the tools of the default mode contain user_list but neither
 // invoice_create (write) nor auth_status (local), each name once (no
-// request); user_list with limit 1 answers without IsError with the JSON
-// of user list (an array entries), and no content contains the token. A
+// request); user_list with limit 1 sends exactly one GET …/users through
+// s.tr and answers without IsError with the JSON of user list (an array
+// entries), and no content (nor the stderr of the server) contains the
+// token. A
 // tool error with exit_code 6 (HTTP 429) stops the run like the quota of
 // a CLI run (markQuota) and skips.
 func TestE2E_MCPReadTool(t *testing.T) {
@@ -38,20 +41,34 @@ func TestE2E_MCPReadTool(t *testing.T) {
 			s.errorf(t, "Tool %s %d-mal gelistet", name, n)
 		}
 	}
-	switch {
-	case seen["user_list"] == 0:
-		s.fatalf(t, "Tool user_list fehlt (%d Tools)", len(list.Tools))
-	case seen["invoice_create"] > 0:
+	if seen["invoice_create"] > 0 {
 		s.errorf(t, "Tool invoice_create im Lesemodus gelistet")
-	case seen["auth_status"] > 0:
+	}
+	if seen["auth_status"] > 0 {
 		s.errorf(t, "Tool auth_status (lokaler Befehl) gelistet")
+	}
+	if seen["user_list"] == 0 {
+		s.fatalf(t, "Tool user_list fehlt (%d Tools)", len(list.Tools))
 	}
 	s.logf(t, "MCP-Server: %d Tools im Lesemodus", len(list.Tools))
 
-	// 2. user_list (1)
+	// 2. user_list (1): exactly one GET /users through the transport of
+	// the suite
+	n := s.tr.Len()
 	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "user_list", Arguments: map[string]any{"limit": 1}})
 	if err != nil {
 		s.fatalf(t, "tools/call user_list: %v", err)
+	}
+	var sent []string
+	users := 0
+	for _, x := range s.tr.Since(n) {
+		sent = append(sent, x.Method+" "+x.Path)
+		if x.Method == "GET" && strings.HasSuffix(strings.TrimRight(x.Path, "/"), "/users") {
+			users++
+		}
+	}
+	if users != 1 || len(sent) != 1 {
+		s.errorf(t, "user_list: Anfragen über den Transport der Suite %v, erwartet genau ein GET …/users", sent)
 	}
 	var texts []string
 	for i, c := range res.Content {
