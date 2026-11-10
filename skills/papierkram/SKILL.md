@@ -115,7 +115,7 @@ papierkram invoice update 459 --customer 3214 --description "Leistungszeitraum O
 
 ## Ablauf 3: offene Posten prüfen
 
-Alles lesend, auch unter Schreibschutz. `invoice paid-status` rechnet die offenen Posten selbst aus: Rechnungen mit `outstanding_amount` über 0, deren Status nicht `draft` oder `canceled` ist (archivierte zählen mit), sortiert nach Fälligkeit, mit `days_overdue` (Tage seit der Fälligkeit, Berliner Tag) und der exakten Summe `total_outstanding`. `--overdue` zeigt nur überfällige (Fälligkeit vor heute); `--customer` (ID oder Name), `--from` und `--to` (Rechnungsdatum) filtern wie bei `invoice list`:
+Alles lesend, auch unter Schreibschutz. `invoice paid-status` rechnet die offenen Posten selbst aus: Rechnungen mit `outstanding_amount` über 0, deren Status nicht `draft`, `canceled` oder `deleted` ist (archivierte zählen mit), sortiert nach Fälligkeit, mit `days_overdue` (Tage seit der Fälligkeit, Berliner Tag) und der exakten Summe `total_outstanding`. `--overdue` zeigt nur überfällige (Fälligkeit vor heute); `--customer` (ID oder Name), `--from` und `--to` (Rechnungsdatum) filtern wie bei `invoice list`:
 
 ```sh
 PAPIERKRAM_READ_ONLY=1 papierkram invoice paid-status --overdue -o json --no-input
@@ -124,7 +124,7 @@ PAPIERKRAM_READ_ONLY=1 papierkram invoice paid-status --from 2026-01-01 --to 202
 PAPIERKRAM_READ_ONLY=1 papierkram invoice describe 459 -o json --no-input
 ```
 
-Der Bericht lädt höchstens `--max-pages` Seiten à 100 Rechnungen (Standard 5, 1 Credit je Seite). Ist `complete` `false` (stderr: „5 von N Seiten geladen“), sind Liste und Summe unvollständig: das dem Menschen sagen und `total_outstanding` nicht als Gesamtbetrag ausgeben; mit Filtern eingrenzen oder `--max-pages` nach Rücksprache erhöhen. Exit 1 „Rechnungsliste ohne outstanding_amount …“ heißt: Die Liste liefert den offenen Betrag nicht; `--details` liest die betroffenen Rechnungen einzeln (1 Credit je Rechnung, die Zahl steht in der Meldung). Die Statuswerte dokumentiert die API nicht vollständig ([offene Punkte](https://github.com/Padrio/papierkram-cli/blob/main/docs/offene-punkte.md)); zeigt der Bericht einen unerwarteten `state` (etwa `deleted`), die Rechnung per `invoice describe` prüfen.
+Der Bericht lädt höchstens `--max-pages` Seiten à 100 Rechnungen (Standard 5, 1 Credit je Seite). Ist `complete` `false` (stderr: „5 von N Seiten geladen“), sind Liste und Summe unvollständig: das dem Menschen sagen und `total_outstanding` nicht als Gesamtbetrag ausgeben; mit Filtern eingrenzen oder `--max-pages` nach Rücksprache erhöhen. Exit 1 „Rechnungsliste ohne outstanding_amount …“ heißt: Die Liste liefert den offenen Betrag nicht; `--details` liest die betroffenen Rechnungen einzeln (1 Credit je Rechnung, die Zahl steht in der Meldung). Die Statuswerte dokumentiert die API nicht vollständig ([offene Punkte](https://github.com/Padrio/papierkram-cli/blob/main/docs/offene-punkte.md)); zeigt der Bericht einen unerwarteten `state` (etwa `imported`), die Rechnung per `invoice describe` prüfen.
 
 ## Ablauf 4: Zeiten erfassen und abrechnen
 
