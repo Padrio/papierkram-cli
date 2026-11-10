@@ -122,7 +122,7 @@ func (a *App) newPaidStatusCmd() *cobra.Command {
 			"(überfällig: Fälligkeit vor heute, Berliner Tag) und der Summe der offenen Beträge (exakt, auf den Cent gerundet). " +
 			"--overdue zeigt nur die überfälligen; Summe und Anzahl gelten dann für sie.\n\n" +
 			"Lädt die Rechnungsliste wie invoice list --all (100 je Seite), aber höchstens --max-pages Seiten. " +
-			"Lässt --max-pages Seiten aus, warnt der Befehl auf stderr, und JSON hat complete false: " +
+			"Lässt --max-pages Seiten aus, warnt der Befehl auf stderr, JSON hat complete false und die Summenzeile der Tabelle endet mit „unvollständig: --max-pages“: " +
 			"Summe und Anzahl gelten dann nur für die geladenen Seiten.\n\n" +
 			"Fehlt outstanding_amount in der Liste, bricht der Befehl ab (Exit 1), statt eine falsche Summe zu zeigen; " +
 			"--details liest dann diese Rechnungen einzeln nach; ab 10 Rechnungen warnt es wie --all und fragt im Terminal nach. " +
@@ -254,7 +254,7 @@ func (a *App) runPaidStatus(c *cobra.Command, e registry.Entry) error {
 	if len(missing) > 0 {
 		if details, _ := f.GetBool("details"); !details {
 			return clierr.New(clierr.CodeError,
-				fmt.Sprintf("Rechnungsliste ohne outstanding_amount bei %d Rechnung(en): offene Posten nicht bestimmbar", len(missing)),
+				fmt.Sprintf("Rechnungsliste ohne outstanding_amount bei %s: offene Posten nicht bestimmbar", invoiceCount(len(missing))),
 				"mit --details je Rechnung nachlesen (1 Credit je Rechnung)")
 		}
 		entries, err := a.paidStatusDetails(c, client, merged.Entries, missing)
@@ -278,11 +278,7 @@ func (a *App) runPaidStatus(c *cobra.Command, e registry.Entry) error {
 func (a *App) paidStatusDetails(c *cobra.Command, client *api.Client, entries []json.RawMessage, missing []int64) ([]json.RawMessage, error) {
 	read, _ := registry.Lookup("invoice", "describe") // GetInvoice, a fixed registry entry
 	n := len(missing)
-	what := "1 Rechnung"
-	if n != 1 {
-		what = fmt.Sprintf("%d Rechnungen", n)
-	}
-	_, _ = fmt.Fprintf(a.Err, "Hinweis: --details liest %s einzeln (%s)\n", what, creditsText(n*read.Credits))
+	_, _ = fmt.Fprintf(a.Err, "Hinweis: --details liest %s einzeln (%s)\n", invoiceCount(n), creditsText(n*read.Credits))
 	// the cost brake of list --all (fetchPages): from warnPages reads on a
 	// warning, in a terminal a question; without one it proceeds
 	if n >= warnPages {
@@ -527,11 +523,20 @@ func (a *App) renderPaidStatus(c *cobra.Command, report paidStatusReport) error 
 	if err := output.RenderValue(o, report.Entries, paidStatusColumns); err != nil {
 		return afterRequest(err)
 	}
-	invoices := "1 Rechnung"
-	if report.Count != 1 {
-		invoices = fmt.Sprintf("%d Rechnungen", report.Count)
+	incomplete := ""
+	if !report.Complete {
+		// the warning is on stderr only (final review B-M5)
+		incomplete = "; unvollständig: --max-pages"
 	}
-	_, err := fmt.Fprintf(a.Out, "Summe offen: %s (%s, davon %d überfällig; Stand %s)\n",
-		germanAmount(string(report.TotalOutstanding)), invoices, report.OverdueCount, report.AsOf)
+	_, err := fmt.Fprintf(a.Out, "Summe offen: %s (%s, davon %d überfällig; Stand %s%s)\n",
+		germanAmount(string(report.TotalOutstanding)), invoiceCount(report.Count), report.OverdueCount, report.AsOf, incomplete)
 	return afterRequest(err)
+}
+
+// invoiceCount is "1 Rechnung" or "n Rechnungen".
+func invoiceCount(n int) string {
+	if n == 1 {
+		return "1 Rechnung"
+	}
+	return fmt.Sprintf("%d Rechnungen", n)
 }

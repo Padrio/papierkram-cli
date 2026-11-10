@@ -277,7 +277,7 @@ func TestPaidStatusMissingOutstanding(t *testing.T) {
 	app, srv := paidApp(t, entries...)
 	wantExit(t, app, Run(app, []string{"invoice", "paid-status", "-o", "json"}), 1)
 	wantRequests(t, srv, 1)
-	wantErrText(t, app, "Rechnungsliste ohne outstanding_amount bei 1 Rechnung(en): offene Posten nicht bestimmbar",
+	wantErrText(t, app, "Rechnungsliste ohne outstanding_amount bei 1 Rechnung: offene Posten nicht bestimmbar",
 		"mit --details je Rechnung nachlesen (1 Credit je Rechnung)")
 	if out, _ := bufs(app); out != "" {
 		t.Errorf("stdout %q", out)
@@ -302,6 +302,11 @@ func TestPaidStatusMissingOutstanding(t *testing.T) {
 	srv.On("GET", "/income/invoices/7", http.StatusOK, []byte(`{"id":7}`))
 	wantExit(t, app, Run(app, []string{"invoice", "paid-status", "--details", "-o", "json"}), 1)
 	wantErrText(t, app, "Rechnung 7 ohne outstanding_amount, auch einzeln gelesen: offene Posten nicht bestimmbar", "")
+
+	// several: plural (final review B-M6a)
+	app, _ = paidApp(t, entries[1], paidEntry(9, "unpaid", nil, "2026-06-05"))
+	wantExit(t, app, Run(app, []string{"invoice", "paid-status", "-o", "json"}), 1)
+	wantErrText(t, app, "Rechnungsliste ohne outstanding_amount bei 2 Rechnungen: offene Posten nicht bestimmbar", "")
 
 	// --details without missing amounts reads nothing more
 	app, srv = paidApp(t, entries[0])
@@ -601,3 +606,18 @@ func TestPaidStatusFilterFlagsLikeInvoiceList(t *testing.T) {
 }
 
 func sameBound(a, b *float64) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }
+
+// final review B-M5: the sum line of the table says that a list cut by
+// --max-pages is incomplete (the warning is on stderr only).
+func TestPaidStatusTableIncomplete(t *testing.T) {
+	var pages [][]map[string]any
+	for p := 1; p <= 2; p++ {
+		pages = append(pages, []map[string]any{paidEntry(p, "unpaid", "1.0", "2026-06-01")})
+	}
+	app, srv := apiApp(t)
+	srv.OnFunc("GET", "/income/invoices", pagedList(t, 2, pages...))
+	wantExit(t, app, Run(app, []string{"invoice", "paid-status", "--max-pages", "1"}), 0)
+	if out, _ := bufs(app); !strings.HasSuffix(out, "Summe offen: 1,00 € (1 Rechnung, davon 1 überfällig; Stand 2026-06-10; unvollständig: --max-pages)\n") {
+		t.Errorf("stdout %q", out)
+	}
+}

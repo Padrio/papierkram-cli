@@ -5,7 +5,7 @@ Offene Posten: unbezahlte Rechnungen mit Summe
 ```text
 Zeigt die offenen Posten: Rechnungen mit outstanding_amount > 0, deren Status nicht draft, canceled oder deleted ist (archivierte zählen mit), sortiert nach Fälligkeit (ohne Fälligkeit zuletzt), mit den Tagen seit der Fälligkeit (überfällig: Fälligkeit vor heute, Berliner Tag) und der Summe der offenen Beträge (exakt, auf den Cent gerundet). --overdue zeigt nur die überfälligen; Summe und Anzahl gelten dann für sie.
 
-Lädt die Rechnungsliste wie invoice list --all (100 je Seite), aber höchstens --max-pages Seiten. Lässt --max-pages Seiten aus, warnt der Befehl auf stderr, und JSON hat complete false: Summe und Anzahl gelten dann nur für die geladenen Seiten.
+Lädt die Rechnungsliste wie invoice list --all (100 je Seite), aber höchstens --max-pages Seiten. Lässt --max-pages Seiten aus, warnt der Befehl auf stderr, JSON hat complete false und die Summenzeile der Tabelle endet mit „unvollständig: --max-pages“: Summe und Anzahl gelten dann nur für die geladenen Seiten.
 
 Fehlt outstanding_amount in der Liste, bricht der Befehl ab (Exit 1), statt eine falsche Summe zu zeigen; --details liest dann diese Rechnungen einzeln nach; ab 10 Rechnungen warnt es wie --all und fragt im Terminal nach. total_gross ist nur Anzeige: Fehlt der Bruttobetrag, bleibt die Spalte leer (JSON null).
 

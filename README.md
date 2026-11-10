@@ -160,7 +160,7 @@ Summe offen: 169,50 € (2 Rechnungen, davon 1 überfällig; Stand 2026-06-10)
 ```
 
 - `--customer` (ID oder Name), `--from` und `--to` (Rechnungsdatum) filtern wie bei `invoice list`; `--overdue` zeigt nur Rechnungen mit Fälligkeit vor heute (Berliner Tag). Rechnungen ohne Fälligkeit sind nie überfällig.
-- Geladen werden höchstens `--max-pages` Seiten à 100 Rechnungen (Standard 5, 1 Credit je Seite). Gibt es mehr, warnt das CLI auf stderr, und JSON hat `complete` `false`: Summe und Anzahl gelten dann nur für die geladenen Seiten.
+- Geladen werden höchstens `--max-pages` Seiten à 100 Rechnungen (Standard 5, 1 Credit je Seite). Gibt es mehr, warnt das CLI auf stderr, JSON hat `complete` `false`, und die Summenzeile der Tabelle endet mit `; unvollständig: --max-pages`: Summe und Anzahl gelten dann nur für die geladenen Seiten.
 - Fehlt `outstanding_amount` in der Liste, bricht der Befehl ab (Exit 1), statt eine falsche Summe zu zeigen; `--details` liest diese Rechnungen dann einzeln nach (1 Credit je Rechnung; ab 10 Rechnungen mit Warnung und im Terminal mit Rückfrage wie `--all`). Fehlt nur der Bruttobetrag, bleibt die Spalte leer.
 - `-o json` liefert `entries`, `total_outstanding`, `count`, `overdue_count`, `as_of` und `complete` (Vertrag: [docs/schemas/paid-status.json](docs/schemas/paid-status.json)).
 
