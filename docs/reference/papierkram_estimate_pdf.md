@@ -9,6 +9,8 @@ Kosten: 1 Credit je Anfrage.
 
 -O datei.pdf speichert das PDF in der Datei; eine vorhandene Datei wird erst ersetzt, wenn das PDF vollständig geladen ist, und behält ihre Rechte, wenn sie dem Nutzer gehört (eine neue oder fremde Datei erhält die Rechte gemäß umask). Eine schreibgeschützte Datei wird nicht ersetzt; ein symbolischer Verweis bleibt erhalten, ersetzt wird die Datei, auf die er zeigt – nur wenn alle Verweise und die Datei dem Nutzer gehören; Gerätedateien wie /dev/null werden direkt beschrieben. -O - schreibt das PDF nach stdout. Ohne -O geht es nur dann nach stdout, wenn stdout kein Terminal ist (Umleitung oder Pipe); im Terminal bricht der Befehl ohne Anfrage ab.
 
+--no-clobber ersetzt nichts: Gibt es unter dem Pfad von -O schon etwas (Datei, symbolischer Verweis, Gerät, Verzeichnis), bricht der Befehl vor der Anfrage mit Exit 2 ab; entsteht die Datei erst während des Downloads, bleibt sie unverändert (Exit 1). Gilt nur mit -O datei.
+
 Danach meldet der Befehl Pfad und Größe ({"path":…,"bytes":…}, path "-" für stdout) auf stderr, bei -O datei mit -o json|yaml, --fields oder --jq auf stdout. Geht das PDF nach stdout, bleibt die Meldung auf stderr; --fields und --jq sind dann nicht erlaubt.
 
 Verwendung:
@@ -20,6 +22,7 @@ Beispiele:
 
 Optionen:
   -h, --help               Hilfe zu pdf
+      --no-clobber         vorhandenes Ziel nicht ersetzen (Exit 2 vor der Anfrage)
   -O, --output-file Text   Zieldatei des PDFs oder - für stdout
 
 Globale Optionen:

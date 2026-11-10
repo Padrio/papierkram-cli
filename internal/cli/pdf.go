@@ -31,6 +31,8 @@ const pdfLong = `
 
 -O datei.pdf speichert das PDF in der Datei; eine vorhandene Datei wird erst ersetzt, wenn das PDF vollständig geladen ist, und behält ihre Rechte, wenn sie dem Nutzer gehört (eine neue oder fremde Datei erhält die Rechte gemäß umask). Eine schreibgeschützte Datei wird nicht ersetzt; ein symbolischer Verweis bleibt erhalten, ersetzt wird die Datei, auf die er zeigt – nur wenn alle Verweise und die Datei dem Nutzer gehören; Gerätedateien wie /dev/null werden direkt beschrieben. -O - schreibt das PDF nach stdout. Ohne -O geht es nur dann nach stdout, wenn stdout kein Terminal ist (Umleitung oder Pipe); im Terminal bricht der Befehl ohne Anfrage ab.
 
+--no-clobber ersetzt nichts: Gibt es unter dem Pfad von -O schon etwas (Datei, symbolischer Verweis, Gerät, Verzeichnis), bricht der Befehl vor der Anfrage mit Exit 2 ab; entsteht die Datei erst während des Downloads, bleibt sie unverändert (Exit 1). Gilt nur mit -O datei.
+
 Danach meldet der Befehl Pfad und Größe ({"path":…,"bytes":…}, path "-" für stdout) auf stderr, bei -O datei mit -o json|yaml, --fields oder --jq auf stdout. Geht das PDF nach stdout, bleibt die Meldung auf stderr; --fields und --jq sind dann nicht erlaubt.`
 
 // newPDFCmd builds the pdf command of an invoice, estimate or voucher
@@ -47,6 +49,7 @@ func (a *App) newPDFCmd(e registry.Entry) *cobra.Command {
 		RunE:        func(c *cobra.Command, args []string) error { return a.runPDF(c, e, args) },
 	}
 	cmd.Flags().StringP("output-file", "O", "", "Zieldatei des PDFs oder - für stdout")
+	cmd.Flags().Bool("no-clobber", false, "vorhandenes Ziel nicht ersetzen (Exit 2 vor der Anfrage)")
 	return cmd
 }
 
@@ -107,7 +110,7 @@ func (a *App) runPDF(c *cobra.Command, e registry.Entry, args []string) error {
 			return pdfSaveFailed(err, e)
 		}
 	default:
-		warning, err := file.commit(resp.Body, dest.modeFrom)
+		warning, err := file.commit(resp.Body, dest.modeFrom, dest.noClobber)
 		if err != nil {
 			return pdfSaveFailed(err, e)
 		}
@@ -127,6 +130,9 @@ type pdfDest struct {
 	// taken over. A file of another user is replaced like a new one (0666
 	// minus umask), so its looser mode never applies to the PDF.
 	modeFrom fs.FileInfo
+	// noClobber: --no-clobber, nothing at arg is replaced (commit links
+	// instead of renaming).
+	noClobber bool
 }
 
 func (d pdfDest) stdout() bool { return d.arg == pdfStdout }
@@ -151,8 +157,13 @@ func (a *App) pdfTarget(c *cobra.Command) (pdfDest, error) {
 		return pdfDest{}, clierr.New(clierr.CodeUsage, "kein Ziel für das PDF: stdout ist ein Terminal",
 			"-O datei.pdf speichert das PDF in einer Datei, -O - schreibt es trotzdem nach stdout (z. B. -O - > datei.pdf). Verwendung: "+useLine(c)+" -O datei.pdf")
 	}
+	noClobber := flagBool(c, "no-clobber")
 	if arg != pdfStdout {
-		return pdfFileDest(arg)
+		return pdfFileDest(arg, noClobber)
+	}
+	if noClobber {
+		return pdfDest{}, clierr.New(clierr.CodeUsage, "--no-clobber gilt nur für eine Datei",
+			"Mit -O datei.pdf verwenden. Verwendung: "+useLine(c)+" -O datei.pdf --no-clobber")
 	}
 	if len(output.ParseFields(a.Flags.Fields)) > 0 || a.Flags.JQ != "" {
 		return pdfDest{}, clierr.New(clierr.CodeUsage, "--fields und --jq gelten nicht für ein PDF auf stdout",
@@ -166,9 +177,21 @@ func (a *App) pdfTarget(c *cobra.Command) (pdfDest, error) {
 // leads nowhere, a missing directory and a directory as target are usage
 // errors (exit 2). A directory or file that cannot be checked, and a
 // write-protected file, are errors (exit 1): Windows refuses to replace a
-// read-only file, so it is refused everywhere.
-func pdfFileDest(arg string) (pdfDest, error) {
-	d := pdfDest{arg: arg, path: arg}
+// read-only file, so it is refused everywhere. With noClobber anything at
+// arg (file, link, also one that leads nowhere, device, directory) is a
+// usage error.
+func pdfFileDest(arg string, noClobber bool) (pdfDest, error) {
+	d := pdfDest{arg: arg, path: arg, noClobber: noClobber}
+	if noClobber {
+		_, err := os.Lstat(arg)
+		switch {
+		case err == nil:
+			return d, clierr.New(clierr.CodeUsage, fmt.Sprintf("-O %s existiert bereits und wird mit --no-clobber nicht ersetzt", arg),
+				"anderen Dateinamen angeben; es wurde nichts angefragt")
+		case !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR):
+			return d, pdfTargetUnusable(arg, err)
+		}
+	}
 	if fi, err := os.Lstat(arg); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
 		real, err := resolvePDFLink(arg)
 		if err != nil {
@@ -358,16 +381,51 @@ func createPDFFile(path string, existing fs.FileInfo) (*pdfFile, error) {
 // When it replaces existing, writeAll sets its exact mode (the umask may
 // have cut bits at creation); a failed chmod (file systems without Unix
 // modes) never discards the paid download, it only returns a warning.
-func (f *pdfFile) commit(data []byte, existing fs.FileInfo) (warning string, err error) {
+// With noClobber the temporary file is linked to the target instead, which
+// fails when something appeared there meanwhile; a file system without
+// hard links falls back to a check and the rename.
+func (f *pdfFile) commit(data []byte, existing fs.FileInfo, noClobber bool) (warning string, err error) {
 	warning, err = writeAll(f.tmp, data, existing)
 	if err != nil {
 		return "", err
+	}
+	if noClobber {
+		return warning, f.commitNew()
 	}
 	if err := os.Rename(f.tmp.Name(), f.path); err != nil {
 		return "", err
 	}
 	f.done = true
 	return warning, nil
+}
+
+// errClobber is the commit error of --no-clobber when the target appeared
+// during the download.
+var errClobber = errors.New("Ziel ist während des Downloads entstanden und wird mit --no-clobber nicht ersetzt")
+
+// linkFile creates a hard link; tests replace it (file systems without
+// hard links).
+var linkFile = os.Link
+
+// commitNew moves the temporary file to the target without replacing
+// anything there.
+func (f *pdfFile) commitNew() error {
+	err := linkFile(f.tmp.Name(), f.path)
+	switch {
+	case errors.Is(err, fs.ErrExist):
+		return errClobber
+	case err != nil:
+		if _, serr := os.Lstat(f.path); !errors.Is(serr, fs.ErrNotExist) {
+			return errClobber
+		}
+		if err := os.Rename(f.tmp.Name(), f.path); err != nil {
+			return err
+		}
+	default:
+		_ = os.Remove(f.tmp.Name())
+	}
+	f.done = true
+	return nil
 }
 
 // chmodFile sets the mode through the open handle of a file; tests replace
