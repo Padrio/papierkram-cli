@@ -23,6 +23,7 @@ Verfügbare Befehle:
   info             Account-Informationen inkl. Rechnungsvorlagen anzeigen
   invoice          Rechnungen verwalten
   local            Projektdatei .papierkram.toml anlegen und anzeigen
+  mcp              MCP-Server für KI-Clients
   payment-term     Zahlungsbedingungen anzeigen
   person           Kontaktpersonen einer Firma verwalten
   project          Projekte verwalten
@@ -65,6 +66,7 @@ Mit "papierkram [Befehl] --help" gibt es weitere Informationen zu einem Befehl.
 - [papierkram info](papierkram_info.md) – Account-Informationen inkl. Rechnungsvorlagen anzeigen
 - [papierkram invoice](papierkram_invoice.md) – Rechnungen verwalten
 - [papierkram local](papierkram_local.md) – Projektdatei .papierkram.toml anlegen und anzeigen
+- [papierkram mcp](papierkram_mcp.md) – MCP-Server für KI-Clients
 - [papierkram payment-term](papierkram_payment-term.md) – Zahlungsbedingungen anzeigen
 - [papierkram person](papierkram_person.md) – Kontaktpersonen einer Firma verwalten
 - [papierkram project](papierkram_project.md) – Projekte verwalten

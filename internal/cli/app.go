@@ -54,6 +54,10 @@ type App struct {
 	ReadPassword func() ([]byte, error)
 	// Sleep waits between GET retries; nil means time.Sleep.
 	Sleep func(time.Duration)
+	// DebugOut receives the --debug request log; nil means Err. A tool
+	// call of mcp serve captures Err into the tool result and logs to the
+	// stderr of the process instead (mcpChild).
+	DebugOut io.Writer
 
 	// Flags receives the parsed global flag values.
 	Flags Flags
@@ -127,6 +131,14 @@ func NewApp() *App {
 		app.CacheDir = dir
 	}
 	return app
+}
+
+// debugOut is the writer of the --debug request log.
+func (a *App) debugOut() io.Writer {
+	if a.DebugOut != nil {
+		return a.DebugOut
+	}
+	return a.Err
 }
 
 // save writes cfg to path, through the saveConfig seam when set.

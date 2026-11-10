@@ -343,7 +343,7 @@ func TestCommandsJSONListsEveryVisibleCommand(t *testing.T) {
 	}
 	for _, meta := range []string{"version", "auth login", "auth logout", "auth status", "context create", "context use",
 		"context list", "context active", "context delete", "context rename", "local init", "local show",
-		"commands", "schema", "completion", "api", "help", "time log", "time start", "time status", "time stop", "time discard"} {
+		"commands", "schema", "completion", "api", "help", "time log", "time start", "time status", "time stop", "time discard", "mcp serve"} {
 		if !slices.Contains(got, meta) {
 			t.Errorf("%s fehlt", meta)
 		}
@@ -416,6 +416,7 @@ func TestCommandsJSONMetaClasses(t *testing.T) {
 		"schema":              {"local", 0, ""},
 		"completion":          {"local", 0, ""},
 		"help":                {"local", 0, ""},
+		"mcp serve":           {"local", 0, ""},
 		"auth login":          {"local", 1, "GetInfo"},
 		"auth logout":         {"local", 0, ""},
 		"auth status":         {"read_only", 1, "GetInfo"},

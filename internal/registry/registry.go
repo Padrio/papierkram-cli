@@ -208,7 +208,7 @@ func newIndex(rs []Resource, es []Entry) (*index, error) {
 
 // reservedNames are top-level commands of their own (meta commands, cobra
 // built-ins); no resource name or alias may shadow them.
-var reservedNames = []string{"help", "completion", "context", "auth", "version", "api", "commands", "schema", "local", "gen-docs"}
+var reservedNames = []string{"help", "completion", "context", "auth", "version", "api", "commands", "schema", "local", "gen-docs", "mcp"}
 
 // checkResources requires unique names and aliases: no alias may repeat or
 // equal any resource name, and no name or alias may be reserved.

@@ -293,6 +293,7 @@ func NewRootCmd(app *App) *cobra.Command {
 	root.AddCommand(newSchemaCmd(app))
 	root.AddCommand(newCompletionCmd(app))
 	root.AddCommand(newGenDocsCmd(app))
+	root.AddCommand(newMCPCmd(app))
 	BuildResourceCommands(app, root)
 	applyGerman(root)
 	return root
@@ -301,6 +302,13 @@ func NewRootCmd(app *App) *cobra.Command {
 // Run executes the CLI with the given arguments and returns the exit code.
 func Run(app *App, args []string) int {
 	return execute(app, NewRootCmd(app), args)
+}
+
+// RunContext executes the CLI with ctx as the command context (no signal
+// handling of its own) and returns the exit code: the entry of a tool call
+// of mcp serve, the same path as the command line.
+func RunContext(ctx context.Context, app *App, args []string) int {
+	return executeContext(ctx, app, NewRootCmd(app), args)
 }
 
 // interruptSignals cancel the command context: Ctrl+C, and SIGTERM where

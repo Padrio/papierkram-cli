@@ -196,7 +196,7 @@ func (a *App) clientOptions(r *config.Resolved) api.Options {
 		OnQuota: a.onQuota,
 	}
 	if a.Flags.Debug {
-		o.Debug, o.DebugInfo = a.Err, a.debugInfo(r)
+		o.Debug, o.DebugInfo = a.debugOut(), a.debugInfo(r)
 	}
 	return o
 }
