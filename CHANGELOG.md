@@ -6,6 +6,8 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-10
+
 ### Hinzugefügt
 
 - `--subdomain` von `context create` und `auth login` nimmt auch den Host oder die URL des Accounts: `pkrason.papierkram.de`, `https://pkrason.papierkram.de/` und `pkrason` ergeben denselben Kontext. Wurde ein Host oder eine URL gekürzt (Schema, Pfad, Punkt am Ende, `.papierkram.de`), nennt ein Hinweis `Subdomain „pkrason“ aus „…“` auf stderr das Ergebnis; bei bloßem `pkrason` (auch mit Großbuchstaben oder Leerraum) gibt es keinen Hinweis. Ports, Benutzerangaben, andere Schemata und andere Domains bleiben Exit 2; der Konfigurationswert und `PAPIERKRAM_SUBDOMAIN` bleiben strikt.
@@ -93,5 +95,6 @@ Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die V
 - Fehlervertrag: Der Fehler einer 2xx-Antwort über 64 MiB (Exit 1, auch Exit 11 von `voucher create --file`) hat kein `http_status` mehr; bisher stand dort der 2xx-Status, den `docs/schemas/error.json` nicht zulässt. Die Meldung sagt weiter, ob die Änderung ausgeführt wurde.
 - Fehlerformat: Scheitert das Parsen eines Flags vor `-o json`, `-o yaml` oder `--jq` (z. B. `--bogus -o json`, `--limit abc -o json`), endet stderr trotzdem mit dem strukturierten Fehler; bisher fehlte er, weil die späteren Flags nicht mehr gelesen wurden. Der Wert eines Flags (`--name -ojson`, auch in einem Bündel wie `-yO -ojson`) gilt dabei wie beim vollständigen Parsen nicht als Format; `-o` in einem Bündel (`-yojson`) zählt.
 
-[Unreleased]: https://github.com/Padrio/papierkram-cli/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Padrio/papierkram-cli/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Padrio/papierkram-cli/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Padrio/papierkram-cli/releases/tag/v0.1.0
