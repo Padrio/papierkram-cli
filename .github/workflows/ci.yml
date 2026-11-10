@@ -248,8 +248,10 @@ jobs:
           printf '%s\n' '## [Unreleased]' '' '~~~' '' '## [1.2.3]' '' '- Eintrag' > "$RUNNER_TEMP/before.md"
           rc=0; sh scripts/release-notes.sh v1.2.3 "$RUNNER_TEMP/before.md" || rc=$?; test "$rc" -eq 4
       # the write check of release.yml against a fake gh, without network:
-      # success, branch not created, branch not deleted (warning only), token
-      # missing, repository not readable, usage
+      # success, repository, default branch or its SHA not readable or
+      # invalid, branch not created or another ref answered (deleted anyway),
+      # branch not deleted (warning only, ::warning:: in Actions), token
+      # missing, usage
       - name: fork check script
         run: |
           # a fake gh answers like the API; it fails if the token is not in
@@ -260,56 +262,88 @@ jobs:
           case "$*" in *"$FAKE_GH_TOKEN"*) echo "Token in argv" >&2; exit 5 ;; esac
           [ "$GH_TOKEN" = "$FAKE_GH_TOKEN" ] || { echo "GH_TOKEN falsch" >&2; exit 4; }
           printf '%s\n' "$*" >> "$FAKE_GH_LOG"
+          sha=0123456789abcdef0123456789abcdef01234567
           case "$*" in
           "api repos/Padrio/winget-pkgs --jq .default_branch")
-            [ "$FAKE_GH_FAIL" != get ] || { echo 'HTTP 404: Not Found' >&2; exit 1; }
-            echo master ;;
+            case "$FAKE_GH_FAIL" in
+            get) echo 'HTTP 404: Not Found' >&2; exit 1 ;;
+            nobranch) echo ;;
+            *) echo master ;;
+            esac ;;
           "api repos/Padrio/winget-pkgs/git/ref/heads/master --jq .object.sha")
-            echo 0123456789abcdef0123456789abcdef01234567 ;;
-          "api -X POST repos/Padrio/winget-pkgs/git/refs -f ref=refs/heads/pk-write-check-"*" -f sha=0123456789abcdef0123456789abcdef01234567 --silent")
-            [ "$FAKE_GH_FAIL" != create ] || { echo 'HTTP 403: Resource not accessible by personal access token' >&2; exit 1; } ;;
+            case "$FAKE_GH_FAIL" in
+            getref) echo 'HTTP 404: Not Found' >&2; exit 1 ;;
+            badsha) echo 0123456789ABCDEF0123456789abcdef0123456g ;;
+            shortsha) echo 0123456789abcdef ;;
+            emptysha) echo ;;
+            twosha) printf 'x\n%s\n' "$sha" ;;
+            *) echo "$sha" ;;
+            esac ;;
+          "api -X POST repos/Padrio/winget-pkgs/git/refs -f ref=refs/heads/pk-write-check-"*" -f sha=$sha --jq .ref")
+            case "$FAKE_GH_FAIL" in
+            create) echo 'HTTP 403: Resource not accessible by personal access token' >&2; exit 1 ;;
+            wrongref) echo refs/heads/master ;;
+            *) for a; do case "$a" in ref=*) echo "${a#ref=}" ;; esac; done ;;
+            esac ;;
           "api -X DELETE repos/Padrio/winget-pkgs/git/refs/heads/pk-write-check-"*" --silent")
             [ "$FAKE_GH_FAIL" != delete ] || { echo 'HTTP 502: Bad Gateway' >&2; exit 1; } ;;
           *) echo "unerwartet: $*" >&2; exit 3 ;;
           esac
           FAKE
           chmod +x "$dir/gh"
-          export CHECK_FORK_PUSH_GH="$dir/gh" FAKE_GH_TOKEN=test-token-fork-check GITHUB_ACTIONS=false
+          export CHECK_FORK_PUSH_GH="$dir/gh" FAKE_GH_TOKEN=test-token-fork-check
           want='PACKAGES_GITHUB_TOKEN kann Padrio/winget-pkgs nicht beschreiben (docs/release.md, Voraussetzungen)'
-          # run <fail> <token>: exit code in rc, stdout+stderr in out, calls in log
+          # run <fail> <token> [GITHUB_ACTIONS]: exit code in rc, stdout+stderr in
+          # out, gh calls in the log; workflow commands are defused in the step log
           run() {
             : > "$dir/log"
             rc=0
-            out="$(FAKE_GH_FAIL="$1" FAKE_GH_LOG="$dir/log" PACKAGES_GITHUB_TOKEN="$2" sh scripts/check-fork-push.sh Padrio/winget-pkgs 2>&1)" || rc=$?
-            printf '%s\n' "$out"
+            out="$(FAKE_GH_FAIL="$1" FAKE_GH_LOG="$dir/log" PACKAGES_GITHUB_TOKEN="$2" GITHUB_ACTIONS="${3:-false}" sh scripts/check-fork-push.sh Padrio/winget-pkgs 2>&1)" || rc=$?
+            printf '%s\n' "$out" | sed 's/^::/[::]/'
             case "$out" in *test-token-fork-check*) echo "Token in der Ausgabe" >&2; exit 1 ;; esac
           }
-          # success: 4 calls, the branch is created and deleted again
+          # success: 4 calls, the created branch is deleted again
           run '' test-token-fork-check
           test "$rc" -eq 0
           test "$(grep -c . "$dir/log")" -eq 4
-          grep -q '^api -X POST ' "$dir/log"
-          grep -q '^api -X DELETE ' "$dir/log"
+          branch="$(sed -n 's/^api -X POST .* -f ref=refs\/heads\/\(pk-write-check-[^ ]*\) .*/\1/p' "$dir/log")"
+          test -n "$branch"
+          grep -qx "api -X DELETE repos/Padrio/winget-pkgs/git/refs/heads/$branch --silent" "$dir/log"
           case "$out" in *'ok: PACKAGES_GITHUB_TOKEN kann Padrio/winget-pkgs beschreiben'*) ;; *) exit 1 ;; esac
-          # creating the branch fails: exit 1 with the message, nothing deleted
-          run create test-token-fork-check
-          test "$rc" -eq 1
-          case "$out" in *"$want"*) ;; *) exit 1 ;; esac
-          if grep -q DELETE "$dir/log"; then exit 1; fi
-          # deleting fails: the write worked, a warning only
+          # before the POST: exit 1, the detail and the message, nothing created
+          fails() {
+            run "$1" test-token-fork-check
+            test "$rc" -eq 1
+            case "$out" in *"$2"*"$want"*) ;; *) echo "Fall $1 nicht erkannt" >&2; exit 1 ;; esac
+            if grep -q POST "$dir/log"; then exit 1; fi
+          }
+          fails get 'Padrio/winget-pkgs nicht lesbar'
+          fails nobranch 'Padrio/winget-pkgs nennt keinen Standard-Branch'
+          fails getref 'Branch master von Padrio/winget-pkgs nicht lesbar'
+          for mode in badsha shortsha emptysha twosha; do
+            fails "$mode" 'Branch master von Padrio/winget-pkgs ohne gültige Commit-SHA'
+          done
+          # POST fails or answers another ref: exit 1 naming branch and delete
+          # command; the branch is deleted anyway (best effort)
+          for mode in create wrongref; do
+            run "$mode" test-token-fork-check
+            test "$rc" -eq 1
+            case "$out" in *'nicht angelegt (falls er doch existiert, von Hand löschen: gh api -X DELETE repos/Padrio/winget-pkgs/git/refs/heads/pk-write-check-'*"$want"*) ;; *) exit 1 ;; esac
+            grep -q '^api -X DELETE repos/Padrio/winget-pkgs/git/refs/heads/pk-write-check-' "$dir/log"
+          done
+          # deleting fails: the write worked, a warning only; ::warning:: only in Actions
           run delete test-token-fork-check
           test "$rc" -eq 0
-          case "$out" in *'Warnung: Prüf-Branch pk-write-check-'*'von Hand löschen'*) ;; *) exit 1 ;; esac
+          case "$out" in *'Warnung: Prüf-Branch pk-write-check-'*'von Hand löschen: gh api -X DELETE '*) ;; *) exit 1 ;; esac
+          case "$out" in *'::warning::'*) exit 1 ;; esac
+          run delete test-token-fork-check true
+          test "$rc" -eq 0
+          printf '%s\n' "$out" | grep -q '^::warning::Prüf-Branch pk-write-check-.*von Hand löschen: gh api -X DELETE '
           # token missing: exit 1, gh never called
           run '' ''
           test "$rc" -eq 1
           case "$out" in *'PACKAGES_GITHUB_TOKEN fehlt'*"$want"*) ;; *) exit 1 ;; esac
           test ! -s "$dir/log"
-          # repository not readable: exit 1, nothing created
-          run get test-token-fork-check
-          test "$rc" -eq 1
-          case "$out" in *"$want"*) ;; *) exit 1 ;; esac
-          if grep -q POST "$dir/log"; then exit 1; fi
           # usage: exactly one owner/repo
           rc=0; PACKAGES_GITHUB_TOKEN=test-token-fork-check sh scripts/check-fork-push.sh || rc=$?; test "$rc" -eq 2
           rc=0; PACKAGES_GITHUB_TOKEN=test-token-fork-check sh scripts/check-fork-push.sh 'Padrio/x y' || rc=$?; test "$rc" -eq 2

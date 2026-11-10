@@ -17,6 +17,16 @@
 # Exit 0: the token can write (a failed cleanup is only a warning: the
 # write itself worked, the leftover branch is harmless and named). Exit 1:
 # token missing, repository not readable or not writable. Exit 2: usage.
+#
+# The branch counts as created only if the API answers with its ref. On any
+# other outcome the script still tries to delete it (best effort, errors
+# ignored: an unreadable answer may hide a created branch) and names the
+# branch and the command to delete a leftover. There is deliberately no
+# trap: a cancelled job ends the step with a signal and kills it shortly
+# after, so a cleanup in a trap may not run or may be cut off mid-request;
+# it would only promise a cleanup it cannot guarantee. A leftover is
+# harmless, and its name pk-write-check-<run>-<attempt> says where it came
+# from.
 set -eu
 
 # owner/repo on one line, nothing else
@@ -57,18 +67,27 @@ if [ -z "$default_branch" ]; then
 	fail "$repo nennt keinen Standard-Branch"
 fi
 sha="$(api "repos/$repo/git/ref/heads/$default_branch" --jq .object.sha)" || fail "Branch $default_branch von $repo nicht lesbar"
-if ! printf '%s\n' "$sha" | grep -Eqx '[0-9a-f]{40}'; then
-	fail "Branch $default_branch von $repo ohne Commit-SHA"
+# exactly 40 lowercase hex digits, one line
+case "$sha" in
+*[!0-9a-f]*) sha_ok=false ;;
+*) if [ "${#sha}" -eq 40 ]; then sha_ok=true; else sha_ok=false; fi ;;
+esac
+if [ "$sha_ok" != true ]; then
+	fail "Branch $default_branch von $repo ohne gültige Commit-SHA"
 fi
 
 # one name per workflow run and attempt (locally per process): a leftover
 # of an earlier attempt never blocks a rerun
 branch="pk-write-check-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-$$}"
-api -X POST "repos/$repo/git/refs" -f "ref=refs/heads/$branch" -f "sha=$sha" --silent ||
-	fail "Branch $branch nicht angelegt"
+delete_cmd="gh api -X DELETE repos/$repo/git/refs/heads/$branch"
+created="$(api -X POST "repos/$repo/git/refs" -f "ref=refs/heads/$branch" -f "sha=$sha" --jq .ref)" || created=""
+if [ "$created" != "refs/heads/$branch" ]; then
+	api -X DELETE "repos/$repo/git/refs/heads/$branch" --silent >/dev/null 2>&1 || true
+	fail "Branch $branch nicht angelegt (falls er doch existiert, von Hand löschen: $delete_cmd)"
+fi
 
 if ! api -X DELETE "repos/$repo/git/refs/heads/$branch" --silent; then
-	msg="Prüf-Branch $branch in $repo nicht gelöscht; von Hand löschen: gh api -X DELETE repos/$repo/git/refs/heads/$branch"
+	msg="Prüf-Branch $branch in $repo nicht gelöscht; von Hand löschen: $delete_cmd"
 	if [ "${GITHUB_ACTIONS:-}" = true ]; then
 		echo "::warning::$msg"
 	fi
