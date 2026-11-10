@@ -92,6 +92,8 @@ func (n *nameResolver) resolve(ref registry.NameRef, name string, parent int64) 
 	var params []int64
 	query := url.Values{}
 	narrowed := hasParent || ref.ParentFilter != "" && parent > 0
+	// an optional parent not given: the objects of all parents
+	allParents := ref.ParentFilter != "" && parent == 0
 	switch {
 	case hasParent:
 		// the only list with a parent path: the persons of a company
@@ -114,7 +116,7 @@ func (n *nameResolver) resolve(ref registry.NameRef, name string, parent int64) 
 		path = completionCachePath(dir, n.r.Context, ref.Resource)
 		if f, ok := readCompletionCache(path, scope, ref.Resource, n.a.Now()); ok && f.Complete {
 			if active, _ := nameMatches(f.Entries, key); len(active) == 1 {
-				return n.found(ref, active[0], 0, true), nil
+				return n.found(ref, active[0], 0, true, allParents), nil
 			}
 		}
 	}
@@ -141,10 +143,14 @@ func (n *nameResolver) resolve(ref registry.NameRef, name string, parent int64) 
 	active, archived := nameMatches(ids, key)
 	switch {
 	case len(active) == 1:
-		return n.found(ref, active[0], credits, false), nil
+		return n.found(ref, active[0], credits, false, allParents), nil
 	case len(active) > 1:
+		hint := "ID statt Name angeben"
+		if allParents {
+			hint += " oder mit --" + ref.Parent + " eingrenzen"
+		}
 		return Resolution{}, clierr.New(clierr.CodeUsage,
-			fmt.Sprintf("%s „%s“ ist mehrdeutig: %s", ref.Label, shown, idList(active)), withCredits("ID statt Name angeben", credits))
+			fmt.Sprintf("%s „%s“ ist mehrdeutig: %s", ref.Label, shown, idList(active)), withCredits(hint, credits))
 	case len(archived) > 0:
 		return Resolution{}, clierr.New(clierr.CodeNotFound,
 			fmt.Sprintf("%s „%s“ nicht gefunden", ref.Label, shown), withCredits(archivedHint(ref.Resource, archived), credits))
@@ -166,15 +172,23 @@ func withCredits(hint string, credits int) string {
 	return hint + " " + note
 }
 
-// found is the resolution of the match m and its hint on stderr.
-func (n *nameResolver) found(ref registry.NameRef, m completionID, credits int, cached bool) Resolution {
+// found is the resolution of the match m and its hint on stderr; all
+// says that an optional parent was not given (all objects searched).
+func (n *nameResolver) found(ref registry.NameRef, m completionID, credits int, cached, all bool) Resolution {
 	cost := creditsText(credits)
 	if cached {
 		cost = "aus dem Zwischenspeicher, 0 Credits"
 	}
+	if all {
+		cost += "; " + allParentsNote[ref.Flag]
+	}
 	_, _ = fmt.Fprintf(n.a.Err, "Hinweis: %s „%s“ → %d (%s)\n", ref.Label, m.Name, m.ID, cost)
 	return Resolution{Flag: ref.Flag, Name: m.Name, Resource: ref.Resource, ID: m.ID, Credits: credits, Cached: cached}
 }
+
+// allParentsNote says in the hint of a match that the optional parent of
+// the flag was not given (final review B-M2).
+var allParentsNote = map[string]string{"customer-project": "ohne Kunde unter den Projekten aller Kunden gesucht"}
 
 // parentFilter is the ID filter of the list e named by ref.ParentFilter.
 func parentFilter(e registry.Entry, ref registry.NameRef) (registry.Filter, bool) {

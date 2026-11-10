@@ -173,9 +173,15 @@ func (a *App) resolveNames(c *cobra.Command, client *api.Client, r *config.Resol
 					continue
 				}
 				var parent int64 // 0: an optional parent not given
-				if ref.Parent != "" && c.Flags().Changed(ref.Parent) {
+				switch {
+				case ref.Parent != "" && c.Flags().Changed(ref.Parent):
 					var err error
 					if parent, err = flagID(c, ref.Parent); err != nil {
+						return out, err
+					}
+				case ref.ParentFilter != "":
+					var err error
+					if parent, err = a.inputParent(c, ref); err != nil {
 						return out, err
 					}
 				}
@@ -197,6 +203,26 @@ func (a *App) resolveNames(c *cobra.Command, client *api.Client, r *config.Resol
 		}
 	}
 	return out, nil
+}
+
+// inputParent is the ID of the optional parent of ref taken from --input
+// when its flag is not given (final review B-M2): the customer of
+// invoice update --input x.json --customer-project Website is
+// customer.id of the input, so a project of that customer is chosen, not
+// a namesake of another. 0 without --input or without a positive ID
+// there (then all objects are searched, as before); an unreadable input
+// is its error, as when the body is built.
+func (a *App) inputParent(c *cobra.Command, ref registry.NameRef) (int64, error) {
+	f := c.Flags().Lookup("input")
+	if f == nil || !f.Changed {
+		return 0, nil
+	}
+	in, err := a.readInput(f.Value.String())
+	if err != nil {
+		return 0, err
+	}
+	obj, _ := in[strings.ReplaceAll(ref.Parent, "-", "_")].(map[string]any)
+	return max(jsonInt(obj["id"]), 0), nil
 }
 
 // setFlagValues replaces the values of f: the whole list of a text list,

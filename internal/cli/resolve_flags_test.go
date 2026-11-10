@@ -563,6 +563,8 @@ func TestCustomerProjectByName(t *testing.T) {
 	if reqs[0].Query.Has("company_id") {
 		t.Errorf("Query %s", reqs[0].Query.Encode())
 	}
+	wantErrText(t, app, "Projekt „Relaunch“ ist mehrdeutig: 10 „Relaunch“, 11 „Relaunch“",
+		"ID statt Name angeben oder mit --customer eingrenzen (1 Credit verbraucht)")
 
 	// a customer ID < 1 has no projects
 	app, srv = apiApp(t)
@@ -644,5 +646,48 @@ func TestMutationInvalidatesNameCacheOutcomeUnknown(t *testing.T) {
 	wantExit(t, next, Run(next, []string{"api", "POST", "/unbekannt", "--yes", "-o", "json"}), 0)
 	if _, err := os.Stat(other); !os.IsNotExist(err) {
 		t.Errorf("Cache nach api POST außerhalb der Spec noch da: %v", err)
+	}
+}
+
+// final review B-M2: --customer-project by name without --customer takes
+// the customer of --input as parent (file or stdin, read once); without
+// any customer it searches all projects as before and says so.
+func TestCustomerProjectParentFromInput(t *testing.T) {
+	const input = `{"customer":{"id":2}}`
+	for _, tc := range []struct {
+		name  string
+		path  string
+		stdin string
+	}{
+		{"Datei", writeFile(t, "rechnung.json", input), ""},
+		{"Standardeingabe", "-", input},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, srv := apiApp(t)
+			app.In = strings.NewReader(tc.stdin)
+			srv.OnFunc("GET", "/projects", customerProjects(t))
+			wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--input", tc.path, "--customer-project", "Relaunch",
+				"--payment-term", "1", "-o", "json"}), 0)
+			reqs := wantPaths(t, srv, "GET /projects", "PUT /income/invoices/459")
+			if q := reqs[0].Query.Get("company_id"); q != "2" {
+				t.Errorf("company_id %q", q)
+			}
+			if !strings.Contains(string(reqs[1].Body), `"project":{"id":10}`) || !strings.Contains(string(reqs[1].Body), `"id":2`) {
+				t.Errorf("body %s", reqs[1].Body)
+			}
+		})
+	}
+	// no customer anywhere: all projects, named in the hint
+	app, srv := apiApp(t)
+	srv.OnFunc("GET", "/projects", pagedList(t, 1, []map[string]any{{"id": 10, "name": "Relaunch"}}))
+	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer-project", "Relaunch", "--payment-term", "1", "-o", "json"}), 0)
+	if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: Projekt „Relaunch“ → 10 (1 Credit; ohne Kunde unter den Projekten aller Kunden gesucht)\n") {
+		t.Errorf("stderr %q", errs)
+	}
+	wantPaths(t, srv, "GET /projects", "PUT /income/invoices/459")
+	for _, ref := range registry.NameRefs() {
+		if ref.ParentFilter != "" && allParentsNote[ref.Flag] == "" {
+			t.Errorf("--%s: kein Hinweis für die Suche ohne --%s", ref.Flag, ref.Parent)
+		}
 	}
 }

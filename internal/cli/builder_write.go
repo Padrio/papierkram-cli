@@ -594,8 +594,25 @@ func rawText(c *cobra.Command, flag string) string {
 	return c.Flags().Lookup(flag).Value.String()
 }
 
-// readInput reads the --input body: a JSON object from a file or stdin.
+// inputRead is the result of reading the --input path once.
+type inputRead struct {
+	path string
+	body map[string]any
+	err  error
+}
+
+// readInput reads the --input body: a JSON object from a file or stdin,
+// once per invocation (the name resolution can read it first, final
+// review B-M2); a second call with the same path returns the same result.
 func (a *App) readInput(path string) (map[string]any, error) {
+	if a.inputRead == nil || a.inputRead.path != path {
+		m, err := a.decodeInput(path)
+		a.inputRead = &inputRead{path: path, body: m, err: err}
+	}
+	return a.inputRead.body, a.inputRead.err
+}
+
+func (a *App) decodeInput(path string) (map[string]any, error) {
 	v, err := readJSON("--input", path, a.stdin())
 	if err != nil {
 		return nil, err

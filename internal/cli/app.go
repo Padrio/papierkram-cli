@@ -74,6 +74,10 @@ type App struct {
 	// https was printed (warnInsecure).
 	insecureWarned bool
 
+	// inputRead is the --input body read once (readInput): the name
+	// resolution may read it before the body is built, stdin only once
+	inputRead *inputRead
+
 	// restoreTerminal restores the terminal state of the start; readCtx
 	// calls it when an interrupt ends a hidden token read (nil: no
 	// terminal).
