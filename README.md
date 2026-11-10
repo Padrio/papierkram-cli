@@ -428,6 +428,7 @@ completion_lookup = false
 - Daten aus der API (Namen, Notizen, Positionstexte) landen im Kontext des Modells. Ein präparierter Text kann versuchen, den Agent zu Aufrufen zu verleiten (Prompt-Injection).
 - Rechnungen, Angebote und Belege anzulegen kostet je 50 Credits, anderes Anlegen 10. Ein Agent in einer Schleife verbraucht das Monatskontingent schnell.
 - Mit `--files-dir` kann der Agent jede Datei dieses Ordners hochladen, also nur Dateien hineinlegen, die nach Papierkram dürfen.
+- Viele MCP-Clients brechen einen Tool-Aufruf nach etwa 60 Sekunden ab, ein Upload darf im CLI aber 120 Sekunden und länger dauern. Bricht der Client `voucher_create` mit `file` ab, kann der Beleg schon angelegt sein, und ein neuer Versuch legt einen zweiten an. Besser: erst `voucher_create` ohne `file`, dann `voucher_upload`. Nach einem abgebrochenen Aufruf wie nach Exit 12 per `voucher_list` bzw. `voucher_describe` prüfen.
 
 Client-Konfiguration (Claude Desktop: `claude_desktop_config.json`, Eintrag unter `mcpServers`):
 
