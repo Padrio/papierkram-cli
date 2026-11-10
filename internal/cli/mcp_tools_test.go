@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
 	"github.com/Padrio/papierkram-cli/internal/mcpserver"
 )
 
@@ -254,7 +257,7 @@ func TestMCPToolSchemasFromCommands(t *testing.T) {
 		{flagInfo{Name: "a", Type: "string", Required: true, Alternatives: []string{"--input"}}, false},
 		{flagInfo{Name: "a", Type: "id", Required: true, DefaultFrom: []string{"flag", "env"}}, false},
 		{flagInfo{Name: "a", Type: "string"}, false},
-		{flagInfo{Name: "output-file", Type: "string"}, true},
+		{flagInfo{Name: "output-file", Type: "string", File: fileFlagPath}, true},
 	} {
 		p, err := mcpFlagParam(tc.f)
 		if err != nil || p.Required != tc.want {
@@ -334,7 +337,7 @@ func TestMCPFlagParamKinds(t *testing.T) {
 		{flagInfo{Name: "a", Type: "integer", Credits: &five, Description: "x"}, mcpserver.KindInteger, nil, "x (zusätzlich 5 Credits)"},
 		{flagInfo{Name: "a", Type: "integer", Credits: &one, Description: "y (1 Credit)"}, mcpserver.KindInteger, nil, "y (1 Credit)"},
 		{flagInfo{Name: "team-member", Type: "id", Repeatable: true, Resolves: "user"}, mcpserver.KindStrings, nil, ""},
-		{flagInfo{Name: "body-file", Type: "string", Description: "Text aus Datei oder - für die Standardeingabe"}, mcpserver.KindPath, nil,
+		{flagInfo{Name: "body-file", Type: "string", Description: "Text aus Datei oder - für die Standardeingabe", File: fileFlagPath}, mcpserver.KindPath, nil,
 			"Text aus Datei; relativer Pfad im Dateiordner des Servers (mcp serve --files-dir), ohne „..“"},
 	} {
 		p, err := mcpFlagParam(tc.f)
@@ -346,8 +349,14 @@ func TestMCPFlagParamKinds(t *testing.T) {
 			t.Errorf("%+v: %+v", tc.f, p)
 		}
 	}
-	// a default of a kind without one, an unparsable default: errors
-	for _, f := range []flagInfo{{Name: "a", Type: "string", Repeatable: true, Default: "x"}, {Name: "a", Type: "integer", Default: "x"}} {
+	// a default of a kind without one, an unparsable default, a flag
+	// that names a file without the annotation (fail closed, final review
+	// A-M1): errors
+	for _, f := range []flagInfo{
+		{Name: "a", Type: "string", Repeatable: true, Default: "x"}, {Name: "a", Type: "integer", Default: "x"},
+		{Name: "template", Type: "string", Description: "Vorlage aus Datei"}, {Name: "attachment-file", Type: "string"},
+		{Name: "body-file", Type: "string", Description: "Text aus Datei"},
+	} {
 		if _, err := mcpFlagParam(f); err == nil {
 			t.Errorf("%+v: kein Fehler", f)
 		}
@@ -404,5 +413,60 @@ func TestMCPSendOnlyAsPDF(t *testing.T) {
 	specs, err = mcpToolSpecsOf([]commandInfo{c})
 	if err != nil || len(specs[0].Fixed) != 0 {
 		t.Errorf("Spec %+v, %v", specs, err)
+	}
+}
+
+// final review A-M1: every flag with file semantics carries the
+// annotation pk:file in the CLI, and every such flag of a tool is a path
+// in the files directory (or a JSON value for --input/--items); the tools
+// know them by the annotation, not by their name.
+func TestMCPFileFlagsAnnotated(t *testing.T) {
+	app, _, _ := newTestApp(t)
+	root := NewRootCmd(app)
+	specs := testToolSpecs(t)
+	tools := map[string]bool{}
+	for _, s := range specs {
+		tools[strings.Join(s.Command, " ")] = true
+	}
+	seen := 0
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		if !tools[strings.TrimPrefix(c.CommandPath(), "papierkram ")] {
+			for _, sub := range c.Commands() {
+				walk(sub)
+			}
+			return
+		}
+		c.LocalFlags().VisitAll(func(f *pflag.Flag) {
+			info := flagInfo{Name: f.Name, Description: f.Usage}
+			kind := strings.Join(f.Annotations[flagFile], "")
+			if looksLikeFile(info) && kind == "" && !slices.Contains(mcpFixedFlags, f.Name) {
+				t.Errorf("%s --%s: Dateisemantik ohne %s", c.CommandPath(), f.Name, flagFile)
+			}
+			if kind != "" {
+				seen++
+			}
+		})
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(root)
+	if seen < 30 {
+		t.Errorf("nur %d Flags mit %s", seen, flagFile)
+	}
+	d := decodeCommands(t, runCommandsJSON(t, "--json"))
+	for _, s := range specs {
+		c := d.find(t, strings.Join(s.Command, " "))
+		for _, p := range s.Params {
+			if p.Flag == "" {
+				continue
+			}
+			f := c.flag(t, p.Flag)
+			want := map[string]mcpserver.Kind{"output-file": mcpserver.KindPath, "file": mcpserver.KindPath, "input": mcpserver.KindJSONFile, "items": mcpserver.KindJSONFile}[f.Name]
+			if (want != "") != (p.Kind == mcpserver.KindPath || p.Kind == mcpserver.KindJSONFile) || want != "" && p.Kind != want {
+				t.Errorf("%s %s: Art %s", s.Name, p.Name, p.Kind)
+			}
+		}
 	}
 }

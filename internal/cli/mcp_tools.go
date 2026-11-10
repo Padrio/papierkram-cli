@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -61,9 +62,15 @@ func mcpSendAsPDF(c commandInfo) error {
 	return fmt.Errorf("mcp: %s: Klasse send ohne --via %s, als Tool nur PDF-Versand erlaubt", c.Command, viaPDF)
 }
 
-// mcpPathFlags take a file path; "-" (stdin/stdout, the transport of the
-// server) is not allowed there.
-var mcpPathFlags = []string{"output-file", "file", "body-file"}
+// fileWords are the words of a flag help that name a file: a flag whose
+// help or name says so but carries no flagFile annotation stops the tools
+// (looksLikeFile, fail closed, final review A-M1).
+var fileWords = regexp.MustCompile(`(^|[\s(])(JSON-)?Datei\b|Zieldatei|Standardeingabe|stdout|stdin`)
+
+// looksLikeFile reports a flag whose name or help names a file.
+func looksLikeFile(f flagInfo) bool {
+	return strings.Contains(f.Name, "file") || fileWords.MatchString(f.Description)
+}
 
 // mcpFixedFlags are flags that are no parameters but set on every call:
 // a pdf tool never replaces a file (ruling T5-B).
@@ -217,14 +224,16 @@ func mcpFlagParam(f flagInfo) (mcpserver.Param, error) {
 	if len(p.Enum) == 0 {
 		p.Enum = nil
 	}
+	// file flags by their annotation (pk:file), "-" (stdin/stdout, the
+	// transport of the server) is never allowed there
 	switch {
-	case f.Name == "input":
+	case f.File == fileFlagObject:
 		p.Kind, p.JSONType = mcpserver.KindJSONFile, "object"
-		p.Description = "Body als JSON-Objekt (das CLI erhält es als Datei für --input); Flags überschreiben einzelne Felder"
-	case f.Name == "items":
+		p.Description = fmt.Sprintf("Body als JSON-Objekt (das CLI erhält es als Datei für --%s); Flags überschreiben einzelne Felder", f.Name)
+	case f.File == fileFlagArray:
 		p.Kind, p.JSONType = mcpserver.KindJSONFile, "array"
-		p.Description = "Positionen als JSON-Array (das CLI erhält es als Datei für --items)"
-	case slices.Contains(mcpPathFlags, f.Name):
+		p.Description = fmt.Sprintf("Positionen als JSON-Array (das CLI erhält es als Datei für --%s)", f.Name)
+	case f.File == fileFlagPath:
 		p.Kind = mcpserver.KindPath
 		p.Description = strings.NewReplacer(" oder - für stdout", "", " oder - für die Standardeingabe", "").Replace(p.Description) +
 			"; relativer Pfad im Dateiordner des Servers (mcp serve --files-dir), ohne „..“"
@@ -232,6 +241,8 @@ func mcpFlagParam(f flagInfo) (mcpserver.Param, error) {
 			p.Description += "; eine vorhandene Datei wird nicht ersetzt"
 			p.Required = true
 		}
+	case f.File != "" || looksLikeFile(f):
+		return p, fmt.Errorf("Flag mit Datei ohne bekannte Annotation %s (%q): kein Tool-Parameter", flagFile, f.File)
 	case f.Repeatable:
 		p.Kind = mcpserver.KindStrings
 	default:

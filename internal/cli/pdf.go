@@ -49,6 +49,7 @@ func (a *App) newPDFCmd(e registry.Entry) *cobra.Command {
 		RunE:        func(c *cobra.Command, args []string) error { return a.runPDF(c, e, args) },
 	}
 	cmd.Flags().StringP("output-file", "O", "", "Zieldatei des PDFs oder - für stdout")
+	markFile(cmd.Flags(), "output-file", fileFlagPath)
 	cmd.Flags().Bool("no-clobber", false, "vorhandenes Ziel nicht ersetzen (Exit 2 vor der Anfrage)")
 	return cmd
 }

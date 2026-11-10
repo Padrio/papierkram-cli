@@ -131,6 +131,7 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 	}
 	fs := cmd.Flags()
 	fs.String("input", "", "Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder")
+	markFile(fs, "input", fileFlagObject)
 	for _, f := range ws.fields {
 		if f.Flag == "" {
 			continue
@@ -171,6 +172,7 @@ func addWriteFlags(cmd *cobra.Command, e registry.Entry) {
 	}
 	if ws.items != nil {
 		fs.String("items", "", "Positionen als JSON-Array aus Datei oder - für die Standardeingabe")
+		markFile(fs, "items", fileFlagArray)
 		if e.Action == "update" {
 			fs.Bool("replace-items", false, "alle Positionen ersetzen (nötig für --item/--items; ohne Positionen werden alle gelöscht)")
 		}

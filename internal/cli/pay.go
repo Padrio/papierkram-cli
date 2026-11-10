@@ -93,6 +93,7 @@ func (a *App) newPayCmd(e registry.Entry) *cobra.Command {
 		markSchemaBounds(fs, pf.flag, f.Schema)
 	}
 	fs.String("input", "", "Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder")
+	markFile(fs, "input", fileFlagObject)
 	// either one of payOneOf: each is required with the others and --input
 	// as alternatives
 	for _, flag := range payOneOf {

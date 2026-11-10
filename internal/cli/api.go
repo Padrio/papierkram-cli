@@ -80,6 +80,7 @@ func newAPICmd(app *App) *cobra.Command {
 	fs.StringArrayP("raw-field", "f", nil, "Feld als Text: key=value (Punkte verschachteln; bei GET und DELETE ohne --input Query-Parameter)")
 	fs.StringArrayP("field", "F", nil, "Feld mit Typ: true, false, null, Zahl, @datei, @- (Standardeingabe), sonst Text (bei GET und DELETE ohne --input Query-Parameter)")
 	fs.String("input", "", "Body als JSON-Datei oder - für die Standardeingabe; -f/-F überschreiben einzelne Felder")
+	markFile(fs, "input", fileFlagObject)
 	fs.Bool("paginate", false, "bei GET alle Seiten einer Liste laden und zusammenführen (1 Anfrage je Seite)")
 	fs.Int("max-pages", 0, "mit --paginate höchstens so viele Seiten laden")
 	markBounds(fs, "max-pages", bound(minMaxPages), nil) // as list --max-pages

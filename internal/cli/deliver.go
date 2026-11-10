@@ -77,7 +77,9 @@ func (a *App) newDeliverCmd(e registry.Entry) *cobra.Command {
 	fs.String("subject", "", "Betreff der E-Mail, Platzhalter erlaubt (Pflicht bei --via email)")
 	fs.String("body", "", "Text der E-Mail, Platzhalter erlaubt (Pflicht bei --via email, sonst --body-file)")
 	fs.String("body-file", "", "Text der E-Mail aus Datei oder - für die Standardeingabe")
+	markFile(fs, "body-file", fileFlagPath)
 	fs.String(deliverBodyFlag, "", "Body als JSON-Datei oder - für die Standardeingabe; Flags überschreiben einzelne Felder")
+	markFile(fs, deliverBodyFlag, fileFlagObject)
 	// with the body flag, checkDeliverFlags leaves send_via to the body
 	addAlternatives(fs, "via", "--"+deliverBodyFlag)
 	return cmd
