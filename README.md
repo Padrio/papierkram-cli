@@ -14,6 +14,8 @@ Das Binary heißt `papierkram`. Alle Texte (Hilfe, Fehler, Hinweise) sind deutsc
 - [Installation](#installation)
 - [Schnellstart](#schnellstart)
 - [Ressourcen](#ressourcen)
+  - [Namen statt IDs](#namen-statt-ids)
+  - [Offene Posten](#offene-posten)
 - [Kontexte](#kontexte)
 - [Projektdatei](#projektdatei)
 - [Zeiterfassung](#zeiterfassung)
@@ -177,7 +179,7 @@ papierkram context delete analyse
 papierkram invoice list --context analyse
 ```
 
-`--subdomain` (bei `context create` und `auth login`) nimmt auch den Host oder die URL des Accounts: `papierkram context create firma --subdomain https://firma.papierkram.de` legt den Kontext mit der Subdomain `firma` an und nennt sie auf stderr (`Hinweis: Subdomain „firma“ aus „https://firma.papierkram.de“`). Ports und andere Domains lehnt das CLI ab (Exit 2). Die Subdomain in `config.toml` und `PAPIERKRAM_SUBDOMAIN` bleiben strikt: dort nur die Subdomain selbst.
+`--subdomain` (bei `context create` und `auth login`) nimmt auch den Host oder die URL des Accounts: `papierkram context create firma --subdomain https://firma.papierkram.de` legt den Kontext mit der Subdomain `firma` an und nennt sie auf stderr (`Hinweis: Subdomain „firma“ aus „https://firma.papierkram.de“`). Der Hinweis kommt nur, wenn das CLI mehr als Leerraum und Großschreibung bereinigt hat (Schema, Pfad, Punkt am Ende, `.papierkram.de`), also nicht bei `--subdomain firma` oder `--subdomain Firma`. Ports und andere Domains lehnt das CLI ab (Exit 2). Die Subdomain in `config.toml` und `PAPIERKRAM_SUBDOMAIN` bleiben strikt: dort nur die Subdomain selbst.
 
 `context delete` löscht auch das Token des Kontexts im Schlüsselbund; `auth logout` entfernt nur das Token, der Kontext bleibt. Läuft für einen Kontext ein Timer, verweigern `context rename` und `context delete` mit Exit 7, bis er mit `time stop` gebucht oder mit `time discard` verworfen ist.
 
@@ -454,13 +456,13 @@ claude mcp add papierkram -- papierkram mcp serve --context firma --files-dir /U
 |---|---|---|
 | 0 | – | Erfolg, auch `--dry-run` |
 | 1 | `error`, `server_error` | unerwarteter Fehler oder Serverfehler (5xx) |
-| 2 | `usage` | falsche Flags oder Argumente, fehlende Pflichtangabe; nichts gesendet |
+| 2 | `usage` | falsche Flags oder Argumente, fehlende Pflichtangabe; nichts gesendet (Ausnahme [Namen statt IDs](#namen-statt-ids): ein mehrdeutiger Name oder eine Liste über 500 Einträge endet nach den Listenanfragen, geändert ist nichts) |
 | 3 | `auth` | kein Token, 401 oder 403 |
 | 4 | `not_found` | 404: ID prüfen, gehört sie zu diesem Kontext? |
 | 5 | `validation` | lokale Prüfung, 400 oder 422 |
 | 6 | `quota` | 429: Monatskontingent erschöpft |
 | 7 | `conflict` | 409, Timer läuft schon oder wird gerade gestoppt |
-| 8 | `confirmation_required` | Bestätigung fehlt oder abgelehnt, oder Rückfrage mit Strg+C abgebrochen; nichts gesendet; `--yes` |
+| 8 | `confirmation_required` | Bestätigung fehlt oder abgelehnt, oder Rückfrage mit Strg+C abgebrochen; nichts gesendet (ohne Terminal endet der Befehl vor jeder Anfrage, auch vor der Namensauflösung; im Terminal kommt die Rückfrage nach der Auflösung, dann sind nur deren Listenanfragen gesendet); `--yes` |
 | 9 | `read_only` | Schreibschutz (`PAPIERKRAM_READ_ONLY` oder `read_only` im Kontext) |
 | 10 | `network` | Zeitüberschreitung, DNS, TLS bei einem Lesezugriff oder bevor eine Änderung gesendet wurde; auch Strg+C während einer Leseanfrage |
 | 11 | `partial` | mehrstufiger Befehl teilweise ausgeführt; Ausgabe nennt, was fehlt, und den Befehl zum Nachholen |
@@ -470,7 +472,7 @@ Fehler stehen auf stderr als `Fehler: …` mit `Hinweis: …` und ggf. `Correlat
 
 ## Eigenheiten der API
 
-Gemessen gegen einen Sandbox-Account (Läufe 1 bis 4 am 2026-11-04, Lauf 5 am 2026-11-08) bzw. entschieden, wie das CLI damit umgeht; Einzelheiten und spätere Messungen stehen in [docs/offene-punkte.md](docs/offene-punkte.md):
+Gemessen gegen einen Sandbox-Account (Läufe 1 bis 4 am 2026-11-04, Lauf 5 am 2026-11-08, Lauf 6 am 2026-11-10) bzw. entschieden, wie das CLI damit umgeht; Einzelheiten und spätere Messungen stehen in [docs/offene-punkte.md](docs/offene-punkte.md):
 
 - **Angebote und Rechnungen brauchen ein Datum:** `estimate create` und `invoice create` ohne `--document-date` lehnt die API mit 422 ab und berechnet trotzdem das Anlegen (gemessen beim Angebot); das CLI prüft das deshalb vorher (Exit 5), bei `invoice create --from-estimate` schon vor dem Lesen des Angebots.
 - **Abgelehnte Anfragen kosten:** Auch ein mit 422 abgelehntes Anlegen kostet die vollen Credits.
@@ -481,7 +483,7 @@ Gemessen gegen einen Sandbox-Account (Läufe 1 bis 4 am 2026-11-04, Lauf 5 am 20
 - **Der Timer ist lokal:** Papierkram kennt keinen laufenden Timer und sperrt nichts; zwei `time stop` desselben Timers würden zwei Einträge buchen. `time stop` beansprucht den Timer deshalb direkt vor dem Senden; ein zweiter Stopp endet mit Exit 7 ohne Anfrage (siehe [Zeiterfassung](#zeiterfassung)).
 - **`--billable-duration` ist wirkungslos:** Gemessen wurde 1800 Sekunden bei einem Eintrag von 90 Minuten; gespeichert war beim Anlegen und beim Ändern die Dauer (5400).
 - **PDF-Versand:** `deliver --via pdf` vergibt die Nummer und setzt den Status (Angebot `sent`, Rechnung `unpaid`), aber weder `sent_on` noch `sent_via` (gemessen an Angebot und Rechnung).
-- **Storno:** `voucher reverse` und `voucher cancel` lehnt die API an einem unbezahlten Beleg mit 422 ab (Exit 5, der Beleg bleibt `unpaid`). Eine stornierte Rechnung (`canceled`, der Name bekommt „ (storniert)“) und ein storniertes Angebot lassen sich weder löschen noch erneut stornieren, nur archivieren.
+- **Storno:** `voucher reverse` und `voucher cancel` lehnt die API an einem unbezahlten Beleg mit 422 ab (Exit 5, der Beleg bleibt `unpaid`). Eine stornierte Rechnung (`canceled`, der Name bekommt „ (storniert)“) und ein storniertes Angebot lassen sich weder löschen noch erneut stornieren, nur archivieren. `invoice cancel` legt außerdem eine eigene Storno-Rechnung an (neue ID, Nummer mit `-S`, z. B. `R-00003-S`, Status `paid`, Name der Rechnung ohne den Zusatz); die Antwort auf `cancel` nennt sie nicht (gemessen Lauf 6, offener Punkt 31).
 - **`due_date` einer Rechnung** lässt sich per `PUT` nicht setzen (422); `invoice update --input` entfernt es, das Fälligkeitsdatum folgt aus der Zahlungsbedingung.
 - **Upload:** PDF, PNG und JPG werden angenommen; TXT lehnt die API mit HTTP 500 ab, andere Typen sind nicht gemessen. `voucher upload` endet dann mit Exit 1 (`server_error`), `voucher create --file` mit Exit 11: Der Beleg ist angelegt, das Hochladen unbekannt (bei HTTP 500 oder einer Zeitüberschreitung) bzw. gescheitert (wenn die API die Datei mit 4xx ablehnt); nur das Hochladen nachholen, nie den ganzen Befehl. Das ist kein vorübergehender Fehler, also nicht mit derselben Datei wiederholen. Die ganze Datei muss innerhalb des Zeitlimits übertragen sein: `voucher upload` und das Hochladen bei `voucher create --file` warten ohne `--timeout` je Versuch mindestens 120 s (ein größeres `timeout` des Kontexts gilt); mit `--timeout` gilt genau dieser Wert, auch wenn er kleiner ist.
 
@@ -494,7 +496,7 @@ Gemessen gegen einen Sandbox-Account (Läufe 1 bis 4 am 2026-11-04, Lauf 5 am 20
 - [docs/offene-punkte.md](docs/offene-punkte.md): offene Fragen zur API und wie die E2E-Suite sie misst
 - [CHANGELOG.md](CHANGELOG.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 - [docs/release.md](docs/release.md): Release mit GoReleaser, Snapshot-Test, Kurzform `pk` je Paketquelle
-- Design: [Spezifikation](docs/specs/2026-11-03-papierkram-cli-design.md), [Implementierungsplan](docs/plans/2026-11-03-papierkram-cli.md), [Plan der Runde 2](docs/plans/2026-11-07-papierkram-cli-ausbau.md), [API-Snapshot](api/)
+- Design: [Spezifikation](docs/specs/2026-11-03-papierkram-cli-design.md), [Implementierungsplan](docs/plans/2026-11-03-papierkram-cli.md), [Plan der Runde 2](docs/plans/2026-11-07-papierkram-cli-ausbau.md), [Design v0.1.1](docs/specs/2026-11-09-papierkram-cli-v0.2-design.md) mit [Plan](docs/plans/2026-11-09-papierkram-cli-v0.2.md), [API-Snapshot](api/)
 
 ## Dank
 
