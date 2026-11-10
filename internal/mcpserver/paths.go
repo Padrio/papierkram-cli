@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"strings"
 )
 
 // File paths of tool calls (ruling T5-A): every KindPath value names a
@@ -39,27 +41,53 @@ func localPath(name, dir, v string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("mcp: Dateiordner %s: %w", dir, err)
 	}
-	if escapes(root, full) {
+	if why := unsafePath(root, dir, v); why != "" {
 		return "", &ArgError{
-			Msg:  fmt.Sprintf("Parameter %s: Pfad %s führt über einen symbolischen Verweis aus dem Dateiordner hinaus", quoted(name), quoted(v)),
-			Hint: "Datei direkt im Dateiordner des Servers angeben",
+			Msg:  fmt.Sprintf("Parameter %s: Pfad %s %s", quoted(name), quoted(v), why),
+			Hint: "Datei direkt im Dateiordner des Servers angeben (vorhandenes Verzeichnis, keine Verweise hinaus)",
 		}
 	}
 	return full, nil
 }
 
-// escapes reports whether full, with its symbolic links resolved, lies
-// outside root (resolved). Of a path that does not exist (yet) its
-// directory is checked; when that does not exist either, nothing there can
-// lead out (the CLI fails on the missing directory).
-func escapes(root, full string) bool {
-	real, err := filepath.EvalSymlinks(full)
-	if errors.Is(err, fs.ErrNotExist) {
-		real, err = filepath.EvalSymlinks(filepath.Dir(full))
+// lstat is os.Lstat; tests replace it (Windows junctions, which Lstat
+// reports as irregular files, cannot be made elsewhere).
+var lstat = os.Lstat
+
+// unsafePath checks the local path v below dir (root: dir with its links
+// resolved) fail closed and returns why it is refused, "" when it is
+// safe. Every component is read with Lstat: an irregular one (a Windows
+// junction) or one that cannot be read is refused, and so is a missing
+// directory component. Only the last component may be missing, and only
+// when it is no symbolic link (a link that leads nowhere is refused). The
+// path, or for a missing last component its directory, must lie in root
+// with every link resolved; any error resolving it (a loop, no
+// permission, a NUL byte) is a refusal.
+func unsafePath(root, dir, v string) string {
+	cur, leafMissing := dir, false
+	parts := strings.Split(filepath.Clean(v), string(filepath.Separator))
+	for i, part := range parts {
+		cur = filepath.Join(cur, part)
+		fi, err := lstat(cur)
+		switch {
+		case errors.Is(err, fs.ErrNotExist) && i == len(parts)-1:
+			leafMissing = true
+		case err != nil:
+			return "ist nicht prüfbar (Verzeichnis fehlt oder ist nicht lesbar)"
+		case fi.Mode()&fs.ModeIrregular != 0:
+			return "führt über einen Verbindungspunkt (Junction) oder eine unbekannte Dateiart"
+		}
 	}
+	check := filepath.Join(dir, v)
+	if leafMissing {
+		check = filepath.Dir(check)
+	}
+	real, err := filepath.EvalSymlinks(check)
 	if err != nil {
-		return false
+		return "ist nicht prüfbar (symbolischer Verweis ins Leere, Schleife oder keine Rechte)"
 	}
-	rel, err := filepath.Rel(root, real)
-	return err != nil || (rel != "." && !filepath.IsLocal(rel))
+	if rel, err := filepath.Rel(root, real); err != nil || (rel != "." && !filepath.IsLocal(rel)) {
+		return "führt über einen symbolischen Verweis aus dem Dateiordner hinaus"
+	}
+	return ""
 }

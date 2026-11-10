@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -286,7 +287,8 @@ func TestMCPArgsPathPolicy(t *testing.T) {
 	if err := os.WriteFile(secret, []byte("geheim"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	bad := []string{"", "-", "/dev/fd/1", secret, "../x.pdf", "a/../../x.pdf", filepath.Join(dir, "x.pdf")}
+	// fail closed: a missing directory, a NUL byte
+	bad := []string{"", "-", "/dev/fd/1", secret, "../x.pdf", "a/../../x.pdf", filepath.Join(dir, "x.pdf"), "fehlt/x.pdf", "a\x00b.pdf"}
 	if runtime.GOOS == "windows" {
 		bad = append(bad, `C:\x.pdf`, "NUL")
 	}
@@ -295,6 +297,17 @@ func TestMCPArgsPathPolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 		bad = append(bad, "link.pdf", "raus/neu.pdf", "raus/geheim.txt")
+		// a link that leads nowhere, a loop
+		if err := os.Symlink(filepath.Join(dir, "nichts.pdf"), filepath.Join(dir, "leer.pdf")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(dir, "schleife2"), filepath.Join(dir, "schleife1")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(dir, "schleife1"), filepath.Join(dir, "schleife2")); err != nil {
+			t.Fatal(err)
+		}
+		bad = append(bad, "leer.pdf", "schleife1", "schleife1/x.pdf")
 	}
 	for _, v := range bad {
 		for _, param := range []string{"file", "output_file"} {
@@ -310,7 +323,7 @@ func TestMCPArgsPathPolicy(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "ablage"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	good := []string{"x.pdf", "ablage/x.pdf", "fehlt/x.pdf", "./x.pdf"}
+	good := []string{"x.pdf", "ablage/x.pdf", "./x.pdf"}
 	if err := os.Symlink(filepath.Join(dir, "ablage"), filepath.Join(dir, "innen")); err == nil {
 		good = append(good, "innen/x.pdf")
 	}
@@ -321,6 +334,31 @@ func TestMCPArgsPathPolicy(t *testing.T) {
 			t.Errorf("%q: %v, %q", v, err, args)
 		}
 	}
+	// a component that is no file, directory or link (a Windows junction:
+	// Lstat reports ModeIrregular; simulated) is refused, also as leaf
+	prev := lstat
+	lstat = func(p string) (os.FileInfo, error) {
+		fi, err := os.Lstat(p)
+		if err == nil && filepath.Base(p) == "ablage" {
+			return irregular{fi}, nil
+		}
+		return fi, err
+	}
+	for _, v := range []string{"ablage/x.pdf", "ablage"} {
+		raw, _ := json.Marshal(map[string]any{"voucher_id": 1, "file": v})
+		_, err := Args(upload, raw, Options{FilesDir: dir}, t.TempDir())
+		var ae *ArgError
+		if !errors.As(err, &ae) || !strings.Contains(ae.Msg, "Junction") {
+			t.Errorf("%q: %v", v, err)
+		}
+	}
+	lstat = prev
+	// a component that cannot be read is refused
+	lstat = func(p string) (os.FileInfo, error) { return nil, os.ErrPermission }
+	if _, err := Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x.pdf"}`), Options{FilesDir: dir}, t.TempDir()); err == nil {
+		t.Error("nicht lesbarer Pfadteil angenommen")
+	}
+	lstat = prev
 	// without a files directory nothing is resolved (programming error)
 	_, err := Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x.pdf"}`), Options{}, t.TempDir())
 	var ae *ArgError
@@ -333,3 +371,8 @@ func TestMCPArgsPathPolicy(t *testing.T) {
 		t.Errorf("Dateiordner fehlt: %v", err)
 	}
 }
+
+// irregular is a FileInfo with ModeIrregular (a Windows junction).
+type irregular struct{ os.FileInfo }
+
+func (i irregular) Mode() fs.FileMode { return i.FileInfo.Mode()&^fs.ModeType | fs.ModeIrregular }
