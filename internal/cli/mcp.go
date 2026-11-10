@@ -47,37 +47,33 @@ type MCPOptions struct {
 // without options, --allow-writes adds create, update and archive,
 // --allow-destructive adds those and destructive and send (deleting
 // without creating is no useful mode). The read-only mode wins: with
-// PAPIERKRAM_READ_ONLY or read_only of the context of o the server is in
-// ModeRead, and when an option asked for more, a hint on stderr says so.
-// The configuration is resolved without the keychain; its errors stop the
-// start.
-func (a *App) mcpMode(o MCPOptions) (mcpserver.Mode, error) {
+// PAPIERKRAM_READ_ONLY or read_only of the resolved context r the server
+// is in ModeRead, and when an option asked for more, a hint on stderr
+// says so. r is the resolution NewMCPServer made (no second one); without
+// it (nil) the mode is ModeRead.
+func (a *App) mcpMode(o MCPOptions, r *config.Resolved) mcpserver.Mode {
 	want := mcpserver.ModeRead
 	switch {
+	case r == nil:
+		return mcpserver.ModeRead
 	case o.AllowDestructive:
 		want = mcpserver.ModeDestructive
 	case o.AllowWrites:
 		want = mcpserver.ModeWrite
 	}
 	why := ""
-	if config.EnvReadOnly(a.Env) {
+	switch {
+	case config.EnvReadOnly(a.Env) || r.ReadOnly && r.ReadOnlySource == config.SourceEnv:
 		why = "PAPIERKRAM_READ_ONLY"
-	} else {
-		r, err := a.resolveWith(o.Context, nil)
-		if err != nil {
-			return want, err
-		}
-		if r.ReadOnly {
-			why = fmt.Sprintf("Kontext „%s“ ist schreibgeschützt", printable(r.Context))
-		}
-	}
-	if why == "" {
-		return want, nil
+	case r.ReadOnly:
+		why = fmt.Sprintf("Kontext „%s“ ist schreibgeschützt", printable(r.Context))
+	default:
+		return want
 	}
 	if want != mcpserver.ModeRead {
 		_, _ = fmt.Fprintf(a.Err, "Hinweis: Schreibschutz aktiv (%s): --allow-writes/--allow-destructive wirkungslos, nur lesende Tools\n", why)
 	}
-	return mcpserver.ModeRead, nil
+	return mcpserver.ModeRead
 }
 
 // mcpStartFlags are global flags that mean nothing for the server: every
@@ -164,10 +160,7 @@ func NewMCPServer(app *App, o MCPOptions) (*mcp.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	mode, err := app.mcpMode(o)
-	if err != nil {
-		return nil, err
-	}
+	mode := app.mcpMode(o, r)
 	dir, err := app.mcpFilesDir(o.FilesDir)
 	if err != nil {
 		return nil, err

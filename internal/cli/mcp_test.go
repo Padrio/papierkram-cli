@@ -38,6 +38,12 @@ func mcpSession(t *testing.T, app *App, o MCPOptions) *mcp.ClientSession {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return connectServer(t, s)
+}
+
+// connectServer serves s over the in-memory transport.
+func connectServer(t *testing.T, s *mcp.Server) *mcp.ClientSession {
+	t.Helper()
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	ss, err := s.Connect(ctx, st, nil)
@@ -526,6 +532,10 @@ func wantToolsOfMode(t *testing.T, m mcpserver.Mode) []string {
 
 func TestMCPModeFlags(t *testing.T) {
 	app, _, _ := mcpApp(t)
+	r, err := app.resolveWith("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		o    MCPOptions
 		want mcpserver.Mode
@@ -535,18 +545,64 @@ func TestMCPModeFlags(t *testing.T) {
 		{MCPOptions{AllowDestructive: true}, mcpserver.ModeDestructive},
 		{MCPOptions{AllowWrites: true, AllowDestructive: true}, mcpserver.ModeDestructive},
 	} {
-		m, err := app.mcpMode(tc.o)
-		if err != nil || m != tc.want {
-			t.Errorf("%+v: Mode %d, %v; erwartet %d", tc.o, m, err, tc.want)
+		if m := app.mcpMode(tc.o, r); m != tc.want {
+			t.Errorf("%+v: Mode %d, erwartet %d", tc.o, m, tc.want)
+		}
+		// M4: without a resolution only the read mode
+		if m := app.mcpMode(tc.o, nil); m != mcpserver.ModeRead {
+			t.Errorf("%+v ohne Auflösung: Mode %d", tc.o, m)
 		}
 	}
 	if s := app.Err.(*bytes.Buffer).String(); s != "" {
 		t.Errorf("stderr %q", s)
 	}
-	// a broken configuration stops the start
+	// a broken configuration stops the start (NewMCPServer resolves once)
 	writeCfg(t, app, "kaputt = [")
-	if _, err := app.mcpMode(MCPOptions{AllowWrites: true}); err == nil {
+	if _, err := NewMCPServer(app, MCPOptions{AllowWrites: true}); err == nil {
 		t.Error("kaputte Konfiguration ohne Fehler")
+	}
+}
+
+// M6: the read-only mode from the environment or the context wins over
+// every combination of options; the hint appears only when an option
+// asked for more.
+func TestMCPReadOnlyModeTable(t *testing.T) {
+	const tail = "): --allow-writes/--allow-destructive wirkungslos, nur lesende Tools\n"
+	for _, src := range []struct {
+		name, why string
+		setup     func(t *testing.T, app *App, env *syncEnv)
+	}{
+		{"Umgebung", "PAPIERKRAM_READ_ONLY", func(t *testing.T, app *App, env *syncEnv) { env.set("PAPIERKRAM_READ_ONLY", "1") }},
+		{"Kontext", "Kontext „agent“ ist schreibgeschützt", func(t *testing.T, app *App, env *syncEnv) {
+			env.set("PAPIERKRAM_TOKEN", "")
+			writeCfg(t, app, "active_context = \"agent\"\n\n[contexts.agent]\nsubdomain = \"firma\"\nread_only = true\n")
+		}},
+		{"beide", "PAPIERKRAM_READ_ONLY", func(t *testing.T, app *App, env *syncEnv) {
+			env.set("PAPIERKRAM_READ_ONLY", "1")
+			env.set("PAPIERKRAM_TOKEN", "")
+			writeCfg(t, app, "active_context = \"agent\"\n\n[contexts.agent]\nsubdomain = \"firma\"\nread_only = true\n")
+		}},
+	} {
+		for _, o := range []MCPOptions{{}, {AllowWrites: true}, {AllowDestructive: true}, {AllowWrites: true, AllowDestructive: true}} {
+			app, _, env := mcpEnvApp(t, nil)
+			src.setup(t, app, env)
+			o.FilesDir = t.TempDir()
+			s, err := NewMCPServer(app, o)
+			if err != nil {
+				t.Fatalf("%s %+v: %v", src.name, o, err)
+			}
+			cs := connectServer(t, s)
+			if got, want := toolNames(t, cs), wantToolsOfMode(t, mcpserver.ModeRead); !slices.Equal(got, want) {
+				t.Errorf("%s %+v: Tools %v", src.name, o, got)
+			}
+			want := ""
+			if o.AllowWrites || o.AllowDestructive {
+				want = "Hinweis: Schreibschutz aktiv (" + src.why + tail
+			}
+			if got := app.Err.(*bytes.Buffer).String(); got != want {
+				t.Errorf("%s %+v: stderr %q, erwartet %q", src.name, o, got, want)
+			}
+		}
 	}
 }
 
@@ -609,11 +665,7 @@ func TestMCPReadOnlyEnvForcesRead(t *testing.T) {
 	if want := "Hinweis: Schreibschutz aktiv (PAPIERKRAM_READ_ONLY): --allow-writes/--allow-destructive wirkungslos, nur lesende Tools\n"; errs != want {
 		t.Errorf("stderr %q\nerwartet %q", errs, want)
 	}
-	// without the options the read mode needs no hint
-	app, _, _ = mcpEnvApp(t, map[string]string{"PAPIERKRAM_READ_ONLY": "1"})
-	if m, err := app.mcpMode(MCPOptions{}); err != nil || m != mcpserver.ModeRead || app.Err.(*bytes.Buffer).Len() != 0 {
-		t.Errorf("Mode %d, %v, stderr %q", m, err, app.Err)
-	}
+	// without the options the read mode needs no hint: TestMCPReadOnlyModeTable
 }
 
 func TestMCPReadOnlyContextForcesRead(t *testing.T) {
