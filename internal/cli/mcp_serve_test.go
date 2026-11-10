@@ -161,6 +161,11 @@ func TestMCPFilesDirRequired(t *testing.T) {
 	}
 	if runtime.GOOS != "windows" {
 		dirs = append(dirs, "/tmp/../")
+	} else {
+		// CI fix: \ is rooted on the drive of the working directory, not
+		// below it; the root of a drive is a root as well
+		vol := filepath.VolumeName(home)
+		dirs = append(dirs, vol+`\`, vol+`\.`, `\..`)
 	}
 	for _, dir := range dirs {
 		app, _, errb := mcpApp(t)
@@ -176,6 +181,20 @@ func TestMCPFilesDirRequired(t *testing.T) {
 			!strings.Contains(errb.String(), "Unterordner") {
 			t.Errorf("%s: Exit %d, stdout %q, stderr %q", dir, code, out, errb)
 		}
+	}
+}
+
+// CI fix (Windows): a drive without an absolute path (C:Belege) is no
+// files directory; it would be relative to a working directory of that
+// drive the process does not know.
+func TestMCPFilesDirDriveRelative(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Laufwerke gibt es nur unter Windows")
+	}
+	app, _, errb := mcpApp(t)
+	vol := filepath.VolumeName(t.TempDir())
+	if code := Run(app, []string{"mcp", "serve", "--files-dir", vol + "Belege"}); code != 2 || !strings.Contains(errb.String(), "Laufwerk ohne absoluten Pfad") {
+		t.Errorf("Exit %d, stderr %q", code, errb)
 	}
 }
 

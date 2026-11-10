@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -137,11 +138,23 @@ func (a *App) mcpFilesDir(dir string) (string, error) {
 		return "", nil
 	}
 	if !filepath.IsAbs(dir) {
+		if filepath.VolumeName(dir) != "" {
+			// C:Belege (Windows): relative to the working directory of
+			// drive C, which this process does not know
+			return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s nennt ein Laufwerk ohne absoluten Pfad", dir),
+				"--files-dir mit absolutem Pfad angeben, z. B. "+filepath.VolumeName(dir)+`\Belege`)
+		}
 		wd, err := a.Getwd()
 		if err != nil {
 			return "", clierr.New(clierr.CodeError, "Arbeitsverzeichnis nicht lesbar: "+err.Error(), "--files-dir mit absolutem Pfad angeben")
 		}
-		dir = filepath.Join(wd, dir)
+		if os.IsPathSeparator(dir[0]) {
+			// \Belege (Windows): rooted on the drive of the working
+			// directory; Join would put it below the working directory
+			dir = filepath.VolumeName(wd) + dir
+		} else {
+			dir = filepath.Join(wd, dir)
+		}
 	}
 	dir = filepath.Clean(dir)
 	fi, err := os.Stat(dir)
@@ -154,7 +167,7 @@ func (a *App) mcpFilesDir(dir string) (string, error) {
 		real = dir
 	}
 	switch home := a.homeDir(); {
-	case filepath.Dir(dir) == dir || filepath.Dir(real) == real:
+	case isRoot(dir) || isRoot(real):
 		return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist die Wurzel des Dateisystems", dir),
 			"Tools dürften dann jede Datei des Rechners lesen und anlegen; einen eigenen Unterordner angeben, z. B. "+filepath.Join(dir, "Belege"))
 	case home != "" && samePath(dir, home):
@@ -162,6 +175,12 @@ func (a *App) mcpFilesDir(dir string) (string, error) {
 			"Tools dürften dann jede Datei des Nutzers lesen und anlegen; einen eigenen Unterordner angeben, z. B. "+filepath.Join(dir, "Belege"))
 	}
 	return dir, nil
+}
+
+// isRoot reports whether the clean absolute path d is the root of a file
+// system: / or a drive or share root like C:\ (Windows).
+func isRoot(d string) bool {
+	return filepath.Dir(d) == d || d == filepath.VolumeName(d)+string(filepath.Separator)
 }
 
 // homeDir is the home directory from the environment of a, like
@@ -194,20 +213,35 @@ func (a *App) serveMCP(ctx context.Context, o MCPOptions) error {
 	if o.FilesDir == "" {
 		_, _ = io.WriteString(a.Err, "Hinweis: ohne --files-dir keine Tools mit Dateien (pdf, Upload); --files-dir <absoluter Ordner> setzen\n")
 	}
-	t := &mcp.IOTransport{Reader: io.NopCloser(a.In), Writer: nopWriteCloser{a.Out}}
-	// Run returns nil when the client closes stdin (or stdout breaks: the
-	// client is gone) and the error of ctx after a signal
-	if err := s.Run(ctx, t); err != nil && ctx.Err() == nil {
+	out := &stdoutWriter{w: a.Out}
+	t := &mcp.IOTransport{Reader: io.NopCloser(a.In), Writer: out}
+	// Run returns nil when the client closes stdin, the error of ctx after
+	// a signal, and after a failed write to stdout either nil or the write
+	// error, depending on whether the reader or the writer ends the
+	// session first. A broken stdout means the client is gone, like EOF:
+	// exit 0 either way.
+	if err := s.Run(ctx, t); err != nil && ctx.Err() == nil && !out.failed.Load() {
 		return err
 	}
 	return nil
 }
 
-// nopWriteCloser keeps the stdout of the process open when the transport
-// closes.
-type nopWriteCloser struct{ io.Writer }
+// stdoutWriter is the writer of the transport: it keeps the stdout of the
+// process open when the transport closes and records a failed write.
+type stdoutWriter struct {
+	w      io.Writer
+	failed atomic.Bool
+}
 
-func (nopWriteCloser) Close() error { return nil }
+func (s *stdoutWriter) Write(p []byte) (int, error) {
+	n, err := s.w.Write(p)
+	if err != nil {
+		s.failed.Store(true)
+	}
+	return n, err
+}
+
+func (*stdoutWriter) Close() error { return nil }
 
 // mcpRunner runs one tool call: the arguments through RunContext in a
 // child App whose stdout and stderr become the result.

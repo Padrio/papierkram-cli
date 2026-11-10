@@ -425,6 +425,30 @@ func TestCommandsJSONMCPServe(t *testing.T) {
 	}
 }
 
+// A broken stdout with stdin still open: the session ends with the write
+// error, not with EOF (CI fix: the race of TestMCPServeWriteFails made
+// deterministic). The client is gone all the same: exit 0, no error.
+func TestMCPServeWriteFailsStdinOpen(t *testing.T) {
+	app, _, errb := mcpApp(t)
+	r, w := io.Pipe()
+	defer func() { _ = w.Close() }()
+	app.In = r
+	app.Out = failWriter{}
+	exit := make(chan int, 1)
+	go func() { exit <- Run(app, []string{"mcp", "serve"}) }()
+	if _, err := io.WriteString(w, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case code := <-exit:
+		if code != 0 || strings.Contains(errb.String(), "Fehler") {
+			t.Errorf("Exit %d, stderr %s", code, errb)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("mcp serve endet nicht nach kaputtem stdout")
+	}
+}
+
 // A stdout that breaks means the client is gone: the server ends like at
 // EOF, with exit 0 and no error on stderr (only the start hint).
 func TestMCPServeWriteFails(t *testing.T) {

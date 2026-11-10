@@ -2,7 +2,9 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -483,13 +485,16 @@ func TestNameResolutionErrors(t *testing.T) {
 // gate and the resolution (review T3-M2).
 func TestMissingFileBeforeResolution(t *testing.T) {
 	dir := t.TempDir()
+	// the message quotes the path like %q (backslashes of Windows paths
+	// doubled), CI fix
+	missing := filepath.Join(dir, "fehlt.json")
 	for _, tc := range []struct {
 		args []string
 		msg  string
 	}{
-		{[]string{"--input", dir + "/fehlt.json"}, `--input: Datei "` + dir + `/fehlt.json" nicht gefunden`},
-		{[]string{"--items", dir + "/fehlt.json"}, `--items: Datei "` + dir + `/fehlt.json" nicht gefunden`},
-		{[]string{"--input", dir}, `--input: "` + dir + `" ist ein Verzeichnis`},
+		{[]string{"--input", missing}, fmt.Sprintf("--input: Datei %q nicht gefunden", missing)},
+		{[]string{"--items", missing}, fmt.Sprintf("--items: Datei %q nicht gefunden", missing)},
+		{[]string{"--input", dir}, fmt.Sprintf("--input: %q ist ein Verzeichnis", dir)},
 	} {
 		app, srv := apiApp(t)
 		mustermann(t, srv)
