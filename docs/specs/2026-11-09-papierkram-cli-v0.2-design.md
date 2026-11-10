@@ -1,6 +1,6 @@
 # papierkram-cli v0.1.1 – Design
 
-Stand 2026-11-09. Ergänzt die Haupt-Spec [`2026-11-03-papierkram-cli-design.md`](2026-11-03-papierkram-cli-design.md); wo dieses Dokument abweicht, gilt es und die Haupt-Spec wird im selben Zug angepasst. Nachtrag nach der Umsetzung: Maßgeblich für das Umgesetzte ist die Haupt-Spec (§6.1, §7.2, §8.4, §9.9, §11.1, §12.2) samt Rulings; dieses Dokument ist der Entwurf vom 2026-11-09. Auftrag Pascal (2026-11-09): alles in einem Zug umsetzen, ohne Rückfragen (Entscheidungen nach Empfehlung, hier mit **[Call]** markiert), subagent-getrieben, am Ende Release **v0.1.1** (Patch-Bump; Pascal hat am 2026-11-09 von Minor auf Patch korrigiert).
+Stand 2026-11-09. Ergänzt die Haupt-Spec [`2026-11-03-papierkram-cli-design.md`](2026-11-03-papierkram-cli-design.md). Maßgeblich für das Umgesetzte ist die Haupt-Spec (§6.1, §7.2, §8.4, §9.9, §11.1, §12.2) samt Rulings; dieses Dokument ist der Entwurf vom 2026-11-09. Auftrag Pascal (2026-11-09): alles in einem Zug umsetzen, ohne Rückfragen (Entscheidungen nach Empfehlung, hier mit **[Call]** markiert), subagent-getrieben, am Ende Release **v0.1.1** (Patch-Bump; Pascal hat am 2026-11-09 von Minor auf Patch korrigiert).
 
 ## Ziele
 
