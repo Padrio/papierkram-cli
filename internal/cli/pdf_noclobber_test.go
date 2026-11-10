@@ -110,3 +110,21 @@ func TestPdfNoClobberTargetAppears(t *testing.T) {
 	}
 	wantDirFiles(t, dir, "neu.pdf")
 }
+
+// M4: when the temporary name cannot be removed after the link, discard
+// removes it: no temporary file stays, the PDF is saved.
+func TestPdfNoClobberRemovesTempAfterLink(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "neu.pdf")
+	app, srv := apiApp(t)
+	onPDF(srv, binaryPDF)
+	prev := removeFile
+	removeFile = func(string) error { return errors.New("belegt") }
+	code := Run(app, []string{"invoice", "pdf", "459", "-O", path, "--no-clobber"})
+	removeFile = prev
+	wantExit(t, app, code, 0)
+	if got, _ := os.ReadFile(path); string(got) != binaryPDF {
+		t.Errorf("Datei = %q", got)
+	}
+	wantDirFiles(t, dir, "neu.pdf")
+}

@@ -31,7 +31,7 @@ const pdfLong = `
 
 -O datei.pdf speichert das PDF in der Datei; eine vorhandene Datei wird erst ersetzt, wenn das PDF vollständig geladen ist, und behält ihre Rechte, wenn sie dem Nutzer gehört (eine neue oder fremde Datei erhält die Rechte gemäß umask). Eine schreibgeschützte Datei wird nicht ersetzt; ein symbolischer Verweis bleibt erhalten, ersetzt wird die Datei, auf die er zeigt – nur wenn alle Verweise und die Datei dem Nutzer gehören; Gerätedateien wie /dev/null werden direkt beschrieben. -O - schreibt das PDF nach stdout. Ohne -O geht es nur dann nach stdout, wenn stdout kein Terminal ist (Umleitung oder Pipe); im Terminal bricht der Befehl ohne Anfrage ab.
 
---no-clobber ersetzt nichts: Gibt es unter dem Pfad von -O schon etwas (Datei, symbolischer Verweis, Gerät, Verzeichnis), bricht der Befehl vor der Anfrage mit Exit 2 ab; entsteht die Datei erst während des Downloads, bleibt sie unverändert (Exit 1). Gilt nur mit -O datei.
+--no-clobber ersetzt nichts: Gibt es unter dem Pfad von -O schon etwas (Datei, symbolischer Verweis, Gerät, Verzeichnis), bricht der Befehl vor der Anfrage mit Exit 2 ab; entsteht die Datei erst während des Downloads, bleibt sie unverändert (Exit 1), denn das PDF wird per hartem Verweis angelegt, der ein vorhandenes Ziel nie ersetzt. Auf Dateisystemen ohne harte Verweise prüft der Befehl stattdessen direkt vor dem Umbenennen; zwischen Prüfung und Umbenennen bleibt dort ein kurzes Rennfenster, in dem eine gerade entstandene Datei ersetzt werden kann. Gilt nur mit -O datei.
 
 Danach meldet der Befehl Pfad und Größe ({"path":…,"bytes":…}, path "-" für stdout) auf stderr, bei -O datei mit -o json|yaml, --fields oder --jq auf stdout. Geht das PDF nach stdout, bleibt die Meldung auf stderr; --fields und --jq sind dann nicht erlaubt.`
 
@@ -422,11 +422,18 @@ func (f *pdfFile) commitNew() error {
 			return err
 		}
 	default:
-		_ = os.Remove(f.tmp.Name())
+		if removeFile(f.tmp.Name()) != nil {
+			// the PDF is saved under its name; discard tries to remove
+			// the temporary name again
+			return nil
+		}
 	}
 	f.done = true
 	return nil
 }
+
+// removeFile removes a file; tests replace it.
+var removeFile = os.Remove
 
 // chmodFile sets the mode through the open handle of a file; tests replace
 // it.
