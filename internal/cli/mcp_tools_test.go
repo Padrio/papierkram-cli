@@ -172,6 +172,16 @@ func TestMCPToolSchemasFromCommands(t *testing.T) {
 		t.Errorf("time_list.invoice = %s", got)
 	}
 
+	// pdf tools never replace a file: --no-clobber is fixed, no parameter
+	for _, name := range []string{"invoice_pdf", "estimate_pdf", "voucher_pdf"} {
+		ps := specByName(t, specs, name)
+		if !slices.Equal(ps.Fixed, []string{"--no-clobber"}) || slices.ContainsFunc(ps.Params, func(p mcpserver.Param) bool { return p.Flag == "no-clobber" }) {
+			t.Errorf("%s: Fixed %v, Params %+v", name, ps.Fixed, ps.Params)
+		}
+	}
+	if s := specByName(t, specs, "invoice_list"); len(s.Fixed) != 0 {
+		t.Errorf("invoice_list Fixed %v", s.Fixed)
+	}
 	pdf := toolSchema(t, specByName(t, specs, "invoice_pdf"))
 	if req, _ := json.Marshal(pdf["required"]); string(req) != `["id","output_file"]` {
 		t.Errorf("invoice_pdf required = %s", req)
@@ -325,7 +335,7 @@ func TestMCPFlagParamKinds(t *testing.T) {
 		{flagInfo{Name: "a", Type: "integer", Credits: &one, Description: "y (1 Credit)"}, mcpserver.KindInteger, nil, "y (1 Credit)"},
 		{flagInfo{Name: "team-member", Type: "id", Repeatable: true, Resolves: "user"}, mcpserver.KindStrings, nil, ""},
 		{flagInfo{Name: "body-file", Type: "string", Description: "Text aus Datei oder - für die Standardeingabe"}, mcpserver.KindPath, nil,
-			"Text aus Datei; „-“ (stdin/stdout) ist nicht erlaubt"},
+			"Text aus Datei; relativer Pfad im Dateiordner des Servers (mcp serve --files-dir), ohne „..“"},
 	} {
 		p, err := mcpFlagParam(tc.f)
 		if err != nil {

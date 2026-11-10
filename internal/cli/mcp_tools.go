@@ -38,7 +38,7 @@ var mcpPositionals = map[string]mcpPositional{
 	"<id>":       {"id", "ID", mcpserver.KindInteger},
 	"<beleg-id>": {"voucher_id", "ID des Belegs", mcpserver.KindInteger},
 	"<datei-id>": {"document_id", "ID der Datei am Beleg", mcpserver.KindInteger},
-	"<datei>":    {"file", "Pfad der Datei", mcpserver.KindPath},
+	"<datei>":    {"file", "Pfad der Datei, relativ zum Dateiordner des Servers (mcp serve --files-dir)", mcpserver.KindPath},
 }
 
 // mcpReserved is the parameter of the dry run switch of the write tools
@@ -48,6 +48,10 @@ const mcpReserved = "dry_run"
 // mcpPathFlags take a file path; "-" (stdin/stdout, the transport of the
 // server) is not allowed there.
 var mcpPathFlags = []string{"output-file", "file", "body-file"}
+
+// mcpFixedFlags are flags that are no parameters but set on every call:
+// a pdf tool never replaces a file (ruling T5-B).
+var mcpFixedFlags = []string{"no-clobber"}
 
 // mcpToolSpecs are the tool specs of every command of root that may have
 // a tool, sorted by name; Tools picks those of a mode.
@@ -105,6 +109,10 @@ func mcpToolSpec(c commandInfo) (mcpserver.ToolSpec, error) {
 	s.Params = pos
 	resolves, perPage := false, false
 	for _, f := range c.Flags {
+		if slices.Contains(mcpFixedFlags, f.Name) {
+			s.Fixed = append(s.Fixed, "--"+f.Name)
+			continue
+		}
 		p, err := mcpFlagParam(f)
 		if err != nil {
 			return s, fmt.Errorf("mcp: %s --%s: %w", c.Command, f.Name, err)
@@ -190,8 +198,9 @@ func mcpFlagParam(f flagInfo) (mcpserver.Param, error) {
 	case slices.Contains(mcpPathFlags, f.Name):
 		p.Kind = mcpserver.KindPath
 		p.Description = strings.NewReplacer(" oder - für stdout", "", " oder - für die Standardeingabe", "").Replace(p.Description) +
-			"; „-“ (stdin/stdout) ist nicht erlaubt"
+			"; relativer Pfad im Dateiordner des Servers (mcp serve --files-dir), ohne „..“"
 		if f.Name == "output-file" {
+			p.Description += "; eine vorhandene Datei wird nicht ersetzt"
 			p.Required = true
 		}
 	case f.Repeatable:

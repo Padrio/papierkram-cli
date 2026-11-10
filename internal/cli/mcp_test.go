@@ -286,51 +286,57 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-// Review focus 1: mcp serve over In/Out (stdio): everything on stdout is
-// JSON-RPC, closing stdin ends the server with exit 0.
-func TestMCPServeStdioOnlyProtocol(t *testing.T) {
-	app, _, procErr := mcpApp(t)
+// stdioServer is mcp serve running over pipes as In/Out, with a client
+// connected over the same pipes; wire records everything on Out.
+type stdioServer struct {
+	cs   *mcp.ClientSession
+	wire *syncBuffer
+	exit chan int
+}
+
+// serveStdio starts RunContext(ctx, app, args) with pipes as In/Out and
+// connects a client.
+func serveStdio(t *testing.T, ctx context.Context, app *App, args ...string) *stdioServer {
+	t.Helper()
 	clientToServer, serverIn := io.Pipe()
 	serverOut, serverToClient := io.Pipe()
-	var wire syncBuffer
+	s := &stdioServer{wire: &syncBuffer{}, exit: make(chan int, 1)}
 	app.In = clientToServer
-	app.Out = io.MultiWriter(serverToClient, &wire)
-	exit := make(chan int, 1)
+	app.Out = io.MultiWriter(serverToClient, s.wire)
 	go func() {
-		code := Run(app, []string{"mcp", "serve", "--debug"})
+		code := RunContext(ctx, app, args)
 		_ = serverToClient.Close()
-		exit <- code
+		s.exit <- code
 	}()
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v0"}, nil).
 		Connect(context.Background(), &mcp.IOTransport{Reader: serverOut, Writer: serverIn}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tools, err := cs.ListTools(context.Background(), nil)
-	if err != nil || len(tools.Tools) == 0 {
-		t.Fatalf("tools/list: %v, %v", tools, err)
-	}
-	for _, tool := range tools.Tools {
-		if !tool.Annotations.ReadOnlyHint {
-			t.Errorf("%s ist kein Lese-Tool", tool.Name)
-		}
-	}
-	res := callTool(t, cs, "invoice_list", map[string]any{"limit": 1})
-	if res.IsError {
-		t.Fatalf("Tool-Fehler %+v", res.Content)
-	}
-	if err := cs.Close(); err != nil {
+	s.cs = cs
+	return s
+}
+
+// close closes the client and returns the exit code of the server.
+func (s *stdioServer) close(t *testing.T) int {
+	t.Helper()
+	if err := s.cs.Close(); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case code := <-exit:
-		if code != 0 {
-			t.Errorf("Exit %d, stderr %s", code, procErr)
-		}
+	case code := <-s.exit:
+		return code
 	case <-time.After(10 * time.Second):
 		t.Fatal("mcp serve endet nicht nach EOF")
 	}
-	sc := bufio.NewScanner(strings.NewReader(wire.String()))
+	return -1
+}
+
+// checkWire requires every line on Out to be a JSON-RPC 2.0 message and
+// returns their number.
+func (s *stdioServer) checkWire(t *testing.T) int {
+	t.Helper()
+	sc := bufio.NewScanner(strings.NewReader(s.wire.String()))
 	sc.Buffer(nil, 1<<24)
 	n := 0
 	for sc.Scan() {
@@ -340,7 +346,34 @@ func TestMCPServeStdioOnlyProtocol(t *testing.T) {
 		}
 		n++
 	}
-	if n < 3 {
+	return n
+}
+
+// Review focus 1: mcp serve over In/Out (stdio): everything on stdout is
+// JSON-RPC, closing stdin ends the server with exit 0.
+func TestMCPServeStdioOnlyProtocol(t *testing.T) {
+	app, _, procErr := mcpApp(t)
+	s := serveStdio(t, context.Background(), app, "mcp", "serve", "--debug")
+	tools, err := s.cs.ListTools(context.Background(), nil)
+	if err != nil || len(tools.Tools) == 0 {
+		t.Fatalf("tools/list: %v, %v", tools, err)
+	}
+	for _, tool := range tools.Tools {
+		a := tool.Annotations
+		// a pdf tool writes a local file (ruling T5-C)
+		ro := !strings.HasSuffix(tool.Name, "_pdf")
+		if a.ReadOnlyHint != ro || *a.DestructiveHint {
+			t.Errorf("%s: %+v", tool.Name, a)
+		}
+	}
+	res := callTool(t, s.cs, "invoice_list", map[string]any{"limit": 1})
+	if res.IsError {
+		t.Fatalf("Tool-Fehler %+v", res.Content)
+	}
+	if code := s.close(t); code != 0 {
+		t.Errorf("Exit %d, stderr %s", code, procErr)
+	}
+	if n := s.checkWire(t); n < 3 {
 		t.Errorf("%d Nachrichten auf stdout, erwartet mindestens 3 (initialize, tools/list, tools/call)", n)
 	}
 	// --debug of the serve process: the request log is on stderr
@@ -398,7 +431,7 @@ func TestMCPServeWriteFails(t *testing.T) {
 	app, _, errb := mcpApp(t)
 	app.In = strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}` + "\n")
 	app.Out = failWriter{}
-	if code := Run(app, []string{"mcp", "serve", "-o", "json"}); code != 0 || errb.Len() != 0 {
+	if code := Run(app, []string{"mcp", "serve"}); code != 0 || errb.Len() != 0 {
 		t.Errorf("Exit %d, stderr %s", code, errb)
 	}
 }
