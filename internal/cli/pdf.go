@@ -401,7 +401,7 @@ func (f *pdfFile) commit(data []byte, existing fs.FileInfo, noClobber bool) (war
 
 // errClobber is the commit error of --no-clobber when the target appeared
 // during the download.
-var errClobber = errors.New("Ziel ist während des Downloads entstanden und wird mit --no-clobber nicht ersetzt")
+var errClobber = errors.New("das Ziel ist während des Downloads entstanden und wird mit --no-clobber nicht ersetzt")
 
 // linkFile creates a hard link; tests replace it (file systems without
 // hard links).
