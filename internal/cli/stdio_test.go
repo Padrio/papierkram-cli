@@ -50,11 +50,12 @@ func stdioUses(t *testing.T, path, rel string) []stdioUse {
 			uses = append(uses, stdioUse{file: rel, what: "import " + p, line: fset.Position(imp.Pos()).Line})
 		}
 	}
+	// fn is the function a use is in: the name of a FuncDecl for its
+	// whole declaration, empty for package-level declarations (a use in a
+	// var after NewApp is no use in NewApp)
 	var fn string
 	visit := func(n ast.Node) bool {
 		switch x := n.(type) {
-		case *ast.FuncDecl:
-			fn = x.Name.Name
 		case *ast.SelectorExpr:
 			if id, ok := x.X.(*ast.Ident); ok {
 				switch {
@@ -70,7 +71,13 @@ func stdioUses(t *testing.T, path, rel string) []stdioUse {
 		}
 		return true
 	}
-	ast.Inspect(f, visit)
+	for _, d := range f.Decls {
+		fn = ""
+		if fd, ok := d.(*ast.FuncDecl); ok {
+			fn = fd.Name.Name
+		}
+		ast.Inspect(d, visit)
+	}
 	return uses
 }
 
@@ -128,14 +135,25 @@ func A() {
 	log.Print("z")
 	_ = stdos.Stdin
 }
+
+var w = stdos.Stderr
 `
 	path := writeFile(t, "x.go", src)
 	var got []string
 	for _, u := range stdioUses(t, path, "x.go") {
 		got = append(got, u.what)
 	}
-	want := "import log,fmt.Println,stdos.Stdout,println,stdos.Stdin"
+	want := "import log,fmt.Println,stdos.Stdout,println,stdos.Stdin,stdos.Stderr"
 	if strings.Join(got, ",") != want {
 		t.Errorf("gefunden %v, erwartet %s", got, want)
+	}
+	// the use in the var after A belongs to no function: in app.go it
+	// would not count as NewApp
+	uses := stdioUses(t, path, "internal/cli/app.go")
+	if last := uses[len(uses)-1]; last.fn != "" || stdioAllowed(stdioUse{file: "internal/cli/app.go", fn: last.fn}) {
+		t.Errorf("Paketebene zugeordnet zu %q", last.fn)
+	}
+	if uses[1].fn != "A" {
+		t.Errorf("Funktion %q, erwartet A", uses[1].fn)
 	}
 }
