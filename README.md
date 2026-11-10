@@ -412,6 +412,15 @@ completion_lookup = false
 - **Dateien:** Dateipfade gibt es nur mit `--files-dir <absoluter Ordner>`. Ohne die Option fehlen die Tools, die eine Datei brauchen (`invoice_pdf`, `estimate_pdf`, `voucher_pdf`, `voucher_upload`); `voucher_create` gibt es dann ohne den Parameter `file`. Alle Dateipfade dieser Tools sind relativ zu diesem Ordner und bleiben darin. pdf ersetzt keine vorhandene Datei (`--no-clobber`). Die Wurzel des Dateisystems, eine Laufwerkswurzel und das Home-Verzeichnis selbst sind Exit 2; am besten einen eigenen Unterordner nehmen.
 - Ergebnis eines Aufrufs ist die JSON-Ausgabe des Befehls. Hinweise von stderr folgen als zweiter Inhalt. Fehler kommen als Tool-Fehler mit der JSON-Fehlerzeile (`code`, `message`, `hint`, `exit_code`). Aufrufe laufen nacheinander. `--debug` schreibt nur auf stderr des Servers.
 
+**Risiken.** Vor `--allow-writes` oder `--allow-destructive` bedenken:
+
+- `voucher_pay` bucht eine Zahlung; sie lässt sich per API nicht zurücknehmen.
+- `invoice_deliver` und `estimate_deliver` finalisieren den Beleg auch als PDF: Er bekommt eine Nummer und gilt als versendet.
+- Mit `--allow-destructive` fragt das CLI nie nach (`--yes`). Die einzige Bremse ist die Freigabe-Einstellung des MCP-Clients, also ob er jeden Tool-Aufruf bestätigen lässt.
+- Daten aus der API (Namen, Notizen, Positionstexte) landen im Kontext des Modells. Ein präparierter Text kann versuchen, den Agent zu Aufrufen zu verleiten (Prompt-Injection).
+- Rechnungen, Angebote und Belege anzulegen kostet je 50 Credits, anderes Anlegen 10. Ein Agent in einer Schleife verbraucht das Monatskontingent schnell.
+- Mit `--files-dir` kann der Agent jede Datei dieses Ordners hochladen, also nur Dateien hineinlegen, die nach Papierkram dürfen.
+
 Client-Konfiguration (Claude Desktop: `claude_desktop_config.json`, Eintrag unter `mcpServers`):
 
 ```json
