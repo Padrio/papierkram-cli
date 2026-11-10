@@ -280,6 +280,24 @@ func TestMCPToolDescriptions(t *testing.T) {
 			t.Errorf("%s: %q\nerwartet %q", name, s.Description, want)
 		}
 	}
+	// the send tools name only the PDF (final review A-M8)
+	for _, name := range []string{"invoice_deliver", "estimate_deliver"} {
+		if d := specByName(t, specs, name).Description; strings.Contains(d, "Mail") || !strings.Contains(d, "nur als PDF") {
+			t.Errorf("%s: %q", name, d)
+		}
+	}
+	if d := specByName(t, specs, "invoice_deliver").Description; d != "Rechnung nur als PDF finalisieren (--via pdf): der Beleg bekommt eine Nummer und gilt als versendet. Klasse send, 2 Credits je Aufruf" {
+		t.Errorf("invoice_deliver: %q", d)
+	}
+	// limit next to all says that all pages of 100 need no limit
+	for _, s := range specs {
+		for _, p := range s.Params {
+			if p.Name == "limit" && slices.ContainsFunc(s.Params, func(q mcpserver.Param) bool { return q.Name == "all" }) &&
+				!strings.Contains(p.Description, "mit all ohne limit 100 je Seite; limit dann weglassen") {
+				t.Errorf("%s.limit: %q", s.Name, p.Description)
+			}
+		}
+	}
 	// a flag that costs extra says so
 	for _, p := range specByName(t, specs, "voucher_create").Params {
 		if p.Name == "file" && !strings.Contains(p.Description, "10 weitere Credits") {

@@ -202,7 +202,11 @@ func (p Param) schema() map[string]any {
 	if p.Description != "" {
 		s["description"] = p.Description
 	}
-	if len(p.Enum) > 0 {
+	switch {
+	case len(p.Enum) > 0 && p.Kind == KindStrings:
+		// the allowed values of each element (final review A-M8)
+		s["items"] = map[string]any{"type": "string", "enum": p.Enum}
+	case len(p.Enum) > 0:
 		s["enum"] = p.Enum
 	}
 	if p.Default != nil {

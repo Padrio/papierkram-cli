@@ -204,6 +204,19 @@ func TestToolResult(t *testing.T) {
 	}
 }
 
+// final review A-M8: a repeatable flag with allowed values has its enum
+// at the items of the array, not at the array.
+func TestInputSchemaRepeatableEnum(t *testing.T) {
+	p := Param{Name: "state", Flag: "state", Pos: -1, Kind: KindStrings, Enum: []string{"a", "b"}}
+	got, err := json.Marshal(p.schema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"items":{"enum":["a","b"],"type":"string"},"type":"array"}`; string(got) != want {
+		t.Errorf("Schema %s, erwartet %s", got, want)
+	}
+}
+
 // connect serves specs with run in mode m over the in-memory transport of
 // the SDK and returns the client session.
 func connect(t *testing.T, specs []ToolSpec, run Runner, o Options) *mcp.ClientSession {

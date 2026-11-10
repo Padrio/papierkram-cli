@@ -135,8 +135,10 @@ func mcpToolSpec(c commandInfo) (mcpserver.ToolSpec, error) {
 			return s, err
 		}
 		s.Fixed = slices.Clone(mcpDeliverFixed)
-		s.Description = fmt.Sprintf("%s, nur als PDF (--via pdf, keine E-Mail). Klasse %s, %s je Aufruf",
-			strings.TrimSuffix(c.Short, "."), c.Class, creditsText(mcpCredits(c)))
+		// not the short help, which names the other way of sending: the
+		// tool names only what it does (final review A-M8)
+		s.Description = fmt.Sprintf("%s nur als PDF finalisieren (--via %s): der Beleg bekommt eine Nummer und gilt als versendet. Klasse %s, %s je Aufruf",
+			resourceNoun(s.Command[0]), viaPDF, c.Class, creditsText(mcpCredits(c)))
 		return s, nil
 	}
 	resolves, perPage := false, false
@@ -155,6 +157,12 @@ func mcpToolSpec(c commandInfo) (mcpserver.ToolSpec, error) {
 		resolves = resolves || f.Resolves != ""
 		perPage = perPage || f.Name == "max-pages"
 		s.Params = append(s.Params, p)
+	}
+	if i := slices.IndexFunc(s.Params, func(p mcpserver.Param) bool { return p.Name == "limit" }); i >= 0 &&
+		slices.ContainsFunc(s.Params, func(p mcpserver.Param) bool { return p.Name == "all" }) {
+		// the default 25 of the schema is no reason to send it with all
+		// (final review A-M8)
+		s.Params[i].Description += "; mit all ohne limit 100 je Seite; limit dann weglassen (sonst mehr Seiten und Credits)"
 	}
 	unit := "je Aufruf"
 	if perPage {
