@@ -62,7 +62,7 @@ Die Haupt-Spec (Abschnitt Nicht-Ziele) hatte Namensauflösung abgelehnt (**[Call
 - Ist der Wert eine ganze Zahl, bleibt er eine ID (keine Anfrage). Sonst: Name.
 - Auflösung **[Call]**: Liste der Ressource seitenweise laden (100 je Seite, höchstens 5 Seiten, wie `--max-pages`), Name exakt vergleichen (ohne Groß-/Kleinschreibung, Leerraum getrimmt; bei Personen „Vorname Nachname“). Archivierte Einträge zählen nicht. Genau ein Treffer → ID; Hinweis auf stderr `Hinweis: Kunde „Mustermann GmbH“ → 3214 (1 Credit)`. Kein Treffer → Exit 4 mit bis zu drei ähnlichen Namen. Mehrere → Exit 2 mit den Kandidaten (ID, Name), nichts gesendet.
 - Cache: `internal/namecache` bzw. der Cache der Vervollständigung (gleicher Schlüssel: Kontext und Ressource) wird genutzt, wenn er frisch ist; die Auflösung schreibt ihn **[Call]**. Ein Treffer aus dem Cache kostet nichts und wird im Hinweis so genannt.
-- `--dry-run`: die Auflösung findet statt (lesend, kostet Credits) und steht unter `read` in der Ausgabe; `credits` enthält sie.
+- `--dry-run`: die Auflösung findet statt (lesend, kostet Credits) und steht unter `resolved[]` in der Ausgabe (`flag`, `name`, `resource`, `id`, `credits`, `cached`; Ruling P-A: `read` bleibt das Einzelobjekt einer Leseanfrage wie bei `--from-estimate`); `credits` enthält die in diesem Lauf verbrauchten Credits der Auflösung, ein Treffer aus dem Cache zählt 0.
 - `commands --json`: Flags mit Namensauflösung bekommen `resolves` (Ressourcenname) – additiv, `version` bleibt 1; Schema `docs/schemas/commands.json` erweitern.
 - Gilt nicht für `papierkram api` und nicht für Positionsargumente `<id>`.
 - MCP: Tools nehmen bei diesen Feldern ebenfalls Namen an (gleicher Pfad).

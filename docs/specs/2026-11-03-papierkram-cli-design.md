@@ -7,6 +7,7 @@
 | Status | Freigegeben (2026-11-03) |
 | API-Snapshot | [`api/openapi.json`](../../api/openapi.json), SHA-256 `da826bc0…ccea`, siehe [`api/README.md`](../../api/README.md) |
 | Nächster Schritt | Implementierungsplan `docs/plans/2026-11-03-papierkram-cli.md` |
+| Ergänzung v0.1.1 | [`2026-11-09-papierkram-cli-v0.2-design.md`](2026-11-09-papierkram-cli-v0.2-design.md) (2026-11-09): Subdomain als Host oder URL, Namen statt IDs, `invoice paid-status`, `papierkram mcp serve`, E2E-Aufräumen, SBOM und winget; die betroffenen Abschnitte hier sind angeglichen |
 
 Markierungen: **[Pascal]** = von Pascal entschieden. **[Call]** = Entscheidung des Autors, darf in der Umsetzung nur mit Begründung geändert werden. **[Builder]** = bewusst der Umsetzung überlassen.
 
@@ -27,7 +28,7 @@ Zwei Zielgruppen, gleich wichtig:
 - Jeder der 89 Endpunkte der offiziellen Spec ist über ein eigenes Command nutzbar (Abschnitt 15, per Test erzwungen).
 - Bekannte API-Fallen sind strukturell gelöst, nicht nur dokumentiert (Abschnitt 16, jede als Regressionstest).
 - Mehrere Papierkram-Accounts parallel über Kontexte, Token im OS-Schlüsselbund.
-- Ein statisches Binary pro Plattform, verteilt über Homebrew, deb/rpm und GitHub-Releases (Scoop ausgesetzt, Pascal 2026-11-09).
+- Ein statisches Binary pro Plattform, verteilt über Homebrew, deb/rpm, winget (v0.1.1, sobald Microsoft den Pull Request annimmt) und GitHub-Releases (Scoop ausgesetzt, Pascal 2026-11-09).
 
 **Nicht-Ziele (v1)**
 - (Gestrichen: Der MCP-Server-Modus war hier Nicht-Ziel; Pascal hat ihn am 2026-11-09 beauftragt, Regeln in [v0.2-Spec §3](2026-11-09-papierkram-cli-v0.2-design.md#3-papierkram-mcp-serve), Umsetzung in v0.1.1 als `papierkram mcp serve`, Tools aus `commands --json`.)
@@ -367,7 +368,7 @@ Lesender Bericht (Klasse `read_only`, Operation `ListInvoices`, erlaubt unter Sc
 - **Fehlt `outstanding_amount`** in der Liste (bei einer Rechnung, die nach Status offen sein kann), bricht der Befehl mit Exit 1 ab (`Rechnungsliste ohne outstanding_amount bei N Rechnung(en): offene Posten nicht bestimmbar`), statt eine falsche Summe zu zeigen. `--details` liest genau diese Rechnungen einzeln (`GET /income/invoices/{id}`, 1 Credit je Rechnung, Hinweis auf stderr) und nimmt den Betrag aus der Antwort; ab 10 Rechnungen warnt es wie `--all` und fragt im Terminal nach (ohne Terminal läuft es weiter, Ruling T4-E).
 - **Ausgabe:** JSON `{"entries":[…],"total_outstanding":…,"count":…,"overdue_count":…,"as_of":"YYYY-MM-DD","complete":…}` (Vertrag `docs/schemas/paid-status.json`); Tabelle `NR.`, `KUNDE`, `DATUM`, `FÄLLIG`, `ÜBERFÄLLIG` (Tage, leer bei 0), `BRUTTO`, `OFFEN` (Beträge deutsch), `-o wide` zusätzlich `ID`, `NAME`, `STATUS`; danach die Zeile `Summe offen: 169,50 € (2 Rechnungen, davon 1 überfällig; Stand 2026-06-10)`.
 - **Credits:** 1 je Seite, mit `--details` 1 je nachgelesener Rechnung, ein Name bei `--customer` 1 je Seite der Firmenliste.
-- Die Liste der ausgeschlossenen Status prüft der Live-Lauf (Storno-Folgeobjekte, `outstanding_amount` einer bezahlten Rechnung); Ergebnis in `docs/offene-punkte.md`.
+- Gemessen Live-Lauf 6 (2026-11-10): Die Rechnungsliste liefert `outstanding_amount` (Text, z. B. `"119.0"`), `--details` ist dafür nicht nötig. `invoice cancel` legt eine eigene Storno-Rechnung an (`invoice_no` `<Nr>-S`, `state` `paid`). Ob die Liste der ausgeschlossenen Status angepasst werden muss (Betrag der Storno-Rechnung, `outstanding_amount` einer bezahlten Rechnung), ist nicht gemessen; Stand in `docs/offene-punkte.md` (Punkte 30 und 31).
 
 ## 10. Konfiguration, Auth, Ausgabe
 
@@ -472,17 +473,17 @@ Coverage-Ziel ≥ 80 % ohne `internal/api/gen`.
 
 ### 11.1 E2E
 - Läuft nur mit `-tags e2e` und gesetzten `PAPIERKRAM_E2E_SUBDOMAIN`, `PAPIERKRAM_E2E_TOKEN` **und** `PAPIERKRAM_E2E_SANDBOX_CONFIRM` = gleiche Subdomain (Schutz gegen Verwechslung mit der Produktivbuchhaltung). Sonst `t.Skip`.
-- Legt Datensätze mit Präfix `pk-e2e-<runid>-` an und räumt sie am Ende auf (löschen, wo möglich, sonst archivieren/stornieren). Ein `cleanup`-Test entfernt Reste früherer Läufe mit dem Präfix. Einzige Ausnahme vom Präfix: Nennt die Antwort auf `cancel` oder `reverse` eines eigenen Objekts ein anderes Objekt (Folgeobjekt mit eigener ID), wird es als `ABWEICHUNG` gemeldet und, nur wenn sein `type` dem der Ressource entspricht, genau diese ID mit aufgeräumt (löschen, sonst archivieren, nie stornieren).
+- Legt Datensätze mit Präfix `pk-e2e-<runid>-` an und räumt sie am Ende auf (löschen, wo möglich, sonst archivieren/stornieren). Ein `cleanup`-Test entfernt Reste früherer Läufe mit dem Präfix; bereits archivierte Reste fasst er nicht mehr an (Log „dauerhaft archiviert: N“). Versendete und stornierte Rechnungen und Angebote (mit Nummer, nicht löschbar) buchen auf die feste Firma `pk-e2e-dauerkunde` (einziges Objekt ohne Lauf-ID, per Name gesucht, am Ende archiviert, nie gelöscht; v0.1.1, [v0.2-Spec §2](2026-11-09-papierkram-cli-v0.2-design.md#2-e2e-aufräumen)); die Storno-Rechnung nach `invoice cancel` sucht `TestE2E_InvoiceFlow` in der Rechnungsliste und archiviert sie. Ausnahme vom Präfix außerdem: Nennt die Antwort auf `cancel` oder `reverse` eines eigenen Objekts ein anderes Objekt (Folgeobjekt mit eigener ID), wird es als `ABWEICHUNG` gemeldet und, nur wenn sein `type` dem der Ressource entspricht, genau diese ID mit aufgeräumt (löschen, sonst archivieren, nie stornieren).
 - Prüft live: leerer Body bei `deliver --via pdf`, Quota-Header vorhanden, `vat_rate` 0.19 ergibt 19 %, Person `default` als String, Upload-MIME-Typen, Statuswerte der Belege.
 - Abdeckung: Tracker, CoveragePlan, Gate nur bei vollständigem Lauf. Der Transport der Suite ordnet jede beantwortete Anfrage per Pfadauflösung einer der 89 Operationen zu (`e2eguard.Coverage`; abgelehnte und unbeantwortete Anfragen zählen nicht). `e2eguard.CoveragePlan` legt je Operation fest, welcher Test sie abdeckt, ob eine 2xx-Antwort nötig ist oder jede Antwort genügt (unbekannte Live-Semantik, z. B. `pay` ohne echte Zahlung) bzw. nur bei vorhandenen Daten, ob die Aufräumphase zählt (nur `delete`) und welche spätere Task sie erst abdeckt (ausstehend). Am Ende steht je Befund eine Zeile `ABDECKUNG …` im Log. Fehlt eine erwartete Operation, scheitert der Lauf nur, wenn er vollständig war (kein `-run`/`-skip`/`-list`, Budget und Kontingent nicht erschöpft, sonst grün); ausstehende Operationen lassen ihn nie scheitern.
-- Credit-Budget pro Lauf wird in der Testdatei dokumentiert (Zielwert < 800; Budget 760, davon 64 Aufräumreserve). Antwortet die API mit 429 (Exit 6), sendet die Suite in den Tests nichts mehr, überspringt alle folgenden Tests (wie bei erschöpftem Budget) und endet mit Exit 1; das Aufräumen versucht es einmal, ein 429 dort beendet es ohne weitere Anfrage. Kein E2E in der normalen CI; manueller Workflow (`workflow_dispatch`) mit Secrets. Der Workflow sucht danach das Token im Log, ersetzt die Sandbox-Subdomain durch `<sandbox>` (das Repository und seine Artefakte sind öffentlich) und sucht danach Token und Subdomain erneut (gefunden, Secret leer oder Prüfung gescheitert: Log löschen, Schritt scheitert, kein Upload; Leerraum und Zeilenumbrüche am Anfang und Ende des Token-Secrets zählen nicht zum Token); nur ein sauberes Log landet mit den Zeilen `ABDECKUNG`, `ABWEICHUNG` und `Credits:` in der Step-Summary und als Artefakt `e2e-log` (14 Tage). **[Call]**
+- Credit-Budget pro Lauf wird in der Testdatei dokumentiert (Zielwert < 800; Budget 760, davon 60 Aufräumreserve). Antwortet die API mit 429 (Exit 6), sendet die Suite in den Tests nichts mehr, überspringt alle folgenden Tests (wie bei erschöpftem Budget) und endet mit Exit 1; das Aufräumen versucht es einmal, ein 429 dort beendet es ohne weitere Anfrage. Kein E2E in der normalen CI; manueller Workflow (`workflow_dispatch`) mit Secrets. Der Workflow sucht danach das Token im Log, ersetzt die Sandbox-Subdomain durch `<sandbox>` (das Repository und seine Artefakte sind öffentlich) und sucht danach Token und Subdomain erneut (gefunden, Secret leer oder Prüfung gescheitert: Log löschen, Schritt scheitert, kein Upload; Leerraum und Zeilenumbrüche am Anfang und Ende des Token-Secrets zählen nicht zum Token); nur ein sauberes Log landet mit den Zeilen `ABDECKUNG`, `ABWEICHUNG` und `Credits:` in der Step-Summary und als Artefakt `e2e-log` (14 Tage). **[Call]**
 - Testaccount existiert noch nicht **[Pascal]**: Suite muss ohne ihn kompilieren und überspringen.
 
 ## 12. CI, Release, Doku
 
 ### 12.1 CI (GitHub Actions)
 - Matrix `ubuntu-latest`, `macos-latest`, `windows-latest`: `go build`, `go test -race ./...`, Keychain-Integrationstest (Linux mit `dbus-run-session` + `gnome-keyring-daemon --unlock`).
-- Einmalig: `go mod verify`, `golangci-lint`, `govulncheck`, `go generate` ohne Diff, Coverage-Report mit Schwelle, `goreleaser release --snapshot --clean`.
+- Einmalig: `go mod verify`, `golangci-lint`, `govulncheck`, `go generate` ohne Diff, Coverage-Report mit Schwelle, `goreleaser release --snapshot --clean` (prüft je Archiv die SBOM und die winget-Manifeste; `scripts/check-fork-push.sh` läuft gegen ein vorgetäuschtes `gh`, v0.1.1).
 - Go-Version aus einer Quelle: `.go-version` (eine Zeile, `1.27.x`); jeder `actions/setup-go`-Schritt in CI, E2E und Release liest sie per `go-version-file: .go-version`, keiner setzt `go-version` selbst. `go.mod` nennt davon getrennt die Mindestversion (`go 1.26.0`, README „Go 1.26 oder neuer“); `scripts/check-go-version.sh` prüft beides, ein Update darf die Mindestversion nicht still anheben.
 - Dependabot hält die per Commit-SHA gepinnten Actions (`github-actions`) und die direkten Go-Module (`gomod`) wöchentlich aktuell. Ausgenommen ist `github.com/speakeasy-api/openapi` (in `go.mod` gepinnt, nur zusammen mit oapi-codegen anheben); indirekte Module, darunter das Tool oapi-codegen, bekommen keine Pull Requests (Versions-Updates).
 
@@ -503,7 +504,7 @@ Coverage-Ziel ≥ 80 % ohne `internal/api/gen`.
 `spf13/cobra`, `pelletier/go-toml/v2`, `zalando/go-keyring`, `oapi-codegen/oapi-codegen/v2` (Tool) + `oapi-codegen/runtime`, `getkin/kin-openapi`, `itchyny/gojq`, `mattn/go-isatty` bzw. `golang.org/x/term`, `goccy/go-yaml`, `rogpeppe/go-internal` (testscript). Tabellen mit `text/tabwriter` oder einer kleinen eigenen Funktion, keine schwere Tabellenbibliothek.
 
 ## 14. Später (v1.x)
-`papierkram mcp serve` aus der Registry; `$EDITOR`-Bearbeitung.
+`$EDITOR`-Bearbeitung; Scoop-Paket (ausgesetzt, Pascal 2026-11-09). `papierkram mcp serve` und die Namensauflösung sind seit v0.1.1 umgesetzt (Abschnitte 7.2 und 6.1).
 
 ## 15. Abdeckungsmatrix (alle 89 Operationen)
 
