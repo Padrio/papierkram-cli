@@ -93,7 +93,8 @@ type Runner func(ctx context.Context, args []string) Result
 // Options configure the server: the mode, the context every call runs in
 // (--context, empty: the CLI chooses), the --timeout of every call (empty:
 // none), --debug for every call, the version the server reports and the
-// absolute directory every file path of a call must lie in (localPath).
+// absolute directory every file path of a call must lie in (localPath;
+// empty: no tool with a file path).
 type Options struct {
 	Mode     Mode
 	Context  string
@@ -179,7 +180,7 @@ func (p Param) schema() map[string]any {
 // new (--no-clobber), not idempotent and not destructive (ruling T5-C).
 func annotations(t ToolSpec) *mcp.ToolAnnotations {
 	destructive := t.Class == "destructive" || t.Class == "send"
-	readOnly := t.Class == "read_only" && !slices.ContainsFunc(t.Params, func(p Param) bool { return p.Kind == KindPath })
+	readOnly := t.Class == "read_only" && !hasPath(t)
 	openWorld := true
 	return &mcp.ToolAnnotations{
 		ReadOnlyHint:    readOnly,
@@ -189,11 +190,17 @@ func annotations(t ToolSpec) *mcp.ToolAnnotations {
 	}
 }
 
+// hasPath reports whether t has a file path parameter.
+func hasPath(t ToolSpec) bool {
+	return slices.ContainsFunc(t.Params, func(p Param) bool { return p.Kind == KindPath })
+}
+
 // waitCancelled is called when a call is cancelled while it waits for the
 // lock (a test seam).
 var waitCancelled = func() {}
 
-// New builds the MCP server with one tool per spec that o.Mode allows. A
+// New builds the MCP server with one tool per spec that o.Mode allows;
+// without o.FilesDir the tools with a file path are left out. A
 // call is translated by Args and run by run; one lock serializes all
 // calls, because the CLI keeps per-invocation state (one App per run, but
 // shared files like the name cache and the timer). A call cancelled while
@@ -202,6 +209,10 @@ func New(specs []ToolSpec, run Runner, o Options) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "papierkram", Version: o.Version}, nil)
 	lock := make(chan struct{}, 1)
 	for _, t := range Tools(specs, o.Mode) {
+		if o.FilesDir == "" && hasPath(t) {
+			// no files directory, no tool with files (ruling T5-E)
+			continue
+		}
 		tool := &mcp.Tool{
 			Name:        t.Name,
 			Description: t.Description,

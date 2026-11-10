@@ -9,7 +9,9 @@ Je Lese-Befehl (Klasse read_only) gibt es ein Tool, z. B. invoice_list oder invo
 
 Ein Tool-Aufruf führt genau den Befehl aus, den er beschreibt, mit -o json und --no-input: dieselben Prüfungen, derselbe Schreibschutz, dieselben Credits und Exit-Codes wie auf der Kommandozeile. Das Ergebnis ist die JSON-Ausgabe des Befehls; Hinweise und Warnungen von stderr folgen als zweiter Inhalt. Bei einem Fehler ist das Ergebnis ein Tool-Fehler mit der JSON-Fehlerzeile (code, message, hint, exit_code). Aufrufe laufen nacheinander.
 
-Dateipfade (pdf: output_file) sind relativ zum Dateiordner --files-dir (Standard: Arbeitsverzeichnis beim Start; muss existieren): kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis aus dem Ordner hinaus (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei.
+Tools mit Dateien (pdf) gibt es nur mit --files-dir: ein vorhandener Ordner, nicht die Wurzel des Dateisystems und nicht das Home-Verzeichnis selbst (sonst Exit 2), am besten ein eigener Unterordner. Ohne --files-dir fehlen diese Tools, mit einem Hinweis auf stderr; ein Arbeitsverzeichnis gilt nie als Dateiordner (Claude Desktop startet Server z. B. in /). Dateipfade der Tools sind relativ zu diesem Ordner: kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis ins Leere oder aus dem Ordner hinaus, kein fehlendes Verzeichnis (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei.
+
+In der Konfiguration eines Clients (JSON, z. B. {"command":"papierkram","args":["mcp","serve","--files-dir","/Users/name/Belege"]}) wird ~ nicht erweitert: den Ordner absolut angeben.
 
 Der Kontext wird beim Start festgelegt (--context oder wie sonst: PAPIERKRAM_CONTEXT, Projektdatei, aktiver Kontext) und gilt für alle Aufrufe, auch wenn sich der aktive Kontext später ändert; Tools haben keinen Kontext-Parameter. --timeout gilt für jeden Aufruf. --yes, --jq, --fields, -o und --dry-run gelten nicht für den Server (Exit 2). --debug schreibt die Anfragen auf stderr, nie in ein Tool-Ergebnis. stdout trägt nur das Protokoll (JSON-RPC).
 
@@ -23,10 +25,10 @@ Verwendung:
 Beispiele:
   papierkram mcp serve
   papierkram mcp serve --context firma
-  papierkram mcp serve --files-dir ~/Belege
+  papierkram mcp serve --files-dir /Users/name/Belege
 
 Optionen:
-      --files-dir Text   Ordner, in dem alle Dateipfade der Tools liegen (Standard: Arbeitsverzeichnis beim Start)
+      --files-dir Text   Ordner, in dem alle Dateipfade der Tools liegen (absolut; ohne ihn keine Tools mit Dateien)
   -h, --help             Hilfe zu serve
 
 Globale Optionen:

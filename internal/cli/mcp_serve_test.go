@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -96,18 +97,85 @@ func TestMCPFilesDir(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(wd, "ablage"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for in, want := range map[string]string{"": wd, "ablage": filepath.Join(wd, "ablage"), filepath.Join(wd, "ablage") + "/": filepath.Join(wd, "ablage")} {
+	for in, want := range map[string]string{"": "", "ablage": filepath.Join(wd, "ablage"), filepath.Join(wd, "ablage") + "/": filepath.Join(wd, "ablage")} {
 		got, err := app.mcpFilesDir(in)
 		if err != nil || got != want {
 			t.Errorf("%q: %q, %v; erwartet %q", in, got, err, want)
 		}
 	}
 	app.Getwd = func() (string, error) { return "", os.ErrPermission }
-	if _, err := app.mcpFilesDir(""); err == nil {
+	if _, err := app.mcpFilesDir("ablage"); err == nil {
 		t.Error("ohne Arbeitsverzeichnis kein Fehler")
 	}
 	if _, err := app.mcpFilesDir(wd); err != nil {
 		t.Errorf("absoluter Ordner braucht kein Arbeitsverzeichnis: %v", err)
+	}
+}
+
+// Ruling T5-E: no implicit files directory. Without --files-dir the tools
+// with files are missing (hint on stderr); the root of a file system and
+// the home directory (also through a link) are refused.
+func TestMCPFilesDirRequired(t *testing.T) {
+	app, _, procErr := mcpApp(t)
+	s := serveStdio(t, context.Background(), app, "mcp", "serve")
+	tools, err := s.cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range tools.Tools {
+		if strings.HasSuffix(tool.Name, "_pdf") {
+			t.Errorf("%s ohne --files-dir", tool.Name)
+		}
+	}
+	if len(tools.Tools) == 0 {
+		t.Error("keine Tools")
+	}
+	s.close(t)
+	if !strings.Contains(procErr.String(), "Hinweis: ohne --files-dir keine Tools mit Dateien") {
+		t.Errorf("stderr %q", procErr)
+	}
+
+	// with --files-dir the pdf tools exist, without the hint
+	app, _, procErr = mcpApp(t)
+	s = serveStdio(t, context.Background(), app, "mcp", "serve", "--files-dir", t.TempDir())
+	tools, err = s.cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, tool := range tools.Tools {
+		if strings.HasSuffix(tool.Name, "_pdf") {
+			n++
+		}
+	}
+	s.close(t)
+	if n != 3 || strings.Contains(procErr.String(), "Hinweis") {
+		t.Errorf("%d pdf-Tools, stderr %q", n, procErr)
+	}
+
+	home := t.TempDir()
+	link := filepath.Join(t.TempDir(), "heim")
+	dirs := []string{string(filepath.Separator), home}
+	if os.Symlink(home, link) == nil {
+		dirs = append(dirs, link)
+	}
+	if runtime.GOOS != "windows" {
+		dirs = append(dirs, "/tmp/../")
+	}
+	for _, dir := range dirs {
+		app, _, errb := mcpApp(t)
+		env := app.Env
+		app.Env = func(k string) string {
+			if k == "HOME" || k == "USERPROFILE" {
+				return home
+			}
+			return env(k)
+		}
+		out := app.Out.(*bytes.Buffer)
+		if code := Run(app, []string{"mcp", "serve", "--files-dir", dir}); code != 2 || out.Len() != 0 ||
+			!strings.Contains(errb.String(), "Unterordner") {
+			t.Errorf("%s: Exit %d, stdout %q, stderr %q", dir, code, out, errb)
+		}
 	}
 }
 

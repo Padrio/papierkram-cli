@@ -426,12 +426,12 @@ func TestCommandsJSONMCPServe(t *testing.T) {
 }
 
 // A stdout that breaks means the client is gone: the server ends like at
-// EOF, with exit 0 and nothing on stderr.
+// EOF, with exit 0 and no error on stderr (only the start hint).
 func TestMCPServeWriteFails(t *testing.T) {
 	app, _, errb := mcpApp(t)
 	app.In = strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}` + "\n")
 	app.Out = failWriter{}
-	if code := Run(app, []string{"mcp", "serve"}); code != 0 || errb.Len() != 0 {
+	if code := Run(app, []string{"mcp", "serve"}); code != 0 || strings.Contains(errb.String(), "Fehler") {
 		t.Errorf("Exit %d, stderr %s", code, errb)
 	}
 }

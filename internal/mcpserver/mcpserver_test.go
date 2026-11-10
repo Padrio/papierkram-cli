@@ -230,7 +230,7 @@ func TestNewListsToolsOfMode(t *testing.T) {
 	specs := []ToolSpec{invoiceList, describe, upload, pdf,
 		{Name: "invoice_delete", Class: "destructive", Command: []string{"invoice", "delete"}, Description: "Rechnung löschen"}}
 	run := func(context.Context, []string) Result { return Result{} }
-	cs := connect(t, specs, run, Options{Mode: ModeRead, Version: "1.2.3"})
+	cs := connect(t, specs, run, Options{Mode: ModeRead, Version: "1.2.3", FilesDir: t.TempDir()})
 	if v := cs.InitializeResult().ServerInfo; v.Name != "papierkram" || v.Version != "1.2.3" {
 		t.Errorf("ServerInfo = %+v", v)
 	}
@@ -255,7 +255,7 @@ func TestNewListsToolsOfMode(t *testing.T) {
 		t.Errorf("Tools = %v, erwartet %v", names, want)
 	}
 
-	cs = connect(t, specs, run, Options{Mode: ModeDestructive})
+	cs = connect(t, specs, run, Options{Mode: ModeDestructive, FilesDir: t.TempDir()})
 	res, err = cs.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -514,5 +514,20 @@ func TestNewTempDirFails(t *testing.T) {
 	if called || !res.IsError || !strings.Contains(text(t, res.Content[0]), `"code":"error","message":`) ||
 		!strings.Contains(text(t, res.Content[0]), `"exit_code":1`) {
 		t.Errorf("Ergebnis %+v, Runner %v", res.Content, called)
+	}
+}
+
+// Ruling T5-E: without a files directory no tool with a file path exists.
+func TestNewWithoutFilesDir(t *testing.T) {
+	pdf := ToolSpec{Name: "invoice_pdf", Class: "read_only", Command: []string{"invoice", "pdf"},
+		Params: []Param{{Name: "output_file", Flag: "output-file", Pos: -1, Kind: KindPath, Required: true}}}
+	run := func(context.Context, []string) Result { return Result{} }
+	cs := connect(t, []ToolSpec{invoiceList, pdf, upload}, run, Options{Mode: ModeDestructive})
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Tools) != 1 || res.Tools[0].Name != "invoice_list" {
+		t.Errorf("Tools %+v", res.Tools)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -27,7 +28,7 @@ import (
 // MCPOptions configure the MCP server. Context is --context of the start;
 // the context it resolves to (or the one the CLI chooses without it) is
 // fixed for every call. FilesDir is the directory every file path of a
-// tool lies in (empty: the working directory at the start). Timeout is
+// tool lies in (empty: no tool with files, ruling T5-E). Timeout is
 // the --timeout of every call (empty: the CLI default or the context's).
 type MCPOptions struct {
 	Context  string
@@ -46,7 +47,9 @@ Je Lese-Befehl (Klasse read_only) gibt es ein Tool, z. B. invoice_list oder invo
 
 Ein Tool-Aufruf führt genau den Befehl aus, den er beschreibt, mit -o json und --no-input: dieselben Prüfungen, derselbe Schreibschutz, dieselben Credits und Exit-Codes wie auf der Kommandozeile. Das Ergebnis ist die JSON-Ausgabe des Befehls; Hinweise und Warnungen von stderr folgen als zweiter Inhalt. Bei einem Fehler ist das Ergebnis ein Tool-Fehler mit der JSON-Fehlerzeile (code, message, hint, exit_code). Aufrufe laufen nacheinander.
 
-Dateipfade (pdf: output_file) sind relativ zum Dateiordner --files-dir (Standard: Arbeitsverzeichnis beim Start; muss existieren): kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis aus dem Ordner hinaus (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei.
+Tools mit Dateien (pdf) gibt es nur mit --files-dir: ein vorhandener Ordner, nicht die Wurzel des Dateisystems und nicht das Home-Verzeichnis selbst (sonst Exit 2), am besten ein eigener Unterordner. Ohne --files-dir fehlen diese Tools, mit einem Hinweis auf stderr; ein Arbeitsverzeichnis gilt nie als Dateiordner (Claude Desktop startet Server z. B. in /). Dateipfade der Tools sind relativ zu diesem Ordner: kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis ins Leere oder aus dem Ordner hinaus, kein fehlendes Verzeichnis (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei.
+
+In der Konfiguration eines Clients (JSON, z. B. {"command":"papierkram","args":["mcp","serve","--files-dir","/Users/name/Belege"]}) wird ~ nicht erweitert: den Ordner absolut angeben.
 
 Der Kontext wird beim Start festgelegt (--context oder wie sonst: PAPIERKRAM_CONTEXT, Projektdatei, aktiver Kontext) und gilt für alle Aufrufe, auch wenn sich der aktive Kontext später ändert; Tools haben keinen Kontext-Parameter. --timeout gilt für jeden Aufruf. --yes, --jq, --fields, -o und --dry-run gelten nicht für den Server (Exit 2). --debug schreibt die Anfragen auf stderr, nie in ein Tool-Ergebnis. stdout trägt nur das Protokoll (JSON-RPC).
 
@@ -68,7 +71,7 @@ func newMCPCmd(app *App) *cobra.Command {
 		Long:  mcpServeLong,
 		Example: "  papierkram mcp serve\n" +
 			"  papierkram mcp serve --context firma\n" +
-			"  papierkram mcp serve --files-dir ~/Belege",
+			"  papierkram mcp serve --files-dir /Users/name/Belege",
 		// sends nothing itself and writes nothing: --dry-run is rejected
 		Annotations: map[string]string{annotLocal: "true"},
 		Args:        noArgs,
@@ -90,7 +93,7 @@ func newMCPCmd(app *App) *cobra.Command {
 			return app.serveMCP(c.Context(), o)
 		},
 	}
-	serve.Flags().String("files-dir", "", "Ordner, in dem alle Dateipfade der Tools liegen (Standard: Arbeitsverzeichnis beim Start)")
+	serve.Flags().String("files-dir", "", "Ordner, in dem alle Dateipfade der Tools liegen (absolut; ohne ihn keine Tools mit Dateien)")
 	cmd.AddCommand(serve)
 	return cmd
 }
@@ -125,22 +128,60 @@ func NewMCPServer(app *App, o MCPOptions) (*mcp.Server, error) {
 	}), nil
 }
 
-// mcpFilesDir is the files directory of the server: dir (or the working
-// directory when empty), absolute, an existing directory (ruling T5-A).
+// mcpFilesDir is the files directory of the server: dir made absolute
+// (relative to the working directory), an existing directory, neither the
+// root of a file system nor the home directory (rulings T5-A, T5-E); ""
+// without dir: no tool with files.
 func (a *App) mcpFilesDir(dir string) (string, error) {
-	if dir == "" || !filepath.IsAbs(dir) {
+	if dir == "" {
+		return "", nil
+	}
+	if !filepath.IsAbs(dir) {
 		wd, err := a.Getwd()
 		if err != nil {
 			return "", clierr.New(clierr.CodeError, "Arbeitsverzeichnis nicht lesbar: "+err.Error(), "--files-dir mit absolutem Pfad angeben")
 		}
 		dir = filepath.Join(wd, dir)
 	}
+	dir = filepath.Clean(dir)
 	fi, err := os.Stat(dir)
 	if err != nil || !fi.IsDir() {
 		return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist kein vorhandenes Verzeichnis", dir),
 			"Verzeichnis anlegen oder ein anderes angeben")
 	}
-	return filepath.Clean(dir), nil
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		real = dir
+	}
+	switch home := a.homeDir(); {
+	case filepath.Dir(dir) == dir || filepath.Dir(real) == real:
+		return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist die Wurzel des Dateisystems", dir),
+			"Tools dürften dann jede Datei des Rechners lesen und anlegen; einen eigenen Unterordner angeben, z. B. "+filepath.Join(dir, "Belege"))
+	case home != "" && samePath(dir, home):
+		return "", clierr.New(clierr.CodeUsage, fmt.Sprintf("--files-dir %s ist das Home-Verzeichnis", dir),
+			"Tools dürften dann jede Datei des Nutzers lesen und anlegen; einen eigenen Unterordner angeben, z. B. "+filepath.Join(dir, "Belege"))
+	}
+	return dir, nil
+}
+
+// homeDir is the home directory from the environment of a, like
+// os.UserHomeDir ("" when unset).
+func (a *App) homeDir() string {
+	if runtime.GOOS == "windows" {
+		return a.Env("USERPROFILE")
+	}
+	return a.Env("HOME")
+}
+
+// samePath reports whether a and b name the same directory: lexically or
+// with their symbolic links resolved.
+func samePath(a, b string) bool {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && ra == rb
 }
 
 // serveMCP runs the MCP server over app.In and app.Out until the client
@@ -149,6 +190,9 @@ func (a *App) serveMCP(ctx context.Context, o MCPOptions) error {
 	s, err := NewMCPServer(a, o)
 	if err != nil {
 		return err
+	}
+	if o.FilesDir == "" {
+		_, _ = io.WriteString(a.Err, "Hinweis: ohne --files-dir keine Tools mit Dateien (pdf, Upload); --files-dir <absoluter Ordner> setzen\n")
 	}
 	t := &mcp.IOTransport{Reader: io.NopCloser(a.In), Writer: nopWriteCloser{a.Out}}
 	// Run returns nil when the client closes stdin (or stdout breaks: the
