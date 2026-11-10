@@ -61,8 +61,8 @@ sie getrennt: `Reste früherer Läufe: <n> entfernt, dauerhaft archiviert: <n>,
 übrig: <n>`. Diese Reste wachsen je Lauf um die beiden versendeten Belege und
 die Storno-Rechnung, aber um keine Firma mehr.
 
-**Storno-Rechnung.** `invoice cancel` legt (vermutlich) eine Storno-Rechnung
-an. `TestE2E_InvoiceFlow` sucht sie danach in der Rechnungsliste des
+**Storno-Rechnung.** `invoice cancel` legt eine Storno-Rechnung an (gemessen
+Live-Lauf 6, siehe unten). `TestE2E_InvoiceFlow` sucht sie danach in der Rechnungsliste des
 Dauerkunden von heute, Berliner Tag (`invoice list --company <id> --from
 <heute> --to <heute> --sort id --desc --limit 100`; lehnt die API die
 Sortierung ab, noch einmal ohne, 1 Credit mehr): Kandidaten sind Rechnungen
@@ -73,7 +73,8 @@ Folgeobjekt der stornierten Rechnung registriert und am Ende archiviert;
 mehrere (etwa durch einen parallelen Lauf) sind eine `ABWEICHUNG`, und
 keiner wird angefasst. Die Annahmen dieser Suche (eigenes Objekt, gleiche
 Firma, Belegdatum heute, steigende IDs, keine fremde Rechnung, Sortierung
-nach `id`, archivierbar, Name ohne `pk-e2e-`) misst der Live-Lauf, siehe
+nach `id`, archivierbar, Name ohne `pk-e2e-`) und was Live-Lauf 6 davon
+bestätigt oder widerlegt hat, stehen in
 [offener Punkt 31](../docs/offene-punkte.md#31-storno-rechnung-nach-invoice-cancel).
 
 Endet `archive` bei einem dieser nur zu archivierenden Objekte mit einem
@@ -370,7 +371,8 @@ hart: Exit 0 und Vertrag
 [docs/schemas/paid-status.json](../docs/schemas/paid-status.json)) und misst
 offenen Punkt 30: ob die versendete Rechnung ein offener Posten ist (Status,
 `outstanding_amount`) und wie viele Einträge der Rechnungsliste
-`outstanding_amount` tragen. Fehlt die Rechnung in den offenen Posten, steht
+`outstanding_amount` tragen (Ergebnisse von Live-Lauf 6:
+[offener Punkt 30](../docs/offene-punkte.md#30-outstanding_amount-in-der-rechnungsliste-und-offene-posten)). Fehlt die Rechnung in den offenen Posten, steht
 das als `ABWEICHUNG` im Log. Nach dem Storno sucht er die Storno-Rechnung
 (offener Punkt 31, siehe [Was die Suite anlegt](#was-die-suite-anlegt)).
 
