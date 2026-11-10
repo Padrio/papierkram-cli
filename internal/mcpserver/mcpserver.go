@@ -104,6 +104,35 @@ type Options struct {
 	FilesDir string
 }
 
+// DryRun is the parameter every tool of a class but read_only gets: the
+// --dry-run of the CLI (spec v0.2 §3). No flag of a command may take its
+// name.
+const DryRun = "dry_run"
+
+// dryRunParam is the parameter DryRun.
+var dryRunParam = Param{
+	Name: DryRun, Flag: "dry-run", Pos: -1, Kind: KindBool,
+	Description: "nur prüfen und zeigen, was gesendet würde (--dry-run): sendet nichts; kostet nur vorbereitende Leseanfragen",
+}
+
+// params are the parameters of t as the client sees them: its own and,
+// for a tool that changes something (every class a mode can serve but
+// read_only), dry_run.
+func (t ToolSpec) params() []Param {
+	if t.Class == "read_only" || !ModeDestructive.Allows(t.Class) {
+		return t.Params
+	}
+	return append(slices.Clip(t.Params), dryRunParam)
+}
+
+// confirms reports whether a call of t runs with --yes: a destructive or
+// send tool in a mode that serves it (--allow-destructive is the consent
+// of the human, spec v0.2 §3). Elsewhere the CLI asks and ends with exit
+// 8, it never confirms on its own.
+func (t ToolSpec) confirms(m Mode) bool {
+	return (t.Class == "destructive" || t.Class == "send") && m.Allows(t.Class)
+}
+
 // Tools are the specs whose class mode m allows, in their order.
 func Tools(specs []ToolSpec, m Mode) []ToolSpec {
 	var out []ToolSpec
@@ -120,7 +149,7 @@ func Tools(specs []ToolSpec, m Mode) []ToolSpec {
 func InputSchema(t ToolSpec) map[string]any {
 	props := map[string]any{}
 	var required []string
-	for _, p := range t.Params {
+	for _, p := range t.params() {
 		props[p.Name] = p.schema()
 		if p.Required {
 			required = append(required, p.Name)

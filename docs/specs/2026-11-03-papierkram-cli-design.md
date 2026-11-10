@@ -30,7 +30,7 @@ Zwei Zielgruppen, gleich wichtig:
 - Ein statisches Binary pro Plattform, verteilt über Homebrew, deb/rpm und GitHub-Releases (Scoop ausgesetzt, Pascal 2026-11-09).
 
 **Nicht-Ziele (v1)**
-- MCP-Server-Modus (`papierkram mcp serve`) **[Pascal]** – kommt in v1.x. Die Command-Registry (Abschnitt 5.3) wird so gebaut, dass MCP-Tools daraus generiert werden können.
+- (Gestrichen: Der MCP-Server-Modus war hier Nicht-Ziel; Pascal hat ihn am 2026-11-09 beauftragt, Regeln in [v0.2-Spec §3](2026-11-09-papierkram-cli-v0.2-design.md#3-papierkram-mcp-serve), Umsetzung in v0.1.1 als `papierkram mcp serve`, Tools aus `commands --json`.)
 - `$EDITOR`-basiertes Bearbeiten, Offline-Cache, automatische Wiederholung von Mutationen **[Call]**.
 - (Gestrichen: Namensauflösung in Flags war hier Nicht-Ziel; Pascal hat sie am 2026-11-09 beauftragt, Regeln in [v0.2-Spec §4](2026-11-09-papierkram-cli-v0.2-design.md#4-namensauflösung-in-flags), Umsetzung in v0.1.1.)
 - Buchhaltungslogik, die Papierkram selbst nicht anbietet (z. B. Mahnwesen, Auswertungen über die API hinaus). Ausnahme: dünne Komfort-Commands, die nur vorhandene Endpunkte verketten (`invoice create --from-estimate`, `voucher create --file`, `time log`).
@@ -168,7 +168,7 @@ Eine Go-Tabelle beschreibt jedes API-Command: Ressource, Aktion, Method, Pfad-Te
 - die cobra-Commands (über einen generischen Ressourcen-Builder; Sonderfälle registrieren eigene Handler),
 - `papierkram commands --json`,
 - der Abdeckungstest (jede Spec-Operation ↔ genau ein Registry-Eintrag, beide Richtungen),
-- später die MCP-Tools.
+- die MCP-Tools von `papierkram mcp serve` (`internal/cli/mcp_tools.go`: je Befehl ein Tool aus `commands --json`, ausgeführt über denselben Einstieg wie die Kommandozeile).
 
 ### 5.4 Codegen
 - `api/overlay.yaml` (OpenAPI Overlay 1.0) ergänzt `operationId`s nach Schema `<Verb><Resource>[<Action>]` (z. B. `ListInvoices`, `DeliverInvoice`, `UploadVoucherDocument`), korrigiert PDF-Content-Type und Schema (`application/pdf`, `format: binary`) und die `deliver`-Response (2xx ohne Body). **[Builder]**: weitere Korrekturen, falls oapi-codegen an `null`-Enums oder `order_direction` scheitert; jede Korrektur im Overlay kommentieren.
@@ -255,6 +255,7 @@ Gemeinsame Flags für `list`: `--page`, `--limit` (= `page_size`, 1–100, Stand
 | `api <METHOD> <path> [-f key=value] [-F key=@file] [--input file.json] [--paginate]` | Escape-Hatch wie `gh api`; Body wird **nicht** bereinigt, nur bei `--validate` geprüft. Schutzregeln gelten trotzdem **[Call]**: Method + Pfad werden in der Registry nachgeschlagen; deren Klasse bestimmt Bestätigung/`--yes`, `read_only`-Sperre und `--dry-run`. Für `…/deliver` gilt die `email`-Pflicht aus 9.1 (Body mit `send_via:"email"` ohne vollständiges `email`-Objekt → Exit 5). Unbekannte Pfade gelten bei GET als `read_only`, sonst als `destructive`. |
 | `commands --json` | alle Commands mit Flags, Typen, Pflicht, Enums, Klasse, Credits, Beispielen; je Flag optional `default` (pflag-Standardwert wie „(Standard: …)“ in der Hilfe, ausgelassen beim Nullwert des Typs), `minimum`/`maximum` (eingeschlossene Grenzen aus denselben Konstanten wie die Prüfung: `--limit` 1–100, `--page` 1, `--max-pages` 1 bei `list` und `api`; zusätzlich `minimum`/`maximum` des Spec-Schemas eines Feld- oder Filter-Flags, die eingebettete Spec nennt heute keine). `--timeout` (positive Dauer, untere Grenze ausgeschlossen) und ID-Flags (Typ `id`, ≥ 0) tragen keine Grenzen; je ID-Flag mit Namensauflösung `resolves` (Ressource, deren Namen das Flag nimmt, v0.1.1). Additiv, `version` bleibt 1 |
 | `schema <resource> [action]` | Request-/Response-Schema als JSON |
+| `mcp serve [--context] [--files-dir] [--allow-writes] [--allow-destructive] [--timeout]` | MCP-Server über stdio (v0.1.1, [v0.2-Spec §3](2026-11-09-papierkram-cli-v0.2-design.md#3-papierkram-mcp-serve)): je Befehl der freigeschalteten Klassen ein Tool, ausgeführt in-process mit `-o json --no-input`; Standard nur `read_only`, `--allow-writes` dazu `create`/`update`/`archive`, `--allow-destructive` zusätzlich `destructive`/`send` mit `--yes`; Schreibschutz erzwingt den Lesemodus; `deliver` nur `--via pdf`; schreibende Tools mit `dry_run`; Dateien nur unter `--files-dir` |
 | `completion bash\|zsh\|fish\|powershell` | Shell-Completion inkl. dynamischer IDs |
 | `version` | Version, Commit, Build-Datum, Go-Version; `-o json` |
 

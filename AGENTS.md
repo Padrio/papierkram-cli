@@ -12,6 +12,7 @@ Diese Datei richtet sich an KI-Agents (Claude Code, Codex und andere), die das C
 6. **Exit 11 und 12 nie blind wiederholen.** Erst `hint` lesen und mit `describe` oder `list` nachsehen, was passiert ist; dann höchstens den einen Schritt nachholen, den der Hinweis nennt (siehe [Exit 11 und 12](#exit-11-und-12-schritt-für-schritt)).
 7. **429 (Exit 6) nie automatisch wiederholen.** Das Monatskontingent ist erschöpft; ein Mensch muss entscheiden.
 8. **Nie Tokens in Befehle.** Kein Token als Argument, in `-f`/`-F`, in Dateien, Logs oder Ausgaben. Das Token kommt aus dem Schlüsselbund des Kontexts oder aus `PAPIERKRAM_TOKEN`, das ein Mensch setzt.
+9. **Über MCP gilt dasselbe.** Die Tools von `papierkram mcp serve` führen dieselben Befehle aus; alle Regeln hier gelten unverändert. `--allow-destructive` ist die Freigabe für `--yes` und wird nur auf ausdrücklichen Wunsch des Menschen gesetzt (siehe [MCP-Server](#mcp-server)).
 
 ## Selbstbeschreibung
 
@@ -36,6 +37,27 @@ papierkram schema voucher --jq '.actions | keys'
 | `per_request` | `papierkram api`: die Klasse folgt aus Methode und Pfad | je nach Anfrage |
 
 `papierkram schema <ressource> [<aktion>]` zeigt Request- und Response-Schema einer Aktion als JSON (aufgelöst, aus der eingebetteten, korrigierten API-Spezifikation); `null` heißt: kein Schema. Beide Befehle senden keine Anfrage und kosten nichts.
+
+## MCP-Server
+
+`papierkram mcp serve` stellt die Befehle als MCP-Tools über stdio bereit. Ein Tool-Aufruf ist genau der Befehl, den er beschreibt, ausgeführt in-process mit `-o json --no-input`. Es gibt keinen zweiten Prüf- oder Sendepfad: Prüfungen, Schreibschutz, Credits, Exit-Codes und Fehlertexte sind die des CLI. Der Vertrag:
+
+| Thema | Regel |
+|---|---|
+| Tools | je Befehl ein Tool `<ressource>_<aktion>` (`invoice_list`, `voucher_document_delete`); Beschreibung mit Klasse und Credits, Eingabe-Schema aus `commands --json`. Positionsargumente heißen `id`, `voucher_id`, `document_id`, `file`. Keine Tools: lokale Befehle (`auth`, `context`, `local`, `completion`, `time start\|stop\|status\|discard`) und `papierkram api` |
+| Modi | ohne Option nur `read_only`; `--allow-writes` dazu `create`, `update`, `archive`; `--allow-destructive` zusätzlich `destructive` und `send`, die dann mit `--yes` laufen. Ein nicht freigeschaltetes Tool existiert nicht (Protokollfehler „unknown tool“), es antwortet nicht mit Exit 8 oder 9 |
+| Freigabe | `--allow-destructive` ist die Freigabe für `--yes` und nur auf ausdrücklichen Wunsch des Menschen zu setzen. Ein Agent startet oder konfiguriert den Server nie selbst mit dieser Option |
+| Schreibschutz | `PAPIERKRAM_READ_ONLY` oder `read_only` des Kontexts erzwingen den Lesemodus, auch mit den Optionen (Hinweis auf stderr beim Start). Jeder Aufruf geht zusätzlich durch das Gate des CLI: Exit 9, nichts gesendet |
+| `dry_run` | jedes schreibende Tool hat `dry_run` (`--dry-run`); wie im CLI erst mit `dry_run: true` prüfen, dann denselben Aufruf ohne |
+| `deliver` | `invoice_deliver`, `estimate_deliver` haben nur `id` und `dry_run` und senden fest `--via pdf`; E-Mail-Versand gibt es über MCP nicht |
+| Namen | ID-Felder mit `resolves` nehmen Zahl oder Namen (Text), wie die Flags; 1 Credit je geladener Listenseite |
+| Kontext | nur `--context` beim Start (sonst wie im CLI gewählt), fest für alle Aufrufe; Tools haben keinen Kontext-Parameter |
+| Dateien | Tools mit Dateipfaden (`*_pdf`, `voucher_upload`, `voucher_create` mit `file`) nur mit `--files-dir`; jeder Pfad relativ und in diesem Ordner, kein `..`, kein `-`, kein Verweis hinaus (sonst Exit 2 ohne Anfrage); pdf ersetzt keine Datei. `input` und `items` sind JSON-Werte statt Dateien |
+| Ergebnis | Erfolg: erster Inhalt = stdout-JSON des Befehls (byte-gleich), zweiter Inhalt `Hinweise (stderr):` mit Hinweisen und Warnungen, falls vorhanden; **den zweiten Inhalt immer lesen** (z. B. „NICHT erneut ausführen“) |
+| Fehler | `isError`; erster Inhalt = die JSON-Fehlerzeile `{"error":{…}}` mit `code` und `exit_code` wie im CLI, danach `Hinweise (stderr):` und bei Exit 11 `Ausgabe (stdout):` mit `retry_command`. Ein Parameter mit falschem Typ, unbekannt oder fehlend ist `usage` (Exit 2), ohne Anfrage |
+| Abbruch | Aufrufe laufen nacheinander. Bricht der Client einen Aufruf ab, endet der Befehl wie nach Strg+C, eine Antwort kommt nicht; eine Änderung dann wie nach Exit 12 per `describe`/`list` prüfen. Ebenso nach einem Signal an den Server |
+
+Exit 11 und 12, „`deliver` nie wiederholen“, „429 nie wiederholen“ und alle übrigen Regeln dieses Dokuments gelten für Tool-Aufrufe unverändert. Einrichtung und Client-Konfiguration: [README.md, MCP-Server](README.md#mcp-server).
 
 ## JSON-Vertrag
 

@@ -29,9 +29,10 @@ func quoted(s string) string {
 
 // Args translates the JSON arguments of a call of t into the argument list
 // of the CLI: the command words, every given flag as --<flag>=<value> (a
-// repeatable flag once per element), sorted by parameter name, the Fixed
-// arguments, --no-input -o json, --context=<ctx>, --timeout=<d> and
-// --debug from o, then
+// repeatable flag once per element, dry_run as --dry-run), sorted by
+// parameter name, the Fixed arguments, --yes for a destructive or send
+// tool in a mode that serves it (confirms), --no-input -o json,
+// --context=<ctx>, --timeout=<d> and --debug from o, then
 // "--" and the positional arguments in Pos order. Every value is glued to
 // its flag and the positional arguments follow "--", so no value can set
 // another option. A KindPath value must name a file in o.FilesDir and
@@ -43,7 +44,7 @@ func Args(t ToolSpec, raw json.RawMessage, o Options, tmpDir string) ([]string, 
 		return nil, err
 	}
 	byName := map[string]Param{}
-	for _, p := range t.Params {
+	for _, p := range t.params() {
 		byName[p.Name] = p
 	}
 	for name := range props {
@@ -54,7 +55,7 @@ func Args(t ToolSpec, raw json.RawMessage, o Options, tmpDir string) ([]string, 
 			}
 		}
 	}
-	params := slices.Clone(t.Params)
+	params := slices.Clone(t.params())
 	slices.SortFunc(params, func(a, b Param) int { return strings.Compare(a.Name, b.Name) })
 	var flags []string
 	positional := map[int]string{}
@@ -81,7 +82,11 @@ func Args(t ToolSpec, raw json.RawMessage, o Options, tmpDir string) ([]string, 
 			flags = append(flags, "--"+p.Flag+"="+s)
 		}
 	}
-	args := slices.Concat(t.Command, flags, t.Fixed, []string{"--no-input", "-o", "json"})
+	args := slices.Concat(t.Command, flags, t.Fixed)
+	if t.confirms(o.Mode) {
+		args = append(args, "--yes")
+	}
+	args = append(args, "--no-input", "-o", "json")
 	if o.Context != "" {
 		args = append(args, "--context="+o.Context)
 	}
@@ -114,7 +119,7 @@ func decodeObject(raw json.RawMessage) (map[string]json.RawMessage, error) {
 // paramNames lists the parameters of t, sorted.
 func paramNames(t ToolSpec) string {
 	var names []string
-	for _, p := range t.Params {
+	for _, p := range t.params() {
 		names = append(names, p.Name)
 	}
 	slices.Sort(names)

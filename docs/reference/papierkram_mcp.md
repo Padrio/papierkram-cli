@@ -10,7 +10,7 @@ Verwendung:
   papierkram mcp [Befehl]
 
 Verfügbare Befehle:
-  serve       MCP-Server über stdio starten (Lese-Tools)
+  serve       MCP-Server über stdio starten
 
 Optionen:
   -h, --help   Hilfe zu mcp
@@ -33,4 +33,4 @@ Mit "papierkram mcp [Befehl] --help" gibt es weitere Informationen zu einem Befe
 ## Siehe auch
 
 - [papierkram](papierkram.md) – Kommandozeile für die Papierkram-API
-- [papierkram mcp serve](papierkram_mcp_serve.md) – MCP-Server über stdio starten (Lese-Tools)
+- [papierkram mcp serve](papierkram_mcp_serve.md) – MCP-Server über stdio starten

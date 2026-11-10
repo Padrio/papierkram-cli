@@ -22,6 +22,7 @@ Das Binary heißt `papierkram`. Alle Texte (Hilfe, Fehler, Hinweise) sind deutsc
 - [Credits](#credits)
 - [Umgebungsvariablen](#umgebungsvariablen)
 - [Shell-Vervollständigung](#shell-vervollständigung)
+- [MCP-Server](#mcp-server)
 - [Exit-Codes](#exit-codes)
 - [Eigenheiten der API](#eigenheiten-der-api)
 - [Weitere Dokumentation](#weitere-dokumentation)
@@ -388,6 +389,49 @@ PowerShell: `papierkram completion powershell | Out-String | Invoke-Expression` 
 [contexts.firma-gmbh]
 completion_lookup = false
 ```
+
+## MCP-Server
+
+`papierkram mcp serve` stellt die Befehle als Tools für KI-Clients bereit (Model Context Protocol über stdin/stdout), etwa für Claude Desktop oder Claude Code. Je Befehl gibt es ein Tool (`invoice_list`, `invoice_describe`, `company_create`, …). Name, Beschreibung mit Klasse und Credits sowie das Eingabe-Schema stammen aus `commands --json`. Ein Tool-Aufruf führt genau diesen Befehl in-process mit `-o json --no-input` aus. Damit gelten dieselben Prüfungen, derselbe Schreibschutz, dieselben Credits und Exit-Codes wie auf der Kommandozeile. Keine Tools haben die lokalen Befehle (`auth`, `context`, `local`, `completion`, `time start|stop|status|discard`) und `papierkram api`.
+
+**Modi.** Welche Tools es gibt, legen die Optionen beim Start fest:
+
+| Option | Tools der Klassen |
+|---|---|
+| (keine) | `read_only` |
+| `--allow-writes` | zusätzlich `create`, `update`, `archive` |
+| `--allow-destructive` | zusätzlich `create`, `update`, `archive`, `destructive`, `send`; diese laufen mit `--yes` |
+
+- Ein nicht freigeschaltetes Tool existiert nicht; ein Aufruf endet mit einem Protokollfehler.
+- `--allow-destructive` ist die Freigabe für `--yes` (Löschen, Stornieren, Zahlen, Versenden ohne Rückfrage). Nur setzen, wenn der Agent das wirklich darf.
+- **Schreibschutz:** Mit `PAPIERKRAM_READ_ONLY` oder `read_only = true` im Kontext bleibt der Server bei lesenden Tools, auch mit den Optionen. Dazu erscheint beim Start ein Hinweis auf stderr. Jeder Aufruf geht außerdem durch den Schreibschutz des CLI (Exit 9).
+- **`dry_run`:** Jedes schreibende Tool hat den Parameter `dry_run` (`--dry-run`). Er prüft und zeigt die Anfrage, ohne sie zu senden.
+- **`deliver` nur als PDF:** `invoice_deliver` und `estimate_deliver` haben nur `id` und `dry_run` und senden fest `--via pdf`. Eine E-Mail an Kunden ist über MCP nicht möglich.
+- **Namen in ID-Feldern:** Felder wie `customer` nehmen eine ID (Zahl) oder einen Namen (Text) wie `--customer` auf der Kommandozeile. Das kostet 1 Credit je geladener Listenseite, siehe [Namen statt IDs](#namen-statt-ids).
+- **Kontext nur beim Start:** `--context` (oder wie sonst gewählt: `PAPIERKRAM_CONTEXT`, Projektdatei, aktiver Kontext) gilt für alle Aufrufe. Tools haben keinen Kontext-Parameter. Ein späteres `context use` ändert am laufenden Server nichts.
+- **Dateien:** Tools mit Dateien (`invoice_pdf`, `estimate_pdf`, `voucher_pdf`, `voucher_upload`, `voucher_create` mit `file`) gibt es nur mit `--files-dir <absoluter Ordner>`. Alle Dateipfade dieser Tools sind relativ zu diesem Ordner und bleiben darin. pdf ersetzt keine vorhandene Datei (`--no-clobber`). Die Wurzel des Dateisystems, eine Laufwerkswurzel und das Home-Verzeichnis selbst sind Exit 2; am besten einen eigenen Unterordner nehmen.
+- Ergebnis eines Aufrufs ist die JSON-Ausgabe des Befehls. Hinweise von stderr folgen als zweiter Inhalt. Fehler kommen als Tool-Fehler mit der JSON-Fehlerzeile (`code`, `message`, `hint`, `exit_code`). Aufrufe laufen nacheinander. `--debug` schreibt nur auf stderr des Servers.
+
+Client-Konfiguration (Claude Desktop: `claude_desktop_config.json`, Eintrag unter `mcpServers`):
+
+```json
+{"command":"papierkram","args":["mcp","serve","--context","firma"]}
+```
+
+Mit Dateien und Schreibzugriff, der Ordner absolut (`~` wird in der JSON-Konfiguration nicht erweitert):
+
+```json
+{"command":"papierkram","args":["mcp","serve","--context","firma","--files-dir","/Users/name/Belege","--allow-writes"]}
+```
+
+Findet der Client `papierkram` nicht, den absoluten Pfad des Binarys als `command` eintragen (z. B. `/opt/homebrew/bin/papierkram`). Claude Code:
+
+```sh
+claude mcp add papierkram -- papierkram mcp serve --context firma
+claude mcp add papierkram -- papierkram mcp serve --context firma --files-dir /Users/name/Belege --allow-writes
+```
+
+`papierkram mcp serve --help` beschreibt alle Regeln, auch Abbruch und Signale.
 
 ## Exit-Codes
 

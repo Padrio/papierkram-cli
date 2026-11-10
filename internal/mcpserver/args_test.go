@@ -376,3 +376,76 @@ func TestMCPArgsPathPolicy(t *testing.T) {
 type irregular struct{ os.FileInfo }
 
 func (i irregular) Mode() fs.FileMode { return i.FileInfo.Mode()&^fs.ModeType | fs.ModeIrregular }
+
+// Task 6: every tool of a class but read_only has the parameter dry_run
+// (--dry-run); destructive and send get --yes, but only when the mode
+// allows them (--allow-destructive). Without it the CLI asks and ends
+// with exit 8 (fail closed).
+func TestMCPArgsDryRunAndYes(t *testing.T) {
+	id := Param{Name: "id", Pos: 0, Kind: KindInteger, Minimum: f(0), Required: true}
+	create := ToolSpec{Name: "company_create", Class: "create", Command: []string{"company", "create"},
+		Params: []Param{{Name: "name", Flag: "name", Pos: -1, Kind: KindString}}}
+	del := ToolSpec{Name: "invoice_delete", Class: "destructive", Command: []string{"invoice", "delete"}, Params: []Param{id}}
+	deliver := ToolSpec{Name: "invoice_deliver", Class: "send", Command: []string{"invoice", "deliver"}, Params: []Param{id}, Fixed: []string{"--via=pdf"}}
+	archive := ToolSpec{Name: "company_archive", Class: "archive", Command: []string{"company", "archive"}, Params: []Param{id}}
+	for _, tc := range []struct {
+		spec ToolSpec
+		dry  bool
+	}{{describe, false}, {invoiceList, false}, {create, true}, {upload, true}, {archive, true}, {del, true}, {deliver, true}} {
+		props := InputSchema(tc.spec)["properties"].(map[string]any)
+		p, ok := props["dry_run"]
+		if ok != tc.dry {
+			t.Errorf("%s: dry_run %v, erwartet %v", tc.spec.Name, ok, tc.dry)
+			continue
+		}
+		if ok && (p.(map[string]any)["type"] != "boolean" || p.(map[string]any)["description"] == "") {
+			t.Errorf("%s: dry_run %v", tc.spec.Name, p)
+		}
+		if req, _ := InputSchema(tc.spec)["required"].([]string); slices.Contains(req, "dry_run") {
+			t.Errorf("%s: dry_run ist Pflicht", tc.spec.Name)
+		}
+	}
+	for _, tc := range []struct {
+		spec ToolSpec
+		raw  string
+		mode Mode
+		want []string
+	}{
+		{create, `{"name":"X","dry_run":true}`, ModeWrite, []string{"company", "create", "--dry-run=true", "--name=X", "--no-input", "-o", "json", "--"}},
+		{create, `{"name":"X"}`, ModeDestructive, []string{"company", "create", "--name=X", "--no-input", "-o", "json", "--"}},
+		{archive, `{"id":2843,"dry_run":false}`, ModeWrite, []string{"company", "archive", "--dry-run=false", "--no-input", "-o", "json", "--", "2843"}},
+		{del, `{"id":459}`, ModeDestructive, []string{"invoice", "delete", "--yes", "--no-input", "-o", "json", "--", "459"}},
+		{del, `{"id":459,"dry_run":true}`, ModeDestructive, []string{"invoice", "delete", "--dry-run=true", "--yes", "--no-input", "-o", "json", "--", "459"}},
+		{deliver, `{"id":459}`, ModeDestructive, []string{"invoice", "deliver", "--via=pdf", "--yes", "--no-input", "-o", "json", "--", "459"}},
+		// not served in these modes; Args alone never confirms for them
+		{del, `{"id":459}`, ModeWrite, []string{"invoice", "delete", "--no-input", "-o", "json", "--", "459"}},
+		{deliver, `{"id":459}`, ModeRead, []string{"invoice", "deliver", "--via=pdf", "--no-input", "-o", "json", "--", "459"}},
+	} {
+		if got := mustArgs(t, tc.spec, tc.raw, Options{Mode: tc.mode}); !slices.Equal(got, tc.want) {
+			t.Errorf("%s %s Mode %d\n got %q\nwant %q", tc.spec.Name, tc.raw, tc.mode, got, tc.want)
+		}
+	}
+	// a read tool has no dry_run; a write tool takes it only as a boolean
+	for _, tc := range []struct {
+		spec ToolSpec
+		raw  string
+		msg  string
+	}{
+		{describe, `{"id":1,"dry_run":true}`, "unbekannter Parameter „dry_run“"},
+		{create, `{"dry_run":"true"}`, "„dry_run“: Wahrheitswert"},
+		{deliver, `{"id":1,"via":"email"}`, "unbekannter Parameter „via“"},
+		{deliver, `{"id":1,"yes":false}`, "unbekannter Parameter „yes“"},
+	} {
+		_, err := Args(tc.spec, json.RawMessage(tc.raw), Options{Mode: ModeDestructive}, t.TempDir())
+		var ae *ArgError
+		if !errors.As(err, &ae) || !strings.Contains(ae.Msg, tc.msg) {
+			t.Errorf("%s %s: Fehler %v, erwartet %q", tc.spec.Name, tc.raw, err, tc.msg)
+		}
+	}
+	// the hint lists dry_run with the other parameters
+	_, err := Args(create, json.RawMessage(`{"x":1}`), Options{}, t.TempDir())
+	var ae *ArgError
+	if !errors.As(err, &ae) || ae.Hint != "Erlaubte Parameter: dry_run, name" {
+		t.Errorf("Fehler %v", err)
+	}
+}

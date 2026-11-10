@@ -17,6 +17,7 @@ import (
 
 	"github.com/Padrio/papierkram-cli/internal/buildinfo"
 	"github.com/Padrio/papierkram-cli/internal/clierr"
+	"github.com/Padrio/papierkram-cli/internal/config"
 	"github.com/Padrio/papierkram-cli/internal/mcpserver"
 )
 
@@ -31,10 +32,52 @@ import (
 // fixed for every call. FilesDir is the directory every file path of a
 // tool lies in (empty: no tool with files, ruling T5-E). Timeout is
 // the --timeout of every call (empty: the CLI default or the context's).
+// AllowWrites (--allow-writes) adds the tools of create, update and
+// archive; AllowDestructive (--allow-destructive) adds those and the
+// tools of destructive and send, which then run with --yes (mcpMode).
 type MCPOptions struct {
-	Context  string
-	FilesDir string
-	Timeout  string
+	Context          string
+	FilesDir         string
+	Timeout          string
+	AllowWrites      bool
+	AllowDestructive bool
+}
+
+// mcpMode is the mode of the server (spec v0.2 §3): read tools only
+// without options, --allow-writes adds create, update and archive,
+// --allow-destructive adds those and destructive and send (deleting
+// without creating is no useful mode). The read-only mode wins: with
+// PAPIERKRAM_READ_ONLY or read_only of the context of o the server is in
+// ModeRead, and when an option asked for more, a hint on stderr says so.
+// The configuration is resolved without the keychain; its errors stop the
+// start.
+func (a *App) mcpMode(o MCPOptions) (mcpserver.Mode, error) {
+	want := mcpserver.ModeRead
+	switch {
+	case o.AllowDestructive:
+		want = mcpserver.ModeDestructive
+	case o.AllowWrites:
+		want = mcpserver.ModeWrite
+	}
+	why := ""
+	if config.EnvReadOnly(a.Env) {
+		why = "PAPIERKRAM_READ_ONLY"
+	} else {
+		r, err := a.resolveWith(o.Context, nil)
+		if err != nil {
+			return want, err
+		}
+		if r.ReadOnly {
+			why = fmt.Sprintf("Kontext „%s“ ist schreibgeschützt", printable(r.Context))
+		}
+	}
+	if why == "" {
+		return want, nil
+	}
+	if want != mcpserver.ModeRead {
+		_, _ = fmt.Fprintf(a.Err, "Hinweis: Schreibschutz aktiv (%s): --allow-writes/--allow-destructive wirkungslos, nur lesende Tools\n", why)
+	}
+	return mcpserver.ModeRead, nil
 }
 
 // mcpStartFlags are global flags that mean nothing for the server: every
@@ -44,11 +87,15 @@ var mcpStartFlags = []string{"yes", "jq", "fields", "output"}
 
 const mcpServeLong = `Startet einen MCP-Server (Model Context Protocol) über stdin/stdout, damit ein KI-Client wie Claude Desktop oder Claude Code die Befehle als Tools aufrufen kann.
 
-Je Lese-Befehl (Klasse read_only) gibt es ein Tool, z. B. invoice_list oder invoice_describe; Name, Beschreibung (mit Klasse und Credits) und Eingabe-Schema stammen aus papierkram commands --json. Lokale Befehle (auth, context, local, completion, time start|stop|status|discard) und papierkram api haben keine Tools.
+Je Befehl einer freigeschalteten Klasse gibt es ein Tool, z. B. invoice_list oder company_create; Name, Beschreibung (mit Klasse und Credits) und Eingabe-Schema stammen aus papierkram commands --json. Lokale Befehle (auth, context, local, completion, time start|stop|status|discard) und papierkram api haben keine Tools.
+
+Modi: Ohne Option gibt es nur lesende Tools (read_only). --allow-writes schaltet create, update und archive frei. --allow-destructive schaltet zusätzlich destructive und send frei (delete, cancel, reverse, pay, document delete, deliver) und schließt --allow-writes ein; diese Tools laufen mit --yes, die Option ist die Freigabe dafür. Ein nicht freigeschaltetes Tool gibt es nicht (Protokollfehler beim Aufruf). Ist der Schreibschutz aktiv (PAPIERKRAM_READ_ONLY oder read_only des Kontexts), bleibt der Server bei lesenden Tools, mit einem Hinweis auf stderr; jeder Aufruf geht außerdem wie auf der Kommandozeile durch den Schreibschutz (Exit 9).
+
+Jedes schreibende Tool hat den Parameter dry_run (--dry-run): Es prüft und zeigt die Anfrage, ohne sie zu senden. Die deliver-Tools (invoice_deliver, estimate_deliver) versenden nur als PDF (--via pdf) und haben nur id und dry_run; eine E-Mail ist über MCP nicht möglich.
 
 Ein Tool-Aufruf führt genau den Befehl aus, den er beschreibt, mit -o json und --no-input: dieselben Prüfungen, derselbe Schreibschutz, dieselben Credits und Exit-Codes wie auf der Kommandozeile. Das Ergebnis ist die JSON-Ausgabe des Befehls; Hinweise und Warnungen von stderr folgen als zweiter Inhalt. Bei einem Fehler ist das Ergebnis ein Tool-Fehler mit der JSON-Fehlerzeile (code, message, hint, exit_code). Aufrufe laufen nacheinander.
 
-Tools mit Dateien (pdf) gibt es nur mit --files-dir: ein vorhandener Ordner, nicht die Wurzel des Dateisystems und nicht das Home-Verzeichnis selbst (sonst Exit 2), am besten ein eigener Unterordner. Ohne --files-dir fehlen diese Tools, mit einem Hinweis auf stderr; ein Arbeitsverzeichnis gilt nie als Dateiordner (Claude Desktop startet Server z. B. in /). Dateipfade der Tools sind relativ zu diesem Ordner: kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis ins Leere oder aus dem Ordner hinaus, kein fehlendes Verzeichnis (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei.
+Tools mit Dateien (pdf, voucher upload, voucher create mit --file) gibt es nur mit --files-dir: ein vorhandener Ordner, nicht die Wurzel des Dateisystems und nicht das Home-Verzeichnis selbst (sonst Exit 2), am besten ein eigener Unterordner. Ohne --files-dir fehlen diese Tools, mit einem Hinweis auf stderr; ein Arbeitsverzeichnis gilt nie als Dateiordner (Claude Desktop startet Server z. B. in /). Dateipfade der Tools sind relativ zu diesem Ordner: kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis ins Leere oder aus dem Ordner hinaus, kein fehlendes Verzeichnis (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei. Ein Upload liest nur Dateien aus diesem Ordner.
 
 In der Konfiguration eines Clients (JSON, z. B. {"command":"papierkram","args":["mcp","serve","--files-dir","/Users/name/Belege"]}) wird ~ nicht erweitert: den Ordner absolut angeben.
 
@@ -68,10 +115,11 @@ func newMCPCmd(app *App) *cobra.Command {
 	}
 	serve := &cobra.Command{
 		Use:   "serve",
-		Short: "MCP-Server über stdio starten (Lese-Tools)",
+		Short: "MCP-Server über stdio starten",
 		Long:  mcpServeLong,
 		Example: "  papierkram mcp serve\n" +
 			"  papierkram mcp serve --context firma\n" +
+			"  papierkram mcp serve --context firma --allow-writes\n" +
 			"  papierkram mcp serve --files-dir /Users/name/Belege",
 		// sends nothing itself and writes nothing: --dry-run is rejected
 		Annotations: map[string]string{annotLocal: "true"},
@@ -87,7 +135,12 @@ func newMCPCmd(app *App) *cobra.Command {
 						"Tool-Aufrufe laufen immer mit -o json und --no-input, nie mit --yes, --jq oder --fields; ohne "+spelled+" starten")
 				}
 			}
-			o := MCPOptions{Context: app.Flags.Context, FilesDir: flagString(c, "files-dir")}
+			o := MCPOptions{
+				Context:          app.Flags.Context,
+				FilesDir:         flagString(c, "files-dir"),
+				AllowWrites:      flagBool(c, "allow-writes"),
+				AllowDestructive: flagBool(c, "allow-destructive"),
+			}
 			if c.Flags().Changed("timeout") {
 				o.Timeout = app.Flags.Timeout.String()
 			}
@@ -95,17 +148,23 @@ func newMCPCmd(app *App) *cobra.Command {
 		},
 	}
 	serve.Flags().String("files-dir", "", "Ordner, in dem alle Dateipfade der Tools liegen (absolut; ohne ihn keine Tools mit Dateien)")
+	serve.Flags().Bool("allow-writes", false, "auch Tools, die anlegen, ändern oder archivieren (create, update, archive)")
+	serve.Flags().Bool("allow-destructive", false, "zusätzlich Tools, die löschen, stornieren, zahlen oder versenden (destructive, send); sie laufen mit --yes, schließt --allow-writes ein")
 	cmd.AddCommand(serve)
 	return cmd
 }
 
-// NewMCPServer builds the MCP server of app: the read tools of the command
-// tree, every call run by mcpRunner in context o.Context, with --debug
-// when app was started with it. The configuration is resolved once
+// NewMCPServer builds the MCP server of app: the tools of the command
+// tree that the mode allows (mcpMode), every call run by mcpRunner in
+// context o.Context, with --debug when app was started with it. The configuration is resolved once
 // without the keychain, so a broken config.toml or an unknown context
 // stops the start (its error, no server).
 func NewMCPServer(app *App, o MCPOptions) (*mcp.Server, error) {
 	r, err := app.resolveWith(o.Context, nil)
+	if err != nil {
+		return nil, err
+	}
+	mode, err := app.mcpMode(o)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +179,7 @@ func NewMCPServer(app *App, o MCPOptions) (*mcp.Server, error) {
 		return nil, err
 	}
 	return mcpserver.New(specs, app.mcpRunner(), mcpserver.Options{
-		Mode:     mcpserver.ModeRead,
+		Mode:     mode,
 		Context:  r.Context,
 		Timeout:  o.Timeout,
 		Debug:    app.Flags.Debug,

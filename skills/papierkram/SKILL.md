@@ -19,6 +19,8 @@ Befehle immer als `papierkram` aufrufen (die Kurzform `pk` gibt es nicht bei jed
 6. **Exit 11 und 12 nie blind wiederholen.** Erst `hint` lesen, mit `describe` oder `list` nachsehen, dann höchstens den einen Nachholschritt aus dem Hinweis (bei `voucher create --file` das `retry_command`). Ablauf je Befehl: [Exit 11 und 12 Schritt für Schritt](https://github.com/Padrio/papierkram-cli/blob/main/AGENTS.md#exit-11-und-12-schritt-für-schritt).
 7. **Exit 6 (429) nie wiederholen**, keine Tokens in Befehlen, `--all` immer mit `--max-pages`. Jede Anfrage kostet Monats-Credits; `credits` steht in `commands --json` und in der `--dry-run`-Ausgabe.
 
+**Über MCP.** Läuft `papierkram mcp serve` als MCP-Server, heißen die Befehle als Tools `<ressource>_<aktion>` (`invoice_list`, `company_create`); ein Tool-Aufruf ist derselbe Befehl mit `-o json --no-input`, alle Regeln oben gelten unverändert. Statt `--dry-run` gibt es den Parameter `dry_run`. Schreibende Tools gibt es nur, wenn der Mensch den Server mit `--allow-writes` gestartet hat, löschende und versendende nur mit `--allow-destructive` (sie laufen dann mit `--yes`, also trotzdem vorher `dry_run` und die Freigabe des Nutzers für genau diese Aktion einholen). `deliver` sendet dort nur als PDF. Fehler kommen als Tool-Fehler mit der JSON-Fehlerzeile (`code`, `exit_code`); den zweiten Inhalt mit Hinweisen von stderr immer lesen. Details: [AGENTS.md, MCP-Server](https://github.com/Padrio/papierkram-cli/blob/main/AGENTS.md#mcp-server).
+
 ## Befehle und Schemas finden
 
 ```sh

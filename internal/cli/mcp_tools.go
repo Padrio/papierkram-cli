@@ -41,9 +41,19 @@ var mcpPositionals = map[string]mcpPositional{
 	"<datei>":    {"file", "Pfad der Datei, relativ zum Dateiordner des Servers (mcp serve --files-dir)", mcpserver.KindPath},
 }
 
-// mcpReserved is the parameter of the dry run switch of the write tools
-// (task 6); no flag may take its name.
-const mcpReserved = "dry_run"
+// mcpDeliverFixed are the arguments of every deliver tool instead of its
+// flags: deliver over MCP sends only as PDF, never an email (spec v0.2
+// §3, AGENTS.md: recipient, subject and text come from the human). The
+// tool has no flag parameter at all, so neither --via nor --input (which
+// could carry send_via) nor a mail flag can reach the CLI.
+var mcpDeliverFixed = []string{"--via=" + viaPDF}
+
+// mcpDeliver reports whether c is a deliver command (invoice deliver,
+// estimate deliver).
+func mcpDeliver(c commandInfo) bool {
+	f := strings.Fields(c.Command)
+	return f[len(f)-1] == "deliver"
+}
 
 // mcpPathFlags take a file path; "-" (stdin/stdout, the transport of the
 // server) is not allowed there.
@@ -107,6 +117,12 @@ func mcpToolSpec(c commandInfo) (mcpserver.ToolSpec, error) {
 		return s, err
 	}
 	s.Params = pos
+	if mcpDeliver(c) {
+		s.Fixed = slices.Clone(mcpDeliverFixed)
+		s.Description = fmt.Sprintf("%s, nur als PDF (--via pdf, keine E-Mail). Klasse %s, %s je Aufruf",
+			strings.TrimSuffix(c.Short, "."), c.Class, creditsText(mcpCredits(c)))
+		return s, nil
+	}
 	resolves, perPage := false, false
 	for _, f := range c.Flags {
 		if slices.Contains(mcpFixedFlags, f.Name) {
@@ -117,26 +133,30 @@ func mcpToolSpec(c commandInfo) (mcpserver.ToolSpec, error) {
 		if err != nil {
 			return s, fmt.Errorf("mcp: %s --%s: %w", c.Command, f.Name, err)
 		}
-		if p.Name == mcpReserved || slices.ContainsFunc(s.Params, func(q mcpserver.Param) bool { return q.Name == p.Name }) {
+		if p.Name == mcpserver.DryRun || slices.ContainsFunc(s.Params, func(q mcpserver.Param) bool { return q.Name == p.Name }) {
 			return s, fmt.Errorf("mcp: %s --%s: Parametername %s doppelt oder reserviert", c.Command, f.Name, p.Name)
 		}
 		resolves = resolves || f.Resolves != ""
 		perPage = perPage || f.Name == "max-pages"
 		s.Params = append(s.Params, p)
 	}
-	credits := 0
-	if c.Credits != nil {
-		credits = *c.Credits
-	}
 	unit := "je Aufruf"
 	if perPage {
 		unit = "je Seite"
 	}
-	s.Description = fmt.Sprintf("%s. Klasse %s, %s %s", strings.TrimSuffix(c.Short, "."), c.Class, creditsText(credits), unit)
+	s.Description = fmt.Sprintf("%s. Klasse %s, %s %s", strings.TrimSuffix(c.Short, "."), c.Class, creditsText(mcpCredits(c)), unit)
 	if resolves {
 		s.Description += "; ID-Felder nehmen auch Namen (1 Credit je geladener Seite)"
 	}
 	return s, nil
+}
+
+// mcpCredits are the credits of a call of c (commands --json).
+func mcpCredits(c commandInfo) int {
+	if c.Credits == nil {
+		return 0
+	}
+	return *c.Credits
 }
 
 // mcpPositionalParams are the parameters of the positional arguments in

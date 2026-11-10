@@ -108,9 +108,10 @@ type docCmd struct {
 }
 
 // docShellCommands are the commands besides the CLI that a checked code
-// block may run (installation, completion setup, jq); every other command
+// block may run (installation, completion setup, jq, the MCP setup of
+// Claude Code); every other command
 // is an error, so a misspelled papierkram is never skipped silently.
-var docShellCommands = []string{"brew", "scoop", "go", "source", "jq"}
+var docShellCommands = []string{"brew", "scoop", "go", "source", "jq", "claude"}
 
 // substPlaceholder replaces a $(…) or <(…) in the enclosing line.
 const substPlaceholder = "SUBST"
@@ -142,6 +143,12 @@ func docLineCommands(text string) ([]docCmd, error) {
 			return nil, fmt.Errorf("kein Befehl nach den Zuweisungen %v", env)
 		case words[0] == "papierkram" || words[0] == "pk":
 			out = append(out, docCmd{env, append([]string{"papierkram"}, words[1:]...)})
+		case words[0] == "claude":
+			// claude mcp add <name> -- papierkram mcp serve …: the server
+			// command line is checked like any other
+			if i := slices.Index(words, "--"); i >= 0 && i+1 < len(words) && words[i+1] == "papierkram" {
+				out = append(out, docCmd{env, words[i+1:]})
+			}
 		case !slices.Contains(docShellCommands, words[0]):
 			return nil, fmt.Errorf("unbekannter Befehl %q (Tippfehler? sonst in docShellCommands aufnehmen)", words[0])
 		}
@@ -233,6 +240,8 @@ func TestDocLineCommandsUnwrapAndReject(t *testing.T) {
 		"source <(papierkram completion $(echo bash))":                      "-",
 		"jq . <(papierkram invoice list -o json)":                           "papierkram invoice list -o json",
 		`papierkram invoice list --jq '.entries[] | "$(x)"'`:                "papierkram invoice list --jq .entries[] | \"$(x)\"",
+		"claude mcp add papierkram -- papierkram mcp serve --allow-writes":  "papierkram mcp serve --allow-writes",
+		"claude mcp list": "",
 	} {
 		cmds, err := docLineCommands(line)
 		var got []string
