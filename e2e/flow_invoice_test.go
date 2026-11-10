@@ -54,12 +54,13 @@ func TestE2E_InvoiceFlow(t *testing.T) {
 		d := s.decode(t, r.stdout)
 		s.measuref(t, "Statuswerte Rechnung", "nach deliver --via pdf: state %v, invoice_no %v, sent_on %v, sent_via %v",
 			d["state"], d["invoice_no"], d["sent_on"], d["sent_via"])
-	}
 
-	// 2a. paid-status of the permanent customer (1), hard exit 0 and the
-	// contract; measured: the own invoice in it and the list entries
-	s.need(t, 1)
-	s.paidStatusAfterDeliver(t, c, idOf(inv))
+		// 2a. only after a deliver with exit 0: paid-status of the
+		// permanent customer (1), hard exit 0 and the contract;
+		// measured: the own invoice in it and the list entries
+		s.need(t, 1)
+		s.paidStatusAfterDeliver(t, c, idOf(inv))
+	}
 
 	// 3. pdf (1), hard: exit 0 and a PDF file
 	s.need(t, 1)
@@ -114,7 +115,9 @@ func TestE2E_InvoiceFlow(t *testing.T) {
 }
 
 // paidStatusAfterDeliver runs invoice paid-status for customer (an ID:
-// one list page, no name resolution) after the deliver of invoice. Hard:
+// no name resolution) from today (Berlin: the date of the invoice), so
+// the list stays one page however many runs booked on the permanent
+// customer, after the deliver of invoice. Hard:
 // exit 0 and docs/schemas/paid-status.json. Measured (open point 30):
 // whether the invoice is an open item, with state and outstanding_amount,
 // and how many entries of the list the API sent carry outstanding_amount.
@@ -123,7 +126,7 @@ func TestE2E_InvoiceFlow(t *testing.T) {
 // outstanding_amount ends paid-status with exit 1.
 func (s *liveSuite) paidStatusAfterDeliver(t *testing.T, customer, invoice int64) {
 	t.Helper()
-	r := s.run(t, "", "invoice", "paid-status", "--customer", ids(customer), "-o", "json")
+	r := s.run(t, "", "invoice", "paid-status", "--customer", ids(customer), "--from", s.todayBerlin(), "-o", "json")
 	s.measureInvoiceList(t, "paid-status nach Versand", r, invoice)
 	if r.code != 0 {
 		s.quotaSkip(t, r, []string{"invoice", "paid-status"})
@@ -174,17 +177,41 @@ func (s *liveSuite) measureInvoiceList(t *testing.T, topic string, r result, inv
 }
 
 // findCancellation looks for the cancellation invoice of invoice (open
-// point 31) in the invoice list of customer of today, newest first:
-// candidates are invoices with a higher id that this run did not
-// register. Measured: name, state, invoice_no and key shape of each.
-// Exactly one is registered for the cleanup as follow-up of invoice
-// (archiveOnly: it has a number); none is a measurement, more than one an
+// point 31) in the invoice list of customer of today (Berlin), newest
+// first: candidates are invoices with a higher id that this run did not
+// register. Measured: name, state, invoice_no, type and key shape of
+// each. Exactly one is registered for the cleanup as follow-up of
+// invoice (archiveOnly: it has a number) with the type of its entry, when
+// that is the type of an invoice (e2eguard.IsFollowUpType, as followUp
+// does; remove checks it again); none is a measurement, more than one an
 // ABWEICHUNG, and none of them is registered (never a choice).
+//
+// The heuristic rests on assumptions the live run has to measure (open
+// point 31):
+//
+//	(a) the cancellation is an object of its own (not only a state);
+//	(b) it has the company_id of the cancelled invoice;
+//	(c) its document_date is today;
+//	(d) ids rise monotonically, so it has a higher id;
+//	(e) no other invoice of the permanent customer appears today (no
+//	    parallel run, no human);
+//	(f) the list can be sorted by id (otherwise: unsorted, the list is
+//	    limited to one day and one customer anyway, 1 credit more);
+//	(g) it can be archived;
+//	(h) its name is not pk-e2e-… (the API names it): it is touched only
+//	    as a follow-up of the own invoice.
 func (s *liveSuite) findCancellation(t *testing.T, customer, invoice int64) {
 	t.Helper()
-	args := []string{"invoice", "list", "--company", ids(customer), "--from", "today", "--to", "today",
-		"--sort", "id", "--desc", "--limit", "100", "-o", "json"}
-	r := s.run(t, "", args...)
+	day := s.todayBerlin()
+	args := []string{"invoice", "list", "--company", ids(customer), "--from", day, "--to", day, "--limit", "100", "-o", "json"}
+	r := s.run(t, "", append(args, "--sort", "id", "--desc")...)
+	if r.code != 0 {
+		s.quotaSkip(t, r, args)
+		// (f): without sorting, the candidates are found by id anyway
+		s.measuref(t, "Storno-Rechnung", "invoice list --sort id: Exit %d, ohne Sortierung erneut", r.code)
+		s.need(t, 1)
+		r = s.run(t, "", args...)
+	}
 	if r.code != 0 {
 		s.quotaSkip(t, r, args)
 		s.deviatef(t, "Storno-Suche: invoice list Exit %d, nicht gemessen", r.code)
@@ -194,8 +221,8 @@ func (s *liveSuite) findCancellation(t *testing.T, customer, invoice int64) {
 	for _, e := range entries(s.decode(t, r.stdout)) {
 		if idOf(e) > invoice && !s.tracked("invoice", idOf(e)) {
 			found = append(found, e)
-			s.measuref(t, "Storno-Rechnung", "Kandidat %d: name %q, state %q, invoice_no %v, Schlüssel %s",
-				idOf(e), str(e["name"]), str(e["state"]), e["invoice_no"], keyShape(e))
+			s.measuref(t, "Storno-Rechnung", "Kandidat %d: name %q, state %q, invoice_no %v, type %q, Schlüssel %s",
+				idOf(e), str(e["name"]), str(e["state"]), e["invoice_no"], str(e["type"]), keyShape(e))
 		}
 	}
 	switch len(found) {
@@ -203,11 +230,16 @@ func (s *liveSuite) findCancellation(t *testing.T, customer, invoice int64) {
 		s.measuref(t, "Storno-Rechnung", "kein Folgeobjekt in der Liste (Rechnung %d)", invoice)
 	case 1:
 		f := found[0]
+		typ := str(f["type"])
+		if !e2eguard.IsFollowUpType("invoice", typ) {
+			s.deviatef(t, "Storno-Suche: Kandidat %d mit Typ %q, nicht angefasst", idOf(f), typ)
+			return
+		}
 		name := str(f["name"])
 		if name == "" {
 			name = s.prefix + "folgeobjekt-" + ids(idOf(f))
 		}
-		s.track(object{resource: "invoice", id: idOf(f), name: name, followUpOf: invoice, followUpType: "invoice", archiveOnly: true})
+		s.track(object{resource: "invoice", id: idOf(f), name: name, followUpOf: invoice, followUpType: typ, archiveOnly: true})
 		s.measuref(t, "Storno-Rechnung", "Storno-Rechnung gefunden: %d zu Rechnung %d, zum Archivieren registriert", idOf(f), invoice)
 	default:
 		var all []string

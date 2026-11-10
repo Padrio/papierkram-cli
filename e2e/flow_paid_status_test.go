@@ -12,7 +12,8 @@ import (
 )
 
 // Spec v0.2 §4, §5, §7: invoice paid-status with a name at --customer
-// (the name resolution of one flag) against the sandbox. Both runs share
+// (the name resolution of one flag) against the sandbox, from today
+// (Berlin). Both runs share
 // one directory, so they share the cache of the CLI. Hard: the first run
 // exits 0 with paid-status.json, names the permanent customer on stderr
 // ("→ <id> (") and sends GET /contact/companies and GET /income/invoices
@@ -23,11 +24,14 @@ func TestE2E_PaidStatus(t *testing.T) {
 	s := live(t)
 	id := s.permanentCustomer(t)
 	dir := t.TempDir()
+	// from today (Berlin): one page of invoices, however many runs booked
+	// on the permanent customer
+	day := s.todayBerlin()
 
 	// 1. company list (1 page per 100 companies, at most 5) and the
 	// invoice list (1)
 	s.need(t, 6)
-	args := []string{"invoice", "paid-status", "--customer", e2eguard.PermanentCustomer, "-o", "json"}
+	args := []string{"invoice", "paid-status", "--customer", e2eguard.PermanentCustomer, "--from", day, "-o", "json"}
 	r := s.runIn(t, dir, time.Now, "", args...)
 	if r.code != 0 {
 		s.quotaSkip(t, r, args)
@@ -51,7 +55,7 @@ func TestE2E_PaidStatus(t *testing.T) {
 	// 2. the same with --overdue: the name from the cache, the invoice
 	// list (1)
 	s.need(t, 1)
-	args = []string{"invoice", "paid-status", "--customer", e2eguard.PermanentCustomer, "--overdue", "-o", "json"}
+	args = []string{"invoice", "paid-status", "--customer", e2eguard.PermanentCustomer, "--from", day, "--overdue", "-o", "json"}
 	r = s.runIn(t, dir, time.Now, "", args...)
 	if r.code != 0 {
 		s.quotaSkip(t, r, args)
@@ -67,6 +71,10 @@ func TestE2E_PaidStatus(t *testing.T) {
 		s.errorf(t, "invoice paid-status --overdue: keine Anfrage GET /income/invoices mit company_id=%d", id)
 	}
 }
+
+// todayBerlin is today in Europe/Berlin (s.loc) as YYYY-MM-DD: the day
+// the CLI gives "today" in document dates and date filters.
+func (s *liveSuite) todayBerlin() string { return time.Now().In(s.loc).Format("2006-01-02") }
 
 // invoicesOf reports whether r sent GET /income/invoices with the filter
 // company_id=company.

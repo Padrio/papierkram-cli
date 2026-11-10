@@ -74,8 +74,11 @@
 // up to 2 there (delete, archive; never cancel), together at most 8; the
 // voucher of VoucherFlow (reversed and cancelled) may need up to 3 more
 // (cancel, delete, archive). Both come from the reserve: its documented
-// worst case is 4 × 4 + 17 × 2 = 50 (that voucher included), with the
-// follow-ups 58 of 60.
+// worst case is 4 × 4 + 17 × 2 = 50 (that voucher included, and the
+// describe after a refused archive of an archiveOnly object: archive +
+// describe = 2), with the follow-ups 58 of 60. In the tests, a refused
+// sort of the cancellation list costs 1 more (unsorted again), taken from
+// the margin of the tests.
 //
 // Of the budget, cleanupReserve = 60 is kept for the final cleanup: the
 // documented worst case (e2eguard.CleanupReserve) for the 4 draft
