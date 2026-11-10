@@ -79,7 +79,7 @@ func (a *App) dryRun(ctx context.Context, e registry.Entry, method, url string, 
 	switch {
 	case x.read != nil:
 		fmt.Fprintf(&b, "Probelauf – nichts %s\nGelesen: %s %s (%s, bereits verbraucht)\n", done, x.read.Method, x.read.URL, creditsText(x.read.Credits))
-	case len(x.resolved) > 0:
+	case resolvedSent(x.resolved):
 		// the list requests of the resolution were sent
 		fmt.Fprintf(&b, "Probelauf – nichts %s\n", done)
 	default:
@@ -122,4 +122,16 @@ func (a *App) dryRun(ctx context.Context, e registry.Entry, method, url string, 
 	}
 	_, err := fmt.Fprint(a.Out, b.String())
 	return err
+}
+
+// resolvedSent reports a resolution that sent its list requests (not
+// all from the cache): the dry run then sent requests, only nothing was
+// changed.
+func resolvedSent(res []Resolution) bool {
+	for _, r := range res {
+		if !r.Cached {
+			return true
+		}
+	}
+	return false
 }

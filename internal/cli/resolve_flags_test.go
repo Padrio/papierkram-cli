@@ -253,6 +253,14 @@ func TestDryRunShowsResolved(t *testing.T) {
 	}
 	wantContract(t, "dry-run", []byte(out))
 
+	// text form from the cache: no request at all (final review B-M6b)
+	app.Out.(interface{ Reset() }).Reset()
+	wantExit(t, app, Run(app, slices.Delete(slices.Clone(args), o, o+2)), 0)
+	wantRequests(t, srv, 1)
+	if out, _ = bufs(app); !strings.HasPrefix(out, "Probelauf – nichts gesendet\nAufgelöst: --customer „Mustermann GmbH“ → 2 (aus dem Zwischenspeicher, 0 Credits)\n") {
+		t.Errorf("stdout %s", out)
+	}
+
 	// without a name: no resolved
 	app, _ = apiApp(t)
 	wantExit(t, app, Run(app, invoiceByName("3214", "--dry-run")), 0)

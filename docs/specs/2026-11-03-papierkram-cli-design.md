@@ -290,7 +290,7 @@ Zwei Stufen **[Pascal]**:
 - `auth status` und `--debug` zeigen, welche Stufe aktiv ist. AGENTS.md empfiehlt für Analyse-Agents die Env-Variable.
 
 ### 8.4 `--dry-run`
-Bei jeder Mutation (inkl. `api` mit Nicht-GET): validiert lokal, zeigt Method, URL, Body (bei Upload: Dateiname, Größe, MIME-Typ) und Credit-Kosten; sendet nichts; Exit 0. Mit `-o json`: `{"dry_run":true,"method":…,"url":…,"body":…,"credits":…}`. Keine Bestätigung nötig. Namen in Flags werden auch bei `--dry-run` aufgelöst (Listenanfragen, Credits verbraucht); sie stehen unter `resolved` (`flag`, `name`, `resource`, `id`, `credits`, `cached`), `credits` enthält sie (v0.1.1; abweichend von v0.2-Spec §4 nicht unter `read`, das ein Einzelobjekt bleibt).
+Bei jeder Mutation (inkl. `api` mit Nicht-GET): validiert lokal, zeigt Method, URL, Body (bei Upload: Dateiname, Größe, MIME-Typ) und Credit-Kosten; sendet nichts; Exit 0. Mit `-o json`: `{"dry_run":true,"method":…,"url":…,"body":…,"credits":…}`. Keine Bestätigung nötig. Namen in Flags werden auch bei `--dry-run` aufgelöst (Listenanfragen, Credits verbraucht); sie stehen unter `resolved` (`flag`, `name`, `resource`, `id`, `credits`, `cached`), `credits` enthält sie (v0.1.1; abweichend von v0.2-Spec §4 nicht unter `read`, das ein Einzelobjekt bleibt). Die Textform beginnt mit „Probelauf – nichts angelegt“ bzw. „… nichts geändert“, wenn Leseanfragen gesendet wurden (Auflösung, `--from-estimate`, Zahlungsbedingung), sonst – auch wenn alle Namen aus dem Zwischenspeicher kamen – mit „Probelauf – nichts gesendet“.
 
 ### 8.5 Credits
 - Kosten pro Command stehen in der Registry und in `commands --json`.
