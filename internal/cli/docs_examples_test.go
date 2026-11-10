@@ -739,19 +739,20 @@ func skillPaidStatus(t *testing.T) []docCmd {
 }
 
 // The paid-status lines of "offene Posten prüfen" run on a list the way
-// the API answers (outstanding_amount as a string): drafts and canceled
-// invoices are no open items even with an amount left (the spec example
+// the API answers (outstanding_amount as a string): drafts, canceled and
+// deleted invoices are no open items even with an amount left (the spec example
 // of a canceled invoice keeps "119.0"), paid ones ("0.0") neither, and
 // only due dates before today count as overdue (review I1, task 4: the
-// report replaces the jq programs). Each line runs read-only and prints
+// report replaces the jq programs; ruling T4-A: deleted). Each line runs read-only and prints
 // the invoice numbers of want, in order.
 func TestSkillOpenItems(t *testing.T) {
-	list := `{"type":"list","page":1,"page_size":100,"total_pages":1,"total_entries":5,"has_more":false,"entries":[
+	list := `{"type":"list","page":1,"page_size":100,"total_pages":1,"total_entries":6,"has_more":false,"entries":[
 	{"id":1,"invoice_no":"RE-1","state":"unpaid","due_date":"2000-01-31","total_gross":19.0,"outstanding_amount":"19.0","billing":{"company":"Muster GmbH"}},
 	{"id":2,"invoice_no":"RE-2","state":"partially_paid","due_date":"2999-12-31","total_gross":200.0,"outstanding_amount":"100.0","billing":{"company":"Muster GmbH"}},
 	{"id":3,"invoice_no":"RE-3","state":"paid","due_date":"2000-01-31","total_gross":10.0,"outstanding_amount":"0.0","billing":{"company":"Muster GmbH"}},
 	{"id":4,"invoice_no":"RE-4","state":"canceled","due_date":"2000-01-31","total_gross":119.0,"outstanding_amount":"119.0","billing":{"company":"Muster GmbH"}},
-	{"id":5,"invoice_no":null,"state":"draft","due_date":null,"total_gross":10.0,"outstanding_amount":"10.0","billing":{"company":"Muster GmbH"}}]}`
+	{"id":5,"invoice_no":null,"state":"draft","due_date":null,"total_gross":10.0,"outstanding_amount":"10.0","billing":{"company":"Muster GmbH"}},
+	{"id":6,"invoice_no":"RE-6","state":"deleted","due_date":"2000-01-31","total_gross":50.0,"outstanding_amount":"50.0","billing":{"company":"Muster GmbH"}}]}`
 	want := [][]string{{"RE-1"}, {"RE-1", "RE-2"}, {"RE-1", "RE-2"}}
 	lines := skillPaidStatus(t)
 	if len(lines) != len(want) {

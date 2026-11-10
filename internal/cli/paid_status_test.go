@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Padrio/papierkram-cli/internal/testutil/golden"
 	"github.com/Padrio/papierkram-cli/internal/testutil/mockapi"
@@ -77,6 +78,7 @@ func TestPaidStatusSelectsOpen(t *testing.T) {
 		paidEntry(3, "unpaid", "119.0", "2026-06-01"),
 		paidEntry(4, "paid", "0.0", "2026-06-01"),
 		paidEntry(5, "partially_paid", "50.5", "2026-06-20"),
+		paidEntry(6, "deleted", "40.0", "2026-06-01"), // ruling T4-A
 	)
 	doc := paidReport(t, app)
 	if ids := reportIDs(doc); !slices.Equal(ids, []string{"3", "5"}) {
@@ -391,14 +393,15 @@ func TestPaidStatusReadOnlyAllowed(t *testing.T) {
 	wantRequests(t, srv, 0)
 }
 
-// A page longer than the response limit ends like invoice list: exit 1
-// with the hint of pageTooLarge.
+// A page longer than the response limit ends like invoice list (exit 1,
+// pageTooLarge) but with a hint of its own: paid-status has no --limit.
 func TestPaidStatusPageTooLarge(t *testing.T) {
 	app, srv := apiApp(t)
 	srv.OnFunc("GET", "/income/invoices", tooLarge(http.StatusOK, "application/json"))
 	wantExit(t, app, Run(app, []string{"invoice", "paid-status", "-o", "json"}), 1)
 	_, errs := bufs(app)
-	if !strings.Contains(lastLine(errs), hintListTooLarge) {
+	// M4: its own hint, paid-status has no --limit
+	if !strings.Contains(lastLine(errs), `"hint":"`+hintPaidStatusTooLarge+`"`) {
 		t.Errorf("stderr %s", lastLine(errs))
 	}
 	if !bytes.Contains([]byte(errs), []byte("64 MiB")) {
@@ -416,15 +419,39 @@ func TestPaidStatusInvalidData(t *testing.T) {
 		t.Errorf("Datum mit Uhrzeit: %v", e)
 	}
 
+	// total_gross is a display column (ruling T4-D): null or missing stays
+	// null in JSON and empty in the table
 	noGross := paidEntry(4, "unpaid", "1.0", nil)
 	delete(noGross, "total_gross")
+	nullGross := paidEntry(5, "unpaid", "2.0", nil)
+	nullGross["total_gross"] = nil
+	app, _ = paidApp(t, noGross, nullGross)
+	doc = paidReport(t, app)
+	for _, e := range doc["entries"].([]any) {
+		if g, ok := e.(map[string]any)["total_gross"]; !ok || g != nil {
+			t.Errorf("total_gross: %v", e)
+		}
+	}
+	if reportNum(doc, "total_outstanding") != "3.00" {
+		t.Errorf("Bericht %v", doc)
+	}
+	app, _ = paidApp(t, nullGross)
+	wantExit(t, app, Run(app, []string{"invoice", "paid-status"}), 0)
+	if out, _ := bufs(app); !strings.Contains(out, "\nRE-0005  Mustermann GmbH  2026-05-01                              2,00 €\n") {
+		t.Errorf("Tabelle ohne Brutto: %q", out)
+	}
+
+	badGross := paidEntry(4, "unpaid", "1.0", nil)
+	badGross["total_gross"] = "x"
 	for _, tc := range []struct {
 		name  string
 		entry any
 		want  string
 	}{
 		{"due_date", paidEntry(3, "unpaid", "1.0", "morgen"), "Rechnung 3: ungültiges due_date „morgen“ in der Rechnungsliste"},
-		{"total_gross fehlt", noGross, "Rechnung 4: ungültiger Betrag „fehlt“ in total_gross der Rechnungsliste"},
+		{"total_gross ungültig", badGross, "Rechnung 4: ungültiger Betrag „x“ in total_gross der Rechnungsliste"},
+		// M2: a number big.Rat cannot hold is no panic
+		{"Betrag zu groß", paidEntry(8, "unpaid", "1e1000001", nil), "Rechnung 8: ungültiger Betrag „1e1000001“ in outstanding_amount der Rechnungsliste"},
 		{"kein Objekt", 42, "unerwartete Listenantwort der Papierkram-API"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -494,3 +521,83 @@ func TestPaidStatusWideAndFields(t *testing.T) {
 		t.Errorf("--fields: %q", out)
 	}
 }
+
+// M6 (ruling T4-E): from warnPages invoices to read, --details warns like
+// list --all; without a terminal it proceeds, in one a "no" is exit 8
+// before any single read.
+func TestPaidStatusDetailsCostBrake(t *testing.T) {
+	var entries []map[string]any
+	for id := 1; id <= warnPages; id++ {
+		entries = append(entries, paidEntry(id, "unpaid", nil, nil))
+	}
+	details := func(t *testing.T, srv *mockapi.Server) {
+		srv.OnFunc("GET", "/income/invoices/{id}", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"outstanding_amount":"1.0"}`))
+		})
+	}
+	warn := "Warnung: --details liest 10 Rechnungen einzeln (10 Credits); mit --customer, --from oder --to eingrenzen\n"
+
+	app, srv := paidApp(t, entries...)
+	details(t, srv)
+	doc := paidReport(t, app, "--details")
+	wantRequests(t, srv, 1+warnPages)
+	if reportNum(doc, "count") != "10" || reportNum(doc, "total_outstanding") != "10.00" {
+		t.Errorf("Bericht %v", doc)
+	}
+	if _, errs := bufs(app); !strings.Contains(errs, "Hinweis: --details liest 10 Rechnungen einzeln (10 Credits)\n"+warn) {
+		t.Errorf("stderr %q", errs)
+	}
+
+	app, srv = paidApp(t, entries...)
+	details(t, srv)
+	app.StdinTTY = true
+	app.In = strings.NewReader("n\n")
+	wantExit(t, app, Run(app, []string{"invoice", "paid-status", "--details", "-o", "json"}), 8)
+	wantPaths(t, srv, "GET /income/invoices")
+	_, errs := bufs(app)
+	if !strings.Contains(errs, warn) || !strings.Contains(errs, "Fortfahren? [j/N] ") {
+		t.Errorf("stderr %q", errs)
+	}
+	wantErrText(t, app, "Abgebrochen: --details nicht fortgesetzt (nur die Rechnungsliste geladen)",
+		"Mit --customer, --from oder --to eingrenzen oder mit --yes ohne Rückfrage laden")
+
+	// one below the limit: no warning
+	app, srv = paidApp(t, entries[:warnPages-1]...)
+	details(t, srv)
+	paidReport(t, app, "--details")
+	if _, errs := bufs(app); strings.Contains(errs, "Warnung") {
+		t.Errorf("stderr %q", errs)
+	}
+}
+
+// M7: today is the Berlin day, also on a host in UTC shortly before
+// midnight UTC (00:30 in Berlin).
+func TestPaidStatusBerlinDayOnUTCHost(t *testing.T) {
+	app, _ := paidApp(t, paidEntry(3, "unpaid", "1.0", "2026-06-09"))
+	app.Location = time.UTC
+	app.Now = func() time.Time { return time.Date(2026, 6, 9, 22, 30, 0, 0, time.UTC) }
+	doc := paidReport(t, app)
+	e := doc["entries"].([]any)[0].(map[string]any)
+	if doc["as_of"] != "2026-06-10" || e["due_date"] != "2026-06-09" || e["days_overdue"] != json.Number("1") {
+		t.Errorf("Bericht %v", doc)
+	}
+}
+
+// M8: the filter flags carry the annotations of the filter flags of
+// invoice list (type, values, bounds, help).
+func TestPaidStatusFilterFlagsLikeInvoiceList(t *testing.T) {
+	d := decodeCommands(t, runCommandsJSON(t, "--json"))
+	ps, il := d.find(t, "invoice paid-status"), d.find(t, "invoice list")
+	for flag, listFlag := range map[string]string{"customer": "company", "from": "from", "to": "to"} {
+		a, b := ps.flag(t, flag), il.flag(t, listFlag)
+		if a.Type != b.Type || !slices.Equal(a.Enum, b.Enum) || !sameBound(a.Minimum, b.Minimum) || !sameBound(a.Maximum, b.Maximum) ||
+			a.Resolves != b.Resolves {
+			t.Errorf("--%s %+v\nweicht ab von invoice list --%s %+v", flag, a, listFlag, b)
+		}
+		if flag != "customer" && a.Description != b.Description {
+			t.Errorf("--%s Hilfe %q, invoice list %q", flag, a.Description, b.Description)
+		}
+	}
+}
+
+func sameBound(a, b *float64) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }

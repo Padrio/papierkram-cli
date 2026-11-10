@@ -29,7 +29,19 @@ import (
 
 // paidStatusSkipStates are the states of invoices that are never open
 // items, whatever outstanding_amount says.
-var paidStatusSkipStates = []string{"draft", "canceled"}
+var paidStatusSkipStates = []string{"draft", "canceled", "deleted"}
+
+// germanOr joins words as "a, b oder c".
+func germanOr(words []string) string {
+	if len(words) < 2 {
+		return strings.Join(words, "")
+	}
+	return strings.Join(words[:len(words)-1], ", ") + " oder " + words[len(words)-1]
+}
+
+// hintPaidStatusTooLarge is the hint of a list page longer than
+// api.MaxResponseSize: paid-status has no --limit (fixed 100 per page).
+const hintPaidStatusTooLarge = "mit --customer, --from oder --to eingrenzen oder die Rechnungen mit invoice list --limit 25 --page N seitenweise lesen"
 
 // paidStatusMaxPages is the default of --max-pages.
 const paidStatusMaxPages = 5
@@ -45,16 +57,16 @@ var paidStatusFilters = []struct{ flag, filter, help string }{
 // paidStatusEntry is one open item. Amounts are the text the API sent
 // (number or decimal string), as JSON numbers.
 type paidStatusEntry struct {
-	ID                int64       `json:"id"`
-	InvoiceNo         *string     `json:"invoice_no"`
-	Name              string      `json:"name"`
-	Customer          string      `json:"customer"`
-	State             string      `json:"state"`
-	DocumentDate      *string     `json:"document_date"`
-	DueDate           *string     `json:"due_date"`
-	DaysOverdue       int         `json:"days_overdue"`
-	TotalGross        json.Number `json:"total_gross"`
-	OutstandingAmount json.Number `json:"outstanding_amount"`
+	ID                int64        `json:"id"`
+	InvoiceNo         *string      `json:"invoice_no"`
+	Name              string       `json:"name"`
+	Customer          string       `json:"customer"`
+	State             string       `json:"state"`
+	DocumentDate      *string      `json:"document_date"`
+	DueDate           *string      `json:"due_date"`
+	DaysOverdue       int          `json:"days_overdue"`
+	TotalGross        *json.Number `json:"total_gross"` // null when the API sends none (display only)
+	OutstandingAmount json.Number  `json:"outstanding_amount"`
 }
 
 // paidStatusReport is the output of paid-status (docs/schemas/paid-status.json).
@@ -105,7 +117,7 @@ func (a *App) newPaidStatusCmd() *cobra.Command {
 		Use:   "paid-status",
 		Short: "Offene Posten: unbezahlte Rechnungen mit Summe",
 		Long: "Zeigt die offenen Posten: Rechnungen mit outstanding_amount > 0, deren Status nicht " +
-			strings.Join(paidStatusSkipStates, " oder ") + " ist (archivierte zählen mit), " +
+			germanOr(paidStatusSkipStates) + " ist (archivierte zählen mit), " +
 			"sortiert nach Fälligkeit (ohne Fälligkeit zuletzt), mit den Tagen seit der Fälligkeit " +
 			"(überfällig: Fälligkeit vor heute, Berliner Tag) und der Summe der offenen Beträge (exakt, auf den Cent gerundet). " +
 			"--overdue zeigt nur die überfälligen; Summe und Anzahl gelten dann für sie.\n\n" +
@@ -113,7 +125,8 @@ func (a *App) newPaidStatusCmd() *cobra.Command {
 			"Lässt --max-pages Seiten aus, warnt der Befehl auf stderr, und JSON hat complete false: " +
 			"Summe und Anzahl gelten dann nur für die geladenen Seiten.\n\n" +
 			"Fehlt outstanding_amount in der Liste, bricht der Befehl ab (Exit 1), statt eine falsche Summe zu zeigen; " +
-			"--details liest dann diese Rechnungen einzeln nach.\n\n" +
+			"--details liest dann diese Rechnungen einzeln nach; ab 10 Rechnungen warnt es wie --all und fragt im Terminal nach. " +
+			"total_gross ist nur Anzeige: Fehlt der Bruttobetrag, bleibt die Spalte leer (JSON null).\n\n" +
 			"Kosten: 1 Credit je Seite, mit --details 1 Credit je nachgelesener Rechnung; " +
 			"ein Name bei --customer kostet 1 Credit je Seite der Firmenliste.",
 		Example: "  papierkram invoice paid-status\n" +
@@ -144,6 +157,13 @@ func (a *App) newPaidStatusCmd() *cobra.Command {
 		} else {
 			fs.String(pf.flag, "", help)
 		}
+		// the same annotations as the filter flag of invoice list
+		// (addListFlags): allowed values, schema bounds, date type
+		if flt.Kind == "enum" || flt.Kind == localKind {
+			_, values := filterEnum(e, flt)
+			markEnum(fs, pf.flag, values)
+		}
+		markSchemaBounds(fs, pf.flag, filterBounds(flt, filterSchema(e, flt)))
 		if flt.Kind == "date" {
 			annotate(fs, pf.flag, flagValueType, "date")
 		}
@@ -218,7 +238,10 @@ func (a *App) runPaidStatus(c *cobra.Command, e registry.Entry) error {
 		}
 	}
 	lr := &listRequest{query: query, pageSize: allPageSize, all: true, maxPages: maxPages, via: "invoice paid-status"}
-	merged, err := a.fetchAll(c, e, client, nil, lr)
+	merged, err := a.fetchPages(c, e.Credits, lr, func(q url.Values) (*api.Response, error) {
+		resp, err := client.Call(c.Context(), e.OperationID, nil, q, nil)
+		return resp, pageTooLarge(err, hintPaidStatusTooLarge)
+	})
 	if err != nil {
 		return err
 	}
@@ -260,6 +283,15 @@ func (a *App) paidStatusDetails(c *cobra.Command, client *api.Client, entries []
 		what = fmt.Sprintf("%d Rechnungen", n)
 	}
 	_, _ = fmt.Fprintf(a.Err, "Hinweis: --details liest %s einzeln (%s)\n", what, creditsText(n*read.Credits))
+	// the cost brake of list --all (fetchPages): from warnPages reads on a
+	// warning, in a terminal a question; without one it proceeds
+	if n >= warnPages {
+		output.Warn(a.Err, fmt.Sprintf("--details liest %d Rechnungen einzeln (%d Credits); mit --customer, --from oder --to eingrenzen", n, n*read.Credits))
+		if err := a.confirmLoad(c.Context(), "Abgebrochen: --details nicht fortgesetzt (nur die Rechnungsliste geladen)",
+			"Mit --customer, --from oder --to eingrenzen oder mit --yes ohne Rückfrage laden"); err != nil {
+			return nil, err
+		}
+	}
 	amounts := map[int64]json.RawMessage{}
 	for _, id := range missing {
 		resp, err := client.Call(c.Context(), read.OperationID, []int64{id}, nil, nil)
@@ -352,16 +384,20 @@ func buildPaidStatus(entries []json.RawMessage, today time.Time, overdueOnly boo
 			missing = append(missing, row.ID)
 			continue
 		}
-		open, err := amountOf(row.ID, "outstanding_amount", row.OutstandingAmount)
+		open, value, err := amountOf(row.ID, "outstanding_amount", row.OutstandingAmount)
 		if err != nil {
 			return paidStatusReport{}, nil, err
 		}
-		if r, _ := new(big.Rat).SetString(string(open)); r.Sign() <= 0 {
+		if value.Sign() <= 0 {
 			continue
 		}
-		gross, err := amountOf(row.ID, "total_gross", row.TotalGross)
-		if err != nil {
-			return paidStatusReport{}, nil, err
+		var gross *json.Number // a display column: missing or null stays null
+		if len(row.TotalGross) > 0 && string(row.TotalGross) != "null" {
+			g, _, err := amountOf(row.ID, "total_gross", row.TotalGross)
+			if err != nil {
+				return paidStatusReport{}, nil, err
+			}
+			gross = &g
 		}
 		it := item{entry: paidStatusEntry{
 			ID: row.ID, InvoiceNo: row.InvoiceNo, Name: deref(row.Name), State: state,
@@ -442,23 +478,29 @@ func dueDay(id int64, s string, loc *time.Location) (time.Time, error) {
 }
 
 // amountOf reads an amount the API sent as number or decimal string; its
-// text stays as sent. Anything else is exit 1 naming the invoice.
-func amountOf(id int64, field string, raw json.RawMessage) (json.Number, error) {
+// text stays as sent, the second value is its parsed value. Anything else,
+// also a number big.Rat cannot hold (1e1000001), is exit 1 naming the
+// invoice.
+func amountOf(id int64, field string, raw json.RawMessage) (json.Number, *big.Rat, error) {
 	s := strings.TrimSpace(string(raw))
 	if strings.HasPrefix(s, `"`) {
 		if err := json.Unmarshal(raw, &s); err != nil {
 			s = string(raw)
 		}
 	}
-	if !isJSONNumber(s) {
+	var value *big.Rat
+	if isJSONNumber(s) {
+		value, _ = new(big.Rat).SetString(s)
+	}
+	if value == nil {
 		shown := s
 		if len(raw) == 0 {
 			shown = "fehlt"
 		}
-		return "", clierr.New(clierr.CodeError,
+		return "", nil, clierr.New(clierr.CodeError,
 			fmt.Sprintf("Rechnung %d: ungültiger Betrag „%s“ in %s der Rechnungsliste", id, printable(shown), field), "")
 	}
-	return json.Number(s), nil
+	return json.Number(s), value, nil
 }
 
 // sumDecimals adds decimal amounts exactly (math/big) and returns the sum

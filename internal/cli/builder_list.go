@@ -561,6 +561,13 @@ func unexpectedList(err error) error {
 // was sent; page 1 was only read). via is the flag that loads all pages
 // (--all or a local filter).
 func (a *App) confirmAll(ctx context.Context, via string) error {
+	return a.confirmLoad(ctx, fmt.Sprintf("Abgebrochen: %s nicht fortgesetzt (nur Seite 1 geladen)", via),
+		"Mit --max-pages begrenzen oder mit --yes ohne Rückfrage laden")
+}
+
+// confirmLoad is the question of confirmAll with the message and hint of
+// exit 8 (invoice paid-status --details names its own step).
+func (a *App) confirmLoad(ctx context.Context, msg, hint string) error {
 	if !a.StdinTTY || a.Flags.Yes || a.Flags.NoInput {
 		return nil
 	}
@@ -572,6 +579,5 @@ func (a *App) confirmAll(ctx context.Context, via string) error {
 	case "j", "ja", "y", "yes":
 		return nil
 	}
-	return clierr.New(clierr.CodeConfirmation, fmt.Sprintf("Abgebrochen: %s nicht fortgesetzt (nur Seite 1 geladen)", via),
-		"Mit --max-pages begrenzen oder mit --yes ohne Rückfrage laden")
+	return clierr.New(clierr.CodeConfirmation, msg, hint)
 }

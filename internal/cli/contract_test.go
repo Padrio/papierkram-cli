@@ -781,8 +781,10 @@ func TestContractSchemasStrict(t *testing.T) {
 				"Nummer und Daten null": {withPaidEntry(func(e map[string]any) {
 					e["invoice_no"], e["document_date"], e["due_date"] = nil, nil, nil
 				}), ""},
-				"due_date kein Datum": {withPaidEntry(func(e map[string]any) { e["due_date"] = "morgen" }), "regular expression"},
-				"entries leer":        {func(d map[string]any) { d["entries"] = []any{} }, ""},
+				"total_gross null":       {withPaidEntry(func(e map[string]any) { e["total_gross"] = nil }), ""},
+				"total_gross als String": {withPaidEntry(func(e map[string]any) { e["total_gross"] = "119.0" }), "value must be a number"},
+				"due_date kein Datum":    {withPaidEntry(func(e map[string]any) { e["due_date"] = "morgen" }), "regular expression"},
+				"entries leer":           {func(d map[string]any) { d["entries"] = []any{} }, ""},
 			}},
 		{"version", `{"version":"dev","commit":"none","date":"unknown","go_version":"go1.27.1"}`,
 			map[string]contractMutation{
