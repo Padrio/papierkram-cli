@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptrace"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -31,6 +32,9 @@ func (c *Client) do(ctx context.Context, req *http.Request) (*Response, error) {
 		req.Header.Set("Accept", "application/json")
 	}
 	req.Header.Set("User-Agent", c.opts.UserAgent)
+	if c.opts.OnMutation != nil && !safeMethod(req.Method) {
+		defer c.opts.OnMutation(req.Method, c.relPath(req.URL.Path))
+	}
 
 	// A GET body (only possible via CallRaw) must be rebuildable per attempt.
 	retry := req.Method == http.MethodGet && (req.Body == nil || req.Body == http.NoBody || req.GetBody != nil)
@@ -45,6 +49,17 @@ func (c *Client) do(ctx context.Context, req *http.Request) (*Response, error) {
 			return resp, err
 		}
 	}
+}
+
+// relPath is path relative to the API root of the base URL, with a
+// leading slash; a path outside it is returned as is.
+func (c *Client) relPath(path string) string {
+	if c.base != nil {
+		if rest, ok := strings.CutPrefix(path, strings.TrimSuffix(c.base.Path, "/")); ok && strings.HasPrefix(rest, "/") {
+			return rest
+		}
+	}
+	return path
 }
 
 // retryable reports whether err is a network error or a 5xx.

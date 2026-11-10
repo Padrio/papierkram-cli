@@ -22,6 +22,7 @@ import (
 	"github.com/Padrio/papierkram-cli/internal/output"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 	"github.com/Padrio/papierkram-cli/internal/safefile"
+	"github.com/Padrio/papierkram-cli/internal/spec"
 )
 
 // ID completion (spec 7.3): the IDs of a resource come from its list
@@ -287,4 +288,25 @@ func (a *App) removeCompletionCaches(ctx string) {
 	for _, r := range registry.Resources() {
 		_ = os.Remove(completionCachePath(dir, ctx, r.Name))
 	}
+}
+
+// dropCompletionCache deletes the cache of the context ctx for the
+// resource a mutation (method and path relative to the API root) may have
+// changed, after every such request whatever its outcome (final review
+// B-I1): the name resolution must not take an archived, renamed or
+// deleted object, nor miss a new one of the same name, from a cache
+// written before. A path of no registry command (papierkram api) drops
+// all caches of the context. Silent and best effort.
+func (a *App) dropCompletionCache(ctx, method, path string) {
+	dir := a.cacheDir()
+	if dir == "" {
+		return
+	}
+	if op, _, ok := spec.MatchPath(method, path); ok {
+		if e, found := registry.ByOperationID(op.ID); found {
+			_ = os.Remove(completionCachePath(dir, ctx, e.Resource))
+			return
+		}
+	}
+	a.removeCompletionCaches(ctx)
 }

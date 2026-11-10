@@ -691,3 +691,39 @@ func TestWithTimeout(t *testing.T) {
 		t.Errorf("WithTimeout(0) = %s, erwartet DefaultTimeout", got.opts.Timeout)
 	}
 }
+
+func TestOnMutationAfterEveryMutation(t *testing.T) {
+	// final review B-I1: the CLI drops its name cache after every request
+	// that may change server state, also after an error
+	var got []string
+	for _, tc := range []struct {
+		status int
+		call   func(c *Client) error
+		want   string
+	}{
+		{200, func(c *Client) error {
+			_, err := c.Call(context.Background(), "ListInvoices", nil, nil, nil)
+			return err
+		}, ""},
+		{200, func(c *Client) error {
+			_, err := c.Call(context.Background(), "ArchiveCompany", []int64{99}, nil, nil)
+			return err
+		}, "POST /contact/companies/99/archive"},
+		{500, func(c *Client) error {
+			_, err := c.CallRaw(context.Background(), "DELETE", "/projects/5", nil, "", nil)
+			return err
+		}, "DELETE /projects/5"},
+	} {
+		got = nil
+		c := newTestClient(t, &recorder{status: tc.status, body: `{}`}, func(o *Options) {
+			o.OnMutation = func(method, path string) { got = append(got, method+" "+path) }
+		})
+		err := tc.call(c)
+		if (err != nil) != (tc.status >= 300) {
+			t.Fatalf("%s: err %v", tc.want, err)
+		}
+		if want := []string{tc.want}; tc.want == "" && len(got) != 0 || tc.want != "" && (len(got) != 1 || got[0] != want[0]) {
+			t.Errorf("OnMutation %q, erwartet %q", got, tc.want)
+		}
+	}
+}

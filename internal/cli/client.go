@@ -195,6 +195,8 @@ func (a *App) clientOptions(r *config.Resolved) api.Options {
 		Sleep:   a.Sleep,
 		OnQuota: a.onQuota,
 	}
+	ctx := r.Context
+	o.OnMutation = func(method, path string) { a.dropCompletionCache(ctx, method, path) }
 	if a.Flags.Debug {
 		o.Debug, o.DebugInfo = a.debugOut(), a.debugInfo(r)
 	}

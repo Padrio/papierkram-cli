@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -568,4 +569,80 @@ func TestCustomerProjectByName(t *testing.T) {
 	wantExit(t, app, Run(app, []string{"invoice", "update", "459", "--customer", "0", "--customer-project", "Relaunch", "--payment-term", "1", "-o", "json"}), 2)
 	wantRequests(t, srv, 0)
 	wantErrText(t, app, `ungültiger Wert "0" für --customer: Name für --customer-project braucht eine ID ≥ 1 oder einen Namen`, "sonst die ID des Projekts angeben")
+}
+
+// nextRun is a fresh app on the environment, cache and config
+// directory of app: the next invocation of the CLI.
+func nextRun(t *testing.T, app *App) *App {
+	t.Helper()
+	next, _, _ := newTestApp(t)
+	next.Env, next.CacheDir, next.ConfigDir = app.Env, app.CacheDir, app.ConfigDir
+	return next
+}
+
+func TestMutationInvalidatesNameCache(t *testing.T) {
+	// final review B-I1: a name resolved into the cache, then the object
+	// archived by the same CLI: the next resolution loads the list again
+	// instead of taking the archived ID from the cache
+	app, srv := apiApp(t)
+	before := pagedList(t, 1, []map[string]any{company(99, "ACME")})
+	after := pagedList(t, 1, []map[string]any{company(99, "ACME", "archived"), company(120, "ACME")})
+	archived := false
+	srv.OnFunc("GET", "/contact/companies", func(w http.ResponseWriter, r *http.Request) {
+		if archived {
+			after(w, r)
+			return
+		}
+		before(w, r)
+	})
+	srv.OnFunc("POST", "/contact/companies/99/archive", func(w http.ResponseWriter, _ *http.Request) {
+		archived = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":99,"name":"ACME","record_state":"archived"}`))
+	})
+	create := []string{"project", "create", "--name", "P", "--customer", "ACME", "-o", "json"}
+	wantExit(t, app, Run(app, append(create, "--dry-run")), 0)
+	cache := completionCachePath(app.CacheDir, "", "company")
+	if _, err := os.Stat(cache); err != nil {
+		t.Fatalf("Cache nicht geschrieben: %v", err)
+	}
+	second := nextRun(t, app)
+	wantExit(t, second, Run(second, []string{"company", "archive", "99", "-o", "json"}), 0)
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatalf("Cache nach archive noch da: %v", err)
+	}
+	third := nextRun(t, app)
+	wantExit(t, third, Run(third, create), 0)
+	reqs := wantPaths(t, srv, "GET /contact/companies", "POST /contact/companies/99/archive", "GET /contact/companies", "POST /projects")
+	var body struct {
+		Customer struct {
+			ID int64 `json:"id"`
+		} `json:"customer"`
+	}
+	if err := json.Unmarshal(reqs[3].Body, &body); err != nil || body.Customer.ID != 120 {
+		t.Errorf("body %s (%v)", reqs[3].Body, err)
+	}
+}
+
+func TestMutationInvalidatesNameCacheOutcomeUnknown(t *testing.T) {
+	// B-I1 after exit 12: the change may have arrived, the cache goes; a
+	// path outside the registry (papierkram api) drops every cache of the
+	// context
+	app, srv := apiApp(t)
+	srv.OnFunc("POST", "/contact/companies/99/archive", closeAfterRead)
+	writeCacheFile(t, app, srv, "company", `[{"id":99,"name":"ACME"}]`, `,"complete":true`)
+	other := writeCacheFile(t, app, srv, "project", `[{"id":5,"name":"Web"}]`, `,"complete":true`)
+	wantExit(t, app, Run(app, []string{"company", "archive", "99", "-o", "json"}), 12)
+	if _, err := os.Stat(completionCachePath(app.CacheDir, "", "company")); !os.IsNotExist(err) {
+		t.Errorf("Cache nach Exit 12 noch da: %v", err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Errorf("Cache einer anderen Ressource gelöscht: %v", err)
+	}
+	srv.On("POST", "/unbekannt", 200, []byte(`{}`))
+	next := nextRun(t, app)
+	wantExit(t, next, Run(next, []string{"api", "POST", "/unbekannt", "--yes", "-o", "json"}), 0)
+	if _, err := os.Stat(other); !os.IsNotExist(err) {
+		t.Errorf("Cache nach api POST außerhalb der Spec noch da: %v", err)
+	}
 }

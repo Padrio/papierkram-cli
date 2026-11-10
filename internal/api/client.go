@@ -52,6 +52,11 @@ type Options struct {
 	Sleep func(time.Duration)
 	// OnQuota is called after every response that reports X-Remaining-Quota.
 	OnQuota func(Quota)
+	// OnMutation is called once after every request with a method other
+	// than GET, HEAD and OPTIONS, whatever its outcome (also after an
+	// error: an outcome_unknown may have changed the server state), with
+	// the method and the path relative to the API root ("/projects/5").
+	OnMutation func(method, path string)
 }
 
 // Response is a raw API response. Body holds the complete body bytes and is
