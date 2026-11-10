@@ -4,9 +4,11 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +16,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Padrio/papierkram-cli/internal/auth"
 	"github.com/Padrio/papierkram-cli/internal/cli"
@@ -57,6 +62,12 @@ type liveSuite struct {
 	// sent holds the request body of every create by "resource/id", so
 	// a check can assert what was actually sent.
 	sent map[string][]byte
+	// permanent are the companies named e2eguard.PermanentCustomer that
+	// TestE2E_CleanupLeftovers saw (never touched there); permanentSeen
+	// is set once it listed all companies, so permanentCustomer needs no
+	// list of its own.
+	permanent     []map[string]any
+	permanentSeen bool
 }
 
 // object is something the run created. name is what Owned checks: name,
@@ -72,6 +83,12 @@ type object struct {
 	// followUpType is the type of that answer (e2eguard.JudgeFollowUp);
 	// remove touches a follow-up only when it is the type of resource.
 	followUpType string
+	// archiveOnly makes remove only archive the object (1 credit), never
+	// delete or cancel it: the permanent customer, numbered (delivered)
+	// invoices and estimates and the cancellation invoice, which the API
+	// cannot delete (spec v0.2 §2; each further attempt costs credits
+	// without effect).
+	archiveOnly bool
 }
 
 // newLiveSuite prepares a run. It sends nothing.
@@ -140,6 +157,21 @@ func (s *liveSuite) execAt(dir string, now func() time.Time, stdin string, args 
 	if s.quotaNow() {
 		return result{code: 6, stderr: quotaRefused + "\n", refused: true}
 	}
+	var out, errb bytes.Buffer
+	app := s.newApp(dir, now, stdin, &out, &errb)
+	n := s.tr.Len()
+	code := cli.Run(app, append([]string{"--no-input"}, args...))
+	r := result{code: code, stdout: out.String(), stderr: errb.String(), exchanges: s.tr.Since(n)}
+	if e2eguard.QuotaHit(r.code, r.exchanges) {
+		s.markQuota()
+	}
+	return r
+}
+
+// newApp is the App of a CLI run in dir (execAt, mcpSession): only the
+// subdomain and token of the sandbox and config and cache below dir in
+// its environment, the transport of the suite, an in-memory keychain.
+func (s *liveSuite) newApp(dir string, now func() time.Time, stdin string, out, errw io.Writer) *cli.App {
 	cfg, cache := filepath.Join(dir, "config"), filepath.Join(dir, "cache")
 	env := map[string]string{
 		"PAPIERKRAM_SUBDOMAIN":  s.sub,
@@ -147,9 +179,8 @@ func (s *liveSuite) execAt(dir string, now func() time.Time, stdin string, args 
 		"PAPIERKRAM_CONFIG_DIR": cfg,
 		"PAPIERKRAM_CACHE_DIR":  cache,
 	}
-	var out, errb bytes.Buffer
-	app := &cli.App{
-		In: strings.NewReader(stdin), Out: &out, Err: &errb,
+	return &cli.App{
+		In: strings.NewReader(stdin), Out: out, Err: errw,
 		Env:          func(k string) string { return env[k] },
 		Now:          now,
 		Location:     s.loc,
@@ -161,13 +192,44 @@ func (s *liveSuite) execAt(dir string, now func() time.Time, stdin string, args 
 		ReadPassword: func() ([]byte, error) { return nil, errors.New("kein Terminal in der E2E-Suite") },
 		Sleep:        time.Sleep,
 	}
-	n := s.tr.Len()
-	code := cli.Run(app, append([]string{"--no-input"}, args...))
-	r := result{code: code, stdout: out.String(), stderr: errb.String(), exchanges: s.tr.Since(n)}
-	if e2eguard.QuotaHit(r.code, r.exchanges) {
-		s.markQuota()
+}
+
+// mcpSession is a client session of the MCP server of the CLI
+// (cli.NewMCPServer, default options: read tools only, no files
+// directory), in-process over the in-memory transport of the SDK. The
+// server runs every tool call with the App of execAt in dir, so its
+// requests go through s.tr (meter, coverage, the rules of the transport)
+// like those of exec. stderr of the start must not contain the token.
+// After a hit of the quota it starts nothing (skip).
+func (s *liveSuite) mcpSession(t *testing.T, dir string) *mcp.ClientSession {
+	t.Helper()
+	if s.quotaNow() {
+		s.skipf(t, "Kontingent erschöpft (HTTP 429): kein MCP-Server gestartet, Test übersprungen")
 	}
-	return r
+	var out, errb bytes.Buffer
+	srv, err := cli.NewMCPServer(s.newApp(dir, time.Now, "", &out, &errb), cli.MCPOptions{})
+	if s.red.Contains(out.String()) || s.red.Contains(errb.String()) {
+		s.errorf(t, "Ausgabe beim Start des MCP-Servers enthält das Token")
+	}
+	if err != nil {
+		s.fatalf(t, "MCP-Server nicht gestartet: %v", err)
+	}
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := srv.Connect(ctx, st, nil)
+	if err != nil {
+		s.fatalf(t, "MCP-Server nicht verbunden: %v", err)
+	}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "pk-e2e", Version: "v0"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		_ = ss.Close()
+		s.fatalf(t, "MCP-Client nicht verbunden: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cs.Close()
+		_ = ss.Wait()
+	})
+	return cs
 }
 
 // quotaRefused is the stderr of a CLI run execAt did not start.
@@ -315,6 +377,26 @@ func (s *liveSuite) sentBody(t *testing.T, resource string, id int64) map[string
 // track registers an object of this run for the cleanup.
 func (s *liveSuite) track(o object) { s.created = append(s.created, o) }
 
+// archiveOnly marks the registered object resource id as archiveOnly (a
+// delivered document: it has a number now and cannot be deleted).
+func (s *liveSuite) archiveOnly(resource string, id int64) {
+	for i := range s.created {
+		if s.created[i].resource == resource && s.created[i].id == id {
+			s.created[i].archiveOnly = true
+		}
+	}
+}
+
+// tracked reports whether this run registered resource id.
+func (s *liveSuite) tracked(resource string, id int64) bool {
+	for _, c := range s.created {
+		if c.resource == resource && c.id == id {
+			return true
+		}
+	}
+	return false
+}
+
 // fixture returns the shared object key, creating it with mk on first use.
 // Once the budget is exhausted it skips; a creation that failed makes
 // later uses fail fast.
@@ -341,6 +423,46 @@ func (s *liveSuite) fixture(t *testing.T, key string, mk func() map[string]any) 
 	s.fixtures[key] = v
 	done = true
 	return v
+}
+
+// checkContract checks stdout, the -o json output of a CLI run, against
+// the strict contract docs/schemas/<schema>.json. It returns the
+// violation ("verletzt <schema>.json bei /<path>: <rule>", or that stdout
+// is no JSON), "" when stdout fulfils it; the caller decides whether that
+// is a failure or a measurement. The violation names only the JSON path
+// and the rule, never values. A contract that cannot be read is a failure
+// of the suite (errorf, "" returned).
+func (s *liveSuite) checkContract(t *testing.T, schema, stdout string) string {
+	t.Helper()
+	path := "../docs/schemas/" + schema + ".json"
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		s.errorf(t, "Vertrag %s nicht lesbar: %v", path, err)
+		return ""
+	}
+	var sc openapi3.Schema
+	if err := json.Unmarshal(raw, &sc); err != nil {
+		s.errorf(t, "Vertrag %s ist kein Schema-Objekt: %v", path, err)
+		return ""
+	}
+	if err := sc.Validate(context.Background()); err != nil {
+		s.errorf(t, "Vertrag %s ist kein gültiges OpenAPI-3-Schema: %v", path, err)
+		return ""
+	}
+	var doc any
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		return "ist keine JSON-Ausgabe, Vertrag " + schema + ".json nicht prüfbar"
+	}
+	err = sc.VisitJSON(doc)
+	var se *openapi3.SchemaError
+	switch {
+	case err == nil:
+		return ""
+	case errors.As(err, &se):
+		return fmt.Sprintf("verletzt %s.json bei /%s: %s", schema, strings.Join(se.JSONPointer(), "/"), se.Reason)
+	default:
+		return fmt.Sprintf("verletzt %s.json (%T)", schema, err)
+	}
 }
 
 // --- JSON helpers -----------------------------------------------------------
@@ -463,11 +585,24 @@ var cleanupDocs = map[string]bool{"invoice": true, "estimate": true, "voucher": 
 // noArchive are the resources without archive.
 var noArchive = map[string]bool{"person": true}
 
+// archivedForGood is what remove returns for an archiveOnly object it
+// archived.
+const archivedForGood = "archiviert (dauerhaft)"
+
+// archivedResult reports whether what (of remove) ends with archiving: the
+// object is not gone but archived.
+func archivedResult(what string) bool {
+	return what == archivedForGood || strings.HasSuffix(what, ", archiviert")
+}
+
 // remove deletes o; where that is not possible it cancels (documents) and
-// archives it (spec 11.1). It touches o only when its name is owned by the
+// archives it (spec 11.1); an archiveOnly object it only archives (never
+// delete or cancel). It touches o only when its name is owned by the
 // suite, or when o is a follow-up object (followUpOf): the API may name
 // that one itself, but its id was read verbatim from the answer to a
-// cancel or reverse of an object of this run (ownTarget), its type is
+// cancel or reverse of an object of this run, or it is the only new
+// invoice of the permanent customer after the cancel of an invoice of
+// this run (findCancellation; the target checked by ownTarget), its type is
 // that of the resource (followUpType, checked here again besides the only
 // place that registers a follow-up), and only that id is touched. A
 // follow-up is never cancelled (it is a cancellation or reverse entry
@@ -486,6 +621,13 @@ func (s *liveSuite) remove(dir string, o object) (string, bool) {
 		return fmt.Sprintf("nicht angefasst: Name %q ohne Präfix %s", o.name, e2eguard.NamePrefix), false
 	}
 	id := ids(o.id)
+	if o.archiveOnly {
+		a := s.exec(dir, "", o.resource, "archive", id, "-o", "json")
+		if a.code == 0 {
+			return archivedForGood, true
+		}
+		return fmt.Sprintf("archive Exit %d", a.code) + ": " + strings.TrimSpace(a.stderr), false
+	}
 	extra := []string{"--yes", "-o", "json"}
 	if o.resource == "person" {
 		extra = append(extra, "--company", ids(o.company))

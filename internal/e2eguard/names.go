@@ -13,6 +13,12 @@ import (
 // Cleanup touches only objects whose name starts with it (spec 11.1).
 const NamePrefix = "pk-e2e-"
 
+// PermanentCustomer is the one object of the suite without a run ID
+// (spec v0.2 §2): the customer of the numbered documents (deliver,
+// cancel). Every run looks it up by name, unarchives it, uses it and
+// archives it again; it is never deleted and never a leftover.
+const PermanentCustomer = NamePrefix + "dauerkunde"
+
 // runIDRe is the form of a run ID taken from GITHUB_RUN_ID.
 var runIDRe = regexp.MustCompile(`^[0-9a-z]{1,32}$`)
 
@@ -48,7 +54,8 @@ func Prefix(runID string) string { return NamePrefix + runID + "-" }
 func Owned(name string) bool { return strings.HasPrefix(name, NamePrefix) }
 
 // Leftover reports whether name belongs to an earlier run than runID: owned
-// by the suite, but without the prefix of this run.
+// by the suite, but without the prefix of this run, and not the
+// PermanentCustomer (shared by all runs).
 func Leftover(name, runID string) bool {
-	return Owned(name) && !strings.HasPrefix(name, Prefix(runID))
+	return Owned(name) && name != PermanentCustomer && !strings.HasPrefix(name, Prefix(runID))
 }

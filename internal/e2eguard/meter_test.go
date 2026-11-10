@@ -204,8 +204,8 @@ func TestCleanupReserve(t *testing.T) {
 		t.Errorf("CleanupReserve(4, 10, 10) = %d, want 46", got)
 	}
 	// the reserve of the live suite (e2e/e2e_test.go)
-	if got := CleanupReserve(6, 13, 10); got != 60 {
-		t.Errorf("CleanupReserve(6, 13, 10) = %d, want 60", got)
+	if got := CleanupReserve(4, 17, 10); got != 60 {
+		t.Errorf("CleanupReserve(4, 17, 10) = %d, want 60", got)
 	}
 	if got := CleanupReserve(0, 0, 0); got != 0 {
 		t.Errorf("CleanupReserve(0, 0, 0) = %d", got)

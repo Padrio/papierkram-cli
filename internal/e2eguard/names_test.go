@@ -97,6 +97,23 @@ func TestLeftover(t *testing.T) {
 	}
 }
 
+// The permanent customer of the suite (spec v0.2 §2) is owned, but never
+// a leftover: every run reuses it and only archives it at the end.
+func TestLeftoverPermanentCustomer(t *testing.T) {
+	if Leftover("pk-e2e-dauerkunde", "abc") {
+		t.Error("Leftover(pk-e2e-dauerkunde, abc) = true, want false")
+	}
+	if !Owned("pk-e2e-dauerkunde") {
+		t.Error("Owned(pk-e2e-dauerkunde) = false, want true")
+	}
+	if !Leftover("pk-e2e-xyz-kunde", "abc") {
+		t.Error("Leftover(pk-e2e-xyz-kunde, abc) = false, want true")
+	}
+	if PermanentCustomer != "pk-e2e-dauerkunde" {
+		t.Errorf("PermanentCustomer = %q", PermanentCustomer)
+	}
+}
+
 type errReader struct{}
 
 func (errReader) Read([]byte) (int, error) { return 0, errors.New("no randomness") }

@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Padrio/papierkram-cli/internal/e2eguard"
 )
 
 // Shared objects of a run. Each is created on first use (so -run works
@@ -97,6 +99,54 @@ func (s *liveSuite) customer(t *testing.T) int64 {
 		name := s.prefix + "kunde"
 		return s.create(t, object{resource: "company", name: name},
 			"company", "create", "--name", name, "--contact-type", "customer")
+	}))
+}
+
+// permanentCustomer is the company e2eguard.PermanentCustomer (spec v0.2
+// §2): the customer of the documents that get a number (deliverPDF,
+// TestE2E_InvoiceFlow), shared by all runs, so the companies of the runs
+// stay deletable. It is the company TestE2E_CleanupLeftovers saw under
+// that name (no request), otherwise one of a full company list. None:
+// created (10). One archived: unarchived (1). One active: used as is (0).
+// More than one: the test fails (never a choice). Registered archiveOnly:
+// the cleanup only archives it again (1), never deletes it.
+func (s *liveSuite) permanentCustomer(t *testing.T) int64 {
+	return idOf(s.fixture(t, "dauerkunde", func() map[string]any {
+		found := s.permanent
+		if !s.permanentSeen {
+			found = nil
+			for _, e := range s.listAll(t, "company") {
+				if str(e["name"]) == e2eguard.PermanentCustomer {
+					found = append(found, e)
+				}
+			}
+		}
+		o := object{resource: "company", name: e2eguard.PermanentCustomer, archiveOnly: true}
+		switch len(found) {
+		case 0:
+			s.need(t, 10)
+			return s.create(t, o, "company", "create", "--name", o.name, "--contact-type", "customer")
+		case 1:
+		default:
+			var all []string
+			for _, e := range found {
+				all = append(all, ids(idOf(e))+" ("+str(e["record_state"])+")")
+			}
+			s.fatalf(t, "mehrere Dauerkunden %s: %s; bis auf einen von Hand umbenennen", o.name, strings.Join(all, ", "))
+		}
+		e := found[0]
+		o.id = idOf(e)
+		if str(e["record_state"]) == "archived" {
+			s.need(t, 1)
+			s.ok(t, "", "company", "unarchive", ids(o.id))
+			s.logf(t, "Dauerkunde %d entarchiviert", o.id)
+		} else {
+			s.logf(t, "Dauerkunde %d ist aktiv (record_state %q)", o.id, str(e["record_state"]))
+		}
+		// registered only once it is active: after a failed unarchive it
+		// stays archived, and the cleanup has nothing to do
+		s.track(o)
+		return e
 	}))
 }
 

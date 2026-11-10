@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,12 +22,19 @@ import (
 // precondition is not known live.
 //
 // The invoice is delivered as PDF only (the transport refuses anything
-// else), so it gets a number of the invoice sequence of the sandbox.
+// else), so it gets a number of the invoice sequence of the sandbox: it
+// books on the permanent customer (spec v0.2 §2), and the cleanup only
+// archives it once delivered (archiveOnly). After the deliver, invoice
+// paid-status of that customer (hard: exit 0 and paid-status.json)
+// measures open point 30 (outstanding_amount in the list); after the
+// cancel, the invoice list of that customer measures open point 31 (the
+// cancellation invoice) and registers it for the cleanup when it is the
+// only candidate.
 func TestE2E_InvoiceFlow(t *testing.T) {
 	s := live(t)
 
 	// 1. create (50)
-	c, pt := s.customer(t), idOf(s.paymentTerms(t)[0])
+	c, pt := s.permanentCustomer(t), idOf(s.paymentTerms(t)[0])
 	name := s.prefix + "rechnung-versand"
 	s.need(t, 50)
 	inv := s.create(t, object{resource: "invoice", name: name},
@@ -42,10 +50,16 @@ func TestE2E_InvoiceFlow(t *testing.T) {
 		s.quotaSkip(t, r, []string{"invoice", "deliver"})
 		s.errorf(t, "invoice deliver --via pdf: Exit %d\n%s", r.code, r.stderr)
 	} else {
+		s.archiveOnly("invoice", idOf(inv))
 		d := s.decode(t, r.stdout)
 		s.measuref(t, "Statuswerte Rechnung", "nach deliver --via pdf: state %v, invoice_no %v, sent_on %v, sent_via %v",
 			d["state"], d["invoice_no"], d["sent_on"], d["sent_via"])
 	}
+
+	// 2a. paid-status of the permanent customer (1), hard exit 0 and the
+	// contract; measured: the own invoice in it and the list entries
+	s.need(t, 1)
+	s.paidStatusAfterDeliver(t, c, idOf(inv))
 
 	// 3. pdf (1), hard: exit 0 and a PDF file
 	s.need(t, 1)
@@ -71,6 +85,11 @@ func TestE2E_InvoiceFlow(t *testing.T) {
 	m := s.ok(t, "", "invoice", "describe", id)
 	s.measuref(t, "Statuswerte Rechnung", "nach cancel: state %q", str(m["state"]))
 
+	// 4a. the cancellation invoice in the list of the customer (1),
+	// measured
+	s.need(t, 1)
+	s.findCancellation(t, c, idOf(inv))
+
 	// 5. archive, describe, unarchive (3), hard exit 0
 	s.need(t, 3)
 	if a := s.run(t, "", "invoice", "archive", id, "-o", "json"); a.code != 0 {
@@ -92,6 +111,111 @@ func TestE2E_InvoiceFlow(t *testing.T) {
 	s.cancelMeasured(t, "estimate", "cancel", est)
 	m = s.ok(t, "", "estimate", "describe", est)
 	s.measuref(t, "Statuswerte Angebot", "nach deliver --via pdf und cancel: state %q", str(m["state"]))
+}
+
+// paidStatusAfterDeliver runs invoice paid-status for customer (an ID:
+// one list page, no name resolution) after the deliver of invoice. Hard:
+// exit 0 and docs/schemas/paid-status.json. Measured (open point 30):
+// whether the invoice is an open item, with state and outstanding_amount,
+// and how many entries of the list the API sent carry outstanding_amount.
+// The invoice missing from the open items is an ABWEICHUNG. The list
+// entries are measured before the hard checks: a list without
+// outstanding_amount ends paid-status with exit 1.
+func (s *liveSuite) paidStatusAfterDeliver(t *testing.T, customer, invoice int64) {
+	t.Helper()
+	r := s.run(t, "", "invoice", "paid-status", "--customer", ids(customer), "-o", "json")
+	s.measureInvoiceList(t, "paid-status nach Versand", r, invoice)
+	if r.code != 0 {
+		s.quotaSkip(t, r, []string{"invoice", "paid-status"})
+		s.errorf(t, "invoice paid-status --customer %d: Exit %d\n%s", customer, r.code, r.stderr)
+		return
+	}
+	if v := s.checkContract(t, "paid-status", r.stdout); v != "" {
+		s.errorf(t, "invoice paid-status %s", v)
+	}
+	out := s.decode(t, r.stdout)
+	for _, e := range entries(out) {
+		if idOf(e) == invoice {
+			s.measuref(t, "paid-status nach Versand", "eigene Rechnung %d enthalten: ja, state %q, outstanding_amount %v, days_overdue %v",
+				invoice, str(e["state"]), e["outstanding_amount"], e["days_overdue"])
+			return
+		}
+	}
+	s.measuref(t, "paid-status nach Versand", "eigene Rechnung %d enthalten: nein (count %v)", invoice, out["count"])
+	s.deviatef(t, "invoice paid-status: versendete Rechnung %d fehlt in den offenen Posten", invoice)
+}
+
+// measureInvoiceList logs, for the invoice list pages r received, how many
+// entries carry outstanding_amount (not null) and how many do not, and
+// state, outstanding_amount and its JSON type of the entry of invoice.
+func (s *liveSuite) measureInvoiceList(t *testing.T, topic string, r result, invoice int64) {
+	t.Helper()
+	with, without, pages := 0, 0, 0
+	own := "nicht in der Liste"
+	for _, x := range r.exchanges {
+		if x.Method != "GET" || !strings.HasSuffix(strings.TrimRight(x.Path, "/"), "/income/invoices") {
+			continue
+		}
+		pages++
+		for _, e := range entries(tryDecode(string(x.RespBody))) {
+			v, ok := e["outstanding_amount"]
+			if ok && v != nil {
+				with++
+			} else {
+				without++
+			}
+			if idOf(e) == invoice {
+				own = fmt.Sprintf("state %q, outstanding_amount %v (%s)", str(e["state"]), v, jsonType(v))
+			}
+		}
+	}
+	s.measuref(t, topic, "Rechnungsliste (%d Seite(n)): %d Einträge mit outstanding_amount, %d ohne; eigene Rechnung %d: %s",
+		pages, with, without, invoice, own)
+}
+
+// findCancellation looks for the cancellation invoice of invoice (open
+// point 31) in the invoice list of customer of today, newest first:
+// candidates are invoices with a higher id that this run did not
+// register. Measured: name, state, invoice_no and key shape of each.
+// Exactly one is registered for the cleanup as follow-up of invoice
+// (archiveOnly: it has a number); none is a measurement, more than one an
+// ABWEICHUNG, and none of them is registered (never a choice).
+func (s *liveSuite) findCancellation(t *testing.T, customer, invoice int64) {
+	t.Helper()
+	args := []string{"invoice", "list", "--company", ids(customer), "--from", "today", "--to", "today",
+		"--sort", "id", "--desc", "--limit", "100", "-o", "json"}
+	r := s.run(t, "", args...)
+	if r.code != 0 {
+		s.quotaSkip(t, r, args)
+		s.deviatef(t, "Storno-Suche: invoice list Exit %d, nicht gemessen", r.code)
+		return
+	}
+	var found []map[string]any
+	for _, e := range entries(s.decode(t, r.stdout)) {
+		if idOf(e) > invoice && !s.tracked("invoice", idOf(e)) {
+			found = append(found, e)
+			s.measuref(t, "Storno-Rechnung", "Kandidat %d: name %q, state %q, invoice_no %v, Schlüssel %s",
+				idOf(e), str(e["name"]), str(e["state"]), e["invoice_no"], keyShape(e))
+		}
+	}
+	switch len(found) {
+	case 0:
+		s.measuref(t, "Storno-Rechnung", "kein Folgeobjekt in der Liste (Rechnung %d)", invoice)
+	case 1:
+		f := found[0]
+		name := str(f["name"])
+		if name == "" {
+			name = s.prefix + "folgeobjekt-" + ids(idOf(f))
+		}
+		s.track(object{resource: "invoice", id: idOf(f), name: name, followUpOf: invoice, followUpType: "invoice", archiveOnly: true})
+		s.measuref(t, "Storno-Rechnung", "Storno-Rechnung gefunden: %d zu Rechnung %d, zum Archivieren registriert", idOf(f), invoice)
+	default:
+		var all []string
+		for _, f := range found {
+			all = append(all, ids(idOf(f)))
+		}
+		s.deviatef(t, "Storno-Suche: %d Kandidaten (%s) für Rechnung %d, keiner registriert", len(found), strings.Join(all, ", "), invoice)
+	}
 }
 
 // cancelPaths are the path suffixes of the status changes cancelMeasured

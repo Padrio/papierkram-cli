@@ -77,6 +77,22 @@ func TestTransportRecordsAndMeters(t *testing.T) {
 	}
 }
 
+// The query of a request is recorded (filters such as company_id), the
+// path stays without it.
+func TestTransportRecordsQuery(t *testing.T) {
+	srv := mockapi.New(t)
+	tr, u := newTestTransport(t, srv, 100)
+	resp, err := send(t, tr, "GET", u.String()+"/income/invoices?company_id=7&page=1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	e := tr.Exchanges()[0]
+	if e.Query != "company_id=7&page=1" || !strings.HasSuffix(e.Path, "/income/invoices") {
+		t.Errorf("recorded path %q query %q", e.Path, e.Query)
+	}
+}
+
 // The request body reaches the server unchanged and is recorded.
 func TestTransportKeepsRequestBody(t *testing.T) {
 	srv := mockapi.New(t)

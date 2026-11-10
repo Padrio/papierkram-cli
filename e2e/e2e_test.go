@@ -18,9 +18,10 @@
 //	CleanupLeftovers: 1 list page per 100 entries of 9 resources
 //	  (all pages; more with leftovers), at least                    9
 //	QuotaHeadersPresent 1, InfoCreditCost 3                         4
-//	DeliverPdfEmptyBody: customer, person, project (30), own
-//	  estimate 50, deliver 1, readback 1                           82
-//	VatRate019Is19Percent: estimate 50, article 10, 2 describes    62
+//	DeliverPdfEmptyBody: permanent customer (unarchive) 1, own
+//	  estimate 50, deliver 1, readback 1                           53
+//	VatRate019Is19Percent: customer, person, project (30),
+//	  estimate 50, article 10, 2 describes                         92
 //	PersonDefaultIsString: describe                                 1
 //	UploadMimeTypes: supplier 10, voucher 50, 4 uploads × 10      100
 //	VoucherStateValues: 3 list pages                                3
@@ -29,9 +30,9 @@
 //	  10 × (describe, update, describe), invoice update reads
 //	  the invoice first (1)                                       114
 //	ReplaceLineItems: describe, read + update, describe              4
-//	InvoiceFlow: invoice 50, deliver 2, pdf 1, cancel +
-//	  describe 2, archive + describe + unarchive 3, estimate
-//	  cancel + describe 2                                          60
+//	InvoiceFlow: invoice 50, deliver 2, paid-status 1, pdf 1,
+//	  cancel + describe 2, cancellation list 1, archive +
+//	  describe + unarchive 3, estimate cancel + describe 2         62
 //	MasterDataArchive: archive + unarchive (2) of supplier,
 //	  project, task, article, custom attribute, estimate
 //	  (6 subtests)                                                 12
@@ -39,6 +40,9 @@
 //	  describe 1, bank-connection and transaction list 1 each and
 //	  describe 1 each (only with data), auth status (GET /info)
 //	  1; at most                                                    8
+//	MCPReadTool: user_list 1 (tools/list: no request)               1
+//	PaidStatus: company list 1 (1 page per 100 companies),
+//	  invoice list 1, invoice list with the cached name 1           3
 //	TimeFlow: time log 10, list 1, archive + unarchive 2, stop
 //	  10, describe 1 (start, status, discard local: 0)             24
 //	VoucherFlow: own creditor 10, create --file 60, describe 1,
@@ -52,26 +56,36 @@
 //	  PUT, describe 3; no. 13 read + update, describe, round
 //	  trip update, describe 5; no. 12 voucher update, describe,
 //	  update, describe 4                                           12
-//	final cleanup: 1 delete per object (6 documents and 13 other
-//	  objects = 19); the customer (and possibly the creditor of
-//	  VoucherFlow) can only be archived: +1 each, 2; each of up
-//	  to 3 final documents costs up to 3 more (cancel, delete,
-//	  archive), 9                                                  30
+//	                                                     tests    622
+//	final cleanup: 1 delete per object (4 draft documents and 13
+//	  other objects = 17); the creditor of VoucherFlow and the
+//	  customer of the run may only be archivable: +1 each, 2;
+//	  archiveOnly objects 1 archive each (permanent customer,
+//	  delivered estimate, delivered invoice, cancellation
+//	  invoice), 4                                                  23
 //	                                                     total    645
+//
+// First run in a sandbox: permanentCustomer creates the permanent
+// customer (10) instead of unarchiving it (1), +9: 654.
 //
 // Not counted: a cancel or reverse (InvoiceFlow, VoucherFlow; 4 in all)
 // whose answer names an object other than its target registers that
 // follow-up object for the cleanup (followUp; none expected). Each costs
-// up to 2 there (delete, archive; never cancel), together at most 8, taken
-// from the margin of the reserve: worst case 653 in all, cleanup 58 of 60.
+// up to 2 there (delete, archive; never cancel), together at most 8; the
+// voucher of VoucherFlow (reversed and cancelled) may need up to 3 more
+// (cancel, delete, archive). Both come from the reserve: its documented
+// worst case is 4 × 4 + 17 × 2 = 50 (that voucher included), with the
+// follow-ups 58 of 60.
 //
 // Of the budget, cleanupReserve = 60 is kept for the final cleanup: the
-// documented worst case (e2eguard.CleanupReserve) for the 6 documents
-// (2 estimates, 2 invoices, 2 vouchers; 4 each) and up to 13 other
-// objects (customer, supplier, creditor of VoucherFlow, person, project,
-// task, article, custom attribute, time entry fixture, 2 midnight time
-// entries, the entries of time log and time stop; 2 each), plus a margin
-// of 10. Tests may use 760 - 60 = 700 (planned: 615, margin 85). The
+// documented worst case (e2eguard.CleanupReserve) for the 4 draft
+// documents (estimate, invoice and voucher fixtures, voucher of
+// VoucherFlow; 4 each) and up to 17 other objects (customer of the run,
+// supplier, creditor of VoucherFlow, person, project, task, article,
+// custom attribute, time entry fixture, 2 midnight time entries, the
+// entries of time log and time stop, and the 4 archiveOnly objects; 2
+// each), plus a margin of 10. Tests may use 760 - 60 = 700 (planned: 622,
+// margin 78). The
 // meter (e2eguard.Meter) counts every sent request, rejected ones too,
 // with max(documented cost, X-Consumed-Quota), the header being the cost
 // of that one request; before the cleanup the transport refuses every
@@ -111,7 +125,14 @@
 //	  the PUT; open point 28: invoice create without document_date ends
 //	  with exit 5 and sends nothing;
 //	  invoice flow: deliver --via pdf, pdf (%PDF file), archive and
-//	  unarchive exit 0; voucher flow: create --file (exit 0, upload
+//	  unarchive exit 0, invoice paid-status of the permanent customer
+//	  after the deliver exit 0 and paid-status.json; paid-status by
+//	  name: exit 0, paid-status.json, the hint "→ <id> (", GET
+//	  /contact/companies and GET /income/invoices with company_id, the
+//	  second run (--overdue) exit 0 from the cache without GET
+//	  /contact/companies; MCP read tool: user_list listed, invoice_create
+//	  and auth_status not, every name once, user_list without IsError
+//	  and with an array entries, no content with the token; voucher flow: create --file (exit 0, upload
 //	  2xx), exactly one document, pdf, document delete, archive and
 //	  unarchive exit 0; time flow: time log, the entry in time list
 //	  --since heute, archive and unarchive exit 0, the timer (start,
@@ -137,7 +158,11 @@
 //	  the suite never pays), 13 (structure of GET /info); open points
 //	  10 (due_date through api PUT), 13 (supply_date format and round
 //	  trip), 12 (entertainment_persons set, then []: cleared or
-//	  unchanged); the
+//	  unchanged), 30 (paid-status after the deliver: the own invoice
+//	  with state and outstanding_amount, list entries with and without
+//	  outstanding_amount), 31 (the cancellation invoice in the invoice
+//	  list of the permanent customer: name, state, invoice_no, key
+//	  shape); paid-status by name: count, overdue_count, complete; the
 //	  answer of archive and unarchive (record_state or empty), the number
 //	  (total_entries) and key shape of bank connections and bank
 //	  transactions (never their values; without an entry the read by
@@ -147,16 +172,15 @@
 //	  not stored as sent, a cancel or reverse answering with another
 //	  object, a due_date changed by PUT, supply_date not stored as
 //	  sent or changed by the round trip, a failed step of that round
-//	  trip, [] rejected for entertainment_persons) is logged as
+//	  trip, [] rejected for entertainment_persons, the delivered invoice
+//	  missing from paid-status, more than one cancellation candidate or
+//	  a failed list of them) is logged as
 //	  ABWEICHUNG and listed again in a summary at the end of the run;
 //	  it does not fail the run.
 package e2e
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -171,8 +195,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getkin/kin-openapi/openapi3"
-
 	"github.com/Padrio/papierkram-cli/internal/e2eguard"
 	"github.com/Padrio/papierkram-cli/internal/registry"
 )
@@ -184,8 +206,9 @@ const creditBudget = 760
 const _ = uint(799 - creditBudget)
 
 // cleanupReserve is the part of the budget kept for the final cleanup
-// (see the header): 6 documents, 13 other objects, margin 10 = 60.
-var cleanupReserve = e2eguard.CleanupReserve(6, 13, 10)
+// (see the header): 4 draft documents, 13 other objects and 4 archiveOnly
+// objects (17), margin 10 = 60.
+var cleanupReserve = e2eguard.CleanupReserve(4, 17, 10)
 
 // suite is the live run; nil when the suite is skipped (skipReason).
 var (
@@ -308,44 +331,82 @@ func (s *liveSuite) listPages(t *testing.T, resource string, first func(t *testi
 
 // TestE2E_CleanupLeftovers removes objects of earlier runs: only those
 // whose name starts with pk-e2e- (never anything else), and not those of
-// this run (the cleanup at the end handles them). The first page of each
-// list is checked against docs/schemas/list.json (checkListContract).
+// this run (the cleanup at the end handles them). Leftovers that are
+// archived already are not touched (no credits for a state that cannot
+// change, spec v0.2 §2); invoices and estimates with a number are only
+// archived (archiveOnly). The companies named e2eguard.PermanentCustomer
+// are remembered for permanentCustomer and never touched. The first page
+// of each list is checked against docs/schemas/list.json
+// (checkListContract).
 func TestE2E_CleanupLeftovers(t *testing.T) {
 	s := live(t)
-	removed, kept := 0, 0
+	removed, archived, left := 0, 0, 0
 	for _, k := range leftoverKinds {
-		for _, e := range s.listPages(t, k.resource, s.checkListContract) {
+		es := s.listPages(t, k.resource, s.checkListContract)
+		if k.resource == "company" {
+			s.rememberPermanent(t, es)
+		}
+		for _, e := range es {
 			name := str(e[k.nameField])
 			if !e2eguard.Leftover(name, s.runID) {
 				continue
 			}
 			if str(e["record_state"]) == "archived" {
-				kept++
+				archived++
 				continue
 			}
 			if k.resource == "company" {
 				s.leftoverPersons(t, idOf(e))
 			}
-			s.need(t, 4)
-			what, ok := s.remove(t.TempDir(), object{resource: k.resource, id: idOf(e), name: name})
+			o := object{resource: k.resource, id: idOf(e), name: name, archiveOnly: numbered(k.resource, e)}
+			if o.archiveOnly {
+				s.need(t, 1)
+			} else {
+				s.need(t, 4)
+			}
+			what, ok := s.remove(t.TempDir(), o)
 			s.logf(t, "Rest %s %d (%s): %s", k.resource, idOf(e), name, what)
 			switch {
+			case ok && archivedResult(what):
+				archived++
 			case ok:
 				removed++
 			case s.quota:
 				s.skipf(t, "Rest %s %d nicht entfernt: Kontingent erschöpft (HTTP 429), Test übersprungen", k.resource, idOf(e))
 			default:
-				kept++
+				left++
 				s.errorf(t, "Rest %s %d nicht entfernt: %s", k.resource, idOf(e), what)
 			}
 		}
 	}
-	s.logf(t, "Reste früherer Läufe: %d entfernt, %d archiviert/übrig", removed, kept)
+	s.logf(t, "Reste früherer Läufe: %d entfernt, dauerhaft archiviert: %d, übrig: %d", removed, archived, left)
 }
 
-// listContract is the path of the contract of list -o json, relative to
-// the package directory.
-const listContract = "../docs/schemas/list.json"
+// numbered reports whether e, an entry of the invoice or estimate list,
+// has a number (invoice_no or estimate_no not null): the API cannot
+// delete it any more, so it is only archived.
+func numbered(resource string, e map[string]any) bool {
+	switch resource {
+	case "invoice", "estimate":
+		return e[resource+"_no"] != nil
+	}
+	return false
+}
+
+// rememberPermanent keeps the entries of the full company list named
+// e2eguard.PermanentCustomer (ID and record_state are logged) for
+// permanentCustomer; they are no leftovers and never touched here.
+func (s *liveSuite) rememberPermanent(t *testing.T, companies []map[string]any) {
+	t.Helper()
+	s.permanent = nil
+	for _, e := range companies {
+		if str(e["name"]) == e2eguard.PermanentCustomer {
+			s.permanent = append(s.permanent, e)
+			s.logf(t, "Dauerkunde %d (record_state %q): nicht angefasst", idOf(e), str(e["record_state"]))
+		}
+	}
+	s.permanentSeen = true
+}
 
 // checkListContract checks the first page of a list that
 // TestE2E_CleanupLeftovers loads anyway (no credit more) against
@@ -354,35 +415,11 @@ const listContract = "../docs/schemas/list.json"
 // only the JSON path and the rule, never values of the entries.
 func (s *liveSuite) checkListContract(t *testing.T, resource, stdout string) {
 	t.Helper()
-	raw, err := os.ReadFile(listContract)
-	if err != nil {
-		s.errorf(t, "Vertrag %s nicht lesbar: %v", listContract, err)
+	if v := s.checkContract(t, "list", stdout); v != "" {
+		s.deviatef(t, "%s list Seite 1 %s", resource, v)
 		return
 	}
-	var schema openapi3.Schema
-	if err := json.Unmarshal(raw, &schema); err != nil {
-		s.errorf(t, "Vertrag %s ist kein Schema-Objekt: %v", listContract, err)
-		return
-	}
-	if err := schema.Validate(context.Background()); err != nil {
-		s.errorf(t, "Vertrag %s ist kein gültiges OpenAPI-3-Schema: %v", listContract, err)
-		return
-	}
-	var doc any
-	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
-		s.deviatef(t, "%s list Seite 1: keine JSON-Ausgabe, Vertrag list.json nicht prüfbar", resource)
-		return
-	}
-	err = schema.VisitJSON(doc)
-	var se *openapi3.SchemaError
-	switch {
-	case err == nil:
-		s.logf(t, "%s list Seite 1 erfüllt list.json", resource)
-	case errors.As(err, &se):
-		s.deviatef(t, "%s list Seite 1 verletzt list.json bei /%s: %s", resource, strings.Join(se.JSONPointer(), "/"), se.Reason)
-	default:
-		s.deviatef(t, "%s list Seite 1 verletzt list.json (%T)", resource, err)
-	}
+	s.logf(t, "%s list Seite 1 erfüllt list.json", resource)
 }
 
 // leftoverPersons removes the persons of a leftover company of the suite
@@ -468,8 +505,11 @@ var delivered *deliverRun
 // deliverPDF delivers an estimate of its own as PDF, once per run. It is
 // an estimate, not an invoice: an invoice would get a number of the
 // invoice sequence. Never by mail (the transport refuses that as well).
-// TestE2E_InvoiceFlow cancels this estimate: a test after it finds it
-// cancelled.
+// The estimate gets a number, so it books on the permanent customer
+// (spec v0.2 §2), without contact person and project (those belong to the
+// customer of the run), and the cleanup only archives it once delivered
+// (archiveOnly). TestE2E_InvoiceFlow cancels this estimate: a test after
+// it finds it cancelled.
 func (s *liveSuite) deliverPDF(t *testing.T) *deliverRun {
 	t.Helper()
 	if delivered != nil {
@@ -488,14 +528,19 @@ func (s *liveSuite) deliverPDF(t *testing.T) *deliverRun {
 		}
 	}()
 	name := s.prefix + "angebot-versand"
-	args := s.estimateArgs(t, name)
-	s.need(t, 53)
-	est := s.create(t, object{resource: "estimate", name: name}, args...)
+	c := s.permanentCustomer(t)
+	// estimate 50, deliver and readback 2
+	s.need(t, 52)
+	est := s.create(t, object{resource: "estimate", name: name},
+		"estimate", "create", "--name", name, "--customer", ids(c), "--document-date", "today",
+		"--item", "name="+pos19+",qty=2,price=100,vat=19",
+		"--item", "name=pk-e2e-pos-7,qty=1,price=50,vat=7")
 	r := s.run(t, "", "estimate", "deliver", ids(idOf(est)), "--via", "pdf", "--yes", "-o", "json")
 	if r.code != 0 {
 		s.quotaSkip(t, r, []string{"estimate", "deliver"})
 		s.fatalf(t, "estimate deliver --via pdf: Exit %d\n%s", r.code, r.stderr)
 	}
+	s.archiveOnly("estimate", idOf(est))
 	delivered = &deliverRun{res: r, out: s.decode(t, r.stdout), estimate: idOf(est)}
 	done = true
 	return delivered

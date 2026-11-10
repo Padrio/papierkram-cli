@@ -17,14 +17,17 @@ normalen CI mit (ohne Variablen, nur Kompilieren und Überspringen).
 ## Verantwortung für die Sandbox
 
 Ob der Account wirklich eine Sandbox ist, kann die Suite nicht prüfen. Das
-liegt bei dir: Trage nie Subdomain und Token der echten Buchhaltung ein. Die
-Suite legt Firmen, Kontaktpersonen, Projekte, Aufgaben, Zeiteinträge (darunter
-zwei von heute aus `TestE2E_TimeFlow`: einen per `time log`, einen nicht
-abrechenbaren per `time stop` aus dem lokalen Timer), Artikel, ein Datenfeld,
-zwei Angebote, zwei Rechnungen und zwei
-Belege an, lädt Dateien hoch, versendet ein Angebot und eine Rechnung als PDF
-und versucht, beide zu stornieren und einen Beleg zu stornieren und
-gegenzubuchen (ob die API das zulässt, wird gemessen).
+liegt bei dir: Trage nie Subdomain und Token der echten Buchhaltung ein.
+
+## Was die Suite anlegt
+
+Die Suite legt Firmen, Kontaktpersonen, Projekte, Aufgaben, Zeiteinträge
+(darunter zwei von heute aus `TestE2E_TimeFlow`: einen per `time log`, einen
+nicht abrechenbaren per `time stop` aus dem lokalen Timer), Artikel, ein
+Datenfeld, zwei Angebote, zwei Rechnungen und zwei Belege an, lädt Dateien
+hoch, versendet ein Angebot und eine Rechnung als PDF und versucht, beide zu
+stornieren und einen Beleg zu stornieren und gegenzubuchen (ob die API das
+zulässt, wird gemessen).
 `TestE2E_MasterDataArchive` archiviert eigene Stammdaten (Lieferant, Projekt,
 Aufgabe, Artikel, Datenfeld) und ein eigenes Angebot und holt sie gleich
 danach wieder aus dem Archiv, sofern `archive` sie archiviert haben kann (Exit
@@ -33,6 +36,40 @@ Untertest übersprungen). Scheitert `unarchive` oder entfällt es nach einer
 Ablehnung von `archive`, steht „Fixture <ressource> <id> womöglich noch
 archiviert – Folgefehler möglich“ im Log. Bankverbindungen und Bankumsätze liest die Suite
 nur.
+
+**Dauerkunde.** Das versendete Angebot und die versendete Rechnung bekommen
+eine Nummer; solche Belege kann die API nicht löschen, und eine Firma mit
+Belegen auch nicht. Deshalb buchen beide auf eine feste Firma
+`pk-e2e-dauerkunde`, das einzige Objekt der Suite ohne Lauf-ID. Jeder Lauf
+sucht sie per Name (die Firmenliste von `TestE2E_CleanupLeftovers`, sonst eine
+eigene), holt sie aus dem Archiv (1 Credit), nutzt sie und archiviert sie am
+Ende wieder (1 Credit); gibt es sie noch nicht, legt der erste Lauf sie an
+(10 Credits). Gelöscht wird sie nie, und die Restesuche fasst sie nicht an.
+Gibt es mehr als eine Firma dieses Namens, scheitert der erste Test, der sie
+braucht („mehrere Dauerkunden“), statt eine zu wählen: dann bis auf eine von
+Hand umbenennen. Das Angebot hat keine Kontaktperson und kein Projekt (die
+gehören zum Kunden des Laufs). Alle anderen Flows nutzen den Kunden des Laufs
+(`pk-e2e-<lauf-id>-kunde`), der so löschbar bleibt.
+
+**Nur archiviert.** Der Dauerkunde, das versendete Angebot, die versendete
+Rechnung und deren Storno-Rechnung werden beim Aufräumen nur archiviert
+(1 Credit), nie gelöscht oder storniert: Jeder weitere Versuch kostete Credits
+ohne Wirkung. Ebenso archiviert die Restesuche Rechnungen und Angebote
+früherer Läufe, die eine Nummer haben (`invoice_no` bzw. `estimate_no` nicht
+`null`). Bereits archivierte Reste fasst sie gar nicht mehr an; das Log zählt
+sie getrennt: `Reste früherer Läufe: <n> entfernt, dauerhaft archiviert: <n>,
+übrig: <n>`. Diese Reste wachsen je Lauf um die beiden versendeten Belege und
+die Storno-Rechnung, aber um keine Firma mehr.
+
+**Storno-Rechnung.** `invoice cancel` legt (vermutlich) eine Storno-Rechnung
+an. `TestE2E_InvoiceFlow` sucht sie danach in der Rechnungsliste des
+Dauerkunden von heute (`invoice list --company <id> --from today --to today
+--sort id --desc --limit 100`): Kandidaten sind Rechnungen mit höherer ID als
+die stornierte, die dieser Lauf nicht selbst registriert hat. Je Kandidat
+stehen Name, Status, Nummer und Schlüsselform als `MESSUNG` im Log. Genau ein
+Kandidat wird als Folgeobjekt der stornierten Rechnung registriert und am
+Ende archiviert; mehrere (etwa durch einen parallelen Lauf) sind eine
+`ABWEICHUNG`, und keiner wird angefasst.
 
 ## Ausführen
 
@@ -131,16 +168,19 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
   kein `email`-Schlüssel).
 - Alles, was die Suite anlegt, heißt `pk-e2e-<lauf-id>-…` (Lauf-ID:
   `GITHUB_RUN_ID`, bei einer Wiederholung mit Versuchsnummer, sonst eine
-  Zufallszahl). Aufgeräumt werden nur Objekte,
+  Zufallszahl), einzige Ausnahme ist der Dauerkunde `pk-e2e-dauerkunde`
+  (siehe oben). Aufgeräumt werden nur Objekte,
   deren Name mit `pk-e2e-` beginnt: am Ende des Laufs die eigenen, im Test
   `TestE2E_CleanupLeftovers` die Reste früherer Läufe. Andere Objekte
   fasst die Suite nie an (Lesen ausgenommen); einzige Ausnahme sind
   Folgeobjekte eines Stornos oder einer Gegenbuchung (siehe unten).
-- Was sich nicht löschen lässt (z. B. ein versendetes Angebot), wird
-  storniert bzw. archiviert. Rechnungen, Angebote und Belege werden als
-  Entwurf angelegt; versendet werden nur ein eigenes Angebot und eine eigene
-  Rechnung (`TestE2E_InvoiceFlow`), beide nur als PDF; danach versucht die
-  Suite, beide zu stornieren. Die Rechnung erhält dabei eine Nummer aus dem
+- Was sich nicht löschen lässt, wird storniert bzw. archiviert; was eine
+  Nummer hat (ein versendetes Angebot, eine versendete Rechnung, die
+  Storno-Rechnung) und der Dauerkunde werden nur archiviert. Rechnungen,
+  Angebote und Belege werden als Entwurf angelegt; versendet werden nur ein
+  eigenes Angebot und eine eigene Rechnung (`TestE2E_InvoiceFlow`), beide
+  nur als PDF und an den Dauerkunden; danach versucht die Suite, beide zu
+  stornieren. Die Rechnung erhält dabei eine Nummer aus dem
   Rechnungsnummernkreis der Sandbox. Einen eigenen Beleg bucht
   `TestE2E_VoucherFlow` gegen (`reverse`) und storniert ihn; er gehört zu
   einem eigenen Lieferanten (`pk-e2e-<runid>-lieferant-storno`), der danach
@@ -154,7 +194,9 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
   stammt unverändert aus dieser Antwort, und das stornierte Objekt hat
   dieser Lauf selbst angelegt. Ein Folgeobjekt wird nur gelöscht oder
   archiviert, nie storniert. Ein Folgeobjekt anderen Typs fasst die Suite
-  nicht an.
+  nicht an. Ebenso Folgeobjekt ist die Storno-Rechnung, die
+  `TestE2E_InvoiceFlow` als einzigen neuen Kandidaten in der Rechnungsliste
+  des Dauerkunden findet (siehe oben); sie wird nur archiviert.
 - Die Suite bezahlt nie etwas: `voucher pay` wird nur mit `value: null` und
   der Bankumsatz-ID 999999999 gemessen, die es nicht gibt (ohne Betrag). Der
   Transport lässt für `pay` genau diesen Body durch,
@@ -190,10 +232,38 @@ Nachweis: Die Suite ignoriert Proxy-Variablen absichtlich.
 ## Credit-Budget
 
 Ein voller Lauf kostet nach den dokumentierten Preisen (Abschnitt 4.3) etwa
-**645 Credits** (Tests 615, Aufräumen 30; jede Zeile im Kopf von
+**645 Credits** (Tests 622, Aufräumen 23; jede Zeile im Kopf von
 `e2e_test.go` gehört zu einem vorhandenen Test, keine ist mehr geplant); das
-Budget je Lauf ist **760** (Zielwert unter 800, die Aufschlüsselung steht
-im Kopf von `e2e_test.go`). Jede gesendete Anfrage
+Budget je Lauf ist **760** (Zielwert unter 800). Die Aufschlüsselung steht
+im Kopf von `e2e_test.go`; die Tests im Überblick (Credits eines vollen
+Laufs ohne Reste; eine Vorbedingung zählt beim ersten Test, der sie nutzt):
+
+| Test | Credits |
+|---|---:|
+| `TestE2E_CleanupLeftovers` (je Ressource 1 Seite je 100 Einträge, mehr mit Resten) | mindestens 9 |
+| `TestE2E_QuotaHeadersPresent`, `TestE2E_InfoCreditCost` | 4 |
+| `TestE2E_DeliverPdfEmptyBody` (Dauerkunde entarchivieren 1, Angebot 50, Versand 1, Nachlesen 1) | 53 |
+| `TestE2E_VatRate019Is19Percent` (Kunde, Person, Projekt 30, Angebot 50, Artikel 10, 2 × describe) | 92 |
+| `TestE2E_PersonDefaultIsString` | 1 |
+| `TestE2E_UploadMimeTypes` | 100 |
+| `TestE2E_VoucherStateValues` | 3 |
+| `TestE2E_PartialUpdateSemantics` | 114 |
+| `TestE2E_ReplaceLineItems` | 4 |
+| `TestE2E_InvoiceFlow` (bisher 60, dazu `paid-status` 1 und Storno-Suche 1) | 62 |
+| `TestE2E_MasterDataArchive` | 12 |
+| `TestE2E_ReadCommands` | höchstens 8 |
+| `TestE2E_MCPReadTool` (`user_list`) | 1 |
+| `TestE2E_PaidStatus` (Firmenliste 1, Rechnungsliste 1, Rechnungsliste mit Name aus dem Zwischenspeicher 1) | 3 |
+| `TestE2E_TimeFlow` | 24 |
+| `TestE2E_VoucherFlow` | 79 |
+| `TestE2E_Carries` | 41 |
+| `TestE2E_OpenMeasurements` | 12 |
+| **Tests** | **622** |
+| Aufräumen: 4 Entwurfsbelege und 13 andere Objekte je 1 `delete` (17), Lieferant aus `TestE2E_VoucherFlow` und Kunde des Laufs ggf. je 1 `archive` (2), Dauerkunde, versendetes Angebot, versendete Rechnung und Storno-Rechnung je 1 `archive` (4) | 23 |
+| **Summe** | **645** |
+
+Im ersten Lauf einer Sandbox legt die Suite den Dauerkunden an (10 statt 1
+Credit): 654. Jede gesendete Anfrage
 zählt, auch eine abgelehnte (4xx/5xx): Die API berechnet z. B. ein mit 422
 abgelehntes Anlegen voll (gemessen 2026-11-04). Gezählt wird der größere
 Wert aus den dokumentierten Kosten und `X-Consumed-Quota`, das die Kosten
@@ -202,15 +272,17 @@ oder kommt keine Antwort (Netzwerkfehler), zählen die dokumentierten
 Kosten.
 
 Vom Budget sind **60 Credits fürs Aufräumen reserviert** (dokumentierter
-Höchstaufwand: je Rechnung/Angebot/Beleg 4, je anderem Objekt 2, plus 10
-Puffer; bei 6 Rechnungen, Angeboten und Belegen und 13 anderen Objekten).
-Die Tests dürfen also höchstens 700 Credits verbrauchen (geplant: 615): Eine
+Höchstaufwand: je Entwurfsbeleg 4, je anderem Objekt 2, plus 10 Puffer; bei
+4 Entwurfsbelegen und 17 anderen Objekten, darunter die 4, die nur archiviert
+werden). Die Tests dürfen also höchstens 700 Credits verbrauchen (geplant:
+622): Eine
 Anfrage, die in die Reserve greifen würde, wird nicht gesendet, und reicht das
 Budget für einen Test nicht mehr, werden dieser und alle folgenden Tests mit
 Begründung übersprungen. Erst das Aufräumen am Ende darf die Reserve nutzen.
-Entstehen beim Stornieren Folgeobjekte (nicht erwartet), kostet jedes beim
-Aufräumen bis zu 2 Credits mehr, bei den 4 Stornos und Gegenbuchungen der
-Suite zusammen höchstens 8 aus dem Puffer der Reserve.
+Entstehen beim Stornieren Folgeobjekte, die die Antwort selbst nennt (nicht
+erwartet), kostet jedes beim Aufräumen bis zu 2 Credits mehr, bei den 4
+Stornos und Gegenbuchungen der Suite zusammen höchstens 8 aus dem Puffer der
+Reserve.
 Am Ende steht die Summe im Log.
 
 Antwortet die API mit 429 (Exit 6, Monatskontingent erschöpft), sendet die
@@ -280,6 +352,32 @@ ohnehin lädt, gegen den Vertrag
 [docs/schemas/list.json](../docs/schemas/list.json) (kein Credit mehr); eine
 Verletzung steht als `ABWEICHUNG` mit JSON-Pfad und Regel im Log, nie mit
 Werten der Einträge.
+
+`TestE2E_InvoiceFlow` ruft nach dem Versand `invoice paid-status --customer
+<Dauerkunde>` auf (hart: Exit 0 und Vertrag
+[docs/schemas/paid-status.json](../docs/schemas/paid-status.json)) und misst
+offenen Punkt 30: ob die versendete Rechnung ein offener Posten ist (Status,
+`outstanding_amount`) und wie viele Einträge der Rechnungsliste
+`outstanding_amount` tragen. Fehlt die Rechnung in den offenen Posten, steht
+das als `ABWEICHUNG` im Log. Nach dem Storno sucht er die Storno-Rechnung
+(offener Punkt 31, siehe [Was die Suite anlegt](#was-die-suite-anlegt)).
+
+`TestE2E_PaidStatus` prüft die Namensauflösung an einem Flag (3 Credits):
+`invoice paid-status --customer pk-e2e-dauerkunde` muss mit Exit 0 enden,
+den Vertrag erfüllen, auf stderr die ID nennen (`→ <id> (`) und die
+Firmenliste sowie die Rechnungsliste mit `company_id=<id>` laden; derselbe
+Aufruf mit `--overdue` im selben Verzeichnis muss den Namen aus dem
+Zwischenspeicher nehmen (keine Firmenliste, „aus dem Zwischenspeicher“ auf
+stderr). `count`, `overdue_count` und `complete` sind Messungen.
+
+`TestE2E_MCPReadTool` startet den MCP-Server des CLI im Prozess (ohne
+Optionen, also nur lesende Tools; In-Memory-Transport des SDK) und ruft das
+Tool `user_list` mit `limit` 1 auf (1 Credit). Hart: `user_list` ist
+gelistet, `invoice_create` und `auth_status` nicht, jeder Name einmal; das
+Ergebnis ist kein Tool-Fehler, sein erster Inhalt JSON mit dem Array
+`entries`, und kein Inhalt enthält das Token. Seine Anfragen laufen über
+denselben Transport wie alle anderen (Budget, Abdeckung, Schutzregeln); ein
+Tool-Fehler mit `exit_code` 6 stoppt die Suite wie ein 429 eines CLI-Laufs.
 
 `TestE2E_OpenMeasurements` prüft vier offene Punkte (12 Credits je Lauf,
 siehe [docs/offene-punkte.md](../docs/offene-punkte.md)): Nr. 28 hart, die

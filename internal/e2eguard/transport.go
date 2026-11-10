@@ -27,6 +27,7 @@ var ErrRefused = errors.New("e2e: Anfrage abgelehnt")
 // never holds the Authorization header.
 type Exchange struct {
 	Method, Path string // Path is the URL path, e.g. /api/v1/info
+	Query        string // the raw query, e.g. company_id=7&page=1
 	Status       int
 	ReqHeader    http.Header
 	ReqBody      []byte
@@ -127,7 +128,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	hdr.Del("Authorization")
 	t.mu.Lock()
 	t.exchanges = append(t.exchanges, Exchange{
-		Method: req.Method, Path: req.URL.Path, Status: resp.StatusCode,
+		Method: req.Method, Path: req.URL.Path, Query: req.URL.RawQuery, Status: resp.StatusCode,
 		ReqHeader: hdr, ReqBody: body,
 		RespHeader: resp.Header.Clone(), RespBody: respBody,
 	})
