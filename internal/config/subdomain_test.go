@@ -84,16 +84,18 @@ func TestParseSubdomain(t *testing.T) {
 func TestParseSubdomainRejects(t *testing.T) {
 	const portHint = "Ohne Port angeben, z. B. firma (für https://firma.papierkram.de)"
 	const domainHint = "Nur die Subdomain angeben, z. B. firma (für https://firma.papierkram.de)"
+	// labelHint: what is left after normalizing is empty (NormalizeSubdomain)
+	const labelHint = "Erlaubt sind Buchstaben, Ziffern und Bindestriche (nicht am Anfang oder Ende), höchstens 63 Zeichen, z. B. firma"
 	for in, hint := range map[string]string{
 		"pkrason.papierkram.de:443":           portHint,
 		"https://pkrason.papierkram.de:8443/": portHint,
 		"firma.example.com":                   domainHint,
-		"https://":                            "",
-		".papierkram.de":                      "",
-		"a.b.papierkram.de":                   "",
-		"https://user@pkrason.papierkram.de":  "",
-		"ftp://pkrason.papierkram.de":         "",
-		"":                                    "",
+		"https://":                            labelHint,
+		".papierkram.de":                      labelHint,
+		"a.b.papierkram.de":                   domainHint,
+		"https://user@pkrason.papierkram.de":  domainHint,
+		"ftp://pkrason.papierkram.de":         domainHint,
+		"":                                    labelHint,
 	} {
 		_, _, err := ParseSubdomain(in, "--subdomain")
 		wantCode(t, err, clierr.CodeUsage)
@@ -101,8 +103,8 @@ func TestParseSubdomainRejects(t *testing.T) {
 		if want := `ungültige Subdomain "` + in + `" (--subdomain)`; ce.Message != want {
 			t.Errorf("%q: message %q, want %q", in, ce.Message, want)
 		}
-		if !strings.Contains(strings.ToLower(ce.Hint), strings.ToLower(hint)) {
-			t.Errorf("%q: hint %q lacks %q", in, ce.Hint, hint)
+		if ce.Hint != hint {
+			t.Errorf("%q: hint %q, want %q", in, ce.Hint, hint)
 		}
 	}
 }
