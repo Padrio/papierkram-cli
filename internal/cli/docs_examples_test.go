@@ -111,7 +111,7 @@ type docCmd struct {
 // block may run (installation, completion setup, jq, the MCP setup of
 // Claude Code); every other command
 // is an error, so a misspelled papierkram is never skipped silently.
-var docShellCommands = []string{"brew", "scoop", "go", "source", "jq", "claude"}
+var docShellCommands = []string{"brew", "scoop", "winget", "go", "source", "jq", "claude"}
 
 // substPlaceholder replaces a $(…) or <(…) in the enclosing line.
 const substPlaceholder = "SUBST"

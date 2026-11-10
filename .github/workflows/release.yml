@@ -1,8 +1,9 @@
 name: Release
 
 # Runs only when Pascal pushes a version tag (docs/release.md); never on
-# branches, pull requests or forks. Publishes the GitHub release and the
-# Homebrew cask (Padrio/homebrew-tap) with GoReleaser (.goreleaser.yaml).
+# branches, pull requests or forks. Publishes the GitHub release with the
+# SBOMs, the Homebrew cask (Padrio/homebrew-tap) and the winget manifests
+# (branch in the fork Padrio/winget-pkgs) with GoReleaser (.goreleaser.yaml).
 on:
   push:
     tags: ['v*']
@@ -45,6 +46,17 @@ jobs:
             echo "Secret PACKAGES_GITHUB_TOKEN fehlt (docs/release.md, Voraussetzungen)" >&2
             exit 1
           fi
+      # a real write test (temporary branch, deleted again) in both
+      # repositories GoReleaser writes to with the token; if one fails,
+      # nothing is published. The token reaches gh only in its environment.
+      - name: tap and winget fork writable
+        env:
+          PACKAGES_GITHUB_TOKEN: ${{ secrets.PACKAGES_GITHUB_TOKEN }}
+        run: |
+          sh scripts/check-fork-push.sh Padrio/homebrew-tap
+          sh scripts/check-fork-push.sh Padrio/winget-pkgs
+      # syft for the SBOMs (sboms in .goreleaser.yaml), put on the PATH
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser

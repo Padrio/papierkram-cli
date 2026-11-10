@@ -30,7 +30,7 @@ Das Binary heißt `papierkram`. Alle Texte (Hilfe, Fehler, Hinweise) sind deutsc
 
 ## Installation
 
-> Pakete gibt es für Homebrew (macOS, Linux) und deb/rpm (Linux). Unter Windows das Archiv von der [Release-Seite](https://github.com/Padrio/papierkram-cli/releases) oder `go install` verwenden; ein Scoop-Paket ist vorerst ausgesetzt.
+> Pakete gibt es für Homebrew (macOS, Linux), deb/rpm (Linux) und winget (Windows, sobald Microsoft den Pull Request angenommen hat). Unter Windows bis dahin das Archiv von der [Release-Seite](https://github.com/Padrio/papierkram-cli/releases) oder `go install` verwenden; ein Scoop-Paket ist vorerst ausgesetzt.
 
 **Homebrew** (macOS, Linux):
 
@@ -38,7 +38,13 @@ Das Binary heißt `papierkram`. Alle Texte (Hilfe, Fehler, Hinweise) sind deutsc
 brew install Padrio/tap/papierkram
 ```
 
-**Windows:** das `.zip` für die eigene Architektur von der [Release-Seite](https://github.com/Padrio/papierkram-cli/releases) laden, entpacken und `papierkram.exe` in ein Verzeichnis im `PATH` legen.
+**Windows:**
+
+```sh
+winget install Padrio.Papierkram
+```
+
+Das gilt, sobald Microsoft den Pull Request angenommen hat; bis dahin das zip-Archiv: das `.zip` für die eigene Architektur von der [Release-Seite](https://github.com/Padrio/papierkram-cli/releases) laden, entpacken und `papierkram.exe` in ein Verzeichnis im `PATH` legen. winget installiert nur `papierkram`, ohne die Kurzform `pk`. Jedes Archiv hat auf der Release-Seite eine SBOM (`<archiv>.sbom.json`, SPDX).
 
 **deb/rpm** (Linux): das `.deb`- bzw. `.rpm`-Paket für die eigene Architektur von der [Release-Seite](https://github.com/Padrio/papierkram-cli/releases) laden und mit dem Paketmanager installieren (z. B. `sudo apt install ./<paket>.deb` oder `sudo dnf install ./<paket>.rpm`).
 

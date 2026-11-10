@@ -70,6 +70,15 @@ checksum:
   name_template: checksums.txt
   algorithm: sha256
 
+# One SBOM (SPDX JSON) per archive, written by syft: in CI and the release
+# from anchore/sbom-action/download-syft, locally from the PATH
+# (docs/release.md). checksums.txt lists the SBOMs as well.
+sboms:
+  - id: archives
+    artifacts: archive
+    documents: ["{{ .ArtifactName }}.sbom.json"]
+    args: ["$artifact", "--output", "spdx-json=$document"]
+
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}"
 
@@ -192,6 +201,41 @@ homebrew_casks:
           on_macos do
             run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/papierkram"]
           end
+
+# winget: three manifests (version, installer, locale) for Padrio.Papierkram,
+# portable from the windows zip archives (GoReleaser v2.19 takes the zip
+# archives by itself; it has no "use" option). They land on a branch
+# papierkram-<version> of the fork Padrio/winget-pkgs; GoReleaser creates it
+# from the fork's default branch. No pull request from here: the fine-grained
+# token cannot open one in microsoft/winget-pkgs, so it is opened by hand
+# after the release (docs/release.md, Release-Schritte). The release
+# workflow checks beforehand that the token can write to the fork
+# (scripts/check-fork-push.sh). Uploaded only by a real release, never by a
+# snapshot or a prerelease (skip_upload: auto); a snapshot writes the
+# manifests to dist/winget/ only.
+winget:
+  - name: papierkram
+    package_identifier: Padrio.Papierkram
+    publisher: Pascal Krason
+    publisher_url: https://github.com/Padrio/papierkram-cli
+    homepage: https://github.com/Padrio/papierkram-cli
+    license: MIT
+    license_url: https://github.com/Padrio/papierkram-cli/blob/main/LICENSE
+    # the descriptions are German, so is the default locale
+    default_locale: de-DE
+    short_description: Kommandozeile für die Papierkram-API
+    ids: [papierkram]
+    commit_author:
+      name: Pascal Krason
+      email: p.krason@icloud.com
+    skip_upload: auto
+    repository:
+      owner: Padrio
+      name: winget-pkgs
+      branch: "papierkram-{{ .Version }}"
+      token: "{{ .Env.PACKAGES_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: false
 
 # Scoop is suspended (Pascal, 2026-11-09): no Padrio/scoop-bucket. The
 # Windows archives stay on the release page; docs/release.md says how to

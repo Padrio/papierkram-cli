@@ -155,9 +155,10 @@ jobs:
           git status --porcelain
           test -z "$(git status --porcelain)"
 
-  # GoReleaser dry run (spec 12.1/12.2): builds every target, the archives
-  # and the deb/rpm packages without publishing anything. No token is set:
-  # tap and bucket are written to dist/ only (docs/release.md).
+  # GoReleaser dry run (spec 12.1/12.2): builds every target, the archives,
+  # their SBOMs and the deb/rpm packages without publishing anything. No
+  # token is set: the cask and the winget manifests are written to dist/
+  # only (docs/release.md).
   snapshot:
     runs-on: ubuntu-latest
     steps:
@@ -170,6 +171,8 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: .go-version
+      # syft for the SBOMs (sboms in .goreleaser.yaml), put on the PATH
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
@@ -187,7 +190,8 @@ jobs:
           for f in "$@"; do
             test -f "$f" || { echo "fehlt: $f" >&2; exit 1; }
           done
-          test "$(grep -c . dist/checksums.txt)" -eq 10
+          # 6 archives, 4 packages and the 6 SBOMs
+          test "$(grep -c . dist/checksums.txt)" -eq 16
           # pk link, man pages and completions in the package
           dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/bin/pk -> papierkram'
           dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/man/man1/papierkram.1.gz'
@@ -197,6 +201,23 @@ jobs:
           dpkg-deb -c dist/papierkram_*_linux_amd64.deb | grep -F './usr/share/bash-completion/completions/pk -> papierkram'
           tar -tzf dist/papierkram_*_linux_amd64.tar.gz | grep -Fx 'completions/_papierkram'
           tar -tzf dist/papierkram_*_linux_amd64.tar.gz | grep -Fx 'man/papierkram.1'
+      - name: one SBOM per archive, winget manifests
+        run: |
+          # exactly 6 SBOMs, one per archive, each SPDX JSON and in checksums.txt
+          test "$(find dist -maxdepth 1 -name '*.sbom.json' | wc -l)" -eq 6
+          for a in dist/papierkram_*.tar.gz dist/papierkram_*.zip; do
+            test -f "$a.sbom.json" || { echo "SBOM fehlt: $a" >&2; exit 1; }
+            grep -q '"spdxVersion"' "$a.sbom.json"
+            grep -qF "  ${a#dist/}.sbom.json" dist/checksums.txt
+          done
+          # version, installer and locale manifest, portable from the zip
+          set -- dist/winget/manifests/p/Padrio/Papierkram/*/
+          test "$#" -eq 1 && test -d "$1"
+          test "$(find "$1" -type f | wc -l)" -eq 3
+          test -f "$1/Padrio.Papierkram.yaml"
+          test -f "$1/Padrio.Papierkram.locale.de-DE.yaml"
+          grep -Fx 'InstallerType: zip' "$1/Padrio.Papierkram.installer.yaml"
+          test "$(grep -c 'NestedInstallerType: portable' "$1/Padrio.Papierkram.installer.yaml")" -eq 2
       # papierkram and pk complete in every shell (pwsh ships with the runner)
       - name: completions for papierkram and pk
         run: |
@@ -226,6 +247,72 @@ jobs:
           # an open block before the section is named as such (exit 4)
           printf '%s\n' '## [Unreleased]' '' '~~~' '' '## [1.2.3]' '' '- Eintrag' > "$RUNNER_TEMP/before.md"
           rc=0; sh scripts/release-notes.sh v1.2.3 "$RUNNER_TEMP/before.md" || rc=$?; test "$rc" -eq 4
+      # the write check of release.yml against a fake gh, without network:
+      # success, branch not created, branch not deleted (warning only), token
+      # missing, repository not readable, usage
+      - name: fork check script
+        run: |
+          # a fake gh answers like the API; it fails if the token is not in
+          # GH_TOKEN or shows up in argv (the token is a test value)
+          dir="$(mktemp -d "$RUNNER_TEMP/forkcheck.XXXXXX")"
+          cat > "$dir/gh" <<'FAKE'
+          #!/bin/sh
+          case "$*" in *"$FAKE_GH_TOKEN"*) echo "Token in argv" >&2; exit 5 ;; esac
+          [ "$GH_TOKEN" = "$FAKE_GH_TOKEN" ] || { echo "GH_TOKEN falsch" >&2; exit 4; }
+          printf '%s\n' "$*" >> "$FAKE_GH_LOG"
+          case "$*" in
+          "api repos/Padrio/winget-pkgs --jq .default_branch")
+            [ "$FAKE_GH_FAIL" != get ] || { echo 'HTTP 404: Not Found' >&2; exit 1; }
+            echo master ;;
+          "api repos/Padrio/winget-pkgs/git/ref/heads/master --jq .object.sha")
+            echo 0123456789abcdef0123456789abcdef01234567 ;;
+          "api -X POST repos/Padrio/winget-pkgs/git/refs -f ref=refs/heads/pk-write-check-"*" -f sha=0123456789abcdef0123456789abcdef01234567 --silent")
+            [ "$FAKE_GH_FAIL" != create ] || { echo 'HTTP 403: Resource not accessible by personal access token' >&2; exit 1; } ;;
+          "api -X DELETE repos/Padrio/winget-pkgs/git/refs/heads/pk-write-check-"*" --silent")
+            [ "$FAKE_GH_FAIL" != delete ] || { echo 'HTTP 502: Bad Gateway' >&2; exit 1; } ;;
+          *) echo "unerwartet: $*" >&2; exit 3 ;;
+          esac
+          FAKE
+          chmod +x "$dir/gh"
+          export CHECK_FORK_PUSH_GH="$dir/gh" FAKE_GH_TOKEN=test-token-fork-check GITHUB_ACTIONS=false
+          want='PACKAGES_GITHUB_TOKEN kann Padrio/winget-pkgs nicht beschreiben (docs/release.md, Voraussetzungen)'
+          # run <fail> <token>: exit code in rc, stdout+stderr in out, calls in log
+          run() {
+            : > "$dir/log"
+            rc=0
+            out="$(FAKE_GH_FAIL="$1" FAKE_GH_LOG="$dir/log" PACKAGES_GITHUB_TOKEN="$2" sh scripts/check-fork-push.sh Padrio/winget-pkgs 2>&1)" || rc=$?
+            printf '%s\n' "$out"
+            case "$out" in *test-token-fork-check*) echo "Token in der Ausgabe" >&2; exit 1 ;; esac
+          }
+          # success: 4 calls, the branch is created and deleted again
+          run '' test-token-fork-check
+          test "$rc" -eq 0
+          test "$(grep -c . "$dir/log")" -eq 4
+          grep -q '^api -X POST ' "$dir/log"
+          grep -q '^api -X DELETE ' "$dir/log"
+          case "$out" in *'ok: PACKAGES_GITHUB_TOKEN kann Padrio/winget-pkgs beschreiben'*) ;; *) exit 1 ;; esac
+          # creating the branch fails: exit 1 with the message, nothing deleted
+          run create test-token-fork-check
+          test "$rc" -eq 1
+          case "$out" in *"$want"*) ;; *) exit 1 ;; esac
+          if grep -q DELETE "$dir/log"; then exit 1; fi
+          # deleting fails: the write worked, a warning only
+          run delete test-token-fork-check
+          test "$rc" -eq 0
+          case "$out" in *'Warnung: Prüf-Branch pk-write-check-'*'von Hand löschen'*) ;; *) exit 1 ;; esac
+          # token missing: exit 1, gh never called
+          run '' ''
+          test "$rc" -eq 1
+          case "$out" in *'PACKAGES_GITHUB_TOKEN fehlt'*"$want"*) ;; *) exit 1 ;; esac
+          test ! -s "$dir/log"
+          # repository not readable: exit 1, nothing created
+          run get test-token-fork-check
+          test "$rc" -eq 1
+          case "$out" in *"$want"*) ;; *) exit 1 ;; esac
+          if grep -q POST "$dir/log"; then exit 1; fi
+          # usage: exactly one owner/repo
+          rc=0; PACKAGES_GITHUB_TOKEN=test-token-fork-check sh scripts/check-fork-push.sh || rc=$?; test "$rc" -eq 2
+          rc=0; PACKAGES_GITHUB_TOKEN=test-token-fork-check sh scripts/check-fork-push.sh 'Padrio/x y' || rc=$?; test "$rc" -eq 2
       # dist/, completions/ and man/ are in .gitignore
       - name: snapshot leaves the tree clean
         run: |

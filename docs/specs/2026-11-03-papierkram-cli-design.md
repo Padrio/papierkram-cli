@@ -487,7 +487,7 @@ Coverage-Ziel ≥ 80 % ohne `internal/api/gen`.
 - Dependabot hält die per Commit-SHA gepinnten Actions (`github-actions`) und die direkten Go-Module (`gomod`) wöchentlich aktuell. Ausgenommen ist `github.com/speakeasy-api/openapi` (in `go.mod` gepinnt, nur zusammen mit oapi-codegen anheben); indirekte Module, darunter das Tool oapi-codegen, bekommen keine Pull Requests (Versions-Updates).
 
 ### 12.2 Release (GoReleaser v2)
-- Ziele: darwin/linux/windows × amd64/arm64, `CGO_ENABLED=0`, Checksums, SBOM optional.
+- Ziele: darwin/linux/windows × amd64/arm64, `CGO_ENABLED=0`, Checksums, SBOM (SPDX, syft) je Archiv; winget-Manifest (`Padrio.Papierkram`, portable aus dem `zip`, Branch je Version im Fork `Padrio/winget-pkgs`; den Pull Request gegen `microsoft/winget-pkgs` stellt ein Mensch nach dem Release, der Release-Workflow prüft vorher per Schreibtest, dass `PACKAGES_GITHUB_TOKEN` Tap und Fork beschreiben kann).
 - Homebrew → `Padrio/homebrew-tap` mit `pk`-Symlink; Scoop ausgesetzt (Pascal, 2026-11-09); nfpm deb/rpm mit `/usr/bin/pk`-Symlink; Archive enthalten Completions und Man-Pages.
 - Tag-getrieben (`v*`), SemVer, `CHANGELOG.md` nach Keep a Changelog.
 - **Grenze des Plans** **[Call]**: Der Implementierungsplan endet bei grüner CI und erfolgreichem `goreleaser release --snapshot`. Anlegen von `Padrio/homebrew-tap` und `Padrio/scoop-bucket`, Tags und echte Releases geschehen nur auf ausdrücklichen Auftrag Pascals in der jeweiligen Session (nach außen wirksam, wie Deployments). Die GoReleaser-Konfiguration für Tap/Bucket wird vorbereitet. Ein Fine-grained-PAT mit Schreibrecht auf beide Repos als Secret `PACKAGES_GITHUB_TOKEN`, angelegt von Pascal. **[Builder]** Ob GoReleaser-Version den `pk`-Alias für Scoop direkt unterstützt, sonst Manifest-Nachbearbeitung.
@@ -503,7 +503,7 @@ Coverage-Ziel ≥ 80 % ohne `internal/api/gen`.
 `spf13/cobra`, `pelletier/go-toml/v2`, `zalando/go-keyring`, `oapi-codegen/oapi-codegen/v2` (Tool) + `oapi-codegen/runtime`, `getkin/kin-openapi`, `itchyny/gojq`, `mattn/go-isatty` bzw. `golang.org/x/term`, `goccy/go-yaml`, `rogpeppe/go-internal` (testscript). Tabellen mit `text/tabwriter` oder einer kleinen eigenen Funktion, keine schwere Tabellenbibliothek.
 
 ## 14. Später (v1.x)
-`papierkram mcp serve` aus der Registry; `$EDITOR`-Bearbeitung; `winget`-Manifest.
+`papierkram mcp serve` aus der Registry; `$EDITOR`-Bearbeitung.
 
 ## 15. Abdeckungsmatrix (alle 89 Operationen)
 
