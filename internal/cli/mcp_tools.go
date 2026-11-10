@@ -242,7 +242,7 @@ func mcpFlagParam(f flagInfo) (mcpserver.Param, error) {
 			p.Required = true
 		}
 	case f.File != "" || looksLikeFile(f):
-		return p, fmt.Errorf("Flag mit Datei ohne bekannte Annotation %s (%q): kein Tool-Parameter", flagFile, f.File)
+		return p, fmt.Errorf("Datei-Flag ohne bekannte Annotation %s (%q): kein Tool-Parameter", flagFile, f.File)
 	case f.Repeatable:
 		p.Kind = mcpserver.KindStrings
 	default:
