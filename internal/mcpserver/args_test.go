@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -53,8 +54,30 @@ var describe = ToolSpec{
 	Params:  []Param{{Name: "id", Pos: 0, Kind: KindInteger, Minimum: f(0), Required: true}},
 }
 
+// filesDirs are the files directories of the running tests (fd).
+var filesDirs sync.Map
+
+// fd is the files directory of test t, the same for every call in t.
+func fd(t *testing.T) string {
+	t.Helper()
+	if d, ok := filesDirs.Load(t); ok {
+		return d.(string)
+	}
+	d := t.TempDir()
+	filesDirs.Store(t, d)
+	t.Cleanup(func() { filesDirs.Delete(t) })
+	return d
+}
+
+// inFD is the absolute path of name in the files directory of t.
+func inFD(t *testing.T, name string) string { return filepath.Join(fd(t), name) }
+
+// mustArgs is Args with the files directory of t unless o names one.
 func mustArgs(t *testing.T, spec ToolSpec, raw string, o Options) []string {
 	t.Helper()
+	if o.FilesDir == "" {
+		o.FilesDir = fd(t)
+	}
 	args, err := Args(spec, json.RawMessage(raw), o, t.TempDir())
 	if err != nil {
 		t.Fatalf("Args(%s): %v", raw, err)
@@ -71,7 +94,7 @@ func TestMCPArgsOrder(t *testing.T) {
 	// positional arguments follow "--" in Pos order, whatever the order of
 	// the params and properties
 	got = mustArgs(t, upload, `{"file":"beleg.pdf","voucher_id":7,"name":"x"}`, Options{})
-	want = []string{"voucher", "upload", "--name=x", "--no-input", "-o", "json", "--", "7", "beleg.pdf"}
+	want = []string{"voucher", "upload", "--name=x", "--no-input", "-o", "json", "--", "7", inFD(t, "beleg.pdf")}
 	if !slices.Equal(got, want) {
 		t.Errorf("Args\n got %q\nwant %q", got, want)
 	}
@@ -94,8 +117,8 @@ func TestMCPArgsOrder(t *testing.T) {
 
 func TestMCPArgsKinds(t *testing.T) {
 	got := mustArgs(t, upload, `{"voucher_id":0,"file":"a b.pdf","amount":12.50,"attr":["a=1","b=2"],"name":"","output_file":"x.pdf"}`, Options{})
-	want := []string{"voucher", "upload", "--amount=12.50", "--attr=a=1", "--attr=b=2", "--name=", "--output-file=x.pdf",
-		"--no-input", "-o", "json", "--", "0", "a b.pdf"}
+	want := []string{"voucher", "upload", "--amount=12.50", "--attr=a=1", "--attr=b=2", "--name=", "--output-file=" + inFD(t, "x.pdf"),
+		"--no-input", "-o", "json", "--", "0", inFD(t, "a b.pdf")}
 	if !slices.Equal(got, want) {
 		t.Errorf("Args\n got %q\nwant %q", got, want)
 	}
@@ -118,14 +141,15 @@ func TestMCPArgsNoFlagInjection(t *testing.T) {
 		}
 		raw, _ = json.Marshal(map[string]any{"attr": []string{v}, "name": v, "voucher_id": 1, "file": v + ".pdf"})
 		got = mustArgs(t, upload, string(raw), Options{})
-		want = []string{"voucher", "upload", "--attr=" + v, "--name=" + v, "--no-input", "-o", "json", "--", "1", v + ".pdf"}
+		want = []string{"voucher", "upload", "--attr=" + v, "--name=" + v, "--no-input", "-o", "json", "--", "1", inFD(t, v+".pdf")}
 		if !slices.Equal(got, want) {
 			t.Errorf("Wert %q\n got %q\nwant %q", v, got, want)
 		}
 	}
-	// a file name that starts with "-" stays behind "--"
+	// a file name that starts with "-" becomes a path in the files
+	// directory, behind "--"
 	got := mustArgs(t, upload, `{"voucher_id":1,"file":"-x.pdf"}`, Options{})
-	if i := slices.Index(got, "--"); i < 0 || !slices.Equal(got[i+1:], []string{"1", "-x.pdf"}) {
+	if i := slices.Index(got, "--"); i < 0 || !slices.Equal(got[i+1:], []string{"1", inFD(t, "-x.pdf")}) {
 		t.Errorf("Positionsargumente nicht hinter --: %q", got)
 	}
 	// no property name can be a global flag: they are rejected as unknown
@@ -175,7 +199,7 @@ func TestMCPArgsRejects(t *testing.T) {
 		{upload, `{"voucher_id":1,"file":"x","name":5}`, "„name“: Text"},
 		{upload, `{"voucher_id":1,"file":7}`, "„file“: Dateipfad"},
 	} {
-		_, err := Args(tc.spec, json.RawMessage(tc.raw), Options{}, t.TempDir())
+		_, err := Args(tc.spec, json.RawMessage(tc.raw), Options{FilesDir: fd(t)}, t.TempDir())
 		var ae *ArgError
 		if !errors.As(err, &ae) {
 			t.Errorf("%s %s: Fehler %v, erwartet ArgError", tc.spec.Name, tc.raw, err)
@@ -189,12 +213,12 @@ func TestMCPArgsRejects(t *testing.T) {
 
 func TestMCPArgsJSONFile(t *testing.T) {
 	dir := t.TempDir()
-	args, err := Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x.pdf","input":{"name":"x"},"items":[{"name":"a"}]}`), Options{}, dir)
+	args, err := Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x.pdf","input":{"name":"x"},"items":[{"name":"a"}]}`), Options{FilesDir: fd(t)}, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	in, items := filepath.Join(dir, "input.json"), filepath.Join(dir, "items.json")
-	want := []string{"voucher", "upload", "--input=" + in, "--items=" + items, "--no-input", "-o", "json", "--", "1", "x.pdf"}
+	want := []string{"voucher", "upload", "--input=" + in, "--items=" + items, "--no-input", "-o", "json", "--", "1", inFD(t, "x.pdf")}
 	if !slices.Equal(args, want) {
 		t.Fatalf("Args\n got %q\nwant %q", args, want)
 	}
@@ -217,8 +241,8 @@ func TestMCPArgsJSONFile(t *testing.T) {
 }
 
 func TestMCPArgsContextAndDebug(t *testing.T) {
-	got := mustArgs(t, describe, `{"id":7}`, Options{Context: "firma", Debug: true})
-	want := []string{"invoice", "describe", "--no-input", "-o", "json", "--context=firma", "--debug", "--", "7"}
+	got := mustArgs(t, describe, `{"id":7}`, Options{Context: "firma", Timeout: "45s", Debug: true})
+	want := []string{"invoice", "describe", "--no-input", "-o", "json", "--context=firma", "--timeout=45s", "--debug", "--", "7"}
 	if !slices.Equal(got, want) {
 		t.Errorf("Args\n got %q\nwant %q", got, want)
 	}
@@ -250,5 +274,62 @@ func TestMCPArgsEdgeCases(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "fehlt")
 	if _, err := Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x","input":{}}`), Options{}, missing); err == nil || errors.As(err, &ae) {
 		t.Errorf("Fehler %v", err)
+	}
+}
+
+// Ruling T5-A: every file path lies in the files directory; absolute
+// paths, "..", "-", empty names and links out of it are argument errors.
+func TestMCPArgsPathPolicy(t *testing.T) {
+	dir := fd(t)
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "geheim.txt")
+	if err := os.WriteFile(secret, []byte("geheim"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bad := []string{"", "-", "/dev/fd/1", secret, "../x.pdf", "a/../../x.pdf", filepath.Join(dir, "x.pdf")}
+	if runtime.GOOS == "windows" {
+		bad = append(bad, `C:\x.pdf`, "NUL")
+	}
+	if err := os.Symlink(secret, filepath.Join(dir, "link.pdf")); err == nil {
+		if err := os.Symlink(outside, filepath.Join(dir, "raus")); err != nil {
+			t.Fatal(err)
+		}
+		bad = append(bad, "link.pdf", "raus/neu.pdf", "raus/geheim.txt")
+	}
+	for _, v := range bad {
+		for _, param := range []string{"file", "output_file"} {
+			raw, _ := json.Marshal(map[string]any{"voucher_id": 1, "file": "ok.pdf", param: v})
+			_, err := Args(upload, raw, Options{FilesDir: dir}, t.TempDir())
+			var ae *ArgError
+			if !errors.As(err, &ae) || !strings.Contains(ae.Msg, quoted(param)) || ae.Hint == "" {
+				t.Errorf("%s %q: Fehler %v, erwartet ArgError", param, v, err)
+			}
+		}
+	}
+	// inside: nested names, a link that stays inside, a missing directory
+	if err := os.Mkdir(filepath.Join(dir, "ablage"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	good := []string{"x.pdf", "ablage/x.pdf", "fehlt/x.pdf", "./x.pdf"}
+	if err := os.Symlink(filepath.Join(dir, "ablage"), filepath.Join(dir, "innen")); err == nil {
+		good = append(good, "innen/x.pdf")
+	}
+	for _, v := range good {
+		raw, _ := json.Marshal(map[string]any{"voucher_id": 1, "file": v})
+		args, err := Args(upload, raw, Options{FilesDir: dir}, t.TempDir())
+		if err != nil || args[len(args)-1] != filepath.Join(dir, v) {
+			t.Errorf("%q: %v, %q", v, err, args)
+		}
+	}
+	// without a files directory nothing is resolved (programming error)
+	_, err := Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x.pdf"}`), Options{}, t.TempDir())
+	var ae *ArgError
+	if err == nil || errors.As(err, &ae) {
+		t.Errorf("ohne Dateiordner: %v", err)
+	}
+	// a files directory that vanished: error, no ArgError
+	_, err = Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x.pdf"}`), Options{FilesDir: filepath.Join(dir, "weg")}, t.TempDir())
+	if err == nil || errors.As(err, &ae) {
+		t.Errorf("Dateiordner fehlt: %v", err)
 	}
 }

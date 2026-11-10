@@ -30,10 +30,12 @@ func quoted(s string) string {
 // Args translates the JSON arguments of a call of t into the argument list
 // of the CLI: the command words, every given flag as --<flag>=<value> (a
 // repeatable flag once per element), sorted by parameter name, the Fixed
-// arguments, --no-input -o json, --context=<ctx> and --debug from o, then
+// arguments, --no-input -o json, --context=<ctx>, --timeout=<d> and
+// --debug from o, then
 // "--" and the positional arguments in Pos order. Every value is glued to
 // its flag and the positional arguments follow "--", so no value can set
-// another option. A KindJSONFile value is written to <tmpDir>/<flag>.json
+// another option. A KindPath value must name a file in o.FilesDir and
+// becomes its absolute path (localPath). A KindJSONFile value is written to <tmpDir>/<flag>.json
 // (0600) and the flag gets its path.
 func Args(t ToolSpec, raw json.RawMessage, o Options, tmpDir string) ([]string, error) {
 	props, err := decodeObject(raw)
@@ -67,7 +69,7 @@ func Args(t ToolSpec, raw json.RawMessage, o Options, tmpDir string) ([]string, 
 			}
 			continue
 		}
-		values, err := p.values(v, tmpDir)
+		values, err := p.values(v, tmpDir, o)
 		if err != nil {
 			return nil, err
 		}
@@ -82,6 +84,9 @@ func Args(t ToolSpec, raw json.RawMessage, o Options, tmpDir string) ([]string, 
 	args := slices.Concat(t.Command, flags, t.Fixed, []string{"--no-input", "-o", "json"})
 	if o.Context != "" {
 		args = append(args, "--context="+o.Context)
+	}
+	if o.Timeout != "" {
+		args = append(args, "--timeout="+o.Timeout)
 	}
 	if o.Debug {
 		args = append(args, "--debug")
@@ -141,7 +146,7 @@ func (p Param) typeErr(want string) error {
 
 // values are the CLI values of the JSON value v of p: one for a scalar,
 // one per element for KindStrings.
-func (p Param) values(v json.RawMessage, tmpDir string) ([]string, error) {
+func (p Param) values(v json.RawMessage, tmpDir string, o Options) ([]string, error) {
 	dec := json.NewDecoder(bytes.NewReader(v))
 	dec.UseNumber()
 	var val any
@@ -158,13 +163,11 @@ func (p Param) values(v json.RawMessage, tmpDir string) ([]string, error) {
 		if !ok {
 			return nil, p.typeErr("Dateipfad als Text")
 		}
-		if s == "-" {
-			return nil, &ArgError{
-				Msg:  fmt.Sprintf("Parameter %s: „-“ (stdin/stdout) ist im MCP-Server nicht erlaubt", quoted(p.Name)),
-				Hint: "Einen Dateipfad angeben; stdin und stdout sind der Transport des MCP-Servers",
-			}
+		full, err := localPath(p.Name, o.FilesDir, s)
+		if err != nil {
+			return nil, err
 		}
-		return []string{s}, nil
+		return []string{full}, nil
 	case KindInteger:
 		n, ok := val.(json.Number)
 		if !ok {

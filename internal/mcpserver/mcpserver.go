@@ -91,13 +91,16 @@ type Result struct {
 type Runner func(ctx context.Context, args []string) Result
 
 // Options configure the server: the mode, the context every call runs in
-// (--context, empty: the CLI chooses), --debug for every call and the
-// version the server reports.
+// (--context, empty: the CLI chooses), the --timeout of every call (empty:
+// none), --debug for every call, the version the server reports and the
+// absolute directory every file path of a call must lie in (localPath).
 type Options struct {
-	Mode    Mode
-	Context string
-	Debug   bool
-	Version string
+	Mode     Mode
+	Context  string
+	Timeout  string
+	Debug    bool
+	Version  string
+	FilesDir string
 }
 
 // Tools are the specs whose class mode m allows, in their order.
@@ -171,14 +174,17 @@ func (p Param) schema() map[string]any {
 	return s
 }
 
-// annotations are the hints of a tool of class.
-func annotations(class string) *mcp.ToolAnnotations {
-	destructive := class == "destructive" || class == "send"
+// annotations are the hints of tool t. A read_only command with a file
+// path (pdf -O) writes a local file: no read-only hint and, as the file is
+// new (--no-clobber), not idempotent and not destructive (ruling T5-C).
+func annotations(t ToolSpec) *mcp.ToolAnnotations {
+	destructive := t.Class == "destructive" || t.Class == "send"
+	readOnly := t.Class == "read_only" && !slices.ContainsFunc(t.Params, func(p Param) bool { return p.Kind == KindPath })
 	openWorld := true
 	return &mcp.ToolAnnotations{
-		ReadOnlyHint:    class == "read_only",
+		ReadOnlyHint:    readOnly,
 		DestructiveHint: &destructive,
-		IdempotentHint:  class == "read_only",
+		IdempotentHint:  readOnly,
 		OpenWorldHint:   &openWorld,
 	}
 }
@@ -200,7 +206,7 @@ func New(specs []ToolSpec, run Runner, o Options) *mcp.Server {
 			Name:        t.Name,
 			Description: t.Description,
 			InputSchema: InputSchema(t),
-			Annotations: annotations(t.Class),
+			Annotations: annotations(t),
 		}
 		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			select {

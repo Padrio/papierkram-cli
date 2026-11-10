@@ -225,7 +225,9 @@ func connect(t *testing.T, specs []ToolSpec, run Runner, o Options) *mcp.ClientS
 }
 
 func TestNewListsToolsOfMode(t *testing.T) {
-	specs := []ToolSpec{invoiceList, describe, upload,
+	pdf := ToolSpec{Name: "invoice_pdf", Class: "read_only", Command: []string{"invoice", "pdf"},
+		Params: []Param{{Name: "id", Pos: 0, Kind: KindInteger, Required: true}, {Name: "output_file", Flag: "output-file", Pos: -1, Kind: KindPath, Required: true}}}
+	specs := []ToolSpec{invoiceList, describe, upload, pdf,
 		{Name: "invoice_delete", Class: "destructive", Command: []string{"invoice", "delete"}, Description: "Rechnung löschen"}}
 	run := func(context.Context, []string) Result { return Result{} }
 	cs := connect(t, specs, run, Options{Mode: ModeRead, Version: "1.2.3"})
@@ -240,13 +242,16 @@ func TestNewListsToolsOfMode(t *testing.T) {
 	for _, tool := range res.Tools {
 		names = append(names, tool.Name)
 		a := tool.Annotations
-		if a == nil || !a.ReadOnlyHint || !a.IdempotentHint || a.DestructiveHint == nil || *a.DestructiveHint ||
+		// a read tool that writes a file (pdf -O) is no read-only tool
+		// (ruling T5-C)
+		ro := tool.Name != "invoice_pdf"
+		if a == nil || a.ReadOnlyHint != ro || a.IdempotentHint != ro || a.DestructiveHint == nil || *a.DestructiveHint ||
 			a.OpenWorldHint == nil || !*a.OpenWorldHint {
 			t.Errorf("%s: Annotationen %+v", tool.Name, a)
 		}
 	}
 	slices.Sort(names)
-	if want := []string{"invoice_describe", "invoice_list"}; !slices.Equal(names, want) {
+	if want := []string{"invoice_describe", "invoice_list", "invoice_pdf"}; !slices.Equal(names, want) {
 		t.Errorf("Tools = %v, erwartet %v", names, want)
 	}
 
@@ -273,8 +278,8 @@ func TestNewListsToolsOfMode(t *testing.T) {
 			}
 		}
 	}
-	if len(res.Tools) != 4 {
-		t.Errorf("%d Tools, erwartet 4", len(res.Tools))
+	if len(res.Tools) != 5 {
+		t.Errorf("%d Tools, erwartet 5", len(res.Tools))
 	}
 }
 
@@ -343,7 +348,7 @@ func TestNewRemovesJSONFiles(t *testing.T) {
 		}
 		return Result{Stdout: []byte("{}\n")}
 	}
-	cs := connect(t, []ToolSpec{upload}, run, Options{Mode: ModeWrite})
+	cs := connect(t, []ToolSpec{upload}, run, Options{Mode: ModeWrite, FilesDir: t.TempDir()})
 	_, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "voucher_upload",
 		Arguments: map[string]any{"voucher_id": 1, "file": "x.pdf", "input": map[string]any{"name": "x"}}})
 	if err != nil {
@@ -500,7 +505,7 @@ func TestNewTempDirFails(t *testing.T) {
 	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "fehlt"))
 	called := false
 	run := func(context.Context, []string) Result { called = true; return Result{} }
-	cs := connect(t, []ToolSpec{upload}, run, Options{Mode: ModeWrite})
+	cs := connect(t, []ToolSpec{upload}, run, Options{Mode: ModeWrite, FilesDir: t.TempDir()})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "voucher_upload",
 		Arguments: map[string]any{"voucher_id": 1, "file": "x.pdf", "input": map[string]any{}}})
 	if err != nil {
