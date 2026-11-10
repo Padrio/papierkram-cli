@@ -79,6 +79,7 @@ Angebot und Zahlungsbedingung suchen (lesend):
 
 ```sh
 PAPIERKRAM_READ_ONLY=1 papierkram estimate list --company 3214 -o json --no-input --jq '.entries[] | {id, estimate_no, name, state, total_gross}'
+PAPIERKRAM_READ_ONLY=1 papierkram estimate list --company "Mustermann GmbH" -o json --no-input  # Platzhalter
 PAPIERKRAM_READ_ONLY=1 papierkram payment-term list -o json --no-input --jq '.entries[] | {id, name}'
 ```
 
@@ -170,9 +171,10 @@ PAPIERKRAM_READ_ONLY=1 papierkram time list --project 4963 --state unbilled --al
 PAPIERKRAM_READ_ONLY=1 papierkram time list --project 4963 --state unbilled --all --max-pages 5 -o json --no-input --jq '([.entries[].billable_duration // 0] | add // 0) / 3600'
 ```
 
-Aus der bestätigten Summe eine Rechnung anlegen (Kunde, Zahlungsbedingung und Stundensatz kommen vom Menschen) und danach wie in Ablauf 2 nur nach Bestätigung versenden:
+Aus der bestätigten Summe eine Rechnung anlegen (Kunde, Zahlungsbedingung und Stundensatz kommen vom Menschen) und danach wie in Ablauf 2 nur nach Bestätigung versenden. Nennt der Mensch den Kunden nur beim Namen, geht `--customer "…"` direkt: Schon `--dry-run` löst ihn auf (1 Credit je Seite der Firmenliste) und zeigt die ID unter `resolved`; den echten Aufruf dann mit dieser ID ausführen. Bei Exit 4 (kein Treffer) oder Exit 2 (mehrdeutig) den Menschen fragen, nie einen der ähnlichen Namen aus dem Hinweis selbst wählen:
 
 ```sh
+papierkram invoice create --name "Beratung Oktober" --customer "Mustermann GmbH" --payment-term 1130 --document-date heute --item "name=Beratung Oktober,qty=12.5,unit=Stunde,price=100,vat=19" --dry-run -o json --no-input  # Platzhalter
 papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --document-date heute --item "name=Beratung Oktober,qty=12.5,unit=Stunde,price=100,vat=19" --dry-run -o json --no-input
 papierkram invoice create --name "Beratung Oktober" --customer 3214 --payment-term 1130 --document-date heute --item "name=Beratung Oktober,qty=12.5,unit=Stunde,price=100,vat=19" -o json --no-input
 ```
@@ -185,13 +187,13 @@ Den Abrechnungsstatus der Zeiteinträge kann das CLI nicht setzen (`papierkram s
 |---|---|---|
 | 0 | – | Ergebnis auswerten, `warnings[]` und stderr lesen |
 | 1 | `error`, `server_error` | Lesen: später einmal erneut. Änderung: erst per `describe`/`list` prüfen. „Befehl ausgeführt, Ausgabe fehlgeschlagen“ oder „Antwort größer als 64 MiB; die Änderung wurde ausgeführt“: angekommen, nicht wiederholen. „Antwort größer als 64 MiB, abgebrochen“ (Lesen): nicht unverändert wiederholen; bei `list` mit kleinerem `--limit`, sonst melden |
-| 2 | `usage` | Befehl nach `Hinweis` korrigieren; nichts gesendet |
+| 2 | `usage` | Befehl nach `Hinweis` korrigieren; nichts gesendet (bei einem mehrdeutigen Namen nur die Listenanfragen: ID aus der Meldung nach Rückfrage nehmen) |
 | 3 | `auth` | abbrechen, Menschen um `papierkram auth login` bitten |
-| 4 | `not_found` | ID und Kontext per `list` prüfen |
+| 4 | `not_found` | ID und Kontext per `list` prüfen; bei einem Namen ohne Treffer den Menschen fragen |
 | 5 | `validation` | Body nach `message` und `schema` korrigieren; nicht angewendet |
 | 6 | `quota` | Kontingent erschöpft: abbrechen, **nicht** wiederholen |
 | 7 | `conflict` | 409 nicht angewendet, beim Timer nichts gesendet; Zustand lesen (`describe`, `time status`); `time stop` nicht wiederholen (siehe Ablauf 4) |
-| 8 | `confirmation_required` | nichts gesendet (auch wenn ein Mensch eine Rückfrage mit Strg+C abbricht); Menschen fragen, `--yes` nur mit Freigabe |
+| 8 | `confirmation_required` | nichts gesendet (auch wenn ein Mensch eine Rückfrage mit Strg+C abbricht; mit `--no-input` vor jeder Anfrage, auch vor der Namensauflösung); Menschen fragen, `--yes` nur mit Freigabe |
 | 9 | `read_only` | abbrechen und melden; Schutz nie umgehen |
 | 10 | `network` | später erneut; die Änderung ist nicht angekommen |
 | 11 | `partial` | `hint` lesen, höchstens den genannten Nachholschritt ([Details](https://github.com/Padrio/papierkram-cli/blob/main/AGENTS.md#exit-11-und-12-schritt-für-schritt)) |
