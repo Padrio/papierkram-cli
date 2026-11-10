@@ -36,9 +36,18 @@ func quoted(s string) string {
 // "--" and the positional arguments in Pos order. Every value is glued to
 // its flag and the positional arguments follow "--", so no value can set
 // another option. A KindPath value must name a file in o.FilesDir and
-// becomes its absolute path (localPath). A KindJSONFile value is written to <tmpDir>/<flag>.json
+// becomes its absolute path (localPath); without o.FilesDir an optional
+// KindPath parameter does not exist and a required one is an ArgError
+// (served). A KindJSONFile value is written to <tmpDir>/<flag>.json
 // (0600) and the flag gets its path.
 func Args(t ToolSpec, raw json.RawMessage, o Options, tmpDir string) ([]string, error) {
+	t, ok := t.served(o.FilesDir)
+	if !ok {
+		return nil, &ArgError{
+			Msg:  fmt.Sprintf("%s braucht einen Dateiordner", t.Name),
+			Hint: "Den Server mit mcp serve --files-dir <absoluter Ordner> starten",
+		}
+	}
 	props, err := decodeObject(raw)
 	if err != nil {
 		return nil, err

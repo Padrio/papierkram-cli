@@ -95,7 +95,7 @@ Jedes schreibende Tool hat den Parameter dry_run (--dry-run): Es prüft und zeig
 
 Ein Tool-Aufruf führt genau den Befehl aus, den er beschreibt, mit -o json und --no-input: dieselben Prüfungen, derselbe Schreibschutz, dieselben Credits und Exit-Codes wie auf der Kommandozeile. Das Ergebnis ist die JSON-Ausgabe des Befehls; Hinweise und Warnungen von stderr folgen als zweiter Inhalt. Bei einem Fehler ist das Ergebnis ein Tool-Fehler mit der JSON-Fehlerzeile (code, message, hint, exit_code). Aufrufe laufen nacheinander.
 
-Tools mit Dateien (pdf, voucher upload, voucher create mit --file) gibt es nur mit --files-dir: ein vorhandener Ordner, nicht die Wurzel des Dateisystems und nicht das Home-Verzeichnis selbst (sonst Exit 2), am besten ein eigener Unterordner. Ohne --files-dir fehlen diese Tools, mit einem Hinweis auf stderr; ein Arbeitsverzeichnis gilt nie als Dateiordner (Claude Desktop startet Server z. B. in /). Dateipfade der Tools sind relativ zu diesem Ordner: kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis ins Leere oder aus dem Ordner hinaus, kein fehlendes Verzeichnis (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei. Ein Upload liest nur Dateien aus diesem Ordner.
+Dateipfade gibt es nur mit --files-dir: ein vorhandener Ordner, nicht die Wurzel des Dateisystems und nicht das Home-Verzeichnis selbst (sonst Exit 2), am besten ein eigener Unterordner. Ohne --files-dir fehlen die Tools, die eine Datei brauchen (pdf, voucher upload), und voucher_create hat keinen Parameter file, mit einem Hinweis auf stderr; ein Arbeitsverzeichnis gilt nie als Dateiordner (Claude Desktop startet Server z. B. in /). Dateipfade der Tools sind relativ zu diesem Ordner: kein absoluter Pfad, kein „..“, kein „-“, kein symbolischer Verweis ins Leere oder aus dem Ordner hinaus, kein fehlendes Verzeichnis (sonst Exit 2 ohne Anfrage). Das CLI erhält den absoluten Pfad im Ordner. Die pdf-Tools laufen mit --no-clobber: Sie ersetzen keine vorhandene Datei. Ein Upload liest nur Dateien aus diesem Ordner.
 
 In der Konfiguration eines Clients (JSON, z. B. {"command":"papierkram","args":["mcp","serve","--files-dir","/Users/name/Belege"]}) wird ~ nicht erweitert: den Ordner absolut angeben.
 
@@ -147,7 +147,7 @@ func newMCPCmd(app *App) *cobra.Command {
 			return app.serveMCP(c.Context(), o)
 		},
 	}
-	serve.Flags().String("files-dir", "", "Ordner, in dem alle Dateipfade der Tools liegen (absolut; ohne ihn keine Tools mit Dateien)")
+	serve.Flags().String("files-dir", "", "Ordner, in dem alle Dateipfade der Tools liegen (absolut; ohne ihn keine Dateipfade)")
 	serve.Flags().Bool("allow-writes", false, "auch Tools, die anlegen, ändern oder archivieren (create, update, archive)")
 	serve.Flags().Bool("allow-destructive", false, "zusätzlich Tools, die löschen, stornieren, zahlen oder versenden (destructive, send); sie laufen mit --yes, schließt --allow-writes ein")
 	cmd.AddCommand(serve)

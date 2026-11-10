@@ -204,11 +204,14 @@ func (p Param) schema() map[string]any {
 	return s
 }
 
-// annotations are the hints of tool t. A read_only command with a file
-// path (pdf -O) writes a local file: no read-only hint and, as the file is
-// new (--no-clobber), not idempotent and not destructive (ruling T5-C).
+// annotations are the hints of tool t. Only read_only and create are
+// additive; update and archive change or hide existing data and count as
+// destructive like destructive and send (the MCP meaning of the hint). A
+// read_only command with a file path (pdf -O) writes a local file: no
+// read-only hint and, as the file is new (--no-clobber), not idempotent
+// and not destructive (ruling T5-C).
 func annotations(t ToolSpec) *mcp.ToolAnnotations {
-	destructive := t.Class == "destructive" || t.Class == "send"
+	destructive := t.Class != "read_only" && t.Class != "create"
 	readOnly := t.Class == "read_only" && !hasPath(t)
 	openWorld := true
 	return &mcp.ToolAnnotations{
@@ -224,12 +227,28 @@ func hasPath(t ToolSpec) bool {
 	return slices.ContainsFunc(t.Params, func(p Param) bool { return p.Kind == KindPath })
 }
 
+// served is t as a server with the files directory dir offers it (ruling
+// T6-A): with dir unchanged; without dir its optional file path
+// parameters are left out, and ok is false when a file path is required
+// (pdf -O, voucher upload <datei>): no tool then.
+func (t ToolSpec) served(dir string) (ToolSpec, bool) {
+	if dir != "" || !hasPath(t) {
+		return t, true
+	}
+	if slices.ContainsFunc(t.Params, func(p Param) bool { return p.Kind == KindPath && p.Required }) {
+		return t, false
+	}
+	t.Params = slices.DeleteFunc(slices.Clone(t.Params), func(p Param) bool { return p.Kind == KindPath })
+	return t, true
+}
+
 // waitCancelled is called when a call is cancelled while it waits for the
 // lock (a test seam).
 var waitCancelled = func() {}
 
 // New builds the MCP server with one tool per spec that o.Mode allows;
-// without o.FilesDir the tools with a file path are left out. A
+// without o.FilesDir the tools with a required file path are left out
+// and the optional file paths of the others (served). A
 // call is translated by Args and run by run; one lock serializes all
 // calls, because the CLI keeps per-invocation state (one App per run, but
 // shared files like the name cache and the timer). A call cancelled while
@@ -238,8 +257,10 @@ func New(specs []ToolSpec, run Runner, o Options) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "papierkram", Version: o.Version}, nil)
 	lock := make(chan struct{}, 1)
 	for _, t := range Tools(specs, o.Mode) {
-		if o.FilesDir == "" && hasPath(t) {
-			// no files directory, no tool with files (ruling T5-E)
+		t, ok := t.served(o.FilesDir)
+		if !ok {
+			// no files directory, no tool that needs a file (rulings
+			// T5-E, T6-A)
 			continue
 		}
 		tool := &mcp.Tool{

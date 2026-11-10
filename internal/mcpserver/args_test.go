@@ -273,7 +273,7 @@ func TestMCPArgsEdgeCases(t *testing.T) {
 	}
 	// the JSON file cannot be written: an error, no ArgError
 	missing := filepath.Join(t.TempDir(), "fehlt")
-	if _, err := Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x","input":{}}`), Options{}, missing); err == nil || errors.As(err, &ae) {
+	if _, err := Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x","input":{}}`), Options{FilesDir: fd(t)}, missing); err == nil || errors.As(err, &ae) {
 		t.Errorf("Fehler %v", err)
 	}
 }
@@ -359,11 +359,16 @@ func TestMCPArgsPathPolicy(t *testing.T) {
 		t.Error("nicht lesbarer Pfadteil angenommen")
 	}
 	lstat = prev
-	// without a files directory nothing is resolved (programming error)
+	// without a files directory a required path is an argument error
+	// (ruling T6-A; New does not serve such a tool)
 	_, err := Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x.pdf"}`), Options{}, t.TempDir())
 	var ae *ArgError
-	if err == nil || errors.As(err, &ae) {
+	if !errors.As(err, &ae) || !strings.Contains(ae.Msg, "braucht einen Dateiordner") {
 		t.Errorf("ohne Dateiordner: %v", err)
+	}
+	// localPath itself never resolves without a directory
+	if _, err := localPath("file", "", "x.pdf"); err == nil || errors.As(err, &ae) {
+		t.Errorf("localPath ohne Dateiordner: %v", err)
 	}
 	// a files directory that vanished: error, no ArgError
 	_, err = Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x.pdf"}`), Options{FilesDir: filepath.Join(dir, "weg")}, t.TempDir())

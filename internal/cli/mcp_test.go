@@ -776,7 +776,8 @@ func TestMCPNameResolution(t *testing.T) {
 // Carry of task 5: the read paths of the write tools (voucher upload
 // <datei>, voucher create --file) follow the files directory policy like
 // the pdf target: a path outside is an argument error without a request,
-// a file inside is sent.
+// a file inside is sent. Without a files directory voucher_create stays,
+// without file (ruling T6-A).
 func TestMCPWritePathsInFilesDir(t *testing.T) {
 	app, srv, _ := mcpApp(t)
 	dir, outside := t.TempDir(), t.TempDir()
@@ -810,18 +811,34 @@ func TestMCPWritePathsInFilesDir(t *testing.T) {
 	if reqs[0].Method != http.MethodPost || !strings.HasPrefix(reqs[0].Path, "/expense/vouchers/5/") || !bytes.Contains(reqs[0].Body, []byte(binaryPDF)) {
 		t.Errorf("Anfrage %s %s", reqs[0].Method, reqs[0].Path)
 	}
-	// without --files-dir the tools with files do not exist
-	app, _, _ = mcpApp(t)
+	// without --files-dir the tools that need a file do not exist; the
+	// optional file of voucher_create is no parameter then (ruling T6-A)
+	app, srv, _ = mcpApp(t)
 	cs = mcpSession(t, app, MCPOptions{AllowDestructive: true})
 	got := toolNames(t, cs)
-	for _, name := range []string{"voucher_upload", "voucher_create", "invoice_pdf"} {
+	for _, name := range []string{"voucher_upload", "invoice_pdf", "estimate_pdf", "voucher_pdf"} {
 		if slices.Contains(got, name) {
 			t.Errorf("%s ohne --files-dir", name)
 		}
 	}
-	if !slices.Contains(got, "invoice_deliver") || !slices.Contains(got, "voucher_pay") {
-		t.Errorf("Tools ohne Dateien fehlen: %v", got)
+	for _, name := range []string{"voucher_create", "invoice_deliver", "voucher_pay"} {
+		if !slices.Contains(got, name) {
+			t.Errorf("%s fehlt ohne --files-dir: %v", name, got)
+		}
 	}
+	args := map[string]any{"name": "X", "provenance": "domestic", "item": []string{"name=A,amount=1,vat=19"}}
+	res = callTool(t, cs, "voucher_create", args)
+	if res.IsError {
+		t.Fatalf("Tool-Fehler %+v", res.Content)
+	}
+	if reqs := wantRequests(t, srv, 1); reqs[0].Method != http.MethodPost || reqs[0].Path != "/expense/vouchers" {
+		t.Errorf("Anfrage %s %s", reqs[0].Method, reqs[0].Path)
+	}
+	args["file"] = "beleg.pdf"
+	if e := errorOf(t, callTool(t, cs, "voucher_create", args)); e["code"] != "usage" || !strings.Contains(e["message"].(string), "„file“") {
+		t.Errorf("file ohne --files-dir: %v", e)
+	}
+	wantRequests(t, srv, 1)
 }
 
 // jsonEqual reports whether a and b are the same JSON value.

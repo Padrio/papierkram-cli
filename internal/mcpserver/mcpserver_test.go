@@ -531,3 +531,79 @@ func TestNewWithoutFilesDir(t *testing.T) {
 		t.Errorf("Tools %+v", res.Tools)
 	}
 }
+
+// Ruling T6-A: without a files directory only the optional file path
+// parameters are left out; a tool goes missing only when a path is
+// required (voucher upload <datei>, pdf -O). voucher create stays usable
+// without file.
+func TestNewOptionalPathWithoutFilesDir(t *testing.T) {
+	create := ToolSpec{Name: "voucher_create", Class: "create", Command: []string{"voucher", "create"}, Params: []Param{
+		{Name: "name", Flag: "name", Pos: -1, Kind: KindString},
+		{Name: "file", Flag: "file", Pos: -1, Kind: KindPath},
+	}}
+	var got []string
+	run := func(_ context.Context, args []string) Result { got = args; return Result{Stdout: []byte("{}\n")} }
+	cs := connect(t, []ToolSpec{create, upload}, run, Options{Mode: ModeWrite})
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Tools) != 1 || res.Tools[0].Name != "voucher_create" {
+		t.Fatalf("Tools %+v", res.Tools)
+	}
+	b, _ := json.Marshal(res.Tools[0].InputSchema)
+	if strings.Contains(string(b), `"file"`) || !strings.Contains(string(b), `"name"`) || !strings.Contains(string(b), `"dry_run"`) {
+		t.Errorf("Schema ohne Dateiordner %s", b)
+	}
+	call := func(args map[string]any) *mcp.CallToolResult {
+		r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "voucher_create", Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	if r := call(map[string]any{"name": "X"}); r.IsError || !slices.Equal(got, []string{"voucher", "create", "--name=X", "--no-input", "-o", "json", "--"}) {
+		t.Errorf("Ergebnis %+v, Argumente %q", r.Content, got)
+	}
+	got = nil
+	if r := call(map[string]any{"name": "X", "file": "beleg.pdf"}); !r.IsError || got != nil ||
+		!strings.Contains(text(t, r.Content[0]), "unbekannter Parameter „file“") {
+		t.Errorf("file ohne Dateiordner: %+v, Runner %q", r.Content, got)
+	}
+	// Args applies the same rule
+	if _, err := Args(upload, json.RawMessage(`{"voucher_id":1,"file":"x.pdf"}`), Options{Mode: ModeWrite}, t.TempDir()); err == nil {
+		t.Error("Pflichtpfad ohne Dateiordner angenommen")
+	}
+	if _, err := Args(create, json.RawMessage(`{"file":"x.pdf"}`), Options{Mode: ModeWrite}, t.TempDir()); err == nil {
+		t.Error("optionaler Pfad ohne Dateiordner angenommen")
+	}
+	// with a files directory file is a parameter again
+	cs = connect(t, []ToolSpec{create}, run, Options{Mode: ModeWrite, FilesDir: t.TempDir()})
+	res, err = cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := json.Marshal(res.Tools[0].InputSchema); !strings.Contains(string(b), `"file"`) {
+		t.Errorf("Schema mit Dateiordner %s", b)
+	}
+}
+
+// M2: DestructiveHint is true for every class but read_only and create
+// (update and archive change or hide existing data, they are not
+// additive); read-only and idempotent only for read_only without a file.
+func TestAnnotationsPerClass(t *testing.T) {
+	for class, want := range map[string][3]bool{
+		// destructive, read-only, idempotent
+		"read_only":   {false, true, true},
+		"create":      {false, false, false},
+		"update":      {true, false, false},
+		"archive":     {true, false, false},
+		"destructive": {true, false, false},
+		"send":        {true, false, false},
+	} {
+		a := annotations(ToolSpec{Name: "x", Class: class})
+		if got := [3]bool{*a.DestructiveHint, a.ReadOnlyHint, a.IdempotentHint}; got != want || !*a.OpenWorldHint {
+			t.Errorf("%s: %v, erwartet %v", class, got, want)
+		}
+	}
+}
