@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -209,7 +210,7 @@ func connect(t *testing.T, specs []ToolSpec, run Runner, o Options) *mcp.ClientS
 	t.Helper()
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
-	ss, err := New(specs, run, o).Connect(ctx, st, nil)
+	ss, err := New(ctx, specs, run, o).Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,6 +494,107 @@ func TestMCPCancelledWhileWaiting(t *testing.T) {
 	}
 	if n := calls.Load(); n != 2 {
 		t.Errorf("%d Läufe, erwartet 2 (der abgebrochene wartende Aufruf lief)", n)
+	}
+}
+
+// final review A-M2: once the server stops (signal), a call waiting for
+// the lock never runs, also when it gets the lock after the running call
+// ended; the running call is not cancelled.
+func TestMCPServerStopSkipsWaitingCalls(t *testing.T) {
+	release := make(chan struct{})
+	first := make(chan struct{})
+	var calls atomic.Int32
+	var firstCtxErr atomic.Value
+	run := func(ctx context.Context, _ []string) Result {
+		if calls.Add(1) == 1 {
+			close(first)
+			<-release
+			firstCtxErr.Store(fmt.Sprint(ctx.Err()))
+		}
+		return Result{Stdout: []byte("{}\n")}
+	}
+	server, stop := context.WithCancel(context.Background())
+	defer stop()
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := New(server, []ToolSpec{describe}, run, Options{}).Connect(context.Background(), st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v0"}, nil).Connect(context.Background(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var once sync.Once
+	free := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(func() {
+		free()
+		_ = cs.Close()
+		_ = ss.Wait()
+	})
+	done := make(chan error, 2)
+	go func() {
+		_, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoice_describe", Arguments: map[string]any{"id": 1}})
+		done <- err
+	}()
+	<-first
+	go func() {
+		_, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoice_describe", Arguments: map[string]any{"id": 2}})
+		done <- err
+	}()
+	time.Sleep(20 * time.Millisecond) // the second call waits for the lock
+	stop()
+	time.Sleep(20 * time.Millisecond)
+	free()
+	errs := 0
+	for range 2 {
+		select {
+		case err := <-done:
+			if err != nil {
+				errs++
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Aufruf nicht beendet")
+		}
+	}
+	if n := calls.Load(); n != 1 || errs != 1 {
+		t.Errorf("%d Läufe, %d Fehler; erwartet 1 Lauf (der laufende) und 1 Fehler (der wartende)", n, errs)
+	}
+	if got := firstCtxErr.Load(); got != "<nil>" {
+		t.Errorf("laufender Aufruf abgebrochen: %v", got)
+	}
+}
+
+// final review A-M7: a panic in a call is a tool error (exit 1, outcome
+// unknown) with the stack on the log, and the server keeps serving.
+func TestMCPPanicIsToolError(t *testing.T) {
+	var calls atomic.Int32
+	run := func(context.Context, []string) Result {
+		if calls.Add(1) == 1 {
+			panic("kaputt")
+		}
+		return Result{Stdout: []byte("{}\n")}
+	}
+	var log bytes.Buffer
+	cs := connect(t, []ToolSpec{describe}, run, Options{Log: &log})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoice_describe", Arguments: map[string]any{"id": 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Error struct {
+			Code, Message, Hint string
+			ExitCode            int `json:"exit_code"`
+		} `json:"error"`
+	}
+	if !res.IsError || json.Unmarshal([]byte(text(t, res.Content[0])), &doc) != nil || doc.Error.Code != "error" || doc.Error.ExitCode != 1 ||
+		!strings.Contains(doc.Error.Message, "kaputt") || !strings.Contains(doc.Error.Hint, "Ergebnis unbekannt – per describe/list prüfen") {
+		t.Errorf("Ergebnis %+v", res.Content)
+	}
+	if !strings.Contains(log.String(), "kaputt") || !strings.Contains(log.String(), "goroutine") {
+		t.Errorf("Log ohne Stack: %q", log.String())
+	}
+	if res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoice_describe", Arguments: map[string]any{"id": 2}}); err != nil || res.IsError {
+		t.Errorf("Server nach Panic: %v %+v", err, res)
 	}
 }
 

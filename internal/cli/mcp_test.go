@@ -31,10 +31,10 @@ func mcpApp(t *testing.T) (*App, *mockapi.Server, *bytes.Buffer) {
 	return app, srv, app.Err.(*bytes.Buffer)
 }
 
-// mcpSession serves NewMCPServer(app, o) over the in-memory transport.
+// mcpSession serves NewMCPServer(t.Context(), app, o) over the in-memory transport.
 func mcpSession(t *testing.T, app *App, o MCPOptions) *mcp.ClientSession {
 	t.Helper()
-	s, err := NewMCPServer(app, o)
+	s, err := NewMCPServer(t.Context(), app, o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestMCPContext(t *testing.T) {
 	if reqs := srv.Requests(); len(reqs) != 1 || reqs[0].Header.Get("Authorization") != "Bearer test-token-b" {
 		t.Errorf("Anfragen %+v", reqs)
 	}
-	if _, err := NewMCPServer(app, MCPOptions{Context: "fehlt"}); err == nil {
+	if _, err := NewMCPServer(t.Context(), app, MCPOptions{Context: "fehlt"}); err == nil {
 		t.Error("unbekannter Kontext ohne Fehler")
 	}
 	out, errb := &bytes.Buffer{}, &bytes.Buffer{}
@@ -558,7 +558,7 @@ func TestMCPModeFlags(t *testing.T) {
 	}
 	// a broken configuration stops the start (NewMCPServer resolves once)
 	writeCfg(t, app, "kaputt = [")
-	if _, err := NewMCPServer(app, MCPOptions{AllowWrites: true}); err == nil {
+	if _, err := NewMCPServer(t.Context(), app, MCPOptions{AllowWrites: true}); err == nil {
 		t.Error("kaputte Konfiguration ohne Fehler")
 	}
 }
@@ -587,7 +587,7 @@ func TestMCPReadOnlyModeTable(t *testing.T) {
 			app, _, env := mcpEnvApp(t, nil)
 			src.setup(t, app, env)
 			o.FilesDir = t.TempDir()
-			s, err := NewMCPServer(app, o)
+			s, err := NewMCPServer(t.Context(), app, o)
 			if err != nil {
 				t.Fatalf("%s %+v: %v", src.name, o, err)
 			}

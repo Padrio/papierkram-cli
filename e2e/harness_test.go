@@ -207,7 +207,7 @@ func (s *liveSuite) mcpSession(t *testing.T, dir string) *mcp.ClientSession {
 		s.skipf(t, "Kontingent erschöpft (HTTP 429): kein MCP-Server gestartet, Test übersprungen")
 	}
 	var out, errb bytes.Buffer
-	srv, err := cli.NewMCPServer(s.newApp(dir, time.Now, "", &out, &errb), cli.MCPOptions{})
+	srv, err := cli.NewMCPServer(t.Context(), s.newApp(dir, time.Now, "", &out, &errb), cli.MCPOptions{})
 	if s.red.Contains(out.String()) || s.red.Contains(errb.String()) {
 		s.errorf(t, "Ausgabe beim Start des MCP-Servers enthält das Token")
 	}

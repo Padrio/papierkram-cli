@@ -97,7 +97,7 @@ In der Konfiguration eines Clients (JSON, z. B. {"command":"papierkram","args":[
 
 Der Kontext wird beim Start festgelegt (--context oder wie sonst: PAPIERKRAM_CONTEXT, Projektdatei, aktiver Kontext) und gilt für alle Aufrufe, auch wenn sich der aktive Kontext später ändert; Tools haben keinen Kontext-Parameter. --timeout gilt für jeden Aufruf. --yes, --jq, --fields, -o und --dry-run gelten nicht für den Server (Exit 2). --debug schreibt die Anfragen auf stderr, nie in ein Tool-Ergebnis. stdout trägt nur das Protokoll (JSON-RPC).
 
-Der Server endet mit Exit 0, wenn stdin geschlossen wird oder ein Signal (Strg+C) kommt. Ein Signal wartet auf den laufenden Aufruf und bricht ihn nicht ab: Er läuft zu Ende, seine Antwort erreicht den Client aber nicht mehr (Verbindung geschlossen; eine Änderung dann wie nach Exit 12 per describe/list prüfen). Ein zweites Strg+C beendet den Prozess sofort. Bricht der Client einen Aufruf ab, endet der Befehl wie nach Strg+C (Exit 10, nach gesendeter Änderung 12), der Client erhält dafür keine Antwort.
+Der Server endet mit Exit 0, wenn stdin geschlossen wird oder ein Signal (Strg+C) kommt. Ein Signal wartet auf den laufenden Aufruf und bricht ihn nicht ab: Er läuft zu Ende, seine Antwort erreicht den Client aber nicht mehr (Verbindung geschlossen; eine Änderung dann wie nach Exit 12 per describe/list prüfen). Aufrufe, die noch warten, laufen nach einem Signal nicht mehr. Ein interner Fehler (Panic) eines Aufrufs beendet den Server nicht: Der Aufruf endet als Tool-Fehler mit code error und Exit 1 (Ergebnis unbekannt, per describe/list prüfen), der Stack steht auf stderr. Ein zweites Strg+C beendet den Prozess sofort. Bricht der Client einen Aufruf ab, endet der Befehl wie nach Strg+C (Exit 10, nach gesendeter Änderung 12), der Client erhält dafür keine Antwort.
 
 Sendet selbst keine Anfrage; jeder Tool-Aufruf kostet die Credits seines Befehls.`
 
@@ -154,8 +154,9 @@ func newMCPCmd(app *App) *cobra.Command {
 // tree that the mode allows (mcpMode), every call run by mcpRunner in
 // context o.Context, with --debug when app was started with it. The configuration is resolved once
 // without the keychain, so a broken config.toml or an unknown context
-// stops the start (its error, no server).
-func NewMCPServer(app *App, o MCPOptions) (*mcp.Server, error) {
+// stops the start (its error, no server). ctx is the context of the
+// server: when it ends (a signal), no waiting call runs any more.
+func NewMCPServer(ctx context.Context, app *App, o MCPOptions) (*mcp.Server, error) {
 	r, err := app.resolveWith(o.Context, nil)
 	if err != nil {
 		return nil, err
@@ -171,13 +172,14 @@ func NewMCPServer(app *App, o MCPOptions) (*mcp.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mcpserver.New(specs, app.mcpRunner(), mcpserver.Options{
+	return mcpserver.New(ctx, specs, app.mcpRunner(), mcpserver.Options{
 		Mode:     mode,
 		Context:  r.Context,
 		Timeout:  o.Timeout,
 		Debug:    app.Flags.Debug,
 		Version:  buildinfo.Version,
 		FilesDir: dir,
+		Log:      app.Err,
 	}), nil
 }
 
@@ -258,7 +260,7 @@ func samePath(a, b string) bool {
 // serveMCP runs the MCP server over app.In and app.Out until the client
 // closes stdin or ctx ends (signal); both end with exit 0.
 func (a *App) serveMCP(ctx context.Context, o MCPOptions) error {
-	s, err := NewMCPServer(a, o)
+	s, err := NewMCPServer(ctx, a, o)
 	if err != nil {
 		return err
 	}

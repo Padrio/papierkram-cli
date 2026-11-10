@@ -9,7 +9,10 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
+	"runtime/debug"
 	"slices"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -94,7 +97,8 @@ type Runner func(ctx context.Context, args []string) Result
 // (--context, empty: the CLI chooses), the --timeout of every call (empty:
 // none), --debug for every call, the version the server reports and the
 // absolute directory every file path of a call must lie in (localPath;
-// empty: no tool with a file path).
+// empty: no tool with a file path), and the log of the server process
+// (its stderr; nil: none), which gets the stack of a call that panicked.
 type Options struct {
 	Mode     Mode
 	Context  string
@@ -102,6 +106,7 @@ type Options struct {
 	Debug    bool
 	Version  string
 	FilesDir string
+	Log      io.Writer
 }
 
 // DryRun is the parameter every tool of a class but read_only gets: the
@@ -252,8 +257,13 @@ var waitCancelled = func() {}
 // call is translated by Args and run by run; one lock serializes all
 // calls, because the CLI keeps per-invocation state (one App per run, but
 // shared files like the name cache and the timer). A call cancelled while
-// it waits never runs.
-func New(specs []ToolSpec, run Runner, o Options) *mcp.Server {
+// it waits never runs, and neither does one that waits when ctx, the
+// context of the server, ends (a signal; final review A-M2): it is
+// checked again after the lock, so a waiting call never sends after the
+// stop, whatever the SDK does with it. The running call keeps its own
+// context. A panic of a call is a tool error (recovered).
+func New(ctx context.Context, specs []ToolSpec, run Runner, o Options) *mcp.Server {
+	server := ctx
 	s := mcp.NewServer(&mcp.Implementation{Name: "papierkram", Version: o.Version}, nil)
 	lock := make(chan struct{}, 1)
 	for _, t := range Tools(specs, o.Mode) {
@@ -275,12 +285,42 @@ func New(specs []ToolSpec, run Runner, o Options) *mcp.Server {
 			case <-ctx.Done():
 				waitCancelled()
 				return nil, ctx.Err()
+			case <-server.Done():
+				waitCancelled()
+				return nil, server.Err()
 			}
 			defer func() { <-lock }()
-			return call(ctx, t, req.Params.Arguments, run, o), nil
+			// the lock may be won after a stop or a cancellation: never run
+			if err := server.Err(); err != nil {
+				return nil, err
+			}
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return safeCall(ctx, t, req.Params.Arguments, run, o), nil
 		})
 	}
 	return s
+}
+
+// safeCall is call with a panic turned into a tool error (final review
+// A-M7): one broken call must not end the server and the session of the
+// client. The outcome is unknown (a change may have been sent); the stack
+// goes to o.Log.
+func safeCall(ctx context.Context, t ToolSpec, raw []byte, run Runner, o Options) (res *mcp.CallToolResult) {
+	defer func() {
+		v := recover()
+		if v == nil {
+			return
+		}
+		if o.Log != nil {
+			_, _ = fmt.Fprintf(o.Log, "Fehler: Tool %s: interner Fehler: %v\n%s", t.Name, v, debug.Stack())
+		}
+		line := errorLine("error", fmt.Sprintf("interner Fehler im Tool %s: %v", t.Name, v),
+			"Ergebnis unbekannt – per describe/list prüfen, ob eine Änderung angekommen ist", 1)
+		res = &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: line}}}
+	}()
+	return call(ctx, t, raw, run, o)
 }
 
 // call runs one tool call: arguments to CLI arguments (JSON values in a
